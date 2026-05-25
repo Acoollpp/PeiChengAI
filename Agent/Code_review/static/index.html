@@ -13,7 +13,13 @@
         <p class="eyebrow">Code Review Task Console</p>
         <h1>代码审查任务台</h1>
       </div>
-      <div class="service-state" id="service-state">Ready</div>
+      <div class="topbar-actions">
+        <div class="user-strip">
+          <span id="current-user">未登录</span>
+          <button id="logout-button" type="button">退出</button>
+        </div>
+        <div class="service-state" id="service-state">Ready</div>
+      </div>
     </header>
 
     <section class="workspace-grid review-workbench">
@@ -39,8 +45,7 @@
             </div>
           </div>
 
-          <label for="requester">请求人</label>
-          <input id="requester" name="requester" type="text" autocomplete="name" placeholder="alice">
+          <input id="requester" name="requester" type="hidden" value="">
 
           <button class="primary-button" type="submit" id="submit-button">提交审查</button>
           <p class="form-message" id="form-message" role="status"></p>

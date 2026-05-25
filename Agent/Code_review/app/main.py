@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from redis import Redis
 
@@ -18,7 +18,7 @@ from app.cleanup import cleanup_old_tasks
 from app.codex_runner import CodexRunner
 from app.config import Settings, settings
 from app.database import TaskRepository
-from app.events import InMemoryEventBus, RedisEventBus
+from app.events import InMemoryEventBus, RedisEventBus, format_sse
 from app.models import (
     SessionCreateRequest,
     SessionResponse,
@@ -215,9 +215,25 @@ def create_app(
             filename=f"code-review-{task_id}.md",
         )
 
+    @app.get("/api/events")
+    async def stream_events(request: Request):
+        user = current_user(request)
+
+        async def generate():
+            async for event in event_bus.subscribe(user["id"]):
+                if await request.is_disconnected():
+                    break
+                yield format_sse(event["event"], event["data"])
+
+        return StreamingResponse(generate(), media_type="text/event-stream")
+
     @app.get("/")
     def serve_frontend() -> FileResponse:
         return FileResponse(static_dir / "index.html", media_type="text/html")
+
+    @app.get("/login")
+    def serve_login() -> FileResponse:
+        return FileResponse(static_dir / "login.html", media_type="text/html")
 
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 

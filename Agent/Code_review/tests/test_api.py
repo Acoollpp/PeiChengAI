@@ -51,6 +51,19 @@ def test_login_creates_session_and_get_session_returns_user(api_client):
     assert session_response.json()["user"]["name"] == "张三"
 
 
+def test_events_requires_login(api_client):
+    response = api_client.get("/api/events")
+
+    assert response.status_code == 401
+
+
+def test_login_page_is_served(api_client):
+    response = api_client.get("/login")
+
+    assert response.status_code == 200
+    assert "login-form" in response.text
+
+
 def test_post_tasks_requires_login(api_client):
     response = create_task(api_client)
 

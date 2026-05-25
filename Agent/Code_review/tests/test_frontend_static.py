@@ -104,3 +104,15 @@ def test_login_page_contains_name_phone_and_submit_controls():
     assert 'name="phone"' in html
     assert 'id="login-form"' in html
     assert "/api/session" in html
+
+
+def test_task_console_uses_eventsource_and_keeps_layout_markers():
+    html = Path("static/index.html").read_text(encoding="utf-8")
+    js = Path("static/app.js").read_text(encoding="utf-8")
+
+    assert 'class="workspace-grid review-workbench"' in html
+    assert 'class="left-rail"' in html
+    assert 'class="right-stage"' in html
+    assert 'id="current-user"' in html
+    assert 'new EventSource("/api/events")' in js
+    assert "loadRecentTasks" in js

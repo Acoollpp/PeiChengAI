@@ -3,6 +3,8 @@ const POLL_INTERVAL_MS = 2500;
 const state = {
   currentTaskId: null,
   pollTimer: null,
+  eventSource: null,
+  currentUser: null,
 };
 
 const elements = {
@@ -10,6 +12,8 @@ const elements = {
   submitButton: document.querySelector("#submit-button"),
   formMessage: document.querySelector("#form-message"),
   serviceState: document.querySelector("#service-state"),
+  currentUser: document.querySelector("#current-user"),
+  logoutButton: document.querySelector("#logout-button"),
   currentSubtitle: document.querySelector("#current-subtitle"),
   taskStatus: document.querySelector("#task-status"),
   taskInput: document.querySelector("#task-input"),
@@ -21,8 +25,54 @@ const elements = {
   recentList: document.querySelector("#recent-list"),
 };
 
-elements.form.addEventListener("submit", submitTask);
-loadRecentTasks();
+if (elements.form && elements.logoutButton) {
+  elements.form.addEventListener("submit", submitTask);
+  elements.logoutButton.addEventListener("click", async () => {
+    await fetch("/api/session", { method: "DELETE" });
+    window.location.href = "/login";
+  });
+  initialize();
+}
+
+async function initialize() {
+  const session = await loadSession();
+  if (!session.authenticated) {
+    if (window.location) {
+      window.location.href = "/login";
+    }
+    return;
+  }
+  state.currentUser = session.user;
+  elements.currentUser.textContent = `${session.user.name} ${session.user.phone}`;
+  connectEvents();
+  await loadRecentTasks();
+}
+
+async function loadSession() {
+  const response = await fetch("/api/session");
+  if (response.status === 401) {
+    return { authenticated: false };
+  }
+  return readJson(response);
+}
+
+function connectEvents() {
+  if (state.eventSource) {
+    state.eventSource.close();
+  }
+  state.eventSource = new EventSource("/api/events");
+  state.eventSource.addEventListener("task_created", refreshFromEvent);
+  state.eventSource.addEventListener("task_updated", refreshFromEvent);
+  state.eventSource.addEventListener("open", () => loadRecentTasks());
+}
+
+async function refreshFromEvent(event) {
+  const data = JSON.parse(event.data || "{}");
+  await loadRecentTasks();
+  if (data.task_id && (!state.currentTaskId || state.currentTaskId === data.task_id)) {
+    await loadTask(data.task_id);
+  }
+}
 
 async function submitTask(event) {
   event.preventDefault();
@@ -34,7 +84,7 @@ async function submitTask(event) {
     svn_url: String(formData.get("svn_url") || "").trim(),
     old_revision: String(formData.get("old_revision") || "").trim(),
     new_revision: String(formData.get("new_revision") || "").trim(),
-    requester: String(formData.get("requester") || "").trim() || "anonymous",
+    requester: "",
   };
 
   try {

@@ -42,3 +42,20 @@ class RedisEventBus:
     async def publish(self, user_id: str, event: str, data: dict) -> None:
         payload = json.dumps({"event": event, "data": data}, ensure_ascii=False)
         self.redis.publish(f"events:user:{user_id}", payload)
+
+    async def subscribe(self, user_id: str) -> AsyncIterator[dict]:
+        pubsub = self.redis.pubsub()
+        pubsub.subscribe(f"events:user:{user_id}")
+        try:
+            while True:
+                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1)
+                if message is None:
+                    await asyncio.sleep(0.1)
+                    continue
+                data = message.get("data")
+                if isinstance(data, bytes):
+                    data = data.decode("utf-8")
+                yield json.loads(data)
+        finally:
+            pubsub.unsubscribe(f"events:user:{user_id}")
+            pubsub.close()
