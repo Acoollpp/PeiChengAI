@@ -82,10 +82,14 @@ def create_app(
             runner = CodexRunner(app_settings.codex_command, app_settings.codex_args)
             worker = Worker(
                 repo=repo,
+                scheduler=scheduler,
+                event_bus=event_bus,
                 runner=runner,
                 prompt_template=prompt_template,
                 workspaces_dir=workspaces_dir,
                 timeout_seconds=app_settings.codex_timeout_seconds,
+                worker_id=app_settings.worker_id,
+                lock_ttl_seconds=app_settings.redis_lock_ttl_seconds,
             )
             worker_thread = WorkerThread(worker, app_settings.worker_poll_seconds)
             worker_thread.start()

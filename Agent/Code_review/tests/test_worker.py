@@ -4,8 +4,9 @@ from pathlib import Path
 
 import app.codex_runner
 from app.codex_runner import CodexRunner
-from app.database import TaskRepository
 from app.models import TaskStatus
+from app.scheduler import InMemoryScheduler
+from app.testing import InMemoryTaskRepository
 from app.worker import Worker, WorkerThread
 
 
@@ -35,32 +36,65 @@ class FakeRunner:
 
 
 def make_repository(tmp_path):
-    repository = TaskRepository(tmp_path / "data" / "tasks.db")
+    repository = InMemoryTaskRepository()
+    repository.base_dir = tmp_path
     repository.init_schema()
     return repository
 
 
-def create_task(repository, *, task_id="task-1", report_path=None):
+def create_task(repository, *, task_id="task-1", report_path=None, user_id=None, requester="alice"):
+    if user_id is None:
+        user = repository.get_or_create_user(name=requester, phone="13800138000")
+        user_id = user["id"]
     if report_path is None:
-        report_path = repository.database_path.parent.parent / "reports" / f"{task_id}.md"
+        report_path = repository.base_dir / "reports" / f"{task_id}.md"
     return repository.create_task(
         svn_url="https://example.test/svn/project",
         old_revision="100",
         new_revision="101",
-        requester="alice",
+        requester=requester,
         report_path=str(report_path),
+        user_id=user_id,
         task_id=task_id,
     )
 
 
-def make_worker(tmp_path, repository, runner):
+def make_worker(tmp_path, repository, runner, scheduler=None, event_bus=None):
+    if scheduler is None:
+        scheduler = InMemoryScheduler()
+        for task in repository.list_tasks():
+            if task["status"] == TaskStatus.pending:
+                scheduler.enqueue_task(task["user_id"], task["id"])
+    if event_bus is None:
+        event_bus = RecordingEventBus()
     return Worker(
         repo=repository,
+        scheduler=scheduler,
+        event_bus=event_bus,
         runner=runner,
         prompt_template=PROMPT_TEMPLATE,
         workspaces_dir=tmp_path / "workspaces",
         timeout_seconds=30,
+        worker_id="worker-test",
+        lock_ttl_seconds=60,
     )
+
+
+def test_process_one_claims_from_scheduler_and_releases_user_lock(tmp_path):
+    repository = make_repository(tmp_path)
+    user = repository.get_or_create_user(name="张三", phone="13800138000")
+    task = create_task(repository, user_id=user["id"], requester=user["name"])
+    scheduler = InMemoryScheduler()
+    scheduler.enqueue_task(user["id"], task["id"])
+    event_bus = RecordingEventBus()
+    worker = make_worker(tmp_path, repository, FakeRunner(), scheduler=scheduler, event_bus=event_bus)
+
+    processed = worker.process_one()
+
+    assert processed is True
+    assert repository.get_task(task["id"])["status"] == TaskStatus.success
+    assert scheduler.claim_next_task(lock_ttl_seconds=60) is None
+    assert event_bus.events[-1]["event"] == "task_updated"
 
 
 def test_process_one_marks_task_success_when_runner_writes_report(tmp_path):
@@ -158,13 +192,8 @@ def test_process_one_renders_prompt_with_task_values_and_creates_workspace(tmp_p
 def test_process_one_marks_failed_when_prompt_template_is_malformed(tmp_path):
     repository = make_repository(tmp_path)
     task = create_task(repository)
-    worker = Worker(
-        repo=repository,
-        runner=FakeRunner(),
-        prompt_template="Review {missing_key}",
-        workspaces_dir=tmp_path / "workspaces",
-        timeout_seconds=30,
-    )
+    worker = make_worker(tmp_path, repository, FakeRunner())
+    worker.prompt_template = "Review {missing_key}"
 
     processed = worker.process_one()
 
@@ -180,13 +209,8 @@ def test_process_one_resolves_relative_report_path_with_path_resolve(tmp_path, m
     repository = make_repository(tmp_path)
     task = create_task(repository, report_path="relative-report.md")
     runner = FakeRunner()
-    worker = Worker(
-        repo=repository,
-        runner=runner,
-        prompt_template=PROMPT_TEMPLATE,
-        workspaces_dir=tmp_path / "nested" / "workspaces",
-        timeout_seconds=30,
-    )
+    worker = make_worker(tmp_path, repository, runner)
+    worker.workspaces_dir = tmp_path / "nested" / "workspaces"
 
     processed = worker.process_one()
 
@@ -299,3 +323,11 @@ class BlockingWorker:
         self.entered.set()
         self.release.wait(timeout=5)
         return False
+
+
+class RecordingEventBus:
+    def __init__(self):
+        self.events = []
+
+    async def publish(self, user_id, event, data):
+        self.events.append({"user_id": user_id, "event": event, "data": data})

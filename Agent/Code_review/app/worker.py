@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import inspect
 import shutil
 import subprocess
 import threading
@@ -19,23 +21,33 @@ class Worker:
     def __init__(
         self,
         repo,
+        scheduler,
+        event_bus,
         runner: Runner,
         prompt_template: str,
         workspaces_dir: Path,
         timeout_seconds: int,
+        worker_id: str,
+        lock_ttl_seconds: int,
     ):
         self.repo = repo
+        self.scheduler = scheduler
+        self.event_bus = event_bus
         self.runner = runner
         self.prompt_template = prompt_template
         self.workspaces_dir = Path(workspaces_dir)
         self.timeout_seconds = timeout_seconds
+        self.worker_id = worker_id
+        self.lock_ttl_seconds = lock_ttl_seconds
 
     def process_one(self) -> bool:
-        task = self.repo.claim_next_task()
-        if task is None:
+        claim = self.scheduler.claim_next_task(lock_ttl_seconds=self.lock_ttl_seconds)
+        if claim is None:
             return False
 
+        task = self.repo.mark_running(claim["task_id"], worker_id=self.worker_id)
         task_id = task["id"]
+        user_id = task["user_id"]
         try:
             workspace = (self.workspaces_dir / task_id).resolve()
             workspace.mkdir(parents=True, exist_ok=True)
@@ -56,9 +68,11 @@ class Worker:
         except subprocess.TimeoutExpired as exc:
             timeout = exc.timeout if exc.timeout is not None else self.timeout_seconds
             self.repo.mark_failed(task_id, f"Codex runner timeout after {timeout} seconds")
+            self._complete_task(user_id, task_id, "failed")
             return True
         except Exception as exc:
             self.repo.mark_failed(task_id, _sanitize_error(f"Codex runner failed: {exc}"))
+            self._complete_task(user_id, task_id, "failed")
             return True
 
         if return_code != 0:
@@ -67,6 +81,7 @@ class Worker:
                 task_id,
                 _sanitize_error(f"Codex runner exited with code {return_code}: {details}"),
             )
+            self._complete_task(user_id, task_id, "failed")
             return True
 
         if not report_path.exists() or report_path.stat().st_size == 0:
@@ -75,10 +90,21 @@ class Worker:
             if details:
                 message = f"{message}。Codex output: {details}"
             self.repo.mark_failed(task_id, _sanitize_error(message))
+            self._complete_task(user_id, task_id, "failed")
             return True
 
         self.repo.mark_success(task_id)
+        self._complete_task(user_id, task_id, "success")
         return True
+
+    def _complete_task(self, user_id: str, task_id: str, status: str) -> None:
+        self.scheduler.complete_task(user_id, task_id)
+        self._publish_event(user_id, "task_updated", {"task_id": task_id, "status": status})
+
+    def _publish_event(self, user_id: str, event: str, data: dict) -> None:
+        result = self.event_bus.publish(user_id, event, data)
+        if inspect.isawaitable(result):
+            asyncio.run(result)
 
 
 class WorkerThread:
