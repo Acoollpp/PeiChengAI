@@ -11,21 +11,37 @@ def api_paths(tmp_path):
 
 
 @pytest.fixture
-def api_client(api_paths):
+def api_scheduler():
+    from app.scheduler import InMemoryScheduler
+
+    return InMemoryScheduler()
+
+
+@pytest.fixture
+def api_event_bus():
+    from app.events import InMemoryEventBus
+
+    return InMemoryEventBus()
+
+
+@pytest.fixture
+def api_client(api_paths, api_repository, api_scheduler, api_event_bus):
     from app.main import create_app
 
-    app = create_app(**api_paths, start_worker=False)
+    app = create_app(
+        **api_paths,
+        start_worker=False,
+        repo=api_repository,
+        scheduler=api_scheduler,
+        event_bus=api_event_bus,
+    )
     with TestClient(app) as client:
         yield client
 
 
 @pytest.fixture
-def api_repository(api_paths):
-    from app.testing import InMemoryTaskRepository
-
-    repo = InMemoryTaskRepository()
-    repo.init_schema()
-    return repo
+def api_repository(repository):
+    return repository
 
 
 @pytest.fixture

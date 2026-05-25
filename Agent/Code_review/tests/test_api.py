@@ -15,6 +15,15 @@ def create_task(client, **overrides):
     return client.post("/api/tasks", json=payload)
 
 
+def login(client, name="张三", phone="13800138000"):
+    return client.post("/api/session", json={"name": name, "phone": phone})
+
+
+def create_logged_in_task(client, **overrides):
+    login(client, name="alice")
+    return create_task(client, **overrides)
+
+
 def test_root_serves_static_frontend_and_api_routes_still_work(api_client):
     root_response = api_client.get("/")
 
@@ -22,10 +31,30 @@ def test_root_serves_static_frontend_and_api_routes_still_work(api_client):
     assert root_response.headers["content-type"].startswith("text/html")
     assert "Code Review Task Console" in root_response.text
 
+    login(api_client)
     api_response = api_client.get("/api/tasks")
 
     assert api_response.status_code == 200
     assert api_response.headers["content-type"].startswith("application/json")
+
+
+def test_login_creates_session_and_get_session_returns_user(api_client):
+    login_response = login(api_client)
+
+    assert login_response.status_code == 200
+    assert "code_review_session" in login_response.headers["set-cookie"]
+
+    session_response = api_client.get("/api/session")
+
+    assert session_response.status_code == 200
+    assert session_response.json()["authenticated"] is True
+    assert session_response.json()["user"]["name"] == "张三"
+
+
+def test_post_tasks_requires_login(api_client):
+    response = create_task(api_client)
+
+    assert response.status_code == 401
 
 
 def test_root_places_report_viewer_on_the_right_and_task_list_on_the_left(api_client):
@@ -47,6 +76,7 @@ def test_post_tasks_creates_pending_task_normalizes_revisions_and_stores_request
     api_repository,
     api_paths,
 ):
+    login(api_client, name="alice", phone="13800138000")
     response = create_task(api_client, old_revision=" 100 ", new_revision="R101")
 
     assert response.status_code == 200
@@ -65,24 +95,28 @@ def test_post_tasks_creates_pending_task_normalizes_revisions_and_stores_request
 
 
 def test_post_tasks_rejects_invalid_svn_url(api_client):
+    login(api_client)
     response = create_task(api_client, svn_url="https://example.test/svn/src_home/project")
 
     assert response.status_code == 400
 
 
 def test_post_tasks_rejects_invalid_revision(api_client):
+    login(api_client)
     response = create_task(api_client, old_revision="abc")
 
     assert response.status_code == 400
 
 
 def test_post_tasks_rejects_same_old_and_new_revision(api_client):
+    login(api_client)
     response = create_task(api_client, old_revision="100", new_revision="r100")
 
     assert response.status_code == 400
 
 
 def test_get_tasks_lists_recent_tasks(api_client):
+    login(api_client)
     first = create_task(api_client, old_revision="1", new_revision="2").json()["task_id"]
     second = create_task(api_client, old_revision="3", new_revision="4").json()["task_id"]
 
@@ -95,7 +129,7 @@ def test_get_tasks_lists_recent_tasks(api_client):
 
 
 def test_get_task_returns_details_with_report_available_false_for_pending(api_client):
-    task_id = create_task(api_client).json()["task_id"]
+    task_id = create_logged_in_task(api_client).json()["task_id"]
 
     response = api_client.get(f"/api/tasks/{task_id}")
 
@@ -112,7 +146,7 @@ def test_get_task_returns_report_available_true_when_success_report_exists(
     api_repository,
     api_paths,
 ):
-    task_id = create_task(api_client).json()["task_id"]
+    task_id = create_logged_in_task(api_client).json()["task_id"]
     report_path = api_paths["reports_dir"] / f"{task_id}.md"
     report_path.write_text("# Review\n\nLooks good.\n", encoding="utf-8", newline="\n")
     api_repository.mark_success(task_id)
@@ -124,7 +158,7 @@ def test_get_task_returns_report_available_true_when_success_report_exists(
 
 
 def test_get_report_returns_conflict_before_success(api_client):
-    task_id = create_task(api_client).json()["task_id"]
+    task_id = create_logged_in_task(api_client).json()["task_id"]
 
     response = api_client.get(f"/api/tasks/{task_id}/report")
 
@@ -132,7 +166,7 @@ def test_get_report_returns_conflict_before_success(api_client):
 
 
 def test_get_report_returns_markdown_after_success(api_client, api_repository, api_paths):
-    task_id = create_task(api_client).json()["task_id"]
+    task_id = create_logged_in_task(api_client).json()["task_id"]
     report_text = "# Review\n\nLooks good.\n"
     (api_paths["reports_dir"] / f"{task_id}.md").write_text(
         report_text,
@@ -153,6 +187,8 @@ def test_get_report_falls_back_to_current_reports_dir_for_copied_database(
     api_repository,
     api_paths,
 ):
+    login(api_client)
+    user = api_repository.get_or_create_user(name="alice", phone="13800138000")
     task_id = "copied-database-task"
     report_text = "# Review\n\nCopied database report.\n"
     current_report = api_paths["reports_dir"] / f"{task_id}.md"
@@ -163,6 +199,7 @@ def test_get_report_falls_back_to_current_reports_dir_for_copied_database(
         new_revision="r2",
         requester="alice",
         report_path=str(api_paths["reports_dir"].parent / "old-install" / "reports" / f"{task_id}.md"),
+        user_id=user["id"],
         task_id=task_id,
     )
     api_repository.mark_success(task["id"])
@@ -182,6 +219,8 @@ def test_report_endpoint_does_not_serve_success_task_report_outside_reports_dir(
     api_paths,
     tmp_path,
 ):
+    login(api_client)
+    user = api_repository.get_or_create_user(name="alice", phone="13800138000")
     outside_report = tmp_path / "outside-report.md"
     outside_report.write_text("# Private\n\nDo not serve.\n", encoding="utf-8", newline="\n")
     task = api_repository.create_task(
@@ -190,6 +229,7 @@ def test_report_endpoint_does_not_serve_success_task_report_outside_reports_dir(
         new_revision="r2",
         requester="alice",
         report_path=str(outside_report),
+        user_id=user["id"],
         task_id="outside-report-task",
     )
     api_repository.mark_success(task["id"])
@@ -204,7 +244,7 @@ def test_report_endpoint_does_not_serve_success_task_report_outside_reports_dir(
 
 
 def test_get_download_returns_markdown_attachment_after_success(api_client, api_repository, api_paths):
-    task_id = create_task(api_client).json()["task_id"]
+    task_id = create_logged_in_task(api_client).json()["task_id"]
     report_text = "# Review\n\nDownload me.\n"
     (api_paths["reports_dir"] / f"{task_id}.md").write_text(
         report_text,
@@ -222,7 +262,7 @@ def test_get_download_returns_markdown_attachment_after_success(api_client, api_
 
 
 def test_get_download_returns_conflict_before_success(api_client):
-    task_id = create_task(api_client).json()["task_id"]
+    task_id = create_logged_in_task(api_client).json()["task_id"]
 
     response = api_client.get(f"/api/tasks/{task_id}/download")
 
@@ -230,6 +270,7 @@ def test_get_download_returns_conflict_before_success(api_client):
 
 
 def test_missing_task_returns_404(api_client):
+    login(api_client)
     response = api_client.get("/api/tasks/missing-task")
 
     assert response.status_code == 404
@@ -246,3 +287,26 @@ def test_importing_app_main_does_not_create_default_app_storage(monkeypatch, tmp
 
     assert not hasattr(module, "app")
     assert not (tmp_path / "data").exists()
+
+
+def test_post_tasks_uses_session_user_and_enqueues_task(api_client, api_repository, api_scheduler):
+    login(api_client, name="李四", phone="13900139000")
+
+    response = create_task(api_client, requester="mallory")
+
+    assert response.status_code == 200
+    task_id = response.json()["task_id"]
+    task = api_repository.get_task(task_id)
+    assert task["requester"] == "李四"
+    assert api_scheduler.claim_next_task(lock_ttl_seconds=60)["task_id"] == task_id
+
+
+def test_user_cannot_read_other_users_task(api_client):
+    login(api_client, name="用户一", phone="13100131000")
+    task_id = create_task(api_client).json()["task_id"]
+    api_client.delete("/api/session")
+    login(api_client, name="用户二", phone="13200132000")
+
+    response = api_client.get(f"/api/tasks/{task_id}")
+
+    assert response.status_code == 404

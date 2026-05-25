@@ -1,21 +1,36 @@
 from __future__ import annotations
 
 import logging
+import asyncio
+import inspect
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from redis import Redis
 
 from app.cleanup import cleanup_old_tasks
 from app.codex_runner import CodexRunner
 from app.config import Settings, settings
 from app.database import TaskRepository
-from app.models import TaskCreateRequest, TaskCreateResponse, TaskResponse, TaskStatus
+from app.events import InMemoryEventBus, RedisEventBus
+from app.models import (
+    SessionCreateRequest,
+    SessionResponse,
+    TaskCreateRequest,
+    TaskCreateResponse,
+    TaskResponse,
+    TaskStatus,
+    UserResponse,
+)
+from app.postgres import PostgresDatabase
+from app.scheduler import RedisScheduler, Scheduler
+from app.session import SESSION_COOKIE_NAME, SessionManager, normalize_phone
 from app.validation import normalize_revision, validate_svn_url
 from app.worker import Worker, WorkerThread
 
@@ -31,8 +46,10 @@ def create_app(
     start_worker: bool = True,
     prompt_template_path: Path | str | None = None,
     app_settings: Settings = settings,
+    repo: TaskRepository | None = None,
+    scheduler: Scheduler | None = None,
+    event_bus: InMemoryEventBus | RedisEventBus | None = None,
 ) -> FastAPI:
-    database_path = Path(database_path or app_settings.database_path).resolve()
     reports_dir = Path(reports_dir or app_settings.reports_dir).resolve()
     workspaces_dir = Path(workspaces_dir or app_settings.workspaces_dir).resolve()
     prompt_template_path = Path(prompt_template_path or app_settings.prompt_template_path).resolve()
@@ -40,8 +57,16 @@ def create_app(
     reports_dir.mkdir(parents=True, exist_ok=True)
     workspaces_dir.mkdir(parents=True, exist_ok=True)
 
-    repo = TaskRepository(database_path)
+    if repo is None:
+        repo = TaskRepository(PostgresDatabase(app_settings.database_url))
     repo.init_schema()
+    if scheduler is None:
+        redis = Redis.from_url(app_settings.redis_url)
+        scheduler = RedisScheduler(redis)
+    if event_bus is None:
+        redis = Redis.from_url(app_settings.redis_url)
+        event_bus = RedisEventBus(redis)
+    session_manager = SessionManager(app_settings.session_secret_key)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -75,12 +100,54 @@ def create_app(
 
     app = FastAPI(lifespan=lifespan)
     app.state.repo = repo
+    app.state.scheduler = scheduler
+    app.state.event_bus = event_bus
     app.state.reports_dir = reports_dir
     app.state.workspaces_dir = workspaces_dir
     static_dir = Path(__file__).resolve().parent.parent / "static"
 
+    def current_user(request: Request) -> dict[str, Any]:
+        user_id = session_manager.read_user_id(request.cookies.get(SESSION_COOKIE_NAME))
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        user = repo.get_user(user_id)
+        if user is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        return user
+
+    @app.post("/api/session", response_model=SessionResponse)
+    def create_session(request: SessionCreateRequest, response: Response) -> SessionResponse:
+        try:
+            phone = normalize_phone(request.phone)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        user = repo.get_or_create_user(name=request.name.strip(), phone=phone)
+        response.set_cookie(
+            SESSION_COOKIE_NAME,
+            session_manager.create_cookie_value(user["id"]),
+            httponly=True,
+            samesite="lax",
+        )
+        return SessionResponse(authenticated=True, user=_to_user_response(user))
+
+    @app.get("/api/session", response_model=SessionResponse)
+    def get_session(request: Request) -> SessionResponse:
+        user_id = session_manager.read_user_id(request.cookies.get(SESSION_COOKIE_NAME))
+        if not user_id:
+            return SessionResponse(authenticated=False)
+        user = repo.get_user(user_id)
+        if user is None:
+            return SessionResponse(authenticated=False)
+        return SessionResponse(authenticated=True, user=_to_user_response(user))
+
+    @app.delete("/api/session")
+    def delete_session(response: Response) -> dict[str, bool]:
+        response.delete_cookie(SESSION_COOKIE_NAME)
+        return {"authenticated": False}
+
     @app.post("/api/tasks", response_model=TaskCreateResponse)
-    def create_task(request: TaskCreateRequest) -> TaskCreateResponse:
+    def create_task(request: TaskCreateRequest, http_request: Request) -> TaskCreateResponse:
+        user = current_user(http_request)
         try:
             svn_url = validate_svn_url(request.svn_url, app_settings.svn_allowed_prefix)
             old_revision = normalize_revision(request.old_revision)
@@ -97,24 +164,37 @@ def create_app(
             svn_url=svn_url,
             old_revision=old_revision,
             new_revision=new_revision,
-            requester=request.requester,
+            requester=user["name"],
+            user_id=user["id"],
             report_path=str(report_path),
             task_id=task_id,
+        )
+        try:
+            scheduler.enqueue_task(user["id"], task_id)
+        except Exception as exc:
+            repo.mark_enqueue_failed(task_id, "Redis enqueue failed")
+            raise HTTPException(status_code=503, detail="Task scheduler is unavailable") from exc
+        _publish_event(
+            event_bus,
+            user["id"],
+            "task_created",
+            {"task_id": task_id, "status": TaskStatus.pending.value},
         )
         return TaskCreateResponse(task_id=task["id"], status=task["status"])
 
     @app.get("/api/tasks", response_model=list[TaskResponse])
-    def list_tasks() -> list[TaskResponse]:
-        return [_to_task_response(task, reports_dir) for task in repo.list_tasks()]
+    def list_tasks(request: Request) -> list[TaskResponse]:
+        user = current_user(request)
+        return [_to_task_response(task, reports_dir) for task in repo.list_tasks_for_user(user["id"])]
 
     @app.get("/api/tasks/{task_id}", response_model=TaskResponse)
-    def get_task(task_id: str) -> TaskResponse:
-        task = _get_existing_task(repo, task_id)
+    def get_task(task_id: str, request: Request) -> TaskResponse:
+        task = _get_existing_task(repo, task_id, current_user(request)["id"])
         return _to_task_response(task, reports_dir)
 
     @app.get("/api/tasks/{task_id}/report")
-    def get_report(task_id: str) -> PlainTextResponse:
-        task = _get_existing_task(repo, task_id)
+    def get_report(task_id: str, request: Request) -> PlainTextResponse:
+        task = _get_existing_task(repo, task_id, current_user(request)["id"])
         report_path = _ready_report_path(task, reports_dir)
         return PlainTextResponse(
             report_path.read_text(encoding="utf-8"),
@@ -122,8 +202,8 @@ def create_app(
         )
 
     @app.get("/api/tasks/{task_id}/download")
-    def download_report(task_id: str) -> FileResponse:
-        task = _get_existing_task(repo, task_id)
+    def download_report(task_id: str, request: Request) -> FileResponse:
+        task = _get_existing_task(repo, task_id, current_user(request)["id"])
         report_path = _ready_report_path(task, reports_dir)
         return FileResponse(
             report_path,
@@ -140,11 +220,26 @@ def create_app(
     return app
 
 
-def _get_existing_task(repo: TaskRepository, task_id: str) -> dict[str, Any]:
-    task = repo.get_task(task_id)
+def _get_existing_task(repo: TaskRepository, task_id: str, user_id: str) -> dict[str, Any]:
+    task = repo.get_task_for_user(task_id, user_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
+
+
+def _to_user_response(user: dict[str, Any]) -> UserResponse:
+    return UserResponse(user_id=user["id"], name=user["name"], phone=user["phone"])
+
+
+def _publish_event(event_bus, user_id: str, event: str, data: dict) -> None:
+    result = event_bus.publish(user_id, event, data)
+    if inspect.isawaitable(result):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(result)
+        else:
+            loop.create_task(result)
 
 
 def _to_task_response(task: dict[str, Any], reports_root: Path) -> TaskResponse:
