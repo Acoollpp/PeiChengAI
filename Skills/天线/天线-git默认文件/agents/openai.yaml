@@ -1,0 +1,4 @@
+﻿interface:
+  display_name: "天线-git默认文件"
+  short_description: "按两份 .gitignore 的并集生成默认文件，确保双方规则都保留，只做去重"
+  default_prompt: "使用 $天线-git默认文件，按当前工程根目录和 User/bms_protocol_V109 下两份 .gitignore 的并集，在当前项目根目录生成一份双方规则都完整保留、只去重的默认 .gitignore。"

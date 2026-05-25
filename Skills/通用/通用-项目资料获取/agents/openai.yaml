@@ -1,0 +1,7 @@
+interface:
+  display_name: "通用-项目资料获取"
+  short_description: "固定浏览器登录态后持续进入项目平台并获取网页资料内容"
+  default_prompt: "使用 $通用-项目资料获取，为当前账号建立固定浏览器登录态，并在后续尽量免登录地进入项目平台获取资料。"
+
+policy:
+  allow_implicit_invocation: true

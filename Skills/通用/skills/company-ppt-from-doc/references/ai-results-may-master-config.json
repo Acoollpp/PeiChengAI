@@ -1,0 +1,797 @@
+{
+  "metadata": {
+    "config_name": "AI成果阶段性汇总-公司PPT母版配置",
+    "source_file": "C:/Users/admin/Desktop/AI成果阶段性汇总-5月汇总.pptx",
+    "extraction_method": "WPS COM object inventory",
+    "deck_size_pt": {
+      "width": 959.95,
+      "height": 540
+    },
+    "slide_count": 17,
+    "notes": [
+      "源文件不是标准可解压OpenXML结构，已通过WPS COM读取真实对象参数。",
+      "后续参考同类PPT时，应读取原PPT对象的Left/Top/Width/Height、字体、字号、颜色、填充和线条参数，不用截图估算。",
+      "截图仅用于最终视觉校验，不作为尺寸和样式来源。"
+    ]
+  },
+  "theme": {
+    "style_name": "深蓝科技风领导汇报模板",
+    "visual_keywords": [
+      "白色顶部标题区",
+      "深蓝内容卡片",
+      "高饱和科技色强调",
+      "截图证据区",
+      "数字化看板",
+      "流程与资产沉淀"
+    ],
+    "colors": {
+      "primary_brand_blue": "#1D2088",
+      "dark_card": "#132340",
+      "dark_footer": "#13235B",
+      "white": "#FFFFFF",
+      "light_gray": "#F0F0F0",
+      "title_black": "#000000",
+      "body_light": "#DDEBFF",
+      "muted_body": "#B8CCE0",
+      "accent_cyan": "#00C2FF",
+      "accent_green": "#00E5A0",
+      "accent_orange": "#FF8C42",
+      "accent_yellow": "#FFD166",
+      "accent_red": "#FF4D6D",
+      "image_border_blue": "#008FC7",
+      "table_blue_gray": "#5A7A9A",
+      "purple_step": "#9B72FF"
+    },
+    "color_usage_rules": {
+      "page_background": "优先使用模板页背景，不额外覆盖低清截图；内容区以白色背景上的深蓝卡片组织。",
+      "standard_title": "正文页标题使用#000000，位于顶部白色区域。",
+      "content_cards": "主要内容卡片填充#132340，正文文字使用#DDEBFF或#B8CCE0。",
+      "card_accents": "多卡片并列时按#00E5A0、#00C2FF、#FF8C42、#FFD166轮换边框、顶部色条或编号块。",
+      "evidence_area": "图片或截图证据区域使用白色填充#FFFFFF，边框优先#008FC7。",
+      "warning_or_note": "底部提示条使用#13235B深色填充，文字#FFFFFF。"
+    },
+    "fonts": {
+      "preferred_chinese": [
+        "微软雅黑",
+        "宋体",
+        "黑体"
+      ],
+      "preferred_english_numeric": [
+        "Arial",
+        "Calibri"
+      ],
+      "observed_frequency": {
+        "Arial": 55,
+        "宋体": 18,
+        "微软雅黑": 18,
+        "Calibri": 5,
+        "黑体": 2
+      },
+      "title": {
+        "size_pt": 27,
+        "bold": true,
+        "color": "#000000",
+        "box_pt": {
+          "left": 83.52,
+          "top": 7.2,
+          "width": 676.8,
+          "height": 30.24
+        }
+      },
+      "agenda_title": {
+        "size_pt": 28,
+        "bold": true,
+        "font": "Arial",
+        "color": "#1D2088"
+      },
+      "section_label": {
+        "size_pt": 17,
+        "bold": true,
+        "color": "#FF8C42"
+      },
+      "card_heading": {
+        "size_pt": 17,
+        "bold": true,
+        "colors": [
+          "#00E5A0",
+          "#00C2FF",
+          "#FF8C42",
+          "#FFD166"
+        ]
+      },
+      "card_body": {
+        "size_pt_range": [
+          12.4,
+          18
+        ],
+        "bold": false,
+        "color": "#DDEBFF"
+      },
+      "metric_number": {
+        "size_pt": 24,
+        "bold": true,
+        "font": "微软雅黑",
+        "colors": [
+          "#00E5A0",
+          "#00C2FF",
+          "#2F66F3",
+          "#FF8C42",
+          "#FFD166",
+          "#FF4D6D"
+        ]
+      },
+      "table": {
+        "header_size_pt": 19,
+        "body_size_pt": 14,
+        "header_color": "#FFFFFF",
+        "body_color": "#000000"
+      }
+    },
+    "layout_rules": {
+      "canvas": "16:9 widescreen, 959.95 x 540 pt",
+      "title_position": "正文页统一标题框 left=83.52, top=7.2, width=676.8, height约30-34 pt。",
+      "safe_margins_pt": {
+        "left": 24,
+        "right": 24,
+        "top_title_reserved": 52,
+        "bottom": 24
+      },
+      "content_start_y_pt": 60,
+      "content_end_y_pt": 490,
+      "image_placeholder_style": "白底矩形或图片对象，边框#008FC7或无边框，保留足够面积放截图作为证据。",
+      "card_style": "深蓝填充#132340，1-2 pt彩色线条或顶部色条，内部标题用强调色，正文浅蓝白。",
+      "visual_hierarchy": "每页必须有一个主判断或关键结论；数字、阶段、动作标题优先放大加粗；说明文字控制在2-4行。"
+    },
+    "do_not_rules": [
+      "不要把整页截图作为不可编辑底图来覆盖内容。",
+      "不要使用低分辨率背景图替代原PPT背景。",
+      "不要随意改变第一页封面。",
+      "不要让正文超出卡片边界；长句需拆分或降低字号。",
+      "不要把所有页面做成同一种三卡片结构，需根据内容类型选择布局。"
+    ]
+  },
+  "layouts": {
+    "cover_image_only": {
+      "page_type": "封面页",
+      "source_slides": [
+        1
+      ],
+      "logic_structure": "全页封面背景/封面组合图，无可编辑文字对象。",
+      "geometry": {
+        "main_group_pt": {
+          "left": 154.61,
+          "top": 160.38,
+          "width": 650.75,
+          "height": 248.37
+        }
+      },
+      "style_rules": [
+        "第一页作为封面资产保留，不新增覆盖层。",
+        "若必须替换主题，应重建可编辑标题，而不是拉伸截图。"
+      ],
+      "prompt_template": "生成【封面页】：保留公司封面背景和版式，不改变第一页既有视觉结构。仅在用户明确要求时添加可编辑主标题、副标题、日期或部门信息；文字应居中落在封面主视觉区域，保持深蓝科技风和正式汇报语气。"
+    },
+    "agenda_vertical_number_list": {
+      "page_type": "目录页",
+      "source_slides": [
+        2
+      ],
+      "logic_structure": "左侧大号“目录/Content”标题 + 中间竖向装饰线 + 右侧6项编号目录列表。",
+      "geometry": {
+        "agenda_title_pt": {
+          "left": 176.4,
+          "top": 211.68,
+          "width": 97.2,
+          "height": 31.68
+        },
+        "content_label_pt": {
+          "left": 138.24,
+          "top": 277.92,
+          "width": 169.2,
+          "height": 30.24
+        },
+        "vertical_line_pt": {
+          "left": 303.84,
+          "top": 195.84,
+          "width": 2.16,
+          "height": 123.84,
+          "fill": "#FF4D6D"
+        },
+        "number_block_pt": {
+          "left": 351.36,
+          "width": 44.64,
+          "height": 44.64,
+          "fill": "#1D2088"
+        },
+        "item_text_bg_pt": {
+          "left": 416.16,
+          "width": 464.4,
+          "height": 31.68,
+          "fill": "#F0F0F0"
+        },
+        "item_top_positions_pt": [
+          100.08,
+          146.16,
+          192.24,
+          238.32,
+          284.4,
+          330.48
+        ]
+      },
+      "style_rules": [
+        "编号白字Arial 12号加粗，目录项宋体17号黑色加粗。",
+        "目录项建议6-7条，超过7条需缩小垂直间距或分栏。",
+        "目录文字应与后续章节标题一致。"
+      ],
+      "prompt_template": "生成【目录页】：左侧放置“目录”和“Content”，右侧按章节顺序生成编号列表。每项结构为深蓝编号块+浅灰标题条，编号使用01、02格式。目录文字应短、并列、面向领导汇报，直接对应后续章节。"
+    },
+    "executive_judgement_three_keypoints": {
+      "page_type": "核心判断+三关键点页",
+      "source_slides": [
+        3,
+        5
+      ],
+      "logic_structure": "顶部章节标题 + 左上深蓝核心判断卡 + 右上图片证据区 + 下方三张关键点卡片。",
+      "geometry": {
+        "title_pt": {
+          "left": 83.52,
+          "top": 7.2,
+          "width": 676.8,
+          "height": 30.24
+        },
+        "judgement_card_pt": {
+          "left": 51.85,
+          "top": 68.4,
+          "width": 428.4,
+          "height": 201.65,
+          "fill": "#132340"
+        },
+        "judgement_left_bar_width_pt": 10.1,
+        "evidence_image_pt": {
+          "left": 574,
+          "top": 65.9,
+          "width": 275.45,
+          "height": 206.15,
+          "fill": "#FFFFFF",
+          "line": "#008FC7"
+        },
+        "three_cards_pt": [
+          {
+            "left": 51.4,
+            "top": 327.05,
+            "width": 271.6,
+            "height": 166.5
+          },
+          {
+            "left": 348.48,
+            "top": 342.4,
+            "width": 267.84,
+            "height": 151.2
+          },
+          {
+            "left": 645.12,
+            "top": 342.4,
+            "width": 267.84,
+            "height": 151.2
+          }
+        ]
+      },
+      "style_rules": [
+        "核心判断标题20号加粗，正文18号浅蓝色。",
+        "关键点标题20号加粗，按绿/青/橙轮换。",
+        "每张关键点卡片包含编号、短标题、1-2句说明。",
+        "右上区域必须保留图片/截图位置，用于增强可信度。"
+      ],
+      "prompt_template": "生成【核心判断+三关键点页】：先写一句面向领导的核心判断，放入左上深蓝卡片；右上预留截图或证据图片区域；下方提炼3个关键点，每点包含编号、4-8字标题和一句结果型说明。标题要突出结论，不写过程流水账。"
+    },
+    "dashboard_metrics_with_evidence": {
+      "page_type": "运营看板/数据指标页",
+      "source_slides": [
+        4
+      ],
+      "logic_structure": "顶部标题 + 左侧2行3列指标卡 + 右侧大截图证据区 + 底部链接/行动入口。",
+      "geometry": {
+        "title_pt": {
+          "left": 83.52,
+          "top": 7.2,
+          "width": 676.8,
+          "height": 34.1
+        },
+        "metric_cards_pt": [
+          {
+            "left": 37.65,
+            "top": 90.85,
+            "width": 123.85,
+            "height": 121.3
+          },
+          {
+            "left": 196.2,
+            "top": 90.85,
+            "width": 123.85,
+            "height": 121.3
+          },
+          {
+            "left": 357.3,
+            "top": 90.85,
+            "width": 123.85,
+            "height": 121.3
+          },
+          {
+            "left": 37.65,
+            "top": 266.05,
+            "width": 123.85,
+            "height": 131.15
+          },
+          {
+            "left": 196.45,
+            "top": 266.05,
+            "width": 126.15,
+            "height": 131.15
+          },
+          {
+            "left": 357.3,
+            "top": 266.05,
+            "width": 123.85,
+            "height": 131.15
+          }
+        ],
+        "evidence_image_pt": {
+          "left": 509.5,
+          "top": 91.3,
+          "width": 399.6,
+          "height": 393.75,
+          "fill": "#FFFFFF",
+          "line": "#008FC7"
+        }
+      },
+      "style_rules": [
+        "指标数字24号微软雅黑加粗，标签16号白色加粗。",
+        "指标卡深蓝底，边框按青绿蓝橙黄红区分。",
+        "右侧截图区面积应大于单个指标卡，确保“有图有真相”。"
+      ],
+      "prompt_template": "生成【运营看板/数据指标页】：左侧放6个关键指标卡，指标必须是领导能快速判断进展的数字或排名；右侧放一张大截图/看板图片作为证据。每个指标包含数值和短标签，页面底部可保留访问链接或数据来源。"
+    },
+    "image_left_three_reasons_right": {
+      "page_type": "截图证据+三条价值说明页",
+      "source_slides": [
+        6,
+        7
+      ],
+      "logic_structure": "顶部标题 + 一句结论 + 左侧大图/截图证据区 + 右侧三张纵向说明卡。",
+      "geometry": {
+        "lead_sentence_pt": {
+          "left": 54.72,
+          "top": 68.4,
+          "width": 547.2,
+          "height": 21.6
+        },
+        "image_left_pt": {
+          "left": 54.7,
+          "top": 111.6,
+          "width": 440.45,
+          "height": 309.6,
+          "fill": "#FFFFFF",
+          "line": "#008FC7"
+        },
+        "right_cards_pt": [
+          {
+            "left": 536.4,
+            "top": 111.9,
+            "width": 378.85,
+            "height": 98.05
+          },
+          {
+            "left": 536.4,
+            "top": 228.65,
+            "width": 378.85,
+            "height": 98.05
+          },
+          {
+            "left": 536.4,
+            "top": 347.4,
+            "width": 378.85,
+            "height": 98.05
+          }
+        ]
+      },
+      "style_rules": [
+        "左侧证据图占页面核心面积，右侧每张卡片只放一个价值点。",
+        "右侧标题18号加粗，正文14号浅蓝。",
+        "三张卡片颜色按青、绿、橙排列。"
+      ],
+      "prompt_template": "生成【截图证据+三条价值说明页】：顶部先给一句结论；左侧放大截图或系统界面作为主证据；右侧用3张深蓝卡片说明价值点，每张卡片包含短标题和一句业务影响，避免长段落。"
+    },
+    "three_step_process_with_evidence": {
+      "page_type": "三步流程说明页",
+      "source_slides": [
+        8
+      ],
+      "logic_structure": "顶部标题 + 左侧三步竖向流程 + 右侧上下两个截图证据区。",
+      "geometry": {
+        "step_number_blocks_pt": [
+          {
+            "left": 60.06,
+            "top": 118.98,
+            "width": 44.64,
+            "height": 44.64
+          },
+          {
+            "left": 60.06,
+            "top": 239.36,
+            "width": 44.64,
+            "height": 44.64
+          },
+          {
+            "left": 60.06,
+            "top": 361.77,
+            "width": 44.64,
+            "height": 44.64
+          }
+        ],
+        "step_text_bars_pt": [
+          {
+            "left": 123.1,
+            "top": 124.55,
+            "width": 240.35,
+            "height": 30.25
+          },
+          {
+            "left": 123.1,
+            "top": 246.1,
+            "width": 240.35,
+            "height": 30.25
+          },
+          {
+            "left": 123.1,
+            "top": 366.05,
+            "width": 240.35,
+            "height": 30.25
+          }
+        ],
+        "evidence_images_pt": [
+          {
+            "left": 439.2,
+            "top": 67.25,
+            "width": 425.25,
+            "height": 249.95
+          },
+          {
+            "left": 411.15,
+            "top": 327.7,
+            "width": 470.25,
+            "height": 143.05
+          }
+        ]
+      },
+      "style_rules": [
+        "流程项用01/02/03编号，左侧编号深蓝底白字。",
+        "步骤名称14号左右，强调动词和交付物。",
+        "右侧截图用于证明流程已打通。"
+      ],
+      "prompt_template": "生成【三步流程说明页】：左侧用3步说明从输入到输出的流程，每步使用动宾短语；右侧放2张截图或结果图，分别证明关键环节和最终结果。整体要体现流程闭环，而不是只罗列功能。"
+    },
+    "scenario_case_with_multiple_screenshots": {
+      "page_type": "场景案例页",
+      "source_slides": [
+        9,
+        10
+      ],
+      "logic_structure": "顶部标题 + 左上深蓝场景说明卡 + 右侧和下方多张截图证据 + 底部风险提示条。",
+      "geometry": {
+        "case_text_card_pt": {
+          "left": 34.9,
+          "top": 60.55,
+          "width": 408.75,
+          "height_range": [
+            124.75,
+            166.25
+          ],
+          "fill": "#132340",
+          "line": "#00E5A0"
+        },
+        "left_bar_pt": {
+          "left": 34.9,
+          "top": 60.55,
+          "width": 7.45,
+          "fill": "#00E5A0"
+        },
+        "screenshot_slots_pt": [
+          {
+            "left": 35.85,
+            "top": 200.65,
+            "width": 405.3,
+            "height": 214.4
+          },
+          {
+            "left": 512.85,
+            "top": 59.1,
+            "width": 373.75,
+            "height": 129.3
+          },
+          {
+            "left": 514.25,
+            "top": 207.7,
+            "width": 359.85,
+            "height": 205.9
+          }
+        ],
+        "note_bar_pt": {
+          "left": 34.16,
+          "top": 454.52,
+          "width": 846.72,
+          "height": 34.56,
+          "fill": "#13235B"
+        }
+      },
+      "style_rules": [
+        "左上说明卡包含场景名称、执行步骤、问题或限制。",
+        "截图不少于2张，位置分散但边界对齐。",
+        "底部提示条用于合规、人工复核或风险边界说明。"
+      ],
+      "prompt_template": "生成【场景案例页】：用左上深蓝卡片说明一个AI落地场景，内容包含操作步骤、当前效果和待解决问题；右侧/下方放2-3张截图证据；底部用深色提示条写明风险边界或人工复核要求。"
+    },
+    "asset_library_with_value_panel": {
+      "page_type": "资产库/沉淀成果页",
+      "source_slides": [
+        11
+      ],
+      "logic_structure": "顶部标题 + 左侧大截图/资产清单区 + 右侧深蓝价值说明面板。",
+      "geometry": {
+        "asset_image_pt": {
+          "left": 24.35,
+          "top": 72.35,
+          "width": 589.1,
+          "height": 371.25,
+          "fill": "#FFFFFF",
+          "line": "#008FC7"
+        },
+        "value_panel_pt": {
+          "left": 645.64,
+          "top": 76.4,
+          "width": 280.8,
+          "height": 367.2,
+          "fill": "#132340",
+          "line": "#00E5A0"
+        }
+      },
+      "style_rules": [
+        "左侧放资产库截图、目录截图或清单表。",
+        "右侧用项目符号说明沉淀价值，控制在4-6条。",
+        "价值说明使用15号左右浅蓝正文，标题18号强调色。"
+      ],
+      "prompt_template": "生成【资产库/沉淀成果页】：左侧放可视化资产库、索引表或清单截图；右侧总结沉淀价值，突出复用、管理、推广、验证。每条价值不超过一行半，面向部门资产化表达。"
+    },
+    "roadmap_timeline_and_workflow": {
+      "page_type": "时间规划+流程示例页",
+      "source_slides": [
+        12
+      ],
+      "logic_structure": "顶部标题 + 上半部分三阶段规划卡 + 下半部分五步工作流示例。",
+      "geometry": {
+        "phase_cards_pt": [
+          {
+            "left": 48.4,
+            "top": 65.35,
+            "width": 261.5,
+            "height": 210.25
+          },
+          {
+            "left": 357.1,
+            "top": 65.35,
+            "width": 248.75,
+            "height": 210.25
+          },
+          {
+            "left": 644.8,
+            "top": 65.35,
+            "width": 270.15,
+            "height": 210.25
+          }
+        ],
+        "workflow_title_pt": {
+          "left": 64.22,
+          "top": 299.52,
+          "width": 573.46,
+          "height": 38.23
+        },
+        "workflow_step_centers_x_pt": [
+          88.1,
+          257.29,
+          426.45,
+          595.62,
+          764.8
+        ]
+      },
+      "style_rules": [
+        "阶段卡使用当前/近期/中期或短中长期，不超过3阶段。",
+        "阶段标题21.3号白字加粗，说明13.3号灰蓝色。",
+        "下方工作流用5步圆形编号，箭头连接，强调标准输入和标准交付。"
+      ],
+      "prompt_template": "生成【时间规划+流程示例页】：上半部分用3张阶段卡说明当前、近期、中期目标；下半部分用5步工作流展示一个典型场景从输入到交付的标准路径。每个阶段写目标和变化，每个流程节点写动作名和交付物。"
+    },
+    "four_strategy_quadrants": {
+      "page_type": "四象限战略规划页",
+      "source_slides": [
+        13
+      ],
+      "logic_structure": "顶部标题 + 2x2四张深蓝战略卡 + 底部一句总结。",
+      "geometry": {
+        "quadrant_cards_pt": [
+          {
+            "left": 59.05,
+            "top": 75.6,
+            "width": 385.2,
+            "height": 153.65
+          },
+          {
+            "left": 494.65,
+            "top": 75.6,
+            "width": 385.2,
+            "height": 153.65
+          },
+          {
+            "left": 59.05,
+            "top": 258.06,
+            "width": 385.2,
+            "height": 153.65
+          },
+          {
+            "left": 494.65,
+            "top": 258.06,
+            "width": 385.2,
+            "height": 153.65
+          }
+        ],
+        "number_blocks_pt": {
+          "width": 41.76,
+          "height": 41.76
+        },
+        "summary_pt": {
+          "left": 115.9,
+          "top": 448.58,
+          "width": 702,
+          "height": 12.96
+        }
+      },
+      "style_rules": [
+        "四个方向必须并列、互不重复，标题17号加粗，说明12.6号。",
+        "编号块和顶部色条按青、绿、橙、黄排列。",
+        "底部总结句要提炼为一条主线，不重复四个标题原文。"
+      ],
+      "prompt_template": "生成【四象限战略规划页】：围绕主题提炼4条主线，使用2x2深蓝卡片排列。每张卡包含编号、行动标题和一句落地说明；底部用一句话总结从当前状态到目标体系的推进逻辑。"
+    },
+    "issue_summary_table": {
+      "page_type": "问题汇总表页",
+      "source_slides": [
+        14,
+        15
+      ],
+      "logic_structure": "顶部标题 + 大面积三列表格，列为一级类别、二级类别、描述。",
+      "geometry": {
+        "title_pt": {
+          "left": 83.52,
+          "top": 7.2,
+          "width": 676.8,
+          "height": 34.1
+        },
+        "table_pt": {
+          "left": 26.42,
+          "top": 72.11,
+          "width": 911.3,
+          "height_range": [
+            377.3,
+            398.55
+          ],
+          "fill": "#FFFFFF"
+        }
+      },
+      "style_rules": [
+        "表格用于承载高密度问题清单，不要拆成过多卡片。",
+        "描述列可用项目符号，单元格文字应自动换行。",
+        "若问题超过8行，分成连续两页，标题保持一致。"
+      ],
+      "prompt_template": "生成【问题汇总表页】：将问题按一级类别、二级类别、描述三列整理成表格。描述列用短项目符号说明现象、影响或约束。若内容较多，按类别拆成多页连续表格，保持标题和列宽一致。"
+    },
+    "summary_four_cards": {
+      "page_type": "总结页/四卡片结论页",
+      "source_slides": [
+        16
+      ],
+      "logic_structure": "顶部总结标题 + 横向四张深蓝结论卡，每张含图标、标题、说明。",
+      "geometry": {
+        "cards_pt": [
+          {
+            "left": 22.4,
+            "top": 110,
+            "width": 203.8,
+            "height": 323.65
+          },
+          {
+            "left": 257.7,
+            "top": 110,
+            "width": 196.65,
+            "height": 323.65
+          },
+          {
+            "left": 489.9,
+            "top": 109.95,
+            "width": 186.9,
+            "height": 323.75
+          },
+          {
+            "left": 708.3,
+            "top": 109.95,
+            "width": 206.7,
+            "height": 323.75
+          }
+        ],
+        "icon_area_top_pt": 122.15,
+        "card_title_top_pt": 207.55,
+        "card_body_top_pt": 247.75
+      },
+      "style_rules": [
+        "四张卡片横向均分，顶部色条按橙、绿、青、红/蓝变化。",
+        "图标可用可编辑符号或图标对象，不要用不可编辑截图。",
+        "每张卡标题18号强调色，正文16号灰蓝。"
+      ],
+      "prompt_template": "生成【总结页/四卡片结论页】：用4张横向深蓝卡片总结关键成果或判断。每张卡包含一个图标、一个短标题和2-3行说明。语言要收束到管理结论，突出已完成、已验证、可复用、下一步。"
+    },
+    "closing_page": {
+      "page_type": "结尾页/致谢页",
+      "source_slides": [
+        17
+      ],
+      "logic_structure": "全页深蓝品牌结尾图形，无正文文本对象。",
+      "geometry": {
+        "main_group_pt": {
+          "left": 118.42,
+          "top": 116.82,
+          "width": 722.59,
+          "height": 315.4,
+          "fill": "#1D2088"
+        }
+      },
+      "style_rules": [
+        "作为正式汇报收尾页使用，可保留公司品牌视觉。",
+        "如需添加致谢文字，应使用白色或浅蓝文字，居中放置。"
+      ],
+      "prompt_template": "生成【结尾页】：使用公司结尾页背景或深蓝品牌视觉，保持简洁。可添加“谢谢”或汇报人/日期信息，但不要堆叠正文内容。"
+    }
+  },
+  "slide_layout_mapping": {
+    "1": "cover_image_only",
+    "2": "agenda_vertical_number_list",
+    "3": "executive_judgement_three_keypoints",
+    "4": "dashboard_metrics_with_evidence",
+    "5": "executive_judgement_three_keypoints",
+    "6": "image_left_three_reasons_right",
+    "7": "image_left_three_reasons_right",
+    "8": "three_step_process_with_evidence",
+    "9": "scenario_case_with_multiple_screenshots",
+    "10": "scenario_case_with_multiple_screenshots",
+    "11": "asset_library_with_value_panel",
+    "12": "roadmap_timeline_and_workflow",
+    "13": "four_strategy_quadrants",
+    "14": "issue_summary_table",
+    "15": "issue_summary_table",
+    "16": "summary_four_cards",
+    "17": "closing_page"
+  },
+  "generation_policy": {
+    "input_expectation": "用户给出主题、内容文档或章节大纲后，先按内容性质选择layouts中的页面类型，再套用theme中的字体、颜色和坐标规则。",
+    "page_planning": [
+      "封面页通常保留原模板。",
+      "第2页使用目录页。",
+      "正文优先在“判断/证据/关键点”“数据看板”“场景案例”“规划路线”“问题表格”中选择。",
+      "每3-4页至少出现一页带截图/图片证据的页面。",
+      "领导汇报页标题应是结论型，不只写主题名。"
+    ],
+    "editing_policy": [
+      "以当前PPTX为唯一真源，修改时复制现有对象参数并重建可编辑对象。",
+      "不直接修改原版本，输出新文件。",
+      "第一页不更改，除非用户明确要求。",
+      "第二页开始沿用模板第二页背景或当前页真实背景，不使用低清导出图覆盖。",
+      "新增内容必须可编辑，图片只作为证据图或背景资产使用。"
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+﻿interface:
+  display_name: "基站-DHCP移植指导"
+  short_description: "根据 W5500 工程改动点指导 DHCP 协议移植与排查。"
+  default_prompt: "使用 $基站-DHCP移植指导，按当前工程结构指导我完成 DHCP 的移植、开关接入和排障。"
+
+policy:
+  allow_implicit_invocation: true

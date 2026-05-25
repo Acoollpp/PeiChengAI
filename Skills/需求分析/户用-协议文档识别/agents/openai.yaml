@@ -1,0 +1,4 @@
+interface:
+  display_name: "户用-协议文档识别"
+  short_description: "扫描CAN/485协议文档，建立知识库并判定新旧协议，输出最相似参考协议清单"
+  default_prompt: "请扫描协议文档并判定是否为新协议，给出最相似旧协议、差异证据和后续编写参考建议。"

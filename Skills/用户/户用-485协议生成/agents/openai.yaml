@@ -1,0 +1,7 @@
+interface:
+  display_name: "户用-485协议生成"
+  short_description: "根据485/Modbus协议文档、寄存器表或现有协议参考，生成符合当前项目风格的单协议C代码。"
+  default_prompt: "使用户用-485协议生成技能，读取485协议文档、寄存器定义或功能码说明，先判断应走 Inverter485Protocol 单协议直写骨架还是 modbus_protocol 公共 Modbus 骨架，再结合当前项目中的 Uart_User485、UartRS485、Inverter_Data 等真实文件，生成符合项目风格的单协议 `.c` 文件骨架。"
+
+policy:
+  allow_implicit_invocation: true

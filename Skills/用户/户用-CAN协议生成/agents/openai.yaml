@@ -1,0 +1,7 @@
+interface:
+  display_name: "户用-CAN协议生成"
+  short_description: "根据CAN协议文档或信号表生成符合项目风格的单协议C代码。"
+  default_prompt: "Use $户用-CAN协议生成 to read the CAN protocol document or signal table and generate a project-style single-protocol `.c` file skeleton."
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,7 @@
+interface:
+  display_name: "公司PPT文档生成"
+  short_description: "按公司模板和当前PPT真源，把文档制作成可编辑领导汇报PPT。"
+  brand_color: "#1D2088"
+  default_prompt: "Use $company-ppt-from-doc to create an editable company-style leadership PPT from this document and the current template."
+policy:
+  allow_implicit_invocation: true

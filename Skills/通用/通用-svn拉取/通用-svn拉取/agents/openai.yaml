@@ -1,0 +1,7 @@
+interface:
+  display_name: "通用-svn拉取"
+  short_description: "稳定拉取 SVN 项目并规避中文路径导出异常"
+  default_prompt: "使用 $通用-svn拉取 帮我把指定 revision 的 SVN 项目稳定拉取到本地目录。"
+
+policy:
+  allow_implicit_invocation: true

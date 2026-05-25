@@ -1,0 +1,7 @@
+interface:
+  display_name: "户用-协议移植"
+  short_description: "根据用户提供的新协议C文件完成当前项目的CAN、统一485或modbus_protocol分支移植与挂接。"
+  default_prompt: "使用 $户用-协议移植，根据当前工程真实结构对用户提供的新协议 `.c` 文件先做结构判定，再执行 CAN、统一 485 或 `modbus_protocol/` 分支移植；若发现缺少当前工程不存在的公共结构，则停止移植并明确反馈问题。"
+
+policy:
+  allow_implicit_invocation: true

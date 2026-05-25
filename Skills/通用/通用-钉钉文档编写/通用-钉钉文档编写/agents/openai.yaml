@@ -1,0 +1,6 @@
+interface:
+  display_name: "通用-钉钉文档编写"
+  short_description: "将正文或报告写入指定钉钉文档文件夹"
+  default_prompt: "使用 $通用-钉钉文档编写 把这篇 Markdown 文档创建到指定钉钉文件夹。"
+policy:
+  allow_implicit_invocation: true

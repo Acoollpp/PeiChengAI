@@ -1,0 +1,11 @@
+interface:
+  display_name: "户用-自检修复"
+  short_description: "按 exe 兼容逻辑处理固件自检修复项的辅助技能"
+  default_prompt: "使用 $户用-自检修复 分析固件自检失败项，按官方工具兼容逻辑解释失败原因，并给出安全的修复动作。"
+
+policy:
+  allow_implicit_invocation: true
+
+
+
+
