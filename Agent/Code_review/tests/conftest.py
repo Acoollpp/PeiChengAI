@@ -1,9 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.database import TaskRepository
-
-
 @pytest.fixture
 def api_paths(tmp_path):
     return {
@@ -24,4 +21,17 @@ def api_client(api_paths):
 
 @pytest.fixture
 def api_repository(api_paths):
-    return TaskRepository(api_paths["database_path"])
+    from app.testing import InMemoryTaskRepository
+
+    repo = InMemoryTaskRepository()
+    repo.init_schema()
+    return repo
+
+
+@pytest.fixture
+def repository():
+    from app.testing import InMemoryTaskRepository
+
+    repo = InMemoryTaskRepository()
+    repo.init_schema()
+    return repo
