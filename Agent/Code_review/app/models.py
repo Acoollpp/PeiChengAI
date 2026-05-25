@@ -9,6 +9,7 @@ class TaskStatus(StrEnum):
     running = "running"
     success = "success"
     failed = "failed"
+    enqueue_failed = "enqueue_failed"
 
 
 class TaskCreateRequest(BaseModel):
@@ -21,6 +22,31 @@ class TaskCreateRequest(BaseModel):
 class TaskCreateResponse(BaseModel):
     task_id: str
     status: TaskStatus
+
+
+class SessionCreateRequest(BaseModel):
+    name: str = Field(min_length=1)
+    phone: str = Field(min_length=1)
+
+
+class UserResponse(BaseModel):
+    user_id: str
+    name: str
+    phone: str
+
+
+class SessionResponse(BaseModel):
+    authenticated: bool
+    user: UserResponse | None = None
+
+
+class UserStatsResponse(BaseModel):
+    total: int
+    pending: int
+    running: int
+    success: int
+    failed: int
+    enqueue_failed: int
 
 
 class TaskResponse(BaseModel):
