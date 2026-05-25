@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 - Code Review Task Console</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <form id="login-form" class="login-panel">
+      <h1>代码审查任务台</h1>
+      <label>
+        姓名
+        <input name="name" autocomplete="name" required>
+      </label>
+      <label>
+        手机号
+        <input name="phone" inputmode="tel" autocomplete="tel" required>
+      </label>
+      <button type="submit">登录</button>
+      <p id="login-message" class="form-message"></p>
+    </form>
+  </main>
+  <script>
+    const form = document.querySelector("#login-form");
+    const message = document.querySelector("#login-message");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const formData = new FormData(form);
+      const response = await fetch("/api/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: String(formData.get("name") || "").trim(),
+          phone: String(formData.get("phone") || "").trim(),
+        }),
+      });
+      if (response.ok) {
+        window.location.href = "/";
+        return;
+      }
+      const body = await response.json().catch(() => ({}));
+      message.textContent = body.detail || "登录失败";
+      message.classList.add("is-error");
+    });
+  </script>
+</body>
+</html>

@@ -95,3 +95,12 @@ def test_report_panel_actions_align_to_preview_bottom():
     assert "grid-template-rows: auto auto minmax(0, 1fr) auto" in panel_block
     assert "align-self: stretch" in preview_block
     assert "align-self: end" in actions_block
+
+
+def test_login_page_contains_name_phone_and_submit_controls():
+    html = Path("static/login.html").read_text(encoding="utf-8")
+
+    assert 'name="name"' in html
+    assert 'name="phone"' in html
+    assert 'id="login-form"' in html
+    assert "/api/session" in html
