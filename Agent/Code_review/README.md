@@ -10,6 +10,8 @@
 
 ```powershell
 uv sync
+$env:DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/code_review"
+$env:REDIS_URL = "redis://127.0.0.1:6379/0"
 uv run uvicorn app.asgi:app --reload --host 127.0.0.1 --port 8000
 ```
 
@@ -21,11 +23,12 @@ http://127.0.0.1:8000
 
 ## 页面功能
 
-- 提交任务：在首页填写 SVN URL、旧修订号、新修订号和请求人，页面会调用 `POST /api/tasks` 创建审查任务。
-- 轮询状态：任务提交后，页面会约每 2.5 秒调用 `GET /api/tasks/{task_id}` 刷新 pending/running 任务状态。
+- 登录：打开首页前先在 `/login` 使用姓名和手机号创建 session。
+- 提交任务：在首页填写 SVN URL、旧修订号和新修订号，页面会调用 `POST /api/tasks` 创建当前用户的审查任务。
+- 动态刷新：任务提交后，页面通过 `GET /api/events` 建立 SSE 连接，并在任务创建或更新时刷新列表和当前报告。
 - 预览报告：任务成功且报告可用时，页面会调用 `GET /api/tasks/{task_id}/report` 并在 Markdown 预览区展示内容。
 - 下载报告：报告可用后，页面提供 `GET /api/tasks/{task_id}/download` 下载入口。
-- 最近任务：页面启动和提交后会调用 `GET /api/tasks` 展示最近任务列表，点击条目可查看对应任务。
+- 最近任务：页面启动、提交和 SSE 事件到达后会调用 `GET /api/tasks` 展示当前用户任务列表，点击条目可查看对应任务。
 
 ## 测试
 
@@ -64,15 +67,27 @@ python -m uv run uvicorn app.asgi:app --reload --host 127.0.0.1 --port 8000
 ## 手动验证清单
 
 1. 运行自动化测试：`python -m uv run pytest -v`。
-2. 启动服务：`python -m uv run uvicorn app.asgi:app --reload --host 127.0.0.1 --port 8000`。
-3. 打开 `http://127.0.0.1:8000`，确认页面能加载。
+2. 准备 PostgreSQL 和 Redis，并设置：
+
+```powershell
+$env:DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/code_review"
+$env:REDIS_URL = "redis://127.0.0.1:6379/0"
+.\.venv\Scripts\python.exe -m uvicorn app.asgi:app --reload --host 127.0.0.1 --port 8000
+```
+
+3. 打开 `http://127.0.0.1:8000/login`，使用姓名和手机号登录。
 4. 提交一个不符合 `SVN_ALLOWED_PREFIX` 的非法 SVN URL，确认页面展示校验失败。
-5. 使用上面的假 Codex 配置启动服务，提交一条合法任务，确认任务成功并能预览或下载假 Markdown 报告。
+5. 使用上面的假 Codex 配置启动服务，提交一条合法任务，确认任务成功并能通过 SSE 自动刷新、预览或下载假 Markdown 报告。
 
 ## 关键环境配置
 
 - `APP_BASE_DIR`：应用基础目录，默认当前工作目录。
-- `DATABASE_PATH`：SQLite 数据库路径，默认 `data/app.db`。
+- `DATABASE_URL`：PostgreSQL 连接串，默认 `postgresql://postgres:postgres@127.0.0.1:5432/code_review`。
+- `REDIS_URL`：Redis 连接串，默认 `redis://127.0.0.1:6379/0`。
+- `SESSION_SECRET_KEY`：session cookie 签名密钥，生产环境必须显式设置。
+- `WORKER_ID`：worker 标识，用于任务 claim 诊断。
+- `REDIS_LOCK_TTL_SECONDS`：用户运行锁 TTL，默认 3600 秒。
+- `HEARTBEAT_SECONDS`：worker 心跳间隔配置，默认 30 秒。
 - `SVN_ALLOWED_PREFIX`：允许审查的 SVN 地址前缀。
 - `CODEX_COMMAND`：Codex 命令，默认 `codex`。
 - `CODEX_ARGS`：Codex 参数，默认 `exec --dangerously-bypass-approvals-and-sandbox`。

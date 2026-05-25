@@ -2,32 +2,33 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app.cleanup import cleanup_old_tasks
-from app.database import TaskRepository
+from app.models import TaskStatus
+from app.testing import InMemoryTaskRepository
 
 
 def make_repository(tmp_path):
-    repository = TaskRepository(tmp_path / "data" / "tasks.db")
+    repository = InMemoryTaskRepository()
+    repository.base_dir = tmp_path
     repository.init_schema()
     return repository
 
 
 def create_task(repository, *, task_id, report_path):
+    user = repository.get_or_create_user(name="alice", phone=f"1380013{len(repository.tasks):04d}")
     return repository.create_task(
         svn_url="https://example.test/svn/repo",
         old_revision="r1",
         new_revision="r2",
+        requester=user["name"],
         report_path=str(report_path),
+        user_id=user["id"],
         task_id=task_id,
     )
 
 
 def set_created_at(repository, task_id, created_at):
-    created_at_iso = created_at.isoformat()
-    with repository.connect() as connection:
-        connection.execute(
-            "UPDATE tasks SET created_at = ?, updated_at = ? WHERE id = ?",
-            (created_at_iso, created_at_iso, task_id),
-        )
+    repository.tasks[task_id]["created_at"] = created_at
+    repository.tasks[task_id]["updated_at"] = created_at
 
 
 def test_cleanup_old_tasks_deletes_old_task_report_and_workspace(tmp_path):
@@ -130,3 +131,22 @@ def test_cleanup_old_tasks_skips_report_outside_reports_dir(tmp_path):
     assert deleted_count == 0
     assert outside_report.exists()
     assert repository.get_task("outside") is not None
+
+
+def test_fail_stale_running_tasks_marks_failed_and_keeps_user_queue_recoverable(repository):
+    user = repository.get_or_create_user(name="张三", phone="13800138000")
+    task = repository.create_task(
+        svn_url="https://example.test/svn/repo",
+        old_revision="r1",
+        new_revision="r2",
+        requester=user["name"],
+        report_path="reports/task.md",
+        user_id=user["id"],
+        task_id="task-1",
+    )
+    repository.mark_running(task["id"], worker_id="worker-a")
+
+    failed = repository.fail_stale_running_tasks("2999-01-01T00:00:00+00:00", "stale worker task")
+
+    assert failed[0]["id"] == "task-1"
+    assert repository.get_task("task-1")["status"] == TaskStatus.failed
