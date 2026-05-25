@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Code Review Task Console</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Code Review Task Console</p>
+        <h1>代码审查任务台</h1>
+      </div>
+      <div class="service-state" id="service-state">Ready</div>
+    </header>
+
+    <section class="workspace-grid review-workbench">
+      <aside class="left-rail">
+        <form class="panel task-form" id="task-form">
+          <div class="panel-heading">
+            <h2>提交任务</h2>
+            <p>填写 SVN 地址与修订号范围后提交审查任务。</p>
+          </div>
+
+          <label for="svn-url">SVN URL</label>
+          <input id="svn-url" name="svn_url" type="url" autocomplete="off" required
+            placeholder="https://192.168.0.233/svn/src_home/project/trunk">
+
+          <div class="field-row">
+            <div>
+              <label for="old-revision">旧修订号</label>
+              <input id="old-revision" name="old_revision" type="text" required placeholder="r100">
+            </div>
+            <div>
+              <label for="new-revision">新修订号</label>
+              <input id="new-revision" name="new_revision" type="text" required placeholder="r101">
+            </div>
+          </div>
+
+          <label for="requester">请求人</label>
+          <input id="requester" name="requester" type="text" autocomplete="name" placeholder="alice">
+
+          <button class="primary-button" type="submit" id="submit-button">提交审查</button>
+          <p class="form-message" id="form-message" role="status"></p>
+        </form>
+
+        <section class="panel task-list-panel" aria-live="polite">
+          <div class="panel-heading">
+            <h2>任务状态记录</h2>
+            <p id="current-subtitle">选择任务后在右侧查看 Markdown 报告。</p>
+          </div>
+          <div class="recent-list task-status-list" id="recent-list">
+            <p class="empty-state">正在加载任务...</p>
+          </div>
+        </section>
+      </aside>
+
+      <section class="right-stage">
+        <section class="panel preview-panel">
+          <div class="panel-heading preview-heading">
+            <div>
+              <h2>审查报告预览</h2>
+              <p id="preview-subtitle">选择成功任务后自动加载报告内容。</p>
+            </div>
+            <span class="status-pill is-idle" id="task-status">Idle</span>
+          </div>
+
+          <dl class="task-metadata report-metadata">
+            <div>
+              <dt>输入</dt>
+              <dd id="task-input">-</dd>
+            </div>
+            <div>
+              <dt>时间</dt>
+              <dd id="task-times">-</dd>
+            </div>
+            <div>
+              <dt>错误</dt>
+              <dd id="task-error">-</dd>
+            </div>
+          </dl>
+
+          <article class="markdown-preview" id="markdown-preview">
+            <p class="empty-state">暂无报告。</p>
+          </article>
+
+          <div class="report-actions">
+            <a class="download-button is-disabled" id="download-link" aria-disabled="true" tabindex="-1">下载报告</a>
+          </div>
+        </section>
+      </section>
+    </section>
+  </main>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

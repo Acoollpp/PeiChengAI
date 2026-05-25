@@ -1,0 +1,9 @@
+.worktrees/
+.venv/
+__pycache__/
+.pytest_cache/
+.pytest_*/
+*.pyc
+data/
+*.db
+*.sqlite3
