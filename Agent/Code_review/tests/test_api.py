@@ -148,6 +148,34 @@ def test_get_report_returns_markdown_after_success(api_client, api_repository, a
     assert response.text == report_text
 
 
+def test_get_report_falls_back_to_current_reports_dir_for_copied_database(
+    api_client,
+    api_repository,
+    api_paths,
+):
+    task_id = "copied-database-task"
+    report_text = "# Review\n\nCopied database report.\n"
+    current_report = api_paths["reports_dir"] / f"{task_id}.md"
+    current_report.write_text(report_text, encoding="utf-8", newline="\n")
+    task = api_repository.create_task(
+        svn_url=VALID_SVN_URL,
+        old_revision="r1",
+        new_revision="r2",
+        requester="alice",
+        report_path=str(api_paths["reports_dir"].parent / "old-install" / "reports" / f"{task_id}.md"),
+        task_id=task_id,
+    )
+    api_repository.mark_success(task["id"])
+
+    detail_response = api_client.get(f"/api/tasks/{task_id}")
+    report_response = api_client.get(f"/api/tasks/{task_id}/report")
+
+    assert detail_response.status_code == 200
+    assert detail_response.json()["report_available"] is True
+    assert report_response.status_code == 200
+    assert report_response.text == report_text
+
+
 def test_report_endpoint_does_not_serve_success_task_report_outside_reports_dir(
     api_client,
     api_repository,

@@ -105,12 +105,12 @@ def create_app(
 
     @app.get("/api/tasks", response_model=list[TaskResponse])
     def list_tasks() -> list[TaskResponse]:
-        return [_to_task_response(task) for task in repo.list_tasks()]
+        return [_to_task_response(task, reports_dir) for task in repo.list_tasks()]
 
     @app.get("/api/tasks/{task_id}", response_model=TaskResponse)
     def get_task(task_id: str) -> TaskResponse:
         task = _get_existing_task(repo, task_id)
-        return _to_task_response(task)
+        return _to_task_response(task, reports_dir)
 
     @app.get("/api/tasks/{task_id}/report")
     def get_report(task_id: str) -> PlainTextResponse:
@@ -147,8 +147,8 @@ def _get_existing_task(repo: TaskRepository, task_id: str) -> dict[str, Any]:
     return task
 
 
-def _to_task_response(task: dict[str, Any]) -> TaskResponse:
-    report_path = Path(task["report_path"])
+def _to_task_response(task: dict[str, Any], reports_root: Path) -> TaskResponse:
+    report_path = _resolve_report_path(task, reports_root)
     return TaskResponse(
         task_id=task["id"],
         svn_url=task["svn_url"],
@@ -160,15 +160,29 @@ def _to_task_response(task: dict[str, Any]) -> TaskResponse:
         started_at=task["started_at"],
         finished_at=task["finished_at"],
         error_message=task["error_message"],
-        report_available=task["status"] == TaskStatus.success and report_path.exists(),
+        report_available=task["status"] == TaskStatus.success
+        and report_path is not None
+        and report_path.exists(),
     )
 
 
 def _ready_report_path(task: dict[str, Any], reports_root: Path) -> Path:
-    reports_root = reports_root.resolve()
-    report_path = Path(task["report_path"]).resolve()
-    if not report_path.is_relative_to(reports_root):
+    report_path = _resolve_report_path(task, reports_root)
+    if report_path is None:
         raise HTTPException(status_code=404, detail="Task not found")
     if task["status"] != TaskStatus.success or not report_path.exists():
         raise HTTPException(status_code=409, detail="Report is not available")
     return report_path
+
+
+def _resolve_report_path(task: dict[str, Any], reports_root: Path) -> Path | None:
+    reports_root = reports_root.resolve()
+    report_path = Path(task["report_path"]).resolve()
+    if report_path.is_relative_to(reports_root):
+        return report_path
+
+    migrated_report_path = (reports_root / f"{task['id']}.md").resolve()
+    if migrated_report_path.exists():
+        return migrated_report_path
+
+    return None
