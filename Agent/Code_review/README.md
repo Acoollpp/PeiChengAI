@@ -31,6 +31,87 @@ PostgreSQL: postgresql://postgres:postgres@127.0.0.1:5432/code_review
 Redis:      redis://127.0.0.1:6379/0
 ```
 
+Windows 本地开发建议把数据库组件放在 `D:\SQL`，避免安装到 C 盘。目录约定如下：
+
+```text
+D:\SQL\PostgreSQL\pgsql        PostgreSQL 二进制文件
+D:\SQL\PostgreSQL\data         PostgreSQL 数据目录
+D:\SQL\Redis                   Redis 二进制文件
+D:\SQL\Redis\data              Redis 数据目录
+D:\SQL\downloads               安装包缓存
+```
+
+首次准备 PostgreSQL 和 Redis：
+
+```powershell
+New-Item -ItemType Directory -Force -Path "D:\SQL\downloads","D:\SQL\PostgreSQL","D:\SQL\Redis","D:\SQL\Redis\data" | Out-Null
+
+Invoke-WebRequest `
+  -Uri "https://get.enterprisedb.com/postgresql/postgresql-17.10-1-windows-x64-binaries.zip" `
+  -OutFile "D:\SQL\downloads\postgresql-17.10-1-windows-x64-binaries.zip" `
+  -UseBasicParsing
+
+Invoke-WebRequest `
+  -Uri "https://github.com/redis-windows/redis-windows/releases/download/8.6.3/Redis-8.6.3-Windows-x64-msys2.zip" `
+  -OutFile "D:\SQL\downloads\Redis-8.6.3-Windows-x64-msys2.zip" `
+  -UseBasicParsing
+
+Expand-Archive "D:\SQL\downloads\postgresql-17.10-1-windows-x64-binaries.zip" -DestinationPath "D:\SQL\PostgreSQL" -Force
+
+$redisTmp = "D:\SQL\Redis_extract_tmp"
+Remove-Item $redisTmp -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path $redisTmp | Out-Null
+Expand-Archive "D:\SQL\downloads\Redis-8.6.3-Windows-x64-msys2.zip" -DestinationPath $redisTmp -Force
+Copy-Item "$redisTmp\Redis-8.6.3-Windows-x64-msys2\*" "D:\SQL\Redis" -Recurse -Force
+Remove-Item $redisTmp -Recurse -Force
+```
+
+初始化并启动 PostgreSQL：
+
+```powershell
+$pgBin = "D:\SQL\PostgreSQL\pgsql\bin"
+$pgData = "D:\SQL\PostgreSQL\data"
+
+if (-not (Test-Path "$pgData\PG_VERSION")) {
+  New-Item -ItemType Directory -Force -Path $pgData | Out-Null
+  Set-Content "D:\SQL\PostgreSQL\pgpass_init.txt" "postgres" -Encoding ASCII
+  & "$pgBin\initdb.exe" -D $pgData -U postgres -A scram-sha-256 --pwfile="D:\SQL\PostgreSQL\pgpass_init.txt" -E UTF8 --no-locale --locale-provider=builtin
+  Remove-Item "D:\SQL\PostgreSQL\pgpass_init.txt" -Force
+}
+
+& "$pgBin\pg_ctl.exe" start -D $pgData -l "D:\SQL\PostgreSQL\postgres.log" -o '"-p 5432"'
+
+$env:PGPASSWORD = "postgres"
+& "$pgBin\psql.exe" -U postgres -h 127.0.0.1 -p 5432 -d postgres -c "SELECT 'CREATE DATABASE code_review' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'code_review')\gexec"
+```
+
+启动 Redis：
+
+```powershell
+Start-Process `
+  -FilePath "D:\SQL\Redis\redis-server.exe" `
+  -ArgumentList @("--dir","D:\SQL\Redis\data","--port","6379") `
+  -WorkingDirectory "D:\SQL\Redis" `
+  -WindowStyle Hidden
+```
+
+日常只需要启动已初始化好的服务进程：
+
+```powershell
+& "D:\SQL\PostgreSQL\pgsql\bin\pg_ctl.exe" start -D "D:\SQL\PostgreSQL\data" -l "D:\SQL\PostgreSQL\postgres.log" -o '"-p 5432"'
+Start-Process -FilePath "D:\SQL\Redis\redis-server.exe" -ArgumentList @("--dir","D:\SQL\Redis\data","--port","6379") -WorkingDirectory "D:\SQL\Redis" -WindowStyle Hidden
+```
+
+验证数据库可用：
+
+```powershell
+$env:PGPASSWORD = "postgres"
+& "D:\SQL\PostgreSQL\pgsql\bin\psql.exe" -U postgres -h 127.0.0.1 -p 5432 -d code_review -c "SELECT version();"
+& "D:\SQL\Redis\redis-cli.exe" -h 127.0.0.1 -p 6379 ping
+```
+
+Redis 验证成功会输出 `PONG`。如果 PostgreSQL 初始化时报 `postgresql.conf` 语法错误，且当前用户对该文件已有完全控制但仍然 `Access is denied`，通常不是项目配置问题，而是公司终端管控、文件系统过滤驱动或安全策略拦截了 PostgreSQL 子进程读写数据目录。请向 IT 申请放行 `D:\SQL\PostgreSQL\pgsql\bin\initdb.exe`、`postgres.exe`、`pg_ctl.exe`、`psql.exe` 对 `D:\SQL\PostgreSQL\data` 的读写执行权限，或申请允许以管理员权限把 PostgreSQL 安装到 `D:\SQL\PostgreSQL\17`。
+
 请先确认 PostgreSQL 中已存在 `code_review` 数据库。表结构会在应用启动时自动创建。
 
 PowerShell 环境变量示例：
@@ -43,7 +124,51 @@ $env:SESSION_SECRET_KEY = "local-dev-session-secret"
 
 生产环境必须显式设置 `SESSION_SECRET_KEY`，不要使用上面的本地示例值。
 
-### 3. 启动服务
+### 3. 云服务器启动示例
+
+如果本机受公司终端管控影响，建议直接在云服务器上运行 PostgreSQL、Redis 和 Web 服务。以下示例按 Ubuntu/Debian 编写：
+
+```bash
+sudo apt update
+sudo apt install -y python3.12 python3.12-venv postgresql redis-server
+sudo systemctl enable --now postgresql redis-server
+```
+
+创建数据库和用户：
+
+```bash
+sudo -u postgres psql <<'SQL'
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'code_review') THEN
+    CREATE ROLE code_review LOGIN PASSWORD 'change-me';
+  END IF;
+END
+$$;
+
+SELECT 'CREATE DATABASE code_review OWNER code_review'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'code_review')\gexec
+SQL
+```
+
+进入项目目录后安装依赖并启动：
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install uv
+uv sync
+
+export DATABASE_URL="postgresql://code_review:change-me@127.0.0.1:5432/code_review"
+export REDIS_URL="redis://127.0.0.1:6379/0"
+export SESSION_SECRET_KEY="replace-with-a-long-random-secret"
+
+uv run uvicorn app.asgi:app --host 0.0.0.0 --port 8000
+```
+
+云服务器安全组或防火墙需要放行 Web 端口，例如 `8000`。PostgreSQL 和 Redis 如果只给本机应用使用，保持监听 `127.0.0.1` 即可，不要暴露到公网。
+
+### 4. 启动服务
 
 ```powershell
 uv run uvicorn app.asgi:app --reload --host 127.0.0.1 --port 8000
