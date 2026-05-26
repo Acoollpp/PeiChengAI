@@ -8,18 +8,60 @@
 
 真实 Codex 运行依赖服务工作目录下存在 `skills/通用-代码变更审查`。部署或手动启动服务前，请确认该目录随运行环境一起准备好。
 
+### 1. 安装依赖
+
 ```powershell
 uv sync
+```
+
+如当前终端找不到 `uv`，可使用：
+
+```powershell
+python -m uv sync
+```
+
+### 2. 准备 PostgreSQL 和 Redis
+
+本版本使用 PostgreSQL 保存用户和任务状态，使用 Redis 保存用户队列、运行锁和 SSE 通知。
+
+默认连接信息：
+
+```text
+PostgreSQL: postgresql://postgres:postgres@127.0.0.1:5432/code_review
+Redis:      redis://127.0.0.1:6379/0
+```
+
+请先确认 PostgreSQL 中已存在 `code_review` 数据库。表结构会在应用启动时自动创建。
+
+PowerShell 环境变量示例：
+
+```powershell
 $env:DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/code_review"
 $env:REDIS_URL = "redis://127.0.0.1:6379/0"
+$env:SESSION_SECRET_KEY = "local-dev-session-secret"
+```
+
+生产环境必须显式设置 `SESSION_SECRET_KEY`，不要使用上面的本地示例值。
+
+### 3. 启动服务
+
+```powershell
 uv run uvicorn app.asgi:app --reload --host 127.0.0.1 --port 8000
 ```
 
-启动后打开：
+如当前终端找不到 `uv`，可使用：
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app.asgi:app --reload --host 127.0.0.1 --port 8000
+```
+
+启动后打开登录页：
 
 ```text
-http://127.0.0.1:8000
+http://127.0.0.1:8000/login
 ```
+
+登录后会跳转到任务台首页。首页本身也会在未登录时自动跳转到 `/login`。
 
 ## 页面功能
 
@@ -59,7 +101,10 @@ Get-Content $report -Encoding UTF8
 $fakeCodex = (Resolve-Path .\tools\fake_codex.py).Path
 $env:CODEX_COMMAND = "python"
 $env:CODEX_ARGS = "`"$fakeCodex`""
-python -m uv run uvicorn app.asgi:app --reload --host 127.0.0.1 --port 8000
+$env:DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/code_review"
+$env:REDIS_URL = "redis://127.0.0.1:6379/0"
+$env:SESSION_SECRET_KEY = "local-dev-session-secret"
+uv run uvicorn app.asgi:app --reload --host 127.0.0.1 --port 8000
 ```
 
 这里必须使用 `fake_codex.py` 的绝对路径，因为 Worker 会在每个任务自己的 `data/workspaces/<task_id>/` 目录下执行命令。
@@ -72,12 +117,20 @@ python -m uv run uvicorn app.asgi:app --reload --host 127.0.0.1 --port 8000
 ```powershell
 $env:DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/code_review"
 $env:REDIS_URL = "redis://127.0.0.1:6379/0"
+$env:SESSION_SECRET_KEY = "local-dev-session-secret"
 .\.venv\Scripts\python.exe -m uvicorn app.asgi:app --reload --host 127.0.0.1 --port 8000
 ```
 
 3. 打开 `http://127.0.0.1:8000/login`，使用姓名和手机号登录。
 4. 提交一个不符合 `SVN_ALLOWED_PREFIX` 的非法 SVN URL，确认页面展示校验失败。
 5. 使用上面的假 Codex 配置启动服务，提交一条合法任务，确认任务成功并能通过 SSE 自动刷新、预览或下载假 Markdown 报告。
+
+### 手动提交任务时的注意点
+
+- SVN URL 必须以 `SVN_ALLOWED_PREFIX` 开头，默认是 `https://192.168.0.233/svn/src_home/`。
+- 修订号可以填 `100` 或 `r100`，服务会统一规范成小写 `r100`。
+- 每个用户同一时间只会运行一个任务；同一用户后续任务会留在 Redis 队列中等待。
+- PostgreSQL 是事实源；Redis 仅保存队列、锁和事件通知，必要时可按 pending 任务重建队列。
 
 ## 关键环境配置
 
