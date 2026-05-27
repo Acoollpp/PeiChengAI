@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 from typing import Any
 
 from app.models import TaskStatus
@@ -377,6 +377,8 @@ class TaskRepository:
         return stats
 
     def get_admin_dashboard(self) -> dict[str, Any]:
+        today_start_utc = datetime.combine(_utc_now().date(), time.min, tzinfo=UTC)
+        tomorrow_start_utc = today_start_utc + timedelta(days=1)
         status_counts = {status.value: 0 for status in TaskStatus}
         with self.database.connect() as connection:
             totals = connection.execute(
@@ -392,10 +394,16 @@ class TaskRepository:
                 """
                 SELECT
                     COUNT(*) AS task_total,
-                    COUNT(*) FILTER (WHERE created_at::date = %(today)s) AS today_task_total
+                    COUNT(*) FILTER (
+                        WHERE created_at >= %(today_start_utc)s
+                          AND created_at < %(tomorrow_start_utc)s
+                    ) AS today_task_total
                 FROM tasks
                 """,
-                {"today": _utc_now().date()},
+                {
+                    "today_start_utc": today_start_utc,
+                    "tomorrow_start_utc": tomorrow_start_utc,
+                },
             ).fetchone()
             status_rows = connection.execute(
                 """

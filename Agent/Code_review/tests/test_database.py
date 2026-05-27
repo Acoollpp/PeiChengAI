@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+import app.database as database_module
 from app.models import TaskStatus
 
 
@@ -175,6 +176,63 @@ def test_user_stats_counts_statuses(repository):
     assert stats["total"] == 2
     assert stats["success"] == 1
     assert stats["enqueue_failed"] == 1
+
+
+def test_admin_dashboard_counts_today_tasks_with_utc_half_open_range(monkeypatch):
+    class FakeResult:
+        def __init__(self, *, one=None, many=None):
+            self.one = one
+            self.many = many or []
+
+        def fetchone(self):
+            return self.one
+
+        def fetchall(self):
+            return self.many
+
+    class FakeConnection:
+        def __init__(self):
+            self.executions = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def execute(self, sql, params=None):
+            self.executions.append((sql, params or {}))
+            if "FROM users" in sql and "COUNT(*) AS user_total" in sql:
+                return FakeResult(one={"user_total": 0, "admin_total": 0, "active_user_total": 0})
+            if "FROM tasks" in sql and "today_task_total" in sql:
+                return FakeResult(one={"task_total": 0, "today_task_total": 0})
+            return FakeResult(many=[])
+
+    class FakeDatabase:
+        def __init__(self):
+            self.connection = FakeConnection()
+
+        def connect(self):
+            return self.connection
+
+    fixed_now = datetime(2026, 5, 27, 15, 30, tzinfo=UTC)
+    fake_database = FakeDatabase()
+    monkeypatch.setattr(database_module, "_utc_now", lambda: fixed_now)
+
+    database_module.TaskRepository(fake_database).get_admin_dashboard()
+
+    task_total_sql, task_total_params = next(
+        (sql, params)
+        for sql, params in fake_database.connection.executions
+        if "today_task_total" in sql
+    )
+    assert "created_at::date" not in task_total_sql
+    assert "created_at >= %(today_start_utc)s" in task_total_sql
+    assert "created_at < %(tomorrow_start_utc)s" in task_total_sql
+    assert task_total_params == {
+        "today_start_utc": datetime(2026, 5, 27, tzinfo=UTC),
+        "tomorrow_start_utc": datetime(2026, 5, 28, tzinfo=UTC),
+    }
 
 
 def test_list_tasks_orders_newest_first(repository):
