@@ -23,6 +23,8 @@ from app.models import (
     AdminUserCreateRequest,
     AdminUserResponse,
     AdminUserUpdateRequest,
+    RepositoryPermissionResponse,
+    RepositoryPermissionUpdateRequest,
     RepositoryResponse,
     SessionCreateRequest,
     SessionResponse,
@@ -221,6 +223,31 @@ def create_app(
         if user is None:
             raise HTTPException(status_code=404, detail="User not found")
         return _to_admin_user_response(user)
+
+    @app.get("/api/admin/users/{user_id}/repositories", response_model=RepositoryPermissionResponse)
+    def admin_get_user_repositories(user_id: str, request: Request) -> RepositoryPermissionResponse:
+        current_admin_user(request)
+        if repo.get_user(user_id) is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        return RepositoryPermissionResponse(
+            user_id=user_id,
+            repository_keys=repo.list_user_repository_permissions(user_id),
+        )
+
+    @app.put("/api/admin/users/{user_id}/repositories", response_model=RepositoryPermissionResponse)
+    def admin_set_user_repositories(
+        user_id: str,
+        request_body: RepositoryPermissionUpdateRequest,
+        request: Request,
+    ) -> RepositoryPermissionResponse:
+        current_admin_user(request)
+        if repo.get_user(user_id) is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        try:
+            repository_keys = repo.set_user_repository_permissions(user_id, request_body.repository_keys)
+        except RepositoryAccessError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return RepositoryPermissionResponse(user_id=user_id, repository_keys=repository_keys)
 
     @app.post("/api/tasks", response_model=TaskCreateResponse)
     def create_task(request: TaskCreateRequest, http_request: Request) -> TaskCreateResponse:

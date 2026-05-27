@@ -66,6 +66,15 @@ class RepositoryResponse(BaseModel):
     is_public: bool
 
 
+class RepositoryPermissionUpdateRequest(BaseModel):
+    repository_keys: list[str]
+
+
+class RepositoryPermissionResponse(BaseModel):
+    user_id: str
+    repository_keys: list[str]
+
+
 class SessionResponse(BaseModel):
     authenticated: bool
     user: UserResponse | None = None

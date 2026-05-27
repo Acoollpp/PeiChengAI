@@ -186,6 +186,57 @@ def test_admin_can_update_user(admin_api_client):
     assert response.json()["is_active"] is False
 
 
+def test_admin_can_get_and_set_user_repository_permissions(admin_api_client):
+    login_admin(admin_api_client)
+    user = admin_api_client.post(
+        "/api/admin/users",
+        json={"name": "bob", "phone": "13900139000", "is_admin": False, "is_active": True},
+    ).json()
+
+    put_response = admin_api_client.put(
+        f"/api/admin/users/{user['user_id']}/repositories",
+        json={"repository_keys": ["home", "power"]},
+    )
+    get_response = admin_api_client.get(f"/api/admin/users/{user['user_id']}/repositories")
+
+    assert put_response.status_code == 200
+    assert put_response.json()["repository_keys"] == ["home", "power"]
+    assert get_response.status_code == 200
+    assert get_response.json()["repository_keys"] == ["home", "power"]
+
+
+def test_admin_repository_permissions_reject_unknown_key(admin_api_client):
+    login_admin(admin_api_client)
+    user = admin_api_client.post(
+        "/api/admin/users",
+        json={"name": "bob", "phone": "13900139000", "is_admin": False, "is_active": True},
+    ).json()
+
+    response = admin_api_client.put(
+        f"/api/admin/users/{user['user_id']}/repositories",
+        json={"repository_keys": ["home", "missing"]},
+    )
+
+    assert response.status_code == 400
+
+
+def test_admin_user_repository_permissions_requires_admin(api_client, api_repository):
+    login(api_client, name="alice", phone="13800138000")
+    user = api_repository.get_or_create_user(name="bob", phone="13900139000")
+
+    response = api_client.get(f"/api/admin/users/{user['id']}/repositories")
+
+    assert response.status_code == 403
+
+
+def test_admin_user_repository_permissions_missing_user_returns_404(admin_api_client):
+    login_admin(admin_api_client)
+
+    response = admin_api_client.get("/api/admin/users/missing-user/repositories")
+
+    assert response.status_code == 404
+
+
 def test_admin_update_user_rejects_blank_name(admin_api_client):
     login_admin(admin_api_client)
     created = admin_api_client.post(
