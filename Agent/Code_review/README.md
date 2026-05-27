@@ -120,9 +120,11 @@ PowerShell 环境变量示例：
 $env:DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/code_review"
 $env:REDIS_URL = "redis://127.0.0.1:6379/0"
 $env:SESSION_SECRET_KEY = "local-dev-session-secret"
+$env:ADMIN_PHONES = "13800138000"
 ```
 
 生产环境必须显式设置 `SESSION_SECRET_KEY`，不要使用上面的本地示例值。
+管理员账号通过 `ADMIN_PHONES` 配置手机号白名单，多个手机号用英文逗号分隔；默认没有内置管理员。手机号登录或创建 session 时，系统会保存用户的启用状态和管理员状态，并在手机号命中 `ADMIN_PHONES` 时自动标记为管理员。
 
 ### 3. 云服务器启动示例
 
@@ -162,6 +164,7 @@ uv sync
 export DATABASE_URL="postgresql://code_review:change-me@127.0.0.1:5432/code_review"
 export REDIS_URL="redis://127.0.0.1:6379/0"
 export SESSION_SECRET_KEY="replace-with-a-long-random-secret"
+export ADMIN_PHONES="13800138000"
 
 uv run uvicorn app.asgi:app --host 0.0.0.0 --port 8000
 ```
@@ -190,12 +193,14 @@ http://127.0.0.1:8000/login
 
 ## 页面功能
 
-- 登录：打开首页前先在 `/login` 使用姓名和手机号创建 session。
-- 提交任务：在首页填写 SVN URL、旧修订号和新修订号，页面会调用 `POST /api/tasks` 创建当前用户的审查任务。
+- 登录：打开首页前先在 `/login` 使用姓名和手机号创建 session。会话用户包含启用状态和管理员状态；被停用账号无法继续登录或访问接口。
+- 提交任务：在首页填写完整 SVN URL、旧修订号和新修订号，页面会调用 `POST /api/tasks` 创建当前用户的审查任务。页面提供当前用户可用仓库的前缀快捷填充，点击后仍需要继续补全完整 SVN URL；后端会按仓库前缀匹配并校验用户权限。
 - 动态刷新：任务提交后，页面通过 `GET /api/events` 建立 SSE 连接，并在任务创建或更新时刷新列表和当前报告。
 - 预览报告：任务成功且报告可用时，页面会调用 `GET /api/tasks/{task_id}/report` 并在 Markdown 预览区展示内容。
 - 下载报告：报告可用后，页面提供 `GET /api/tasks/{task_id}/download` 下载入口。
 - 最近任务：页面启动、提交和 SSE 事件到达后会调用 `GET /api/tasks` 展示当前用户任务列表，点击条目可查看对应任务。
+- 仓库可见性：普通用户只能看到和使用自己已授权的产品仓库；公共仓库对所有已启用用户可用。
+- 管理员页面：管理员可打开 `/admin` 查看仪表盘、用户-任务数图表、任务状态和仓库使用情况；也可以新增账号、启停账号、标记或取消管理员，并为用户配置产品仓库权限。
 
 ## 测试
 
@@ -243,16 +248,20 @@ uv run uvicorn app.asgi:app --reload --host 127.0.0.1 --port 8000
 $env:DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/code_review"
 $env:REDIS_URL = "redis://127.0.0.1:6379/0"
 $env:SESSION_SECRET_KEY = "local-dev-session-secret"
+$env:ADMIN_PHONES = "13800138000"
 .\.venv\Scripts\python.exe -m uvicorn app.asgi:app --reload --host 127.0.0.1 --port 8000
 ```
 
 3. 打开 `http://127.0.0.1:8000/login`，使用姓名和手机号登录。
-4. 提交一个不符合 `SVN_ALLOWED_PREFIX` 的非法 SVN URL，确认页面展示校验失败。
-5. 使用上面的假 Codex 配置启动服务，提交一条合法任务，确认任务成功并能通过 SSE 自动刷新、预览或下载假 Markdown 报告。
+4. 如果手机号在 `ADMIN_PHONES` 中，打开 `http://127.0.0.1:8000/admin`，确认可查看仪表盘，并可新增账号、启停账号、设置管理员标记和配置产品仓库权限。
+5. 使用普通用户登录，确认首页只展示公共仓库和该用户被授权的产品仓库前缀。
+6. 提交一个不属于已配置仓库前缀，或属于未授权产品仓库前缀的 SVN URL，确认页面展示校验失败。
+7. 使用上面的假 Codex 配置启动服务，提交一条有权限的完整 SVN URL 任务，确认任务成功并能通过 SSE 自动刷新、预览或下载假 Markdown 报告。
 
 ### 手动提交任务时的注意点
 
-- SVN URL 必须以 `SVN_ALLOWED_PREFIX` 开头，默认是 `https://192.168.0.233/svn/src_home/`。
+- 提交任务时仍粘贴完整 SVN URL；仓库快捷项只负责填入已授权仓库前缀，不能替代完整路径。
+- 后端按内置仓库前缀识别公共仓库和产品仓库，公共仓库对所有已启用用户可用，产品仓库需要管理员在 `/admin` 为用户授权。
 - 修订号可以填 `100` 或 `r100`，服务会统一规范成小写 `r100`。
 - 每个用户同一时间只会运行一个任务；同一用户后续任务会留在 Redis 队列中等待。
 - PostgreSQL 是事实源；Redis 仅保存队列、锁和事件通知，必要时可按 pending 任务重建队列。
@@ -267,7 +276,8 @@ $env:SESSION_SECRET_KEY = "local-dev-session-secret"
 - `WORKER_ID`：worker 标识，用于任务 claim 诊断。
 - `REDIS_LOCK_TTL_SECONDS`：用户运行锁 TTL，默认 3600 秒。
 - `HEARTBEAT_SECONDS`：worker 心跳间隔配置，默认 30 秒。
-- `SVN_ALLOWED_PREFIX`：允许审查的 SVN 地址前缀。
+- `ADMIN_PHONES`：管理员手机号白名单，多个手机号用英文逗号分隔；默认空值，表示没有内置管理员。
+- `SVN_ALLOWED_PREFIX`：旧版单仓库 SVN 地址前缀配置，当前权限临时方案按代码中的仓库前缀列表匹配和授权。
 - `CODEX_COMMAND`：Codex 命令，默认 `codex`。
 - `CODEX_ARGS`：Codex 参数，默认 `exec --dangerously-bypass-approvals-and-sandbox`。
 - `CODEX_TIMEOUT_SECONDS`：Codex 执行超时时间，默认 1800 秒。
