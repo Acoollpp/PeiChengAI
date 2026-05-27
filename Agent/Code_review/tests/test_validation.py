@@ -96,6 +96,16 @@ def test_match_repository_rejects_encoded_relative_path_segments():
         match_repository_for_url("https://192.168.0.233/svn/src_home/%2e%2e/src_power/project")
 
 
+def test_match_repository_rejects_encoded_forward_slash_segments():
+    with pytest.raises(RepositoryAccessError, match="相对路径段"):
+        match_repository_for_url("https://192.168.0.233/svn/src_home/%2f..%2fsrc_power/project")
+
+
+def test_match_repository_rejects_encoded_backslash_segments():
+    with pytest.raises(RepositoryAccessError, match="相对路径段"):
+        match_repository_for_url("https://192.168.0.233/svn/src_home/%5c..%5csrc_power/project")
+
+
 def test_validate_repository_keys_deduplicates_in_product_order():
     assert validate_repository_keys(["power", "home", "home"]) == ["home", "power"]
 
