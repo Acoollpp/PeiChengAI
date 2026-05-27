@@ -262,6 +262,7 @@ $env:SESSION_SECRET_KEY = "local-dev-session-secret"
 - `APP_BASE_DIR`：应用基础目录，默认当前工作目录。
 - `DATABASE_URL`：PostgreSQL 连接串，默认 `postgresql://postgres:postgres@127.0.0.1:5432/code_review`。
 - `REDIS_URL`：Redis 连接串，默认 `redis://127.0.0.1:6379/0`。
+- `SVN_EXPORTS_DIR`：任务 SVN 导出根目录，默认 `data/svn_exports`；每个任务使用 `<task_id>/` 子目录，任务结束后会自动清理该子目录。
 - `SESSION_SECRET_KEY`：session cookie 签名密钥，生产环境必须显式设置。
 - `WORKER_ID`：worker 标识，用于任务 claim 诊断。
 - `REDIS_LOCK_TTL_SECONDS`：用户运行锁 TTL，默认 3600 秒。

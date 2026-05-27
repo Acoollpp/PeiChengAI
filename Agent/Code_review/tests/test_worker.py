@@ -14,6 +14,7 @@ from app.worker import Worker, WorkerThread
 PROMPT_TEMPLATE = """
 Review {svn_url} from {old_revision} to {new_revision}.
 Write the report to {report_path}.
+Use SVN export directory {svn_export_dir}.
 """
 
 
@@ -26,6 +27,7 @@ class FakeRunner:
         stderr="",
         writes_report=True,
         report_text="review report",
+        writes_svn_export=False,
         error=None,
     ):
         self.return_code = return_code
@@ -33,6 +35,7 @@ class FakeRunner:
         self.stderr = stderr
         self.writes_report = writes_report
         self.report_text = report_text
+        self.writes_svn_export = writes_svn_export
         self.error = error
         self.calls = []
 
@@ -40,6 +43,10 @@ class FakeRunner:
         self.calls.append((prompt, cwd, timeout_seconds))
         if self.error is not None:
             raise self.error
+        if self.writes_svn_export:
+            svn_exports_dir = _extract_svn_exports_dir(prompt)
+            svn_exports_dir.mkdir(parents=True, exist_ok=True)
+            (svn_exports_dir / "checkout.c").write_text("code", encoding="utf-8")
         if self.writes_report:
             report_path = _extract_report_path(prompt)
             report_path.write_text(self.report_text, encoding="utf-8")
@@ -85,6 +92,7 @@ def make_worker(tmp_path, repository, runner, scheduler=None, event_bus=None):
         runner=runner,
         prompt_template=PROMPT_TEMPLATE,
         workspaces_dir=tmp_path / "workspaces",
+        svn_exports_dir=tmp_path / "svn_exports",
         timeout_seconds=30,
         worker_id="worker-test",
         lock_ttl_seconds=60,
@@ -215,6 +223,52 @@ def test_process_one_renders_prompt_with_task_values_and_creates_workspace(tmp_p
     assert cwd == (tmp_path / "workspaces" / task["id"]).resolve()
     assert cwd.is_dir()
     assert timeout_seconds == 30
+
+
+def test_process_one_removes_task_svn_export_dir_after_success(tmp_path):
+    repository = make_repository(tmp_path)
+    task = create_task(repository)
+    worker = make_worker(tmp_path, repository, FakeRunner(writes_svn_export=True))
+    svn_export_dir = tmp_path / "svn_exports" / task["id"]
+
+    processed = worker.process_one()
+
+    assert processed is True
+    assert repository.get_task(task["id"])["status"] == TaskStatus.success
+    assert not svn_export_dir.exists()
+
+
+def test_process_one_removes_task_svn_export_dir_after_failure(tmp_path):
+    repository = make_repository(tmp_path)
+    task = create_task(repository)
+    worker = make_worker(
+        tmp_path,
+        repository,
+        FakeRunner(return_code=2, stderr="failed", writes_report=False, writes_svn_export=True),
+    )
+    svn_export_dir = tmp_path / "svn_exports" / task["id"]
+
+    processed = worker.process_one()
+
+    assert processed is True
+    assert repository.get_task(task["id"])["status"] == TaskStatus.failed
+    assert not svn_export_dir.exists()
+
+
+def test_process_one_keeps_task_complete_when_svn_export_cleanup_fails(tmp_path, monkeypatch):
+    repository = make_repository(tmp_path)
+    task = create_task(repository)
+    worker = make_worker(tmp_path, repository, FakeRunner(writes_svn_export=True))
+
+    def fail_rmtree(path):
+        raise OSError("locked")
+
+    monkeypatch.setattr("app.worker.shutil.rmtree", fail_rmtree)
+
+    processed = worker.process_one()
+
+    assert processed is True
+    assert repository.get_task(task["id"])["status"] == TaskStatus.success
 
 
 def test_process_one_marks_failed_when_prompt_template_is_malformed(tmp_path):
@@ -391,7 +445,11 @@ def test_worker_thread_stop_returns_false_when_thread_is_still_alive():
 
 
 def _extract_report_path(prompt: str) -> Path:
-    return Path(prompt.rsplit("Write the report to ", 1)[1].strip().rstrip("."))
+    return Path(prompt.rsplit("Write the report to ", 1)[1].splitlines()[0].strip().rstrip("."))
+
+
+def _extract_svn_exports_dir(prompt: str) -> Path:
+    return Path(prompt.rsplit("Use SVN export directory ", 1)[1].splitlines()[0].strip().rstrip("."))
 
 
 class CountingWorker:

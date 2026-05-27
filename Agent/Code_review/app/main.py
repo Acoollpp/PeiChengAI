@@ -43,6 +43,7 @@ def create_app(
     database_path: Path | str | None = None,
     reports_dir: Path | str | None = None,
     workspaces_dir: Path | str | None = None,
+    svn_exports_dir: Path | str | None = None,
     start_worker: bool = True,
     prompt_template_path: Path | str | None = None,
     app_settings: Settings = settings,
@@ -52,10 +53,12 @@ def create_app(
 ) -> FastAPI:
     reports_dir = Path(reports_dir or app_settings.reports_dir).resolve()
     workspaces_dir = Path(workspaces_dir or app_settings.workspaces_dir).resolve()
+    svn_exports_dir = Path(svn_exports_dir or app_settings.svn_exports_dir).resolve()
     prompt_template_path = Path(prompt_template_path or app_settings.prompt_template_path).resolve()
 
     reports_dir.mkdir(parents=True, exist_ok=True)
     workspaces_dir.mkdir(parents=True, exist_ok=True)
+    svn_exports_dir.mkdir(parents=True, exist_ok=True)
 
     if repo is None:
         repo = TaskRepository(PostgresDatabase(app_settings.database_url))
@@ -87,6 +90,7 @@ def create_app(
                 runner=runner,
                 prompt_template=prompt_template,
                 workspaces_dir=workspaces_dir,
+                svn_exports_dir=svn_exports_dir,
                 timeout_seconds=app_settings.codex_timeout_seconds,
                 worker_id=app_settings.worker_id,
                 lock_ttl_seconds=app_settings.redis_lock_ttl_seconds,
@@ -108,6 +112,7 @@ def create_app(
     app.state.event_bus = event_bus
     app.state.reports_dir = reports_dir
     app.state.workspaces_dir = workspaces_dir
+    app.state.svn_exports_dir = svn_exports_dir
     static_dir = Path(__file__).resolve().parent.parent / "static"
 
     def current_user(request: Request) -> dict[str, Any]:

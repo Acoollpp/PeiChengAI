@@ -14,6 +14,7 @@ class Settings:
     redis_url: str
     reports_dir: Path
     workspaces_dir: Path
+    svn_exports_dir: Path
     prompt_template_path: Path
     svn_allowed_prefix: str
     codex_command: str
@@ -58,6 +59,10 @@ def load_settings() -> Settings:
         reports_dir=_resolve_path(os.getenv("REPORTS_DIR", data_dir / "reports"), base_dir),
         workspaces_dir=_resolve_path(
             os.getenv("WORKSPACES_DIR", data_dir / "workspaces"),
+            base_dir,
+        ),
+        svn_exports_dir=_resolve_path(
+            os.getenv("SVN_EXPORTS_DIR", data_dir / "svn_exports"),
             base_dir,
         ),
         prompt_template_path=_resolve_path(

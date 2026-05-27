@@ -48,6 +48,7 @@ def test_load_settings_includes_postgres_redis_session_and_worker_defaults(monke
     assert settings.worker_id
     assert settings.redis_lock_ttl_seconds == 3600
     assert settings.reports_dir == (Path(tmp_path) / "data" / "reports").resolve()
+    assert settings.svn_exports_dir == (Path(tmp_path) / "data" / "svn_exports").resolve()
 
 
 def test_load_settings_reads_postgres_redis_and_session_env(monkeypatch, tmp_path):
@@ -57,6 +58,7 @@ def test_load_settings_reads_postgres_redis_and_session_env(monkeypatch, tmp_pat
     monkeypatch.setenv("SESSION_SECRET_KEY", "test-secret")
     monkeypatch.setenv("WORKER_ID", "worker-a")
     monkeypatch.setenv("REDIS_LOCK_TTL_SECONDS", "120")
+    monkeypatch.setenv("SVN_EXPORTS_DIR", "custom-svn-exports")
 
     settings = load_settings()
 
@@ -65,6 +67,7 @@ def test_load_settings_reads_postgres_redis_and_session_env(monkeypatch, tmp_pat
     assert settings.session_secret_key == "test-secret"
     assert settings.worker_id == "worker-a"
     assert settings.redis_lock_ttl_seconds == 120
+    assert settings.svn_exports_dir == (Path(tmp_path) / "custom-svn-exports").resolve()
 
 
 def test_models_include_session_request_and_enqueue_failed_status():
