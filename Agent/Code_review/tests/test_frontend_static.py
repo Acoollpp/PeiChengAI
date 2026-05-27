@@ -292,6 +292,191 @@ def run_frontend_scenario(scenario: str) -> dict:
     return json.loads(result.stdout)
 
 
+def run_admin_repository_permission_scenario() -> dict:
+    script = textwrap.dedent(
+        r"""
+        const fs = require("fs");
+        const vm = require("vm");
+
+        class FakeClassList {
+          add() {}
+          remove() {}
+          toggle() {}
+          contains() { return false; }
+        }
+
+        class FakeElement {
+          constructor(id) {
+            this.id = id;
+            this.classList = new FakeClassList();
+            this.listeners = {};
+            this.textContent = "";
+            this.disabled = false;
+            this._innerHTML = "";
+            this.children = [];
+          }
+
+          addEventListener(type, handler) {
+            this.listeners[type] = handler;
+          }
+
+          querySelectorAll(selector) {
+            if (selector === "[data-action='save-user']" || selector === "[data-action='select-user']") {
+              return [];
+            }
+            if (selector === "input:checked") {
+              return this.children.filter((child) => child.checked);
+            }
+            return [];
+          }
+
+          get innerHTML() {
+            return this._innerHTML;
+          }
+
+          set innerHTML(value) {
+            this._innerHTML = String(value);
+            this.children = [];
+            const inputPattern = /<input type="checkbox" value="([^"]*)"([^>]*)>/g;
+            let match;
+            while ((match = inputPattern.exec(this._innerHTML)) !== null) {
+              this.children.push({ value: decodeEntities(match[1]), checked: /\bchecked\b/.test(match[2]) });
+            }
+          }
+        }
+
+        function decodeEntities(value) {
+          return String(value)
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&amp;/g, "&");
+        }
+
+        function deferredResponse(body) {
+          let resolve;
+          const promise = new Promise((innerResolve) => {
+            resolve = () => innerResolve({
+              ok: true,
+              json: () => Promise.resolve(body),
+            });
+          });
+          return { promise, resolve };
+        }
+
+        async function runScenario() {
+          const nodes = new Map();
+          const add = (selector) => {
+            const node = new FakeElement(selector);
+            nodes.set(selector, node);
+            return node;
+          };
+
+          [
+            "#admin-gate",
+            "#admin-dashboard",
+            "#admin-service-state",
+            "#admin-current-user",
+            "#admin-logout-button",
+            "#admin-refresh-button",
+            "#admin-user-form",
+            "#admin-user-form-message",
+            "#create-user-button",
+            "#admin-users-table",
+            "#recent-tasks-table",
+            "#repository-permissions",
+            "#repository-permission-title",
+            "#repository-permission-message",
+            "#save-repositories-button",
+            "#user-usage-chart",
+            "#status-chart",
+            "#repository-usage-chart",
+            "#metric-user-total",
+            "#metric-active-user-total",
+            "#metric-admin-total",
+            "#metric-task-total",
+            "#metric-today-task-total",
+          ].forEach(add);
+          nodes.set("#admin-user-form", null);
+
+          const first = deferredResponse({ repository_keys: ["repo-a"] });
+          const second = deferredResponse({ repository_keys: ["repo-b"] });
+          const saves = [];
+
+          const context = {
+            document: {
+              querySelector(selector) {
+                return nodes.get(selector) || null;
+              },
+            },
+            window: {
+              location: { href: "" },
+              setTimeout() {},
+            },
+            fetch(url, options = {}) {
+              if (options.method === "PUT") {
+                saves.push({ url, body: JSON.parse(options.body) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+              }
+              if (url === "/api/admin/users/user-a/repositories") {
+                return first.promise;
+              }
+              if (url === "/api/admin/users/user-b/repositories") {
+                return second.promise;
+              }
+              return Promise.resolve({ ok: false, json: () => Promise.resolve({ detail: `unexpected ${url}` }) });
+            },
+            console,
+          };
+
+          vm.createContext(context);
+          vm.runInContext(fs.readFileSync("static/admin.js", "utf8"), context);
+          vm.runInContext(`
+            adminState.users = [
+              { user_id: "user-a", name: "Alice", phone: "100", task_count: 0 },
+              { user_id: "user-b", name: "Bob", phone: "200", task_count: 0 },
+            ];
+            adminState.repositories = [
+              { key: "repo-a", name: "Repo A", url_prefix: "svn://a" },
+              { key: "repo-b", name: "Repo B", url_prefix: "svn://b" },
+            ];
+          `, context);
+
+          const selectA = context.selectUser("user-a");
+          const selectB = context.selectUser("user-b");
+          second.resolve();
+          await selectB;
+          first.resolve();
+          await selectA;
+          await context.saveRepositoryPermissions();
+
+          return {
+            html: nodes.get("#repository-permissions").innerHTML,
+            message: nodes.get("#repository-permission-message").textContent,
+            saves,
+          };
+        }
+
+        runScenario()
+          .then((result) => process.stdout.write(JSON.stringify(result)))
+          .catch((error) => {
+            console.error(error && error.stack ? error.stack : error);
+            process.exit(1);
+          });
+        """
+    )
+    result = subprocess.run(
+        ["node", "-e", script],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
 def test_markdown_preview_renders_common_report_markdown():
     html = run_render_markdown(
         "# 标题\n\n"
@@ -483,6 +668,19 @@ def test_admin_script_calls_required_admin_apis_and_protects_non_admin():
     assert 'fetch(`/api/admin/users/${encodeURIComponent(userId)}/repositories`)' in js
     assert 'fetch("/api/admin/repositories")' in js
     assert 'fetch("/api/repositories")' not in js
+
+
+def test_admin_repository_permission_load_ignores_stale_user_response():
+    result = run_admin_repository_permission_scenario()
+
+    assert 'value="repo-a"\n        checked' not in result["html"]
+    assert 'value="repo-b"\n        checked' in result["html"]
+    assert result["saves"] == [
+        {
+            "url": "/api/admin/users/user-b/repositories",
+            "body": {"repository_keys": ["repo-b"]},
+        }
+    ]
 
 
 def test_admin_script_contains_user_task_chart_rendering_logic():

@@ -3,6 +3,7 @@ const adminState = {
   repositories: [],
   selectedUserId: null,
   selectedRepositoryKeys: new Set(),
+  repositoryPermissionRequestId: 0,
 };
 
 const adminElements = {
@@ -285,6 +286,8 @@ function ensureSelectedUser(users) {
 }
 
 async function selectUser(userId) {
+  const requestId = adminState.repositoryPermissionRequestId + 1;
+  adminState.repositoryPermissionRequestId = requestId;
   adminState.selectedUserId = userId;
   renderUsers(adminState.users);
   const user = adminState.users.find((item) => item.user_id === userId);
@@ -295,11 +298,17 @@ async function selectUser(userId) {
   try {
     const response = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/repositories`);
     const permissions = await parseJsonResponse(response, "permissions failed");
+    if (requestId !== adminState.repositoryPermissionRequestId || userId !== adminState.selectedUserId) {
+      return;
+    }
     adminState.selectedRepositoryKeys = new Set(permissions.repository_keys || []);
     renderRepositoryPermissions();
     adminElements.repositoryPermissionMessage.textContent = "";
     adminElements.saveRepositoriesButton.disabled = false;
   } catch (error) {
+    if (requestId !== adminState.repositoryPermissionRequestId || userId !== adminState.selectedUserId) {
+      return;
+    }
     adminElements.repositoryPermissionMessage.textContent = error.message;
   }
 }
@@ -328,7 +337,8 @@ function renderRepositoryPermissions() {
 }
 
 async function saveRepositoryPermissions() {
-  if (!adminState.selectedUserId) {
+  const userId = adminState.selectedUserId;
+  if (!userId) {
     return;
   }
 
@@ -339,7 +349,7 @@ async function saveRepositoryPermissions() {
 
   try {
     await fetchJson(
-      `/api/admin/users/${encodeURIComponent(adminState.selectedUserId)}/repositories`,
+      `/api/admin/users/${encodeURIComponent(userId)}/repositories`,
       "保存权限失败",
       {
         method: "PUT",
@@ -347,12 +357,18 @@ async function saveRepositoryPermissions() {
         body: JSON.stringify({ repository_keys: repositoryKeys }),
       },
     );
-    adminState.selectedRepositoryKeys = new Set(repositoryKeys);
-    adminElements.repositoryPermissionMessage.textContent = "权限已保存";
+    if (userId === adminState.selectedUserId) {
+      adminState.selectedRepositoryKeys = new Set(repositoryKeys);
+      adminElements.repositoryPermissionMessage.textContent = "权限已保存";
+    }
   } catch (error) {
-    adminElements.repositoryPermissionMessage.textContent = error.message;
+    if (userId === adminState.selectedUserId) {
+      adminElements.repositoryPermissionMessage.textContent = error.message;
+    }
   } finally {
-    adminElements.saveRepositoriesButton.disabled = false;
+    if (userId === adminState.selectedUserId) {
+      adminElements.saveRepositoriesButton.disabled = false;
+    }
   }
 }
 
