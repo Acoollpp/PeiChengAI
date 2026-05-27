@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 
 class RepositoryAccessError(ValueError):
@@ -39,7 +39,7 @@ def match_repository_for_url(svn_url: str) -> RepositoryDefinition:
     if parsed.scheme != "https":
         raise RepositoryAccessError("SVN 地址必须使用 HTTPS")
 
-    if any(segment in {".", ".."} for segment in parsed.path.split("/")):
+    if any(segment in {".", ".."} or unquote(segment) in {".", ".."} for segment in parsed.path.split("/")):
         raise RepositoryAccessError("SVN 地址不允许包含相对路径段")
 
     normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
