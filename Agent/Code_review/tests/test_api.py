@@ -7,7 +7,10 @@ from app.main import create_app
 from app.models import TaskStatus
 
 
-VALID_SVN_URL = "https://192.168.0.233/svn/src_home/project/trunk"
+PUBLIC_SVN_URL = "https://192.168.0.233/svn/documents/spec.md"
+HOME_SVN_URL = "https://192.168.0.233/svn/src_home/project/trunk"
+POWER_SVN_URL = "https://192.168.0.233/svn/src_power/project/trunk"
+VALID_SVN_URL = PUBLIC_SVN_URL
 
 
 def create_task(client, **overrides):
@@ -98,6 +101,36 @@ def test_post_tasks_requires_login(api_client):
     response = create_task(api_client)
 
     assert response.status_code == 401
+
+
+def test_public_repository_task_is_allowed_for_any_logged_in_user(api_client):
+    login(api_client, name="alice", phone="13800138000")
+
+    response = create_task(api_client, svn_url=PUBLIC_SVN_URL)
+
+    assert response.status_code == 200
+
+
+def test_product_repository_task_requires_permission(api_client):
+    login(api_client, name="alice", phone="13800138000")
+
+    response = create_task(api_client, svn_url=HOME_SVN_URL)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "当前用户没有该 SVN 仓库权限"
+
+
+def test_product_repository_task_is_allowed_when_granted(api_client, api_repository):
+    login(api_client, name="alice", phone="13800138000")
+    user = next(user for user in api_repository.users.values() if user["phone"] == "13800138000")
+    api_repository.set_user_repository_permissions(user["id"], ["home"])
+
+    response = create_task(api_client, svn_url=HOME_SVN_URL)
+
+    assert response.status_code == 200
+    task = api_repository.get_task(response.json()["task_id"])
+    assert task["repository_key"] == "home"
+    assert task["repository_name"] == "户储"
 
 
 def test_root_places_report_viewer_on_the_right_and_task_list_on_the_left(api_client):

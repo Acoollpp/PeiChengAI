@@ -54,6 +54,8 @@ class UserStatsResponse(BaseModel):
 class TaskResponse(BaseModel):
     task_id: str
     svn_url: str
+    repository_key: str | None = None
+    repository_name: str | None = None
     old_revision: str
     new_revision: str
     requester: str | None

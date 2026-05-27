@@ -29,9 +29,10 @@ from app.models import (
     UserResponse,
 )
 from app.postgres import PostgresDatabase
+from app.repositories import RepositoryAccessError, match_repository_for_url
 from app.scheduler import RedisScheduler, Scheduler
 from app.session import SESSION_COOKIE_NAME, SessionManager, normalize_phone
-from app.validation import normalize_revision, validate_svn_url
+from app.validation import normalize_revision
 from app.worker import Worker, WorkerThread
 
 
@@ -160,11 +161,18 @@ def create_app(
     def create_task(request: TaskCreateRequest, http_request: Request) -> TaskCreateResponse:
         user = current_user(http_request)
         try:
-            svn_url = validate_svn_url(request.svn_url, app_settings.svn_allowed_prefix)
+            svn_url = request.svn_url.strip()
+            repository = match_repository_for_url(svn_url)
             old_revision = normalize_revision(request.old_revision)
             new_revision = normalize_revision(request.new_revision)
+        except RepositoryAccessError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        granted_keys = set(repo.list_user_repository_permissions(user["id"]))
+        if not repository.is_public and repository.key not in granted_keys:
+            raise HTTPException(status_code=403, detail="当前用户没有该 SVN 仓库权限")
 
         if old_revision == new_revision:
             raise HTTPException(status_code=400, detail="old_revision and new_revision must differ")
@@ -179,6 +187,8 @@ def create_app(
             user_id=user["id"],
             report_path=str(report_path),
             task_id=task_id,
+            repository_key=repository.key,
+            repository_name=repository.name,
         )
         try:
             scheduler.enqueue_task(user["id"], task_id)
@@ -280,6 +290,8 @@ def _to_task_response(task: dict[str, Any], reports_root: Path) -> TaskResponse:
     return TaskResponse(
         task_id=task["id"],
         svn_url=task["svn_url"],
+        repository_key=task.get("repository_key"),
+        repository_name=task.get("repository_name"),
         old_revision=task["old_revision"],
         new_revision=task["new_revision"],
         requester=task["requester"] or "anonymous",

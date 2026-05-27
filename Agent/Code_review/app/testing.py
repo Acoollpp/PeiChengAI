@@ -71,6 +71,8 @@ class InMemoryTaskRepository:
         user_id: str,
         requester: str,
         task_id: str | None = None,
+        repository_key: str | None = None,
+        repository_name: str | None = None,
     ) -> dict[str, Any]:
         now = _utc_now()
         task_id = task_id or str(uuid.uuid4())
@@ -78,6 +80,8 @@ class InMemoryTaskRepository:
             "id": task_id,
             "user_id": user_id,
             "svn_url": svn_url,
+            "repository_key": repository_key,
+            "repository_name": repository_name,
             "old_revision": old_revision,
             "new_revision": new_revision,
             "requester": requester.strip() or "anonymous",

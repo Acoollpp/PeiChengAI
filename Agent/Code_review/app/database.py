@@ -54,6 +54,8 @@ class TaskRepository:
             connection.execute("CREATE INDEX IF NOT EXISTS idx_tasks_user_created ON tasks (user_id, created_at DESC)")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status)")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_tasks_heartbeat ON tasks (heartbeat_at)")
+            connection.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS repository_key TEXT")
+            connection.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS repository_name TEXT")
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS user_repository_permissions (
@@ -148,6 +150,8 @@ class TaskRepository:
         user_id: str,
         requester: str,
         task_id: str | None = None,
+        repository_key: str | None = None,
+        repository_name: str | None = None,
     ) -> dict[str, Any]:
         now = _utc_now()
         task_id = task_id or str(uuid.uuid4())
@@ -158,12 +162,12 @@ class TaskRepository:
                 INSERT INTO tasks (
                     id, user_id, svn_url, old_revision, new_revision, requester, status,
                     report_path, error_message, claimed_by, heartbeat_at, created_at,
-                    started_at, finished_at, updated_at
+                    started_at, finished_at, updated_at, repository_key, repository_name
                 )
                 VALUES (
                     %(id)s, %(user_id)s, %(svn_url)s, %(old_revision)s, %(new_revision)s,
                     %(requester)s, %(status)s, %(report_path)s, NULL, NULL, NULL,
-                    %(now)s, NULL, NULL, %(now)s
+                    %(now)s, NULL, NULL, %(now)s, %(repository_key)s, %(repository_name)s
                 )
                 RETURNING *
                 """,
@@ -177,6 +181,8 @@ class TaskRepository:
                     "status": TaskStatus.pending.value,
                     "report_path": report_path,
                     "now": now,
+                    "repository_key": repository_key,
+                    "repository_name": repository_name,
                 },
             ).fetchone()
         task = _row_to_task(row)
