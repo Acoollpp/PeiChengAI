@@ -146,6 +146,8 @@ def create_app(
         user = repo.get_or_create_user(name=request.name.strip(), phone=phone)
         repo.set_user_admin_if_phone_matches(phone, app_settings.admin_phones)
         user = repo.get_user(user["id"]) or user
+        if not user.get("is_active", True):
+            raise HTTPException(status_code=403, detail="Account is disabled")
         response.set_cookie(
             SESSION_COOKIE_NAME,
             session_manager.create_cookie_value(user["id"]),
@@ -160,7 +162,7 @@ def create_app(
         if not user_id:
             return SessionResponse(authenticated=False)
         user = repo.get_user(user_id)
-        if user is None:
+        if user is None or not user.get("is_active", True):
             return SessionResponse(authenticated=False)
         return SessionResponse(authenticated=True, user=_to_user_response(user))
 
@@ -183,12 +185,15 @@ def create_app(
     @app.post("/api/admin/users", response_model=AdminUserResponse)
     def create_admin_user(request: AdminUserCreateRequest, http_request: Request) -> AdminUserResponse:
         current_admin_user(http_request)
+        name = request.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="name is required")
         try:
             phone = normalize_phone(request.phone)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         user = repo.create_user(
-            name=request.name.strip(),
+            name=name,
             phone=phone,
             is_admin=request.is_admin,
             is_active=request.is_active,
@@ -204,9 +209,12 @@ def create_app(
         http_request: Request,
     ) -> AdminUserResponse:
         current_admin_user(http_request)
+        name = request.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="name is required")
         user = repo.update_user(
             user_id,
-            name=request.name.strip(),
+            name=name,
             is_admin=request.is_admin,
             is_active=request.is_active,
         )

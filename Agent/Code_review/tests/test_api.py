@@ -156,6 +156,18 @@ def test_admin_create_user_rejects_duplicate_phone(admin_api_client):
     assert response.status_code == 409
 
 
+def test_admin_create_user_rejects_blank_name(admin_api_client):
+    login_admin(admin_api_client)
+
+    response = admin_api_client.post(
+        "/api/admin/users",
+        json={"name": "   ", "phone": "13900139000", "is_admin": False, "is_active": True},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "name is required"
+
+
 def test_admin_can_update_user(admin_api_client):
     login_admin(admin_api_client)
     created = admin_api_client.post(
@@ -174,7 +186,23 @@ def test_admin_can_update_user(admin_api_client):
     assert response.json()["is_active"] is False
 
 
-def test_disabled_user_cannot_access_tasks(admin_api_client):
+def test_admin_update_user_rejects_blank_name(admin_api_client):
+    login_admin(admin_api_client)
+    created = admin_api_client.post(
+        "/api/admin/users",
+        json={"name": "bob", "phone": "13900139000", "is_admin": False, "is_active": True},
+    ).json()
+
+    response = admin_api_client.patch(
+        f"/api/admin/users/{created['user_id']}",
+        json={"name": "   ", "is_admin": False, "is_active": True},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "name is required"
+
+
+def test_disabled_user_cannot_create_session(admin_api_client):
     login_admin(admin_api_client)
     created = admin_api_client.post(
         "/api/admin/users",
@@ -182,11 +210,14 @@ def test_disabled_user_cannot_access_tasks(admin_api_client):
     ).json()
     admin_api_client.delete("/api/session")
 
-    login(admin_api_client, name="bob", phone="13900139000")
-    response = admin_api_client.get("/api/tasks")
+    response = login(admin_api_client, name="bob", phone="13900139000")
+    session_response = admin_api_client.get("/api/session")
 
     assert created["is_active"] is False
     assert response.status_code == 403
+    assert "set-cookie" not in response.headers
+    assert session_response.status_code == 200
+    assert session_response.json()["authenticated"] is False
 
 
 def test_public_repository_task_is_allowed_for_any_logged_in_user(api_client):
