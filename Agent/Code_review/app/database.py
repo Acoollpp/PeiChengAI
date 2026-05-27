@@ -119,6 +119,8 @@ class TaskRepository:
         return validate_repository_keys([str(row["repository_key"]) for row in rows])
 
     def set_user_repository_permissions(self, user_id: str, repository_keys: list[str]) -> list[str]:
+        if self.get_user(user_id) is None:
+            raise KeyError(user_id)
         safe_keys = validate_repository_keys(repository_keys)
         now = _utc_now()
         with self.database.connect() as connection:

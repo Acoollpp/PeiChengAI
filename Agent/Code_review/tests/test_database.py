@@ -40,9 +40,9 @@ def test_get_or_create_user_creates_and_updates_by_phone(repository):
 def test_repository_stores_user_repository_permissions(repository):
     user = repository.get_or_create_user(name="alice", phone="13800138000")
 
-    repository.set_user_repository_permissions(user["id"], ["home", "power"])
+    repository.set_user_repository_permissions(user["id"], ["power", "energy", "home", "home"])
 
-    assert repository.list_user_repository_permissions(user["id"]) == ["home", "power"]
+    assert repository.list_user_repository_permissions(user["id"]) == ["energy", "home", "power"]
 
 
 def test_repository_replaces_user_repository_permissions(repository):
@@ -52,6 +52,11 @@ def test_repository_replaces_user_repository_permissions(repository):
     repository.set_user_repository_permissions(user["id"], ["bs"])
 
     assert repository.list_user_repository_permissions(user["id"]) == ["bs"]
+
+
+def test_repository_permissions_require_existing_user(repository):
+    with pytest.raises(KeyError):
+        repository.set_user_repository_permissions("missing-user", ["home"])
 
 
 def test_create_and_get_task_stores_pending_status_and_requester(repository):

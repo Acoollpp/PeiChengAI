@@ -55,6 +55,8 @@ class InMemoryTaskRepository:
         return validate_repository_keys(self.repository_permissions.get(user_id, set()))
 
     def set_user_repository_permissions(self, user_id: str, repository_keys: list[str]) -> list[str]:
+        if user_id not in self.users:
+            raise KeyError(user_id)
         safe_keys = validate_repository_keys(repository_keys)
         self.repository_permissions[user_id] = set(safe_keys)
         return self.list_user_repository_permissions(user_id)
