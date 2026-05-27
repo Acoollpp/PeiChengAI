@@ -46,3 +46,42 @@ def test_validate_svn_url_rejects_prefix_without_path_boundary():
             "https://192.168.0.233/svn/src_home_evil/repo",
             "https://192.168.0.233/svn/src_home",
         )
+
+
+from app.repositories import (
+    PRODUCT_REPOSITORY_KEYS,
+    PUBLIC_REPOSITORY_KEYS,
+    RepositoryAccessError,
+    match_repository_for_url,
+    repositories_for_user,
+)
+
+
+def test_match_repository_for_full_product_url():
+    match = match_repository_for_url(
+        " https://192.168.0.233/svn/src_home/PCB_1447V320/SST22-1404-T "
+    )
+
+    assert match.key == "home"
+    assert match.name == "户储"
+    assert match.url_prefix == "https://192.168.0.233/svn/src_home"
+
+
+def test_match_repository_rejects_similar_prefix():
+    try:
+        match_repository_for_url("https://192.168.0.233/svn/src_home_other/project")
+    except RepositoryAccessError as exc:
+        assert str(exc) == "SVN 地址不属于已配置仓库"
+    else:
+        raise AssertionError("Expected RepositoryAccessError")
+
+
+def test_repositories_for_user_includes_public_and_granted_products():
+    repos = repositories_for_user({"home", "power"})
+    keys = [repo.key for repo in repos]
+
+    assert keys[:2] == list(PUBLIC_REPOSITORY_KEYS)
+    assert "home" in keys
+    assert "power" in keys
+    assert "bs" not in keys
+    assert set(PRODUCT_REPOSITORY_KEYS) >= {"energy", "home", "bs", "moto", "lcd", "linux", "pace_tools", "power"}
