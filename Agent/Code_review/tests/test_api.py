@@ -1,3 +1,9 @@
+from dataclasses import replace
+
+from fastapi.testclient import TestClient
+
+from app.config import settings
+from app.main import create_app
 from app.models import TaskStatus
 
 
@@ -57,8 +63,24 @@ def test_events_requires_login(api_client):
     assert response.status_code == 401
 
 
-def test_admin_phone_login_marks_user_as_admin(api_client):
-    response = login(api_client, name="admin", phone="15866582922")
+def test_admin_phone_login_marks_user_as_admin(
+    api_paths,
+    api_repository,
+    api_scheduler,
+    api_event_bus,
+):
+    custom_settings = replace(settings, admin_phones=("15866582922",))
+    app = create_app(
+        **api_paths,
+        start_worker=False,
+        repo=api_repository,
+        scheduler=api_scheduler,
+        event_bus=api_event_bus,
+        app_settings=custom_settings,
+    )
+
+    with TestClient(app) as client:
+        response = login(client, name="admin", phone="15866582922")
 
     assert response.status_code == 200
     assert response.json()["user"]["is_admin"] is True

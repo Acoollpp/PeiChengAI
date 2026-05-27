@@ -87,7 +87,7 @@ def load_settings() -> Settings:
         worker_id=os.getenv("WORKER_ID", f"worker-{os.getpid()}"),
         redis_lock_ttl_seconds=int(os.getenv("REDIS_LOCK_TTL_SECONDS", "3600")),
         heartbeat_seconds=int(os.getenv("HEARTBEAT_SECONDS", "30")),
-        admin_phones=_parse_csv(os.getenv("ADMIN_PHONES", "15866582922")),
+        admin_phones=_parse_csv(os.getenv("ADMIN_PHONES", "")),
     )
 
 
