@@ -106,6 +106,30 @@ def test_login_page_contains_name_phone_and_submit_controls():
     assert "/api/session" in html
 
 
+def test_login_page_uses_workbench_entry_layout():
+    html = Path("static/login.html").read_text(encoding="utf-8")
+    css = (PROJECT_ROOT / "static" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'class="login-brand"' in html
+    assert 'class="login-status-card"' in html
+    assert 'placeholder="请输入姓名"' in html
+    assert 'placeholder="请输入手机号"' in html
+    assert 'class="login-button"' in html
+    assert ".login-brand {" in css
+    assert ".login-status-card {" in css
+    assert ".login-panel::before {" in css
+
+
+def test_frontend_uses_platform_product_name():
+    login_html = Path("static/login.html").read_text(encoding="utf-8")
+    index_html = Path("static/index.html").read_text(encoding="utf-8")
+
+    assert "代码审查平台" in login_html
+    assert "代码审查平台" in index_html
+    assert "代码审查任务台" not in login_html
+    assert "代码审查任务台" not in index_html
+
+
 def test_task_console_uses_eventsource_and_keeps_layout_markers():
     html = Path("static/index.html").read_text(encoding="utf-8")
     js = Path("static/app.js").read_text(encoding="utf-8")

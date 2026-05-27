@@ -1,6 +1,7 @@
 import subprocess
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import app.codex_runner
 from app.codex_runner import CodexRunner
@@ -17,11 +18,21 @@ Write the report to {report_path}.
 
 
 class FakeRunner:
-    def __init__(self, *, return_code=0, stdout="", stderr="", writes_report=True, error=None):
+    def __init__(
+        self,
+        *,
+        return_code=0,
+        stdout="",
+        stderr="",
+        writes_report=True,
+        report_text="review report",
+        error=None,
+    ):
         self.return_code = return_code
         self.stdout = stdout
         self.stderr = stderr
         self.writes_report = writes_report
+        self.report_text = report_text
         self.error = error
         self.calls = []
 
@@ -31,7 +42,7 @@ class FakeRunner:
             raise self.error
         if self.writes_report:
             report_path = _extract_report_path(prompt)
-            report_path.write_text("review report", encoding="utf-8")
+            report_path.write_text(self.report_text, encoding="utf-8")
         return self.return_code, self.stdout, self.stderr
 
 
@@ -126,6 +137,23 @@ def test_process_one_marks_failed_when_report_is_missing(tmp_path):
     assert updated["status"] == TaskStatus.failed
     assert "报告未生成或为空" in updated["error_message"]
     assert "codex finished without writing report" in updated["error_message"]
+
+
+def test_process_one_marks_failed_when_report_says_materials_unavailable(tmp_path):
+    repository = make_repository(tmp_path)
+    task = create_task(repository)
+    worker = make_worker(
+        tmp_path,
+        repository,
+        FakeRunner(report_text="## 结论\n材料不可用/无法完成代码级审查\n"),
+    )
+
+    processed = worker.process_one()
+
+    updated = repository.get_task(task["id"])
+    assert processed is True
+    assert updated["status"] == TaskStatus.failed
+    assert updated["error_message"] == "材料不可用/无法完成代码级审查"
 
 
 def test_process_one_marks_failed_with_sanitized_truncated_error_on_nonzero_return(tmp_path):
@@ -226,11 +254,19 @@ def test_codex_runner_invokes_subprocess_without_shell(monkeypatch, tmp_path):
 
     monkeypatch.setattr("app.codex_runner._resolve_command", lambda command: command)
 
-    def fake_run(command, **kwargs):
-        calls.append((command, kwargs))
-        return subprocess.CompletedProcess(command, 0, "out", "err")
+    class FakeProcess:
+        returncode = 0
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+        def __init__(self, command, **kwargs):
+            calls.append((command, kwargs))
+
+        def poll(self):
+            return self.returncode
+
+        def communicate(self):
+            return "out", "err"
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
     runner = CodexRunner("codex", ("exec", "--flag"))
 
     result = runner.run("prompt text", tmp_path, 45)
@@ -244,12 +280,57 @@ def test_codex_runner_invokes_subprocess_without_shell(monkeypatch, tmp_path):
                 "text": True,
                 "encoding": "utf-8",
                 "errors": "replace",
-                "capture_output": True,
-                "timeout": 45,
-                "check": False,
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
             },
         )
     ]
+
+
+def test_codex_runner_terminates_when_materials_unavailable_report_is_written(monkeypatch, tmp_path):
+    report_path = tmp_path / "report.md"
+    calls = []
+
+    class FakeProcess:
+        def __init__(self):
+            self.returncode = None
+            self.stdout = SimpleNamespace(read=lambda: "")
+            self.stderr = SimpleNamespace(read=lambda: "")
+
+        def poll(self):
+            if not report_path.exists():
+                report_path.write_text("材料不可用/无法完成代码级审查", encoding="utf-8")
+            return self.returncode
+
+        def terminate(self):
+            calls.append("terminate")
+            self.returncode = 0
+
+        def wait(self, timeout=None):
+            calls.append(("wait", timeout))
+            return self.returncode
+
+        def kill(self):
+            calls.append("kill")
+            self.returncode = -9
+
+        def communicate(self):
+            return "", ""
+
+    monkeypatch.setattr("app.codex_runner._resolve_command", lambda command: command)
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
+
+    runner = CodexRunner("codex", ("exec",))
+    return_code, stdout, stderr = runner.run(
+        f"Write the report to {report_path}.\n",
+        tmp_path,
+        30,
+    )
+
+    assert return_code == 0
+    assert stdout == ""
+    assert stderr == ""
+    assert calls[0] == "terminate"
 
 
 def test_codex_runner_prefers_real_windows_codex_binary(monkeypatch, tmp_path):
@@ -262,11 +343,19 @@ def test_codex_runner_prefers_real_windows_codex_binary(monkeypatch, tmp_path):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setattr("app.codex_runner.shutil.which", lambda command: f"C:\\WindowsApps\\{command}")
 
-    def fake_run(command, **kwargs):
-        calls.append(command)
-        return subprocess.CompletedProcess(command, 0, "out", "err")
+    class FakeProcess:
+        returncode = 0
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+        def __init__(self, command, **kwargs):
+            calls.append(command)
+
+        def poll(self):
+            return self.returncode
+
+        def communicate(self):
+            return "out", "err"
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
     runner = CodexRunner("codex", ("exec",))
 
     runner.run("prompt text", tmp_path, 45)

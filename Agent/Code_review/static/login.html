@@ -8,17 +8,38 @@
 </head>
 <body class="login-page">
   <main class="login-shell">
-    <form id="login-form" class="login-panel">
-      <h1>代码审查任务台</h1>
+    <section class="login-brand" aria-label="代码审查平台介绍">
+      <p class="login-kicker">Code Review Console</p>
+      <h1>代码审查平台</h1>
+      <p class="login-copy">集中提交审查任务、跟踪执行状态，并在同一工作台查看审查报告。</p>
+      <div class="login-status-card">
+        <span class="login-status-dot" aria-hidden="true"></span>
+        <div>
+          <strong>审查服务在线</strong>
+          <span>登录后可创建任务并查看实时进度</span>
+        </div>
+      </div>
+      <div class="login-tags" aria-label="能力标签">
+        <span>SVN 差异审查</span>
+        <span>任务追踪</span>
+        <span>报告预览</span>
+      </div>
+    </section>
+
+    <form id="login-form" class="login-panel" aria-label="登录表单">
+      <div class="login-panel-heading">
+        <p>欢迎回来</p>
+        <h2>进入工作台</h2>
+      </div>
       <label>
         姓名
-        <input name="name" autocomplete="name" required>
+        <input name="name" autocomplete="name" placeholder="请输入姓名" required>
       </label>
       <label>
         手机号
-        <input name="phone" inputmode="tel" autocomplete="tel" required>
+        <input name="phone" inputmode="tel" autocomplete="tel" placeholder="请输入手机号" required>
       </label>
-      <button type="submit">登录</button>
+      <button class="login-button" type="submit">登录</button>
       <p id="login-message" class="form-message"></p>
     </form>
   </main>
@@ -27,6 +48,8 @@
     const message = document.querySelector("#login-message");
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      message.textContent = "";
+      message.classList.remove("is-error");
       const formData = new FormData(form);
       const response = await fetch("/api/session", {
         method: "POST",

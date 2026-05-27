@@ -10,6 +10,7 @@ from typing import Protocol
 
 
 MAX_WORKER_ERROR_LENGTH = 1000
+MATERIALS_UNAVAILABLE_MESSAGE = "材料不可用/无法完成代码级审查"
 
 
 class Runner(Protocol):
@@ -93,6 +94,12 @@ class Worker:
             self._complete_task(user_id, task_id, "failed")
             return True
 
+        report_text = report_path.read_text(encoding="utf-8", errors="replace")
+        if _report_says_materials_unavailable(report_text):
+            self.repo.mark_failed(task_id, MATERIALS_UNAVAILABLE_MESSAGE)
+            self._complete_task(user_id, task_id, "failed")
+            return True
+
         self.repo.mark_success(task_id)
         self._complete_task(user_id, task_id, "success")
         return True
@@ -138,6 +145,15 @@ class WorkerThread:
 def _sanitize_error(message: str) -> str:
     words = ["[redacted]" if _looks_like_env_assignment(word) else word for word in message.split()]
     return " ".join(words)[:MAX_WORKER_ERROR_LENGTH]
+
+
+def _report_says_materials_unavailable(report_text: str) -> bool:
+    normalized = report_text.replace(" ", "")
+    return (
+        MATERIALS_UNAVAILABLE_MESSAGE in normalized
+        or ("材料不可用" in normalized and "无法完成代码级审查" in normalized)
+        or ("SVN" in report_text and "E160013" in report_text and "path not found" in report_text)
+    )
 
 
 def _looks_like_env_assignment(word: str) -> bool:
