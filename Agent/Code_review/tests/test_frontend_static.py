@@ -38,9 +38,258 @@ def run_render_markdown(markdown: str) -> str:
         cwd=PROJECT_ROOT,
         check=True,
         capture_output=True,
+        encoding="utf-8",
         text=True,
     )
     return __import__("base64").b64decode(result.stdout).decode("utf-8")
+
+
+def run_frontend_scenario(scenario: str) -> dict:
+    script = textwrap.dedent(
+        r"""
+        const fs = require("fs");
+        const vm = require("vm");
+
+        class FakeClassList {
+          constructor(classes = "") {
+            this.classes = new Set(classes.split(/\s+/).filter(Boolean));
+          }
+
+          toggle(name, force) {
+            const shouldAdd = force === undefined ? !this.classes.has(name) : Boolean(force);
+            if (shouldAdd) {
+              this.classes.add(name);
+            } else {
+              this.classes.delete(name);
+            }
+            return shouldAdd;
+          }
+
+          contains(name) {
+            return this.classes.has(name);
+          }
+        }
+
+        class FakeElement {
+          constructor(id, { className = "", dataset = {} } = {}) {
+            this.id = id;
+            this.classList = new FakeClassList(className);
+            this.dataset = dataset;
+            this.listeners = {};
+            this.children = [];
+            this.attributes = {};
+            this.textContent = "";
+            this.value = "";
+            this.disabled = false;
+            this.focused = false;
+            this._innerHTML = "";
+          }
+
+          addEventListener(type, handler) {
+            this.listeners[type] = handler;
+          }
+
+          focus() {
+            this.focused = true;
+          }
+
+          removeAttribute(name) {
+            delete this.attributes[name];
+          }
+
+          setAttribute(name, value) {
+            this.attributes[name] = String(value);
+          }
+
+          querySelectorAll(selector) {
+            if (selector === "[data-url-prefix]") {
+              return this.children.filter((child) => child.dataset.urlPrefix !== undefined);
+            }
+            return [];
+          }
+
+          get innerHTML() {
+            return this._innerHTML;
+          }
+
+          set innerHTML(value) {
+            this._innerHTML = String(value);
+            this.children = [];
+            const pattern = /data-url-prefix="([^"]*)"/g;
+            let match;
+            while ((match = pattern.exec(this._innerHTML)) !== null) {
+              this.children.push(new FakeElement("repository-chip", {
+                dataset: { urlPrefix: decodeEntities(match[1]) },
+              }));
+            }
+          }
+        }
+
+        function decodeEntities(value) {
+          return String(value)
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&amp;/g, "&");
+        }
+
+        function response(status, body) {
+          return {
+            ok: status >= 200 && status < 300,
+            status,
+            json: () => Promise.resolve(body),
+            text: () => Promise.resolve(String(body || "")),
+          };
+        }
+
+        async function runScenario(name) {
+          const posts = [];
+          const nodes = new Map();
+          const add = (selector, node) => {
+            nodes.set(selector, node);
+            return node;
+          };
+
+          const form = add("#task-form", new FakeElement("task-form"));
+          const svnUrl = add("#svn-url", new FakeElement("svn-url"));
+          const oldRevision = add("#old-revision", new FakeElement("old-revision"));
+          const newRevision = add("#new-revision", new FakeElement("new-revision"));
+          form.fields = { svn_url: svnUrl, old_revision: oldRevision, new_revision: newRevision };
+          add("#submit-button", new FakeElement("submit-button"));
+          add("#form-message", new FakeElement("form-message"));
+          add("#service-state", new FakeElement("service-state"));
+          add("#current-user", new FakeElement("current-user"));
+          if (name !== "missing-admin-link") {
+            add("#admin-link", new FakeElement("admin-link", { className: "admin-link is-hidden" }));
+          }
+          add("#logout-button", new FakeElement("logout-button"));
+          add("#repository-options", new FakeElement("repository-options"));
+          add("#repository-message", new FakeElement("repository-message"));
+          add("#current-subtitle", new FakeElement("current-subtitle"));
+          add("#task-status", new FakeElement("task-status"));
+          add("#task-input", new FakeElement("task-input"));
+          add("#task-times", new FakeElement("task-times"));
+          add("#task-error", new FakeElement("task-error"));
+          add("#download-link", new FakeElement("download-link"));
+          add("#preview-subtitle", new FakeElement("preview-subtitle"));
+          add("#markdown-preview", new FakeElement("markdown-preview"));
+          add("#recent-list", new FakeElement("recent-list"));
+
+          const context = {
+            document: {
+              querySelector(selector) {
+                return nodes.get(selector) || null;
+              },
+            },
+            window: {
+              location: { href: "" },
+              setTimeout() {},
+              clearTimeout() {},
+            },
+            EventSource: class {
+              constructor(url) {
+                this.url = url;
+                this.listeners = {};
+              }
+              addEventListener(type, handler) {
+                this.listeners[type] = handler;
+              }
+              close() {}
+            },
+            FormData: class {
+              constructor(formElement) {
+                this.formElement = formElement;
+              }
+              get(name) {
+                return this.formElement.fields[name]?.value || "";
+              }
+            },
+            fetch(url, options = {}) {
+              if (url === "/api/session") {
+                return Promise.resolve(response(200, {
+                  authenticated: true,
+                  user: { name: "Alice", phone: "13800138000", is_admin: name === "admin-visible" },
+                }));
+              }
+              if (url === "/api/repositories") {
+                if (name === "repository-failure-submit") {
+                  return Promise.resolve(response(500, { detail: "repository service failed" }));
+                }
+                return Promise.resolve(response(200, [
+                  { name: "Home", url_prefix: "https://svn.example.com/home" },
+                ]));
+              }
+              if (url === "/api/tasks" && options.method === "POST") {
+                posts.push(JSON.parse(options.body));
+                return Promise.resolve(response(200, { task_id: "task-1" }));
+              }
+              if (url === "/api/tasks") {
+                return Promise.resolve(response(200, []));
+              }
+              if (url === "/api/tasks/task-1") {
+                return Promise.resolve(response(200, {
+                  task_id: "task-1",
+                  status: "pending",
+                  svn_url: posts[0]?.svn_url || "",
+                  old_revision: posts[0]?.old_revision || "",
+                  new_revision: posts[0]?.new_revision || "",
+                  requester: "Alice",
+                  created_at: null,
+                  started_at: null,
+                  finished_at: null,
+                  error_message: "",
+                }));
+              }
+              return Promise.resolve(response(404, { detail: `unexpected ${url}` }));
+            },
+            console,
+          };
+          context.window.window = context.window;
+          vm.createContext(context);
+          vm.runInContext(fs.readFileSync("static/app.js", "utf8"), context);
+          await new Promise((resolve) => setImmediate(resolve));
+          await new Promise((resolve) => setImmediate(resolve));
+
+          if (name === "repository-chip") {
+            const chip = nodes.get("#repository-options").querySelectorAll("[data-url-prefix]")[0];
+            chip.listeners.click();
+          }
+          if (name === "repository-failure-submit") {
+            svnUrl.value = "https://svn.example.com/manual/project/trunk";
+            oldRevision.value = "r100";
+            newRevision.value = "r101";
+            await form.listeners.submit({ preventDefault() {} });
+          }
+
+          return {
+            adminHidden: nodes.get("#admin-link")?.classList.contains("is-hidden") ?? null,
+            message: nodes.get("#repository-message").textContent,
+            optionsHtml: nodes.get("#repository-options").innerHTML,
+            svnUrl: svnUrl.value,
+            svnFocused: svnUrl.focused,
+            posts,
+            serviceState: nodes.get("#service-state").textContent,
+          };
+        }
+
+        runScenario(process.argv[1])
+          .then((result) => process.stdout.write(JSON.stringify(result)))
+          .catch((error) => {
+            console.error(error && error.stack ? error.stack : error);
+            process.exit(1);
+          });
+        """
+    )
+    result = subprocess.run(
+        ["node", "-e", script, scenario],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+        text=True,
+    )
+    return json.loads(result.stdout)
 
 
 def test_markdown_preview_renders_common_report_markdown():
@@ -142,31 +391,53 @@ def test_task_console_uses_eventsource_and_keeps_layout_markers():
     assert "loadRecentTasks" in js
 
 
-def test_task_console_keeps_svn_url_input_and_adds_repository_shortcuts():
+def test_repository_load_failure_still_allows_manual_svn_url_submit():
     html = Path("static/index.html").read_text(encoding="utf-8")
-    js = Path("static/app.js").read_text(encoding="utf-8")
     css = (PROJECT_ROOT / "static" / "styles.css").read_text(encoding="utf-8")
+    result = run_frontend_scenario("repository-failure-submit")
 
     assert 'id="svn-url"' in html
     assert 'name="svn_url"' in html
     assert 'id="repository-options"' in html
     assert 'id="repository-message"' in html
-    assert 'fetch("/api/repositories")' in js
-    assert "repository.url_prefix" in js
-    assert "elements.svnUrl.value = repository.url_prefix" in js
-    assert "elements.svnUrl.focus()" in js
     assert ".repository-options" in css
     assert ".repository-chip" in css
+    assert result["optionsHtml"] == ""
+    assert "SVN URL" in result["message"]
+    assert result["posts"] == [
+        {
+            "svn_url": "https://svn.example.com/manual/project/trunk",
+            "old_revision": "r100",
+            "new_revision": "r101",
+            "requester": "",
+        }
+    ]
 
 
-def test_task_console_shows_admin_entry_only_for_admin_session():
+def test_repository_chip_click_writes_original_svn_url_input():
+    result = run_frontend_scenario("repository-chip")
+
+    assert result["svnUrl"] == "https://svn.example.com/home"
+    assert result["svnFocused"] is True
+    assert "前缀" in result["message"]
+
+
+def test_admin_entry_visibility_handles_admin_and_non_admin_sessions():
     html = Path("static/index.html").read_text(encoding="utf-8")
-    js = Path("static/app.js").read_text(encoding="utf-8")
     css = (PROJECT_ROOT / "static" / "styles.css").read_text(encoding="utf-8")
+    non_admin = run_frontend_scenario("non-admin-hidden")
+    admin = run_frontend_scenario("admin-visible")
 
     assert 'id="admin-link"' in html
     assert 'href="/admin"' in html
     assert 'class="admin-link is-hidden"' in html
-    assert "session.user.is_admin" in js
-    assert 'elements.adminLink.classList.toggle("is-hidden", !session.user.is_admin)' in js
     assert ".admin-link.is-hidden" in css
+    assert non_admin["adminHidden"] is True
+    assert admin["adminHidden"] is False
+
+
+def test_admin_entry_visibility_does_not_interrupt_initialization_when_link_missing():
+    result = run_frontend_scenario("missing-admin-link")
+
+    assert result["adminHidden"] is None
+    assert "前缀" in result["message"]

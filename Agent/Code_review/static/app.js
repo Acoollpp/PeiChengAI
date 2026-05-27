@@ -48,7 +48,9 @@ async function initialize() {
   }
   state.currentUser = session.user;
   elements.currentUser.textContent = `${session.user.name} ${session.user.phone}`;
-  elements.adminLink.classList.toggle("is-hidden", !session.user.is_admin);
+  if (elements.adminLink) {
+    elements.adminLink.classList.toggle("is-hidden", !session.user.is_admin);
+  }
   connectEvents();
   await loadRepositories();
   await loadRecentTasks();
