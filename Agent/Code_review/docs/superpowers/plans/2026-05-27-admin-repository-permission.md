@@ -1,41 +1,41 @@
-# Admin Repository Permission Implementation Plan
+# 管理员与 SVN 仓库权限管理实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **给 agentic workers：** 必须使用子技能 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 按任务执行本计划。步骤使用 checkbox（`- [ ]`）语法跟踪进度。
 
-**Goal:** Add temporary platform-side SVN repository permission management with admin pages, user authorization, and usage dashboard.
+**目标：** 在现有代码审查 Web 平台中增加临时 SVN 仓库权限管理能力，包括管理员后台、用户授权、任务提交权限校验和使用情况仪表盘。
 
-**Architecture:** Keep the existing FastAPI plus static frontend architecture. Add a repository catalog module for SVN prefix recognition, extend the repository layer for admin/user permission data, enforce permissions inside task creation, and add a static `/admin` page backed by `/api/admin/*` endpoints.
+**架构：** 保持当前 FastAPI + 静态前端架构不变。新增仓库目录模块负责 SVN 前缀识别，扩展 repository 层保存管理员和仓库权限数据，在任务创建入口做后端强校验，并增加 `/admin` 静态页面与 `/api/admin/*` 管理接口。
 
-**Tech Stack:** Python 3, FastAPI, Pydantic, PostgreSQL through `psycopg`, in-memory test repository, static HTML/CSS/JavaScript, pytest.
+**技术栈：** Python 3、FastAPI、Pydantic、PostgreSQL/psycopg、测试用内存 repository、静态 HTML/CSS/JavaScript、pytest。
 
 ---
 
-## File Structure
+## 文件结构
 
-- Create `app/repositories.py`: repository catalog, URL normalization, URL-to-repository matching, visible repository filtering.
-- Modify `app/config.py`: add `admin_phones`.
-- Modify `app/models.py`: add admin/user/repository request and response models.
-- Modify `app/database.py`: add schema columns, user repository permission methods, admin dashboard queries, repository metadata on tasks.
-- Modify `app/testing.py`: mirror new repository methods for unit/API tests.
-- Modify `app/main.py`: add admin guards, repository list API, admin page route, admin APIs, task permission enforcement.
-- Modify `static/index.html`: add admin entry and available repository helper area.
-- Modify `static/app.js`: render admin entry, load available repositories, keep full SVN URL paste input, support prefix click.
-- Create `static/admin.html`: admin console shell.
-- Create `static/admin.js`: dashboard, user management, repository permission management.
-- Modify `static/styles.css`: styles for repository helper, admin entry, admin console, CSS bar charts.
-- Modify `tests/test_api.py`: backend permission, admin, dashboard tests.
-- Modify `tests/test_frontend_static.py`: static markup and JavaScript behavior marker tests.
-- Modify `tests/test_config.py`: `ADMIN_PHONES` parsing test.
+- 新增 `app/repositories.py`：仓库清单、SVN URL 归属识别、用户可见仓库过滤。
+- 修改 `app/config.py`：增加 `ADMIN_PHONES` 配置解析。
+- 修改 `app/models.py`：增加管理员、用户、仓库、仪表盘相关请求和响应模型。
+- 修改 `app/database.py`：增加用户管理员字段、启用状态、用户仓库权限表、任务仓库元数据、管理员统计查询。
+- 修改 `app/testing.py`：为测试用内存 repository 补齐同样的用户、权限和统计方法。
+- 修改 `app/main.py`：增加管理员守卫、仓库列表 API、管理员页面路由、管理 API、任务提交权限校验。
+- 修改 `static/index.html`：增加管理员入口和“可用仓库”辅助区域。
+- 修改 `static/app.js`：根据 session 展示管理员入口，加载可用仓库，保留完整 SVN URL 粘贴输入，并支持点击仓库前缀填入。
+- 新增 `static/admin.html`：管理员后台页面骨架。
+- 新增 `static/admin.js`：仪表盘、账号管理、仓库权限管理交互。
+- 修改 `static/styles.css`：增加任务台仓库辅助区、管理员入口、后台页面、CSS 图表样式。
+- 修改 `tests/test_api.py`：增加管理员、权限、仪表盘、仓库列表 API 测试。
+- 修改 `tests/test_frontend_static.py`：增加静态页面关键标记测试。
+- 修改 `tests/test_config.py`：增加 `ADMIN_PHONES` 解析测试。
 
-## Task 1: Repository Catalog And URL Matching
+## 任务 1：新增 SVN 仓库清单与 URL 识别
 
-**Files:**
-- Create: `app/repositories.py`
-- Test: `tests/test_validation.py`
+**文件：**
+- 新增：`app/repositories.py`
+- 测试：`tests/test_validation.py`
 
-- [ ] **Step 1: Write failing repository catalog tests**
+- [ ] **步骤 1：先写失败测试**
 
-Append these tests to `tests/test_validation.py`:
+在 `tests/test_validation.py` 末尾追加：
 
 ```python
 from app.repositories import (
@@ -77,19 +77,19 @@ def test_repositories_for_user_includes_public_and_granted_products():
     assert set(PRODUCT_REPOSITORY_KEYS) >= {"energy", "home", "bs", "moto", "lcd", "linux", "pace_tools", "power"}
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_validation.py -v
 ```
 
-Expected: FAIL because `app.repositories` does not exist.
+预期：失败，原因是 `app.repositories` 尚不存在。
 
-- [ ] **Step 3: Implement repository catalog**
+- [ ] **步骤 3：实现仓库清单模块**
 
-Create `app/repositories.py`:
+创建 `app/repositories.py`：
 
 ```python
 from __future__ import annotations
@@ -148,40 +148,44 @@ def repositories_for_user(granted_keys: set[str]) -> list[RepositoryDefinition]:
 
 
 def validate_repository_keys(repository_keys: list[str] | set[str]) -> list[str]:
-    unknown = sorted(set(repository_keys) - set(PRODUCT_REPOSITORY_KEYS))
+    requested = set(repository_keys)
+    unknown = sorted(requested - set(PRODUCT_REPOSITORY_KEYS))
     if unknown:
         raise RepositoryAccessError(f"未知产品仓库: {', '.join(unknown)}")
-    return [key for key in PRODUCT_REPOSITORY_KEYS if key in set(repository_keys)]
+    return [key for key in PRODUCT_REPOSITORY_KEYS if key in requested]
 ```
 
-- [ ] **Step 4: Run catalog tests**
+- [ ] **步骤 4：运行仓库清单测试**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_validation.py -v
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```powershell
 git add app/repositories.py tests/test_validation.py
 git commit -m "feat: add svn repository catalog"
 ```
 
-## Task 2: Config And Session User Model
+## 任务 2：增加管理员手机号配置与用户响应字段
 
-**Files:**
-- Modify: `app/config.py`
-- Modify: `app/models.py`
-- Test: `tests/test_config.py`
-- Test: `tests/test_api.py`
+**文件：**
+- 修改：`app/config.py`
+- 修改：`app/models.py`
+- 修改：`app/database.py`
+- 修改：`app/testing.py`
+- 修改：`app/main.py`
+- 测试：`tests/test_config.py`
+- 测试：`tests/test_api.py`
 
-- [ ] **Step 1: Write failing config and session tests**
+- [ ] **步骤 1：先写失败测试**
 
-Append to `tests/test_config.py`:
+在 `tests/test_config.py` 追加：
 
 ```python
 def test_admin_phones_are_parsed_from_environment(monkeypatch, tmp_path):
@@ -195,7 +199,7 @@ def test_admin_phones_are_parsed_from_environment(monkeypatch, tmp_path):
     assert loaded.admin_phones == ("15866582922", "13800138000")
 ```
 
-Append to `tests/test_api.py`:
+在 `tests/test_api.py` 追加：
 
 ```python
 def test_admin_phone_login_marks_user_as_admin(api_client):
@@ -206,40 +210,40 @@ def test_admin_phone_login_marks_user_as_admin(api_client):
     assert response.json()["user"]["is_active"] is True
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_config.py::test_admin_phones_are_parsed_from_environment tests/test_api.py::test_admin_phone_login_marks_user_as_admin -v
 ```
 
-Expected: FAIL because `admin_phones`, `is_admin`, and `is_active` are not implemented.
+预期：失败，因为还没有 `admin_phones`、`is_admin`、`is_active`。
 
-- [ ] **Step 3: Add config field**
+- [ ] **步骤 3：增加配置字段**
 
-In `app/config.py`, add `admin_phones` to `Settings`:
+在 `app/config.py` 的 `Settings` 中增加：
 
 ```python
     admin_phones: tuple[str, ...]
 ```
 
-Add helper:
+增加解析函数：
 
 ```python
 def _parse_csv(value: str) -> tuple[str, ...]:
     return tuple(part.strip() for part in value.split(",") if part.strip())
 ```
 
-In `load_settings()`, add:
+在 `load_settings()` 返回 `Settings(...)` 时增加：
 
 ```python
         admin_phones=_parse_csv(os.getenv("ADMIN_PHONES", "")),
 ```
 
-- [ ] **Step 4: Extend user response model**
+- [ ] **步骤 4：扩展用户响应模型**
 
-In `app/models.py`, update `UserResponse`:
+在 `app/models.py` 中更新 `UserResponse`：
 
 ```python
 class UserResponse(BaseModel):
@@ -250,24 +254,16 @@ class UserResponse(BaseModel):
     is_active: bool = True
 ```
 
-- [ ] **Step 5: Make in-memory users carry admin and active flags**
+- [ ] **步骤 5：扩展测试用内存用户**
 
-In `app/testing.py`, update new user dict in `get_or_create_user`:
+在 `app/testing.py` 的新用户 dict 中加入：
 
 ```python
-        user = {
-            "id": str(uuid.uuid4()),
-            "name": name,
-            "phone": phone,
             "is_admin": False,
             "is_active": True,
-            "created_at": now,
-            "updated_at": now,
-            "last_seen_at": now,
-        }
 ```
 
-When returning existing user, preserve those fields. Add method:
+并增加方法：
 
 ```python
     def set_user_admin_if_phone_matches(self, phone: str, admin_phones: tuple[str, ...]) -> None:
@@ -277,16 +273,16 @@ When returning existing user, preserve those fields. Add method:
                 user["updated_at"] = _utc_now()
 ```
 
-- [ ] **Step 6: Make PostgreSQL users carry admin and active flags**
+- [ ] **步骤 6：扩展 PostgreSQL 用户表**
 
-In `app/database.py`, add columns in `init_schema()` after `users` table creation:
+在 `app/database.py` 的 `init_schema()` 中创建 `users` 表后追加：
 
 ```python
             connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE")
             connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE")
 ```
 
-Add method:
+增加方法：
 
 ```python
     def set_user_admin_if_phone_matches(self, phone: str, admin_phones: tuple[str, ...]) -> None:
@@ -305,16 +301,16 @@ Add method:
             )
 ```
 
-- [ ] **Step 7: Update session creation and response mapping**
+- [ ] **步骤 7：登录时自动标记管理员**
 
-In `app/main.py`, after `user = repo.get_or_create_user(...)`, add:
+在 `app/main.py` 的 `create_session()` 中，`repo.get_or_create_user(...)` 后增加：
 
 ```python
         repo.set_user_admin_if_phone_matches(phone, app_settings.admin_phones)
         user = repo.get_user(user["id"]) or user
 ```
 
-Update `_to_user_response`:
+更新 `_to_user_response`：
 
 ```python
 def _to_user_response(user: dict[str, Any]) -> UserResponse:
@@ -327,33 +323,33 @@ def _to_user_response(user: dict[str, Any]) -> UserResponse:
     )
 ```
 
-- [ ] **Step 8: Run focused tests**
+- [ ] **步骤 8：运行聚焦测试**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_config.py::test_admin_phones_are_parsed_from_environment tests/test_api.py::test_admin_phone_login_marks_user_as_admin -v
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 9: Commit**
+- [ ] **步骤 9：提交**
 
 ```powershell
 git add app/config.py app/models.py app/database.py app/testing.py app/main.py tests/test_config.py tests/test_api.py
 git commit -m "feat: add admin identity flags"
 ```
 
-## Task 3: Repository Permissions In Repository Layer
+## 任务 3：增加用户仓库权限存储
 
-**Files:**
-- Modify: `app/database.py`
-- Modify: `app/testing.py`
-- Test: `tests/test_database.py`
+**文件：**
+- 修改：`app/database.py`
+- 修改：`app/testing.py`
+- 测试：`tests/test_database.py`
 
-- [ ] **Step 1: Write failing repository-layer tests**
+- [ ] **步骤 1：先写失败测试**
 
-Append to `tests/test_database.py`:
+在 `tests/test_database.py` 追加：
 
 ```python
 def test_repository_stores_user_repository_permissions(repository):
@@ -373,25 +369,25 @@ def test_repository_replaces_user_repository_permissions(repository):
     assert repository.list_user_repository_permissions(user["id"]) == ["bs"]
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_database.py::test_repository_stores_user_repository_permissions tests/test_database.py::test_repository_replaces_user_repository_permissions -v
 ```
 
-Expected: FAIL because permission methods do not exist.
+预期：失败，因为权限方法尚不存在。
 
-- [ ] **Step 3: Add PostgreSQL permission table and methods**
+- [ ] **步骤 3：实现 PostgreSQL 权限表与方法**
 
-In `app/database.py`, import:
+在 `app/database.py` 增加导入：
 
 ```python
 from app.repositories import validate_repository_keys
 ```
 
-In `init_schema()`, add:
+在 `init_schema()` 中增加：
 
 ```python
             connection.execute(
@@ -406,7 +402,7 @@ In `init_schema()`, add:
             )
 ```
 
-Add methods:
+增加方法：
 
 ```python
     def list_user_repository_permissions(self, user_id: str) -> list[str]:
@@ -441,21 +437,21 @@ Add methods:
         return self.list_user_repository_permissions(user_id)
 ```
 
-- [ ] **Step 4: Add in-memory permission methods**
+- [ ] **步骤 4：实现内存 repository 权限方法**
 
-In `app/testing.py`, add `self.repository_permissions` in `__init__`:
+在 `app/testing.py` 的 `__init__` 中增加：
 
 ```python
         self.repository_permissions: dict[str, set[str]] = {}
 ```
 
-Import:
+增加导入：
 
 ```python
 from app.repositories import validate_repository_keys
 ```
 
-Add methods:
+增加方法：
 
 ```python
     def list_user_repository_permissions(self, user_id: str) -> list[str]:
@@ -467,35 +463,35 @@ Add methods:
         return self.list_user_repository_permissions(user_id)
 ```
 
-- [ ] **Step 5: Run repository tests**
+- [ ] **步骤 5：运行 repository 测试**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_database.py::test_repository_stores_user_repository_permissions tests/test_database.py::test_repository_replaces_user_repository_permissions -v
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```powershell
 git add app/database.py app/testing.py tests/test_database.py
 git commit -m "feat: store repository permissions"
 ```
 
-## Task 4: Enforce Repository Permissions On Task Creation
+## 任务 4：任务提交时强制校验仓库权限
 
-**Files:**
-- Modify: `app/models.py`
-- Modify: `app/database.py`
-- Modify: `app/testing.py`
-- Modify: `app/main.py`
-- Test: `tests/test_api.py`
+**文件：**
+- 修改：`app/models.py`
+- 修改：`app/database.py`
+- 修改：`app/testing.py`
+- 修改：`app/main.py`
+- 测试：`tests/test_api.py`
 
-- [ ] **Step 1: Write failing API permission tests**
+- [ ] **步骤 1：先写失败测试**
 
-Append to `tests/test_api.py`:
+在 `tests/test_api.py` 追加：
 
 ```python
 PUBLIC_SVN_URL = "https://192.168.0.233/svn/documents/spec.md"
@@ -533,83 +529,73 @@ def test_product_repository_task_is_allowed_when_granted(api_client, api_reposit
     assert task["repository_name"] == "户储"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_api.py::test_public_repository_task_is_allowed_for_any_logged_in_user tests/test_api.py::test_product_repository_task_requires_permission tests/test_api.py::test_product_repository_task_is_allowed_when_granted -v
 ```
 
-Expected: FAIL because task creation does not enforce repository permissions.
+预期：失败，因为任务创建尚未校验仓库权限。
 
-- [ ] **Step 3: Extend task model responses**
+- [ ] **步骤 3：扩展任务响应模型**
 
-In `app/models.py`, add optional fields to `TaskResponse`:
+在 `app/models.py` 的 `TaskResponse` 中增加：
 
 ```python
     repository_key: str | None = None
     repository_name: str | None = None
 ```
 
-- [ ] **Step 4: Add task repository metadata fields**
+- [ ] **步骤 4：任务表增加仓库元数据**
 
-In `app/database.py`, add columns in `init_schema()`:
+在 `app/database.py` 的 `init_schema()` 中增加：
 
 ```python
             connection.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS repository_key TEXT")
             connection.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS repository_name TEXT")
 ```
 
-Update `create_task` signature:
+更新 `create_task` 签名：
 
 ```python
         repository_key: str | None = None,
         repository_name: str | None = None,
 ```
 
-Update INSERT column list to include `repository_key, repository_name`, and values:
-
-```sql
-                    repository_key, repository_name
-```
-
-```sql
-                    %(repository_key)s, %(repository_name)s
-```
-
-Add parameters:
+在 INSERT 中加入 `repository_key`、`repository_name`，并传入参数：
 
 ```python
                     "repository_key": repository_key,
                     "repository_name": repository_name,
 ```
 
-- [ ] **Step 5: Add in-memory task metadata fields**
+- [ ] **步骤 5：内存 task 增加仓库元数据**
 
-In `app/testing.py`, update `create_task` signature with:
+在 `app/testing.py` 的 `create_task` 签名中增加：
 
 ```python
         repository_key: str | None = None,
         repository_name: str | None = None,
 ```
 
-Add fields to task dict:
+在 task dict 中增加：
 
 ```python
             "repository_key": repository_key,
             "repository_name": repository_name,
 ```
 
-- [ ] **Step 6: Enforce permissions in task creation**
+- [ ] **步骤 6：任务创建入口增加权限校验**
 
-In `app/main.py`, import:
+在 `app/main.py` 增加导入：
 
 ```python
 from app.repositories import RepositoryAccessError, match_repository_for_url, repositories_for_user
 ```
 
-Inside `create_task`, after revision validation and before `old_revision == new_revision`:
+在 `create_task()` 中，规范化版本号后、比较新旧版本号前增加：
 
 ```python
         try:
@@ -622,73 +608,73 @@ Inside `create_task`, after revision validation and before `old_revision == new_
             raise HTTPException(status_code=403, detail="当前用户没有该 SVN 仓库权限")
 ```
 
-Pass metadata to `repo.create_task`:
+创建任务时传入：
 
 ```python
             repository_key=repository.key,
             repository_name=repository.name,
 ```
 
-Update `_to_task_response`:
+更新 `_to_task_response()`：
 
 ```python
         repository_key=task.get("repository_key"),
         repository_name=task.get("repository_name"),
 ```
 
-- [ ] **Step 7: Keep old prefix validation compatible**
+- [ ] **步骤 7：兼容完整 SVN URL 输入**
 
-In `app/main.py`, replace:
+在 `app/main.py` 中，把旧逻辑：
 
 ```python
             svn_url = validate_svn_url(request.svn_url, app_settings.svn_allowed_prefix)
 ```
 
-with:
+替换为：
 
 ```python
             svn_url = request.svn_url.strip()
 ```
 
-Keep revision normalization in the same `try`. Remove unused `validate_svn_url` import if no longer used.
+如果 `validate_svn_url` 不再使用，移除对应导入。
 
-- [ ] **Step 8: Run focused API tests**
+- [ ] **步骤 8：运行聚焦 API 测试**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_api.py::test_public_repository_task_is_allowed_for_any_logged_in_user tests/test_api.py::test_product_repository_task_requires_permission tests/test_api.py::test_product_repository_task_is_allowed_when_granted -v
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 9: Run existing task API tests and adjust fixtures**
+- [ ] **步骤 9：运行现有 API 测试并修正测试数据**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_api.py -v
 ```
 
-Expected: tests using `VALID_SVN_URL` may need repository permission. Update helper `create_logged_in_task` or individual tests to grant `home` before submitting product repository tasks, or change `VALID_SVN_URL` to a public repository URL where the specific test is not about product permissions.
+预期：部分使用 `VALID_SVN_URL` 的旧测试可能因为产品仓库未授权失败。处理方式是：与产品权限无关的测试改用公共仓库 URL；需要产品仓库的测试在提交前给用户授予 `home` 权限。
 
-- [ ] **Step 10: Commit**
+- [ ] **步骤 10：提交**
 
 ```powershell
 git add app/models.py app/database.py app/testing.py app/main.py tests/test_api.py
 git commit -m "feat: enforce svn repository permissions"
 ```
 
-## Task 5: Available Repository API
+## 任务 5：提供当前用户可用仓库 API
 
-**Files:**
-- Modify: `app/models.py`
-- Modify: `app/main.py`
-- Test: `tests/test_api.py`
+**文件：**
+- 修改：`app/models.py`
+- 修改：`app/main.py`
+- 测试：`tests/test_api.py`
 
-- [ ] **Step 1: Write failing API tests**
+- [ ] **步骤 1：先写失败测试**
 
-Append to `tests/test_api.py`:
+在 `tests/test_api.py` 追加：
 
 ```python
 def test_get_repositories_returns_public_and_granted_repositories(api_client, api_repository):
@@ -713,19 +699,19 @@ def test_get_repositories_requires_login(api_client):
     assert response.status_code == 401
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_api.py::test_get_repositories_returns_public_and_granted_repositories tests/test_api.py::test_get_repositories_requires_login -v
 ```
 
-Expected: FAIL because `/api/repositories` does not exist.
+预期：失败，因为 `/api/repositories` 不存在。
 
-- [ ] **Step 3: Add response model**
+- [ ] **步骤 3：增加响应模型**
 
-In `app/models.py`, add:
+在 `app/models.py` 增加：
 
 ```python
 class RepositoryResponse(BaseModel):
@@ -735,9 +721,9 @@ class RepositoryResponse(BaseModel):
     is_public: bool
 ```
 
-- [ ] **Step 4: Add API endpoint**
+- [ ] **步骤 4：增加 API**
 
-In `app/main.py`, import `RepositoryResponse`. Add helper:
+在 `app/main.py` 导入 `RepositoryResponse`，并增加 helper：
 
 ```python
 def _to_repository_response(repository) -> RepositoryResponse:
@@ -749,7 +735,7 @@ def _to_repository_response(repository) -> RepositoryResponse:
     )
 ```
 
-Add endpoint:
+增加 endpoint：
 
 ```python
     @app.get("/api/repositories", response_model=list[RepositoryResponse])
@@ -759,35 +745,35 @@ Add endpoint:
         return [_to_repository_response(item) for item in repositories_for_user(granted_keys)]
 ```
 
-- [ ] **Step 5: Run focused tests**
+- [ ] **步骤 5：运行聚焦测试**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_api.py::test_get_repositories_returns_public_and_granted_repositories tests/test_api.py::test_get_repositories_requires_login -v
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```powershell
 git add app/models.py app/main.py tests/test_api.py
 git commit -m "feat: expose available repositories"
 ```
 
-## Task 6: Admin User APIs
+## 任务 6：增加管理员账号管理 API
 
-**Files:**
-- Modify: `app/models.py`
-- Modify: `app/database.py`
-- Modify: `app/testing.py`
-- Modify: `app/main.py`
-- Test: `tests/test_api.py`
+**文件：**
+- 修改：`app/models.py`
+- 修改：`app/database.py`
+- 修改：`app/testing.py`
+- 修改：`app/main.py`
+- 测试：`tests/test_api.py`
 
-- [ ] **Step 1: Write failing admin user API tests**
+- [ ] **步骤 1：先写失败测试**
 
-Append to `tests/test_api.py`:
+在 `tests/test_api.py` 追加：
 
 ```python
 def login_admin(client):
@@ -845,19 +831,19 @@ def test_admin_can_update_user(api_client):
     assert response.json()["is_active"] is False
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_api.py::test_admin_users_requires_admin tests/test_api.py::test_admin_can_create_and_list_users tests/test_api.py::test_admin_create_user_rejects_duplicate_phone tests/test_api.py::test_admin_can_update_user -v
 ```
 
-Expected: FAIL because admin APIs do not exist.
+预期：失败，因为管理 API 不存在。
 
-- [ ] **Step 3: Add admin request/response models**
+- [ ] **步骤 3：增加管理用户模型**
 
-In `app/models.py`, add:
+在 `app/models.py` 增加：
 
 ```python
 class AdminUserCreateRequest(BaseModel):
@@ -882,9 +868,9 @@ class AdminUserResponse(BaseModel):
     task_count: int = 0
 ```
 
-- [ ] **Step 4: Add repository methods for users**
+- [ ] **步骤 4：增加 repository 用户管理方法**
 
-In `app/database.py`, add:
+在 `app/database.py` 增加：
 
 ```python
     def list_users_with_task_counts(self) -> list[dict[str, Any]]:
@@ -933,11 +919,11 @@ In `app/database.py`, add:
         return dict(row) if row is not None else None
 ```
 
-Add equivalent methods in `app/testing.py`.
+在 `app/testing.py` 增加等价方法，使用 `self.users` 和 `self.tasks` 完成同样行为。
 
-- [ ] **Step 5: Add admin guards and APIs**
+- [ ] **步骤 5：增加管理员守卫和 API**
 
-In `app/main.py`, import admin models. Add guard:
+在 `app/main.py` 增加管理员模型导入，并在 `create_app()` 内增加：
 
 ```python
     def current_admin_user(request: Request) -> dict[str, Any]:
@@ -947,14 +933,14 @@ In `app/main.py`, import admin models. Add guard:
         return user
 ```
 
-Update `current_user` to reject inactive users:
+在 `current_user()` 中增加停用账号检查：
 
 ```python
         if not user.get("is_active", True):
             raise HTTPException(status_code=403, detail="Account is disabled")
 ```
 
-Add helper:
+增加响应转换：
 
 ```python
 def _to_admin_user_response(user: dict[str, Any]) -> AdminUserResponse:
@@ -968,7 +954,7 @@ def _to_admin_user_response(user: dict[str, Any]) -> AdminUserResponse:
     )
 ```
 
-Add endpoints:
+增加 endpoints：
 
 ```python
     @app.get("/api/admin/users", response_model=list[AdminUserResponse])
@@ -1007,33 +993,33 @@ Add endpoints:
         return _to_admin_user_response(user)
 ```
 
-- [ ] **Step 6: Run focused admin user tests**
+- [ ] **步骤 6：运行聚焦测试**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_api.py::test_admin_users_requires_admin tests/test_api.py::test_admin_can_create_and_list_users tests/test_api.py::test_admin_create_user_rejects_duplicate_phone tests/test_api.py::test_admin_can_update_user -v
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 7: Commit**
+- [ ] **步骤 7：提交**
 
 ```powershell
 git add app/models.py app/database.py app/testing.py app/main.py tests/test_api.py
 git commit -m "feat: add admin user management api"
 ```
 
-## Task 7: Admin Repository Permission APIs
+## 任务 7：增加管理员仓库权限 API
 
-**Files:**
-- Modify: `app/models.py`
-- Modify: `app/main.py`
-- Test: `tests/test_api.py`
+**文件：**
+- 修改：`app/models.py`
+- 修改：`app/main.py`
+- 测试：`tests/test_api.py`
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **步骤 1：先写失败测试**
 
-Append to `tests/test_api.py`:
+在 `tests/test_api.py` 追加：
 
 ```python
 def test_admin_can_get_and_set_user_repository_permissions(api_client):
@@ -1070,19 +1056,19 @@ def test_admin_repository_permissions_reject_unknown_key(api_client):
     assert response.status_code == 400
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_api.py::test_admin_can_get_and_set_user_repository_permissions tests/test_api.py::test_admin_repository_permissions_reject_unknown_key -v
 ```
 
-Expected: FAIL because endpoints do not exist.
+预期：失败，因为 endpoints 不存在。
 
-- [ ] **Step 3: Add models**
+- [ ] **步骤 3：增加模型**
 
-In `app/models.py`, add:
+在 `app/models.py` 增加：
 
 ```python
 class RepositoryPermissionUpdateRequest(BaseModel):
@@ -1094,9 +1080,9 @@ class RepositoryPermissionResponse(BaseModel):
     repository_keys: list[str]
 ```
 
-- [ ] **Step 4: Add endpoints**
+- [ ] **步骤 4：增加 endpoints**
 
-In `app/main.py`, import `RepositoryAccessError`, `RepositoryPermissionResponse`, and `RepositoryPermissionUpdateRequest`. Add:
+在 `app/main.py` 导入 `RepositoryAccessError`、`RepositoryPermissionResponse`、`RepositoryPermissionUpdateRequest`，并增加：
 
 ```python
     @app.get("/api/admin/users/{user_id}/repositories", response_model=RepositoryPermissionResponse)
@@ -1125,35 +1111,35 @@ In `app/main.py`, import `RepositoryAccessError`, `RepositoryPermissionResponse`
         return RepositoryPermissionResponse(user_id=user_id, repository_keys=repository_keys)
 ```
 
-- [ ] **Step 5: Run focused tests**
+- [ ] **步骤 5：运行聚焦测试**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_api.py::test_admin_can_get_and_set_user_repository_permissions tests/test_api.py::test_admin_repository_permissions_reject_unknown_key -v
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```powershell
 git add app/models.py app/main.py tests/test_api.py
 git commit -m "feat: add admin repository permission api"
 ```
 
-## Task 8: Admin Dashboard API
+## 任务 8：增加管理员仪表盘 API
 
-**Files:**
-- Modify: `app/models.py`
-- Modify: `app/database.py`
-- Modify: `app/testing.py`
-- Modify: `app/main.py`
-- Test: `tests/test_api.py`
+**文件：**
+- 修改：`app/models.py`
+- 修改：`app/database.py`
+- 修改：`app/testing.py`
+- 修改：`app/main.py`
+- 测试：`tests/test_api.py`
 
-- [ ] **Step 1: Write failing dashboard tests**
+- [ ] **步骤 1：先写失败测试**
 
-Append to `tests/test_api.py`:
+在 `tests/test_api.py` 追加：
 
 ```python
 def test_admin_dashboard_contains_user_usage_chart_data(api_client, api_repository):
@@ -1179,19 +1165,19 @@ def test_admin_dashboard_contains_user_usage_chart_data(api_client, api_reposito
     assert any(item["repository_key"] == "home" and item["task_count"] == 2 for item in body["repository_usage"])
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_api.py::test_admin_dashboard_contains_user_usage_chart_data -v
 ```
 
-Expected: FAIL because dashboard API does not exist.
+预期：失败，因为仪表盘 API 不存在。
 
-- [ ] **Step 3: Add dashboard models**
+- [ ] **步骤 3：增加仪表盘模型**
 
-In `app/models.py`, add:
+在 `app/models.py` 增加：
 
 ```python
 class UserUsageResponse(BaseModel):
@@ -1219,9 +1205,9 @@ class AdminDashboardResponse(BaseModel):
     recent_tasks: list[TaskResponse]
 ```
 
-- [ ] **Step 4: Add dashboard repository method**
+- [ ] **步骤 4：增加仪表盘 repository 方法**
 
-In `app/testing.py`, implement with in-memory loops:
+在 `app/testing.py` 中用内存循环实现：
 
 ```python
     def get_admin_dashboard(self) -> dict[str, Any]:
@@ -1258,7 +1244,7 @@ In `app/testing.py`, implement with in-memory loops:
         }
 ```
 
-For `app/database.py`, use SQL queries with the same return keys. Use `CURRENT_DATE` for `today_task_total` and group by `repository_key, repository_name`.
+在 `app/database.py` 中用 SQL 实现同样返回结构：
 
 ```python
     def get_admin_dashboard(self) -> dict[str, Any]:
@@ -1347,9 +1333,9 @@ For `app/database.py`, use SQL queries with the same return keys. Use `CURRENT_D
         }
 ```
 
-- [ ] **Step 5: Add dashboard endpoint**
+- [ ] **步骤 5：增加仪表盘 endpoint**
 
-In `app/main.py`, import `AdminDashboardResponse`, `RepositoryUsageResponse`, and `UserUsageResponse`. Add:
+在 `app/main.py` 导入 `AdminDashboardResponse`、`RepositoryUsageResponse`、`UserUsageResponse`，并增加：
 
 ```python
     @app.get("/api/admin/dashboard", response_model=AdminDashboardResponse)
@@ -1369,34 +1355,34 @@ In `app/main.py`, import `AdminDashboardResponse`, `RepositoryUsageResponse`, an
         )
 ```
 
-- [ ] **Step 6: Run dashboard test**
+- [ ] **步骤 6：运行仪表盘测试**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_api.py::test_admin_dashboard_contains_user_usage_chart_data -v
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 7: Commit**
+- [ ] **步骤 7：提交**
 
 ```powershell
 git add app/models.py app/database.py app/testing.py app/main.py tests/test_api.py
 git commit -m "feat: add admin dashboard api"
 ```
 
-## Task 9: Task Console Frontend Repository Helper And Admin Entry
+## 任务 9：任务台前端增加仓库辅助区和管理员入口
 
-**Files:**
-- Modify: `static/index.html`
-- Modify: `static/app.js`
-- Modify: `static/styles.css`
-- Test: `tests/test_frontend_static.py`
+**文件：**
+- 修改：`static/index.html`
+- 修改：`static/app.js`
+- 修改：`static/styles.css`
+- 测试：`tests/test_frontend_static.py`
 
-- [ ] **Step 1: Write failing frontend static tests**
+- [ ] **步骤 1：先写失败测试**
 
-Append to `tests/test_frontend_static.py`:
+在 `tests/test_frontend_static.py` 追加：
 
 ```python
 def test_task_console_has_admin_entry_and_repository_helper():
@@ -1410,25 +1396,25 @@ def test_task_console_has_admin_entry_and_repository_helper():
     assert 'session.user.is_admin' in js
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_frontend_static.py::test_task_console_has_admin_entry_and_repository_helper -v
 ```
 
-Expected: FAIL because admin link and repository helper do not exist.
+预期：失败，因为页面还没有管理员入口和仓库辅助区。
 
-- [ ] **Step 3: Add admin link and repository helper markup**
+- [ ] **步骤 3：增加页面标记**
 
-In `static/index.html`, inside `.user-strip`, add before logout button:
+在 `static/index.html` 的 `.user-strip` 内、退出按钮前增加：
 
 ```html
           <a id="admin-link" class="admin-link is-hidden" href="/admin">管理后台</a>
 ```
 
-After SVN URL input, add:
+在 SVN URL 输入框下方增加：
 
 ```html
           <div class="repository-helper">
@@ -1437,9 +1423,9 @@ After SVN URL input, add:
           </div>
 ```
 
-- [ ] **Step 4: Add JavaScript behavior**
+- [ ] **步骤 4：增加前端交互**
 
-In `static/app.js`, add elements:
+在 `static/app.js` 的 `elements` 中增加：
 
 ```javascript
   adminLink: document.querySelector("#admin-link"),
@@ -1447,14 +1433,14 @@ In `static/app.js`, add elements:
   repositoryOptions: document.querySelector("#repository-options"),
 ```
 
-In `initialize()`, after setting user text:
+在 `initialize()` 设置当前用户后增加：
 
 ```javascript
   elements.adminLink.classList.toggle("is-hidden", !session.user.is_admin);
   await loadRepositories();
 ```
 
-Add functions:
+增加函数：
 
 ```javascript
 async function loadRepositories() {
@@ -1489,9 +1475,9 @@ function renderRepositories(repositories) {
 }
 ```
 
-- [ ] **Step 5: Add CSS**
+- [ ] **步骤 5：增加样式**
 
-In `static/styles.css`, add:
+在 `static/styles.css` 增加：
 
 ```css
 .admin-link {
@@ -1543,36 +1529,36 @@ In `static/styles.css`, add:
 }
 ```
 
-- [ ] **Step 6: Run frontend static test**
+- [ ] **步骤 6：运行前端静态测试**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_frontend_static.py::test_task_console_has_admin_entry_and_repository_helper -v
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 7: Commit**
+- [ ] **步骤 7：提交**
 
 ```powershell
 git add static/index.html static/app.js static/styles.css tests/test_frontend_static.py
 git commit -m "feat: show repository helper on task console"
 ```
 
-## Task 10: Admin Static Page
+## 任务 10：新增管理员后台静态页面
 
-**Files:**
-- Create: `static/admin.html`
-- Create: `static/admin.js`
-- Modify: `static/styles.css`
-- Modify: `app/main.py`
-- Test: `tests/test_api.py`
-- Test: `tests/test_frontend_static.py`
+**文件：**
+- 新增：`static/admin.html`
+- 新增：`static/admin.js`
+- 修改：`static/styles.css`
+- 修改：`app/main.py`
+- 测试：`tests/test_api.py`
+- 测试：`tests/test_frontend_static.py`
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **步骤 1：先写失败测试**
 
-Append to `tests/test_api.py`:
+在 `tests/test_api.py` 追加：
 
 ```python
 def test_admin_page_is_served(api_client):
@@ -1582,7 +1568,7 @@ def test_admin_page_is_served(api_client):
     assert "admin-app" in response.text
 ```
 
-Append to `tests/test_frontend_static.py`:
+在 `tests/test_frontend_static.py` 追加：
 
 ```python
 def test_admin_page_contains_dashboard_users_permissions_and_usage_chart():
@@ -1598,19 +1584,19 @@ def test_admin_page_contains_dashboard_users_permissions_and_usage_chart():
     assert 'savePermissions' in js
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_api.py::test_admin_page_is_served tests/test_frontend_static.py::test_admin_page_contains_dashboard_users_permissions_and_usage_chart -v
 ```
 
-Expected: FAIL because admin page files and route do not exist.
+预期：失败，因为管理员页面文件和路由不存在。
 
-- [ ] **Step 3: Add `/admin` route**
+- [ ] **步骤 3：增加 `/admin` 路由**
 
-In `app/main.py`, add:
+在 `app/main.py` 增加：
 
 ```python
     @app.get("/admin")
@@ -1618,439 +1604,94 @@ In `app/main.py`, add:
         return FileResponse(static_dir / "admin.html", media_type="text/html")
 ```
 
-The page itself will call `/api/session` and redirect or show denial if not admin.
+页面加载后自行调用 `/api/session` 判断是否管理员；普通用户跳回首页。
 
-- [ ] **Step 4: Create admin HTML**
+- [ ] **步骤 4：创建管理员 HTML**
 
-Create `static/admin.html`:
+创建 `static/admin.html`。页面必须包含：
 
 ```html
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>管理后台 - Code Review Task Console</title>
-  <link rel="stylesheet" href="/static/styles.css">
-</head>
-<body>
-  <main id="admin-app" class="admin-shell">
-    <header class="admin-topbar">
-      <div>
-        <p class="eyebrow">Code Review Admin</p>
-        <h1>管理后台</h1>
-      </div>
-      <nav class="admin-actions">
-        <a href="/">返回任务台</a>
-        <button id="admin-logout" type="button">退出</button>
-      </nav>
-    </header>
-
-    <section class="admin-grid">
-      <section class="panel admin-dashboard">
-        <div class="panel-heading">
-          <h2>仪表盘</h2>
-          <p id="dashboard-summary">正在加载平台使用情况...</p>
-        </div>
-        <div id="dashboard-cards" class="dashboard-cards"></div>
-        <h3>用户使用次数</h3>
-        <div id="usage-chart" class="usage-chart"></div>
-        <h3>仓库使用分布</h3>
-        <div id="repository-usage" class="usage-chart"></div>
-      </section>
-
-      <section class="panel admin-users-panel">
-        <div class="panel-heading">
-          <h2>账号管理</h2>
-          <p>新增账号并维护管理员与启用状态。</p>
-        </div>
-        <form id="admin-user-form" class="admin-user-form">
-          <input name="name" placeholder="姓名" required>
-          <input name="phone" placeholder="手机号" required>
-          <label><input name="is_admin" type="checkbox"> 管理员</label>
-          <label><input name="is_active" type="checkbox" checked> 启用</label>
-          <button type="submit">新增账号</button>
-        </form>
-        <div id="admin-message" class="form-message"></div>
-        <div id="admin-users" class="admin-users"></div>
-      </section>
-
-      <section class="panel admin-permissions-panel">
-        <div class="panel-heading">
-          <h2>仓库权限</h2>
-          <p id="permission-user">请选择用户。</p>
-        </div>
-        <div class="public-note">公共仓库默认开放，不需要配置。</div>
-        <div id="permission-list" class="permission-list"></div>
-        <button id="save-permissions" type="button">保存权限</button>
-      </section>
-    </section>
-  </main>
-  <script src="/static/admin.js" defer></script>
-</body>
-</html>
+<main id="admin-app" class="admin-shell">
+  ...
+  <div id="usage-chart" class="usage-chart"></div>
+  <div id="admin-users" class="admin-users"></div>
+  <div id="permission-list" class="permission-list"></div>
+  ...
+</main>
+<script src="/static/admin.js" defer></script>
 ```
 
-- [ ] **Step 5: Create admin JavaScript**
+具体结构按设计文档实现：顶部返回任务台和退出按钮，中间三块区域分别为“仪表盘”“账号管理”“仓库权限”。
 
-Create `static/admin.js` with these functions:
+- [ ] **步骤 5：创建管理员 JavaScript**
+
+创建 `static/admin.js`。必须实现这些函数：
 
 ```javascript
-const adminState = {
-  users: [],
-  selectedUserId: null,
-  selectedPermissions: new Set(),
-};
-
-const adminElements = {
-  summary: document.querySelector("#dashboard-summary"),
-  cards: document.querySelector("#dashboard-cards"),
-  usageChart: document.querySelector("#usage-chart"),
-  repositoryUsage: document.querySelector("#repository-usage"),
-  userForm: document.querySelector("#admin-user-form"),
-  users: document.querySelector("#admin-users"),
-  message: document.querySelector("#admin-message"),
-  permissionUser: document.querySelector("#permission-user"),
-  permissionList: document.querySelector("#permission-list"),
-  savePermissions: document.querySelector("#save-permissions"),
-  logout: document.querySelector("#admin-logout"),
-};
-
-adminElements.userForm.addEventListener("submit", createUser);
-adminElements.savePermissions.addEventListener("click", savePermissions);
-adminElements.logout.addEventListener("click", async () => {
-  await fetch("/api/session", { method: "DELETE" });
-  window.location.href = "/login";
-});
-
-initializeAdmin();
-
-async function initializeAdmin() {
-  const session = await fetchJson("/api/session");
-  if (!session.authenticated) {
-    window.location.href = "/login";
-    return;
-  }
-  if (!session.user.is_admin) {
-    window.location.href = "/";
-    return;
-  }
-  await Promise.all([loadDashboard(), loadUsers()]);
-}
-
-async function loadDashboard() {
-  const dashboard = await fetchJson("/api/admin/dashboard");
-  adminElements.summary.textContent = `任务总数 ${dashboard.task_total}，今日 ${dashboard.today_task_total}`;
-  adminElements.cards.innerHTML = [
-    ["用户", dashboard.user_total],
-    ["管理员", dashboard.admin_total],
-    ["启用账号", dashboard.active_user_total],
-    ["任务", dashboard.task_total],
-  ].map(([label, value]) => `<div class="dashboard-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
-  renderUsageChart(adminElements.usageChart, dashboard.user_usage, "name", "task_count", "phone");
-  renderUsageChart(adminElements.repositoryUsage, dashboard.repository_usage, "repository_name", "task_count", "repository_key");
-}
-
-function renderUsageChart(container, rows, labelKey, valueKey, subLabelKey) {
-  const max = Math.max(1, ...rows.map((row) => Number(row[valueKey] || 0)));
-  container.innerHTML = rows.map((row) => {
-    const value = Number(row[valueKey] || 0);
-    const width = Math.max(4, Math.round((value / max) * 100));
-    return `
-      <div class="usage-row">
-        <span>${escapeHtml(row[labelKey] || "-")}<small>${escapeHtml(row[subLabelKey] || "")}</small></span>
-        <div class="usage-bar"><i style="width: ${width}%"></i></div>
-        <strong>${value}</strong>
-      </div>
-    `;
-  }).join("") || '<p class="empty-state">暂无数据</p>';
-}
-
-async function loadUsers() {
-  adminState.users = await fetchJson("/api/admin/users");
-  renderUsers();
-}
-
-function renderUsers() {
-  adminElements.users.innerHTML = adminState.users.map((user) => `
-    <button class="admin-user-item" type="button" data-user-id="${escapeAttribute(user.user_id)}">
-      <strong>${escapeHtml(user.name)}</strong>
-      <span>${escapeHtml(user.phone)}</span>
-      <small>${user.is_admin ? "管理员" : "普通用户"} · ${user.is_active ? "启用" : "停用"} · ${user.task_count} 次</small>
-    </button>
-  `).join("");
-  adminElements.users.querySelectorAll("[data-user-id]").forEach((button) => {
-    button.addEventListener("click", () => selectUser(button.dataset.userId));
-  });
-}
-
-async function createUser(event) {
-  event.preventDefault();
-  const formData = new FormData(adminElements.userForm);
-  const payload = {
-    name: String(formData.get("name") || "").trim(),
-    phone: String(formData.get("phone") || "").trim(),
-    is_admin: formData.get("is_admin") === "on",
-    is_active: formData.get("is_active") === "on",
-  };
-  const response = await fetch("/api/admin/users", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    showMessage(body.detail || "新增账号失败", true);
-    return;
-  }
-  adminElements.userForm.reset();
-  adminElements.userForm.elements.is_active.checked = true;
-  showMessage("账号已新增", false);
-  await Promise.all([loadDashboard(), loadUsers()]);
-}
-
-async function selectUser(userId) {
-  adminState.selectedUserId = userId;
-  const user = adminState.users.find((item) => item.user_id === userId);
-  adminElements.permissionUser.textContent = user ? `${user.name} ${user.phone}` : "请选择用户。";
-  const permissions = await fetchJson(`/api/admin/users/${encodeURIComponent(userId)}/repositories`);
-  adminState.selectedPermissions = new Set(permissions.repository_keys);
-  renderPermissionList();
-}
-
-function renderPermissionList() {
-  const products = [
-    ["energy", "高压"],
-    ["home", "户储"],
-    ["bs", "基站"],
-    ["moto", "动力"],
-    ["lcd", "显示屏"],
-    ["linux", "Linux"],
-    ["pace_tools", "上位机"],
-    ["power", "电源"],
-  ];
-  adminElements.permissionList.innerHTML = products.map(([key, name]) => `
-    <label>
-      <input type="checkbox" value="${escapeAttribute(key)}" ${adminState.selectedPermissions.has(key) ? "checked" : ""}>
-      ${escapeHtml(name)}
-    </label>
-  `).join("");
-}
-
-async function savePermissions() {
-  if (!adminState.selectedUserId) {
-    showMessage("请先选择用户", true);
-    return;
-  }
-  const repositoryKeys = Array.from(adminElements.permissionList.querySelectorAll("input:checked")).map((input) => input.value);
-  const response = await fetch(`/api/admin/users/${encodeURIComponent(adminState.selectedUserId)}/repositories`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ repository_keys: repositoryKeys }),
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    showMessage(body.detail || "保存权限失败", true);
-    return;
-  }
-  showMessage("权限已保存", false);
-}
-
-async function fetchJson(url) {
-  const response = await fetch(url);
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(body.detail || "请求失败");
-  }
-  return body;
-}
-
-function showMessage(message, isError) {
-  adminElements.message.textContent = message;
-  adminElements.message.classList.toggle("is-error", isError);
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function escapeAttribute(value) {
-  return escapeHtml(value);
-}
+async function initializeAdmin() {}
+async function loadDashboard() {}
+function renderUsageChart(container, rows, labelKey, valueKey, subLabelKey) {}
+async function loadUsers() {}
+function renderUsers() {}
+async function createUser(event) {}
+async function selectUser(userId) {}
+function renderPermissionList() {}
+async function savePermissions() {}
 ```
 
-- [ ] **Step 6: Add admin CSS**
+交互要求：
 
-Append styles to `static/styles.css`:
+- `initializeAdmin()` 调用 `/api/session`，未登录跳转 `/login`，非管理员跳转 `/`。
+- `loadDashboard()` 调用 `/api/admin/dashboard`。
+- `renderUsageChart()` 用 CSS 横向柱状图展示用户任务数和仓库任务数。
+- `loadUsers()` 调用 `/api/admin/users`。
+- `createUser()` 调用 `POST /api/admin/users`。
+- `selectUser()` 调用 `GET /api/admin/users/{user_id}/repositories`。
+- `savePermissions()` 调用 `PUT /api/admin/users/{user_id}/repositories`。
+
+- [ ] **步骤 6：增加后台页面样式**
+
+在 `static/styles.css` 增加后台布局、卡片、用户列表、权限复选框、横向柱状图样式。关键选择器必须包括：
 
 ```css
-.admin-shell {
-  margin: 0 auto;
-  max-width: 1480px;
-  padding: 36px;
-}
-
-.admin-topbar,
-.admin-actions {
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.admin-actions a,
-.admin-actions button,
-.admin-user-form button,
-#save-permissions {
-  border: 1px solid #c6d3e1;
-  border-radius: 6px;
-  background: #f8fafc;
-  color: #0f3b57;
-  cursor: pointer;
-  font-weight: 700;
-  padding: 9px 12px;
-  text-decoration: none;
-}
-
-.admin-grid {
-  align-items: start;
-  display: grid;
-  gap: 22px;
-  grid-template-columns: minmax(0, 1.4fr) minmax(360px, 0.8fr);
-}
-
-.admin-permissions-panel {
-  grid-column: 2;
-}
-
-.dashboard-cards {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.dashboard-card {
-  border: 1px solid #d7e0ea;
-  border-radius: 8px;
-  padding: 14px;
-}
-
-.dashboard-card span,
-.usage-row small {
-  color: #64748b;
-  display: block;
-}
-
-.dashboard-card strong {
-  display: block;
-  font-size: 26px;
-  margin-top: 6px;
-}
-
-.usage-chart {
-  display: grid;
-  gap: 10px;
-}
-
-.usage-row {
-  align-items: center;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: 150px minmax(0, 1fr) 48px;
-}
-
-.usage-bar {
-  background: #e8eef5;
-  border-radius: 6px;
-  height: 12px;
-  overflow: hidden;
-}
-
-.usage-bar i {
-  background: #0f7c91;
-  display: block;
-  height: 100%;
-}
-
-.admin-user-form,
-.permission-list {
-  display: grid;
-  gap: 10px;
-}
-
-.admin-user-form input[type="text"],
-.admin-user-form input:not([type]) {
-  width: 100%;
-}
-
-.admin-users {
-  display: grid;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.admin-user-item {
-  border: 1px solid #d7e0ea;
-  border-radius: 8px;
-  background: #fff;
-  cursor: pointer;
-  display: grid;
-  gap: 4px;
-  padding: 12px;
-  text-align: left;
-}
-
-.public-note {
-  color: #52627a;
-  margin-bottom: 12px;
-}
-
-@media (max-width: 980px) {
-  .admin-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .admin-permissions-panel {
-    grid-column: auto;
-  }
-
-  .dashboard-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
+.admin-shell {}
+.admin-topbar {}
+.admin-grid {}
+.dashboard-cards {}
+.usage-chart {}
+.usage-row {}
+.usage-bar {}
+.admin-users {}
+.admin-user-item {}
+.permission-list {}
 ```
 
-- [ ] **Step 7: Run frontend/admin static tests**
+- [ ] **步骤 7：运行静态页面测试**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_api.py::test_admin_page_is_served tests/test_frontend_static.py::test_admin_page_contains_dashboard_users_permissions_and_usage_chart -v
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 8: Commit**
+- [ ] **步骤 8：提交**
 
 ```powershell
 git add app/main.py static/admin.html static/admin.js static/styles.css tests/test_api.py tests/test_frontend_static.py
 git commit -m "feat: add admin console page"
 ```
 
-## Task 11: Full Verification And Documentation Touch-Up
+## 任务 11：文档更新与整体验证
 
-**Files:**
-- Modify: `README.md`
-- Test: all relevant tests
+**文件：**
+- 修改：`README.md`
+- 测试：完整测试集
 
-- [ ] **Step 1: Add README notes**
+- [ ] **步骤 1：更新 README**
 
-Add a short section to `README.md`:
+在 `README.md` 增加一节：
 
 ```markdown
 ## 管理员与 SVN 仓库权限
@@ -2066,45 +1707,52 @@ $env:ADMIN_PHONES = "15866582922"
 管理员登录后，任务台右上角会显示“管理后台”入口，可进入 `/admin` 维护账号、仓库权限和查看使用统计。
 ```
 
-- [ ] **Step 2: Run full tests**
+- [ ] **步骤 2：运行完整测试**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest -v
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 3: Run static smoke check**
+- [ ] **步骤 3：运行前端静态冒烟测试**
 
-Run:
+运行：
 
 ```powershell
 python -m uv run pytest tests/test_frontend_static.py -v
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 4: Inspect git status**
+- [ ] **步骤 4：检查 git 状态**
 
-Run:
+运行：
 
 ```powershell
 git status --short
 ```
 
-Expected: only intended files are modified or untracked.
+预期：只存在本次实现相关改动。
 
-- [ ] **Step 5: Commit verification docs**
+- [ ] **步骤 5：提交文档更新**
 
 ```powershell
 git add README.md
 git commit -m "docs: document admin repository permissions"
 ```
 
-## Self-Review
+## 自检
 
-- Spec coverage: The plan covers admin identity, `ADMIN_PHONES`, active users, repository catalog, full SVN URL paste workflow, backend permission enforcement, repository helper display, admin user management, repository permission management, dashboard with user-task-count chart, and tests.
-- Placeholder scan: No `TBD`, `TODO`, or unspecified implementation steps remain.
-- Type consistency: Repository keys use `repository_keys`; task metadata uses `repository_key` and `repository_name`; admin user responses use `user_id`, `is_admin`, `is_active`, and `task_count` consistently.
+- 规格覆盖：本计划覆盖管理员身份、`ADMIN_PHONES`、启用/停用账号、仓库清单、完整 SVN URL 粘贴流程、后端权限强校验、任务台仓库辅助展示、管理员账号管理、仓库权限管理、包含“用户-任务数”图表的仪表盘，以及对应测试。
+- 占位检查：没有未完成占位说明；代码片段、命令和预期结果均已给出。
+- 类型一致性：仓库权限列表统一使用 `repository_keys`；任务仓库元数据统一使用 `repository_key` 和 `repository_name`；管理员用户响应统一使用 `user_id`、`is_admin`、`is_active`、`task_count`。
+
+## 执行交接
+
+计划已保存到 `docs/superpowers/plans/2026-05-27-admin-repository-permission.md`。执行时有两个选择：
+
+1. **Subagent-Driven（推荐）**：每个任务派发一个新的 subagent，任务之间做审查，迭代速度更快。
+2. **Inline Execution**：在当前会话中使用 `superpowers:executing-plans` 按批次执行，并在检查点做复核。
