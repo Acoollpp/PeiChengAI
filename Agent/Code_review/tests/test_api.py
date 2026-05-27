@@ -145,11 +145,15 @@ def test_admin_dashboard_contains_user_usage_chart_data(admin_api_client, api_re
         "/api/admin/users",
         json={"name": "alice", "phone": "13800138000", "is_admin": False, "is_active": True},
     ).json()
+    admin_api_client.post(
+        "/api/admin/users",
+        json={"name": "bob", "phone": "13900139000", "is_admin": True, "is_active": False},
+    )
     api_repository.set_user_repository_permissions(alice["user_id"], ["home"])
     admin_api_client.delete("/api/session")
     login(admin_api_client, name="alice", phone="13800138000")
-    assert create_task(admin_api_client, svn_url=HOME_SVN_URL).status_code == 200
-    assert create_task(admin_api_client, svn_url=HOME_SVN_URL, old_revision="102", new_revision="103").status_code == 200
+    first_task = create_task(admin_api_client, svn_url=HOME_SVN_URL).json()
+    second_task = create_task(admin_api_client, svn_url=HOME_SVN_URL, old_revision="102", new_revision="103").json()
     admin_api_client.delete("/api/session")
     login_admin(admin_api_client)
 
@@ -157,7 +161,22 @@ def test_admin_dashboard_contains_user_usage_chart_data(admin_api_client, api_re
 
     assert response.status_code == 200
     body = response.json()
-    assert body["task_total"] >= 2
+    assert body["user_total"] == 3
+    assert body["admin_total"] == 2
+    assert body["active_user_total"] == 2
+    assert body["task_total"] == 2
+    assert body["today_task_total"] == 2
+    assert body["status_counts"] == {
+        TaskStatus.pending.value: 2,
+        TaskStatus.running.value: 0,
+        TaskStatus.success.value: 0,
+        TaskStatus.failed.value: 0,
+        TaskStatus.enqueue_failed.value: 0,
+    }
+    assert [task["task_id"] for task in body["recent_tasks"]] == [
+        second_task["task_id"],
+        first_task["task_id"],
+    ]
     assert any(item["phone"] == "13800138000" and item["task_count"] == 2 for item in body["user_usage"])
     assert any(item["repository_key"] == "home" and item["task_count"] == 2 for item in body["repository_usage"])
 
