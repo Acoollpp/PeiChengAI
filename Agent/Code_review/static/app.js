@@ -13,7 +13,11 @@ const elements = {
   formMessage: document.querySelector("#form-message"),
   serviceState: document.querySelector("#service-state"),
   currentUser: document.querySelector("#current-user"),
+  adminLink: document.querySelector("#admin-link"),
   logoutButton: document.querySelector("#logout-button"),
+  svnUrl: document.querySelector("#svn-url"),
+  repositoryOptions: document.querySelector("#repository-options"),
+  repositoryMessage: document.querySelector("#repository-message"),
   currentSubtitle: document.querySelector("#current-subtitle"),
   taskStatus: document.querySelector("#task-status"),
   taskInput: document.querySelector("#task-input"),
@@ -44,7 +48,9 @@ async function initialize() {
   }
   state.currentUser = session.user;
   elements.currentUser.textContent = `${session.user.name} ${session.user.phone}`;
+  elements.adminLink.classList.toggle("is-hidden", !session.user.is_admin);
   connectEvents();
+  await loadRepositories();
   await loadRecentTasks();
 }
 
@@ -64,6 +70,49 @@ function connectEvents() {
   state.eventSource.addEventListener("task_created", refreshFromEvent);
   state.eventSource.addEventListener("task_updated", refreshFromEvent);
   state.eventSource.addEventListener("open", () => loadRecentTasks());
+}
+
+async function loadRepositories() {
+  if (!elements.repositoryOptions || !elements.repositoryMessage) {
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/repositories");
+    const repositories = await readJson(response);
+    if (!response.ok) {
+      throw new Error(apiErrorMessage(repositories, "可用仓库加载失败"));
+    }
+    renderRepositories(repositories);
+  } catch (error) {
+    elements.repositoryOptions.innerHTML = "";
+    elements.repositoryMessage.textContent = "仓库前缀加载失败，可直接粘贴完整 SVN URL";
+  }
+}
+
+function renderRepositories(repositories) {
+  if (!repositories.length) {
+    elements.repositoryOptions.innerHTML = "";
+    elements.repositoryMessage.textContent = "暂无可用仓库，可直接粘贴完整 SVN URL";
+    return;
+  }
+
+  elements.repositoryMessage.textContent = "点击填入前缀后继续补全路径";
+  elements.repositoryOptions.innerHTML = repositories.map((repository) => `
+    <button class="repository-chip" type="button" data-url-prefix="${escapeAttribute(repository.url_prefix)}">
+      <strong>${escapeHtml(repository.name)}</strong>
+      <span>${escapeHtml(repository.url_prefix)}</span>
+    </button>
+  `).join("");
+
+  elements.repositoryOptions.querySelectorAll("[data-url-prefix]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const repository = { url_prefix: button.dataset.urlPrefix || "" };
+      elements.svnUrl.value = repository.url_prefix;
+      elements.svnUrl.focus();
+      elements.repositoryMessage.textContent = "已填入前缀，请继续补全路径";
+    });
+  });
 }
 
 async function refreshFromEvent(event) {

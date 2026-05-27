@@ -140,3 +140,33 @@ def test_task_console_uses_eventsource_and_keeps_layout_markers():
     assert 'id="current-user"' in html
     assert 'new EventSource("/api/events")' in js
     assert "loadRecentTasks" in js
+
+
+def test_task_console_keeps_svn_url_input_and_adds_repository_shortcuts():
+    html = Path("static/index.html").read_text(encoding="utf-8")
+    js = Path("static/app.js").read_text(encoding="utf-8")
+    css = (PROJECT_ROOT / "static" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="svn-url"' in html
+    assert 'name="svn_url"' in html
+    assert 'id="repository-options"' in html
+    assert 'id="repository-message"' in html
+    assert 'fetch("/api/repositories")' in js
+    assert "repository.url_prefix" in js
+    assert "elements.svnUrl.value = repository.url_prefix" in js
+    assert "elements.svnUrl.focus()" in js
+    assert ".repository-options" in css
+    assert ".repository-chip" in css
+
+
+def test_task_console_shows_admin_entry_only_for_admin_session():
+    html = Path("static/index.html").read_text(encoding="utf-8")
+    js = Path("static/app.js").read_text(encoding="utf-8")
+    css = (PROJECT_ROOT / "static" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="admin-link"' in html
+    assert 'href="/admin"' in html
+    assert 'class="admin-link is-hidden"' in html
+    assert "session.user.is_admin" in js
+    assert 'elements.adminLink.classList.toggle("is-hidden", !session.user.is_admin)' in js
+    assert ".admin-link.is-hidden" in css

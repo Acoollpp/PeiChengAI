@@ -16,6 +16,7 @@
       <div class="topbar-actions">
         <div class="user-strip">
           <span id="current-user">未登录</span>
+          <a id="admin-link" class="admin-link is-hidden" href="/admin">管理后台</a>
           <button id="logout-button" type="button">退出</button>
         </div>
         <div class="service-state" id="service-state">Ready</div>
@@ -33,6 +34,13 @@
           <label for="svn-url">SVN URL</label>
           <input id="svn-url" name="svn_url" type="url" autocomplete="off" required
             placeholder="https://192.168.0.233/svn/src_home/project/trunk">
+          <div class="repository-helper" aria-live="polite">
+            <div class="repository-helper-topline">
+              <span>授权仓库前缀</span>
+              <small id="repository-message">正在加载...</small>
+            </div>
+            <div class="repository-options" id="repository-options"></div>
+          </div>
 
           <div class="field-row">
             <div>
