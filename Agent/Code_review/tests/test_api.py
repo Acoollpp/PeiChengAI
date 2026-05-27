@@ -133,6 +133,28 @@ def test_product_repository_task_is_allowed_when_granted(api_client, api_reposit
     assert task["repository_name"] == "户储"
 
 
+def test_get_repositories_returns_public_and_granted_repositories(api_client, api_repository):
+    login(api_client, name="alice", phone="13800138000")
+    user = next(user for user in api_repository.users.values() if user["phone"] == "13800138000")
+    api_repository.set_user_repository_permissions(user["id"], ["home"])
+
+    response = api_client.get("/api/repositories")
+
+    assert response.status_code == 200
+    body = response.json()
+    keys = [repo["key"] for repo in body]
+    assert "public_repository" in keys
+    assert "documents" in keys
+    assert "home" in keys
+    assert "power" not in keys
+
+
+def test_get_repositories_requires_login(api_client):
+    response = api_client.get("/api/repositories")
+
+    assert response.status_code == 401
+
+
 def test_root_places_report_viewer_on_the_right_and_task_list_on_the_left(api_client):
     response = api_client.get("/")
 

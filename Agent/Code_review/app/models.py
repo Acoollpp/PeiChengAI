@@ -37,6 +37,13 @@ class UserResponse(BaseModel):
     is_active: bool = True
 
 
+class RepositoryResponse(BaseModel):
+    key: str
+    name: str
+    url_prefix: str
+    is_public: bool
+
+
 class SessionResponse(BaseModel):
     authenticated: bool
     user: UserResponse | None = None

@@ -20,6 +20,7 @@ from app.config import Settings, settings
 from app.database import TaskRepository
 from app.events import InMemoryEventBus, RedisEventBus, format_sse
 from app.models import (
+    RepositoryResponse,
     SessionCreateRequest,
     SessionResponse,
     TaskCreateRequest,
@@ -29,7 +30,7 @@ from app.models import (
     UserResponse,
 )
 from app.postgres import PostgresDatabase
-from app.repositories import RepositoryAccessError, match_repository_for_url
+from app.repositories import RepositoryAccessError, match_repository_for_url, repositories_for_user
 from app.scheduler import RedisScheduler, Scheduler
 from app.session import SESSION_COOKIE_NAME, SessionManager, normalize_phone
 from app.validation import normalize_revision
@@ -157,6 +158,12 @@ def create_app(
         response.delete_cookie(SESSION_COOKIE_NAME)
         return {"authenticated": False}
 
+    @app.get("/api/repositories", response_model=list[RepositoryResponse])
+    def list_repositories(request: Request) -> list[RepositoryResponse]:
+        user = current_user(request)
+        granted_keys = set(repo.list_user_repository_permissions(user["id"]))
+        return [_to_repository_response(item) for item in repositories_for_user(granted_keys)]
+
     @app.post("/api/tasks", response_model=TaskCreateResponse)
     def create_task(request: TaskCreateRequest, http_request: Request) -> TaskCreateResponse:
         user = current_user(http_request)
@@ -271,6 +278,15 @@ def _to_user_response(user: dict[str, Any]) -> UserResponse:
         phone=user["phone"],
         is_admin=bool(user.get("is_admin", False)),
         is_active=bool(user.get("is_active", True)),
+    )
+
+
+def _to_repository_response(repository) -> RepositoryResponse:
+    return RepositoryResponse(
+        key=repository.key,
+        name=repository.name,
+        url_prefix=repository.url_prefix,
+        is_public=repository.is_public,
     )
 
 
