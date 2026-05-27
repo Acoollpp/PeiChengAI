@@ -92,6 +92,83 @@ class TaskRepository:
             row = connection.execute("SELECT * FROM users WHERE id = %(id)s", {"id": user_id}).fetchone()
         return dict(row) if row is not None else None
 
+    def list_users_with_task_counts(self) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT users.*, COUNT(tasks.id) AS task_count
+                FROM users
+                LEFT JOIN tasks ON tasks.user_id = users.id
+                GROUP BY users.id
+                ORDER BY users.created_at DESC, users.id DESC
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def create_user(
+        self,
+        *,
+        name: str,
+        phone: str,
+        is_admin: bool = False,
+        is_active: bool = True,
+    ) -> dict[str, Any] | None:
+        now = _utc_now()
+        user_id = str(uuid.uuid4())
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """
+                INSERT INTO users (
+                    id, name, phone, is_admin, is_active, created_at, updated_at, last_seen_at
+                )
+                VALUES (
+                    %(id)s, %(name)s, %(phone)s, %(is_admin)s, %(is_active)s,
+                    %(now)s, %(now)s, %(now)s
+                )
+                ON CONFLICT (phone) DO NOTHING
+                RETURNING *
+                """,
+                {
+                    "id": user_id,
+                    "name": name,
+                    "phone": phone,
+                    "is_admin": is_admin,
+                    "is_active": is_active,
+                    "now": now,
+                },
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def update_user(
+        self,
+        user_id: str,
+        *,
+        name: str,
+        is_admin: bool,
+        is_active: bool,
+    ) -> dict[str, Any] | None:
+        now = _utc_now()
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """
+                UPDATE users
+                SET name = %(name)s,
+                    is_admin = %(is_admin)s,
+                    is_active = %(is_active)s,
+                    updated_at = %(now)s
+                WHERE id = %(id)s
+                RETURNING *
+                """,
+                {
+                    "id": user_id,
+                    "name": name,
+                    "is_admin": is_admin,
+                    "is_active": is_active,
+                    "now": now,
+                },
+            ).fetchone()
+        return dict(row) if row is not None else None
+
     def set_user_admin_if_phone_matches(self, phone: str, admin_phones: tuple[str, ...]) -> None:
         if phone not in admin_phones:
             return

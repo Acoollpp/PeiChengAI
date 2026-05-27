@@ -1,5 +1,6 @@
 from dataclasses import replace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.config import settings
@@ -28,9 +29,28 @@ def login(client, name="张三", phone="13800138000"):
     return client.post("/api/session", json={"name": name, "phone": phone})
 
 
+def login_admin(client):
+    return login(client, name="admin", phone="15866582922")
+
+
 def create_logged_in_task(client, **overrides):
     login(client, name="alice")
     return create_task(client, **overrides)
+
+
+@pytest.fixture
+def admin_api_client(api_paths, api_repository, api_scheduler, api_event_bus):
+    custom_settings = replace(settings, admin_phones=("15866582922",))
+    app = create_app(
+        **api_paths,
+        start_worker=False,
+        repo=api_repository,
+        scheduler=api_scheduler,
+        event_bus=api_event_bus,
+        app_settings=custom_settings,
+    )
+    with TestClient(app) as client:
+        yield client
 
 
 def test_root_serves_static_frontend_and_api_routes_still_work(api_client):
@@ -101,6 +121,72 @@ def test_post_tasks_requires_login(api_client):
     response = create_task(api_client)
 
     assert response.status_code == 401
+
+
+def test_admin_users_requires_admin(api_client):
+    login(api_client, name="alice", phone="13800138000")
+
+    response = api_client.get("/api/admin/users")
+
+    assert response.status_code == 403
+
+
+def test_admin_can_create_and_list_users(admin_api_client):
+    login_admin(admin_api_client)
+
+    create_response = admin_api_client.post(
+        "/api/admin/users",
+        json={"name": "bob", "phone": "13900139000", "is_admin": False, "is_active": True},
+    )
+    list_response = admin_api_client.get("/api/admin/users")
+
+    assert create_response.status_code == 200
+    assert create_response.json()["phone"] == "13900139000"
+    assert list_response.status_code == 200
+    assert any(user["phone"] == "13900139000" for user in list_response.json())
+
+
+def test_admin_create_user_rejects_duplicate_phone(admin_api_client):
+    login_admin(admin_api_client)
+    payload = {"name": "bob", "phone": "13900139000", "is_admin": False, "is_active": True}
+    assert admin_api_client.post("/api/admin/users", json=payload).status_code == 200
+
+    response = admin_api_client.post("/api/admin/users", json=payload)
+
+    assert response.status_code == 409
+
+
+def test_admin_can_update_user(admin_api_client):
+    login_admin(admin_api_client)
+    created = admin_api_client.post(
+        "/api/admin/users",
+        json={"name": "bob", "phone": "13900139000", "is_admin": False, "is_active": True},
+    ).json()
+
+    response = admin_api_client.patch(
+        f"/api/admin/users/{created['user_id']}",
+        json={"name": "Bob Updated", "is_admin": True, "is_active": False},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Bob Updated"
+    assert response.json()["is_admin"] is True
+    assert response.json()["is_active"] is False
+
+
+def test_disabled_user_cannot_access_tasks(admin_api_client):
+    login_admin(admin_api_client)
+    created = admin_api_client.post(
+        "/api/admin/users",
+        json={"name": "bob", "phone": "13900139000", "is_admin": False, "is_active": False},
+    ).json()
+    admin_api_client.delete("/api/session")
+
+    login(admin_api_client, name="bob", phone="13900139000")
+    response = admin_api_client.get("/api/tasks")
+
+    assert created["is_active"] is False
+    assert response.status_code == 403
 
 
 def test_public_repository_task_is_allowed_for_any_logged_in_user(api_client):

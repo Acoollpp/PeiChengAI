@@ -37,6 +37,28 @@ class UserResponse(BaseModel):
     is_active: bool = True
 
 
+class AdminUserCreateRequest(BaseModel):
+    name: str = Field(min_length=1)
+    phone: str = Field(min_length=1)
+    is_admin: bool = False
+    is_active: bool = True
+
+
+class AdminUserUpdateRequest(BaseModel):
+    name: str = Field(min_length=1)
+    is_admin: bool
+    is_active: bool
+
+
+class AdminUserResponse(BaseModel):
+    user_id: str
+    name: str
+    phone: str
+    is_admin: bool
+    is_active: bool
+    task_count: int = 0
+
+
 class RepositoryResponse(BaseModel):
     key: str
     name: str

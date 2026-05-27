@@ -45,6 +45,61 @@ class InMemoryTaskRepository:
         user = self.users.get(user_id)
         return dict(user) if user else None
 
+    def list_users_with_task_counts(self) -> list[dict[str, Any]]:
+        users = []
+        for user in self.users.values():
+            task_count = sum(1 for task in self.tasks.values() if task["user_id"] == user["id"])
+            users.append({**user, "task_count": task_count})
+        return [
+            dict(user)
+            for user in sorted(
+                users,
+                key=lambda item: (item["created_at"], item["id"]),
+                reverse=True,
+            )
+        ]
+
+    def create_user(
+        self,
+        *,
+        name: str,
+        phone: str,
+        is_admin: bool = False,
+        is_active: bool = True,
+    ) -> dict[str, Any] | None:
+        if any(user["phone"] == phone for user in self.users.values()):
+            return None
+        now = _utc_now()
+        user = {
+            "id": str(uuid.uuid4()),
+            "name": name,
+            "phone": phone,
+            "is_admin": is_admin,
+            "is_active": is_active,
+            "created_at": now,
+            "updated_at": now,
+            "last_seen_at": now,
+        }
+        self.users[user["id"]] = user
+        return dict(user)
+
+    def update_user(
+        self,
+        user_id: str,
+        *,
+        name: str,
+        is_admin: bool,
+        is_active: bool,
+    ) -> dict[str, Any] | None:
+        user = self.users.get(user_id)
+        if user is None:
+            return None
+        user["name"] = name
+        user["is_admin"] = is_admin
+        user["is_active"] = is_active
+        user["updated_at"] = _utc_now()
+        return dict(user)
+
     def set_user_admin_if_phone_matches(self, phone: str, admin_phones: tuple[str, ...]) -> None:
         for user in self.users.values():
             if user["phone"] == phone and phone in admin_phones:

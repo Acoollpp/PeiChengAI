@@ -20,6 +20,9 @@ from app.config import Settings, settings
 from app.database import TaskRepository
 from app.events import InMemoryEventBus, RedisEventBus, format_sse
 from app.models import (
+    AdminUserCreateRequest,
+    AdminUserResponse,
+    AdminUserUpdateRequest,
     RepositoryResponse,
     SessionCreateRequest,
     SessionResponse,
@@ -124,6 +127,14 @@ def create_app(
         user = repo.get_user(user_id)
         if user is None:
             raise HTTPException(status_code=401, detail="Authentication required")
+        if not user.get("is_active", True):
+            raise HTTPException(status_code=403, detail="Account is disabled")
+        return user
+
+    def current_admin_user(request: Request) -> dict[str, Any]:
+        user = current_user(request)
+        if not user.get("is_admin", False):
+            raise HTTPException(status_code=403, detail="Admin access required")
         return user
 
     @app.post("/api/session", response_model=SessionResponse)
@@ -163,6 +174,45 @@ def create_app(
         user = current_user(request)
         granted_keys = set(repo.list_user_repository_permissions(user["id"]))
         return [_to_repository_response(item) for item in repositories_for_user(granted_keys)]
+
+    @app.get("/api/admin/users", response_model=list[AdminUserResponse])
+    def list_admin_users(request: Request) -> list[AdminUserResponse]:
+        current_admin_user(request)
+        return [_to_admin_user_response(user) for user in repo.list_users_with_task_counts()]
+
+    @app.post("/api/admin/users", response_model=AdminUserResponse)
+    def create_admin_user(request: AdminUserCreateRequest, http_request: Request) -> AdminUserResponse:
+        current_admin_user(http_request)
+        try:
+            phone = normalize_phone(request.phone)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        user = repo.create_user(
+            name=request.name.strip(),
+            phone=phone,
+            is_admin=request.is_admin,
+            is_active=request.is_active,
+        )
+        if user is None:
+            raise HTTPException(status_code=409, detail="phone already exists")
+        return _to_admin_user_response(user)
+
+    @app.patch("/api/admin/users/{user_id}", response_model=AdminUserResponse)
+    def update_admin_user(
+        user_id: str,
+        request: AdminUserUpdateRequest,
+        http_request: Request,
+    ) -> AdminUserResponse:
+        current_admin_user(http_request)
+        user = repo.update_user(
+            user_id,
+            name=request.name.strip(),
+            is_admin=request.is_admin,
+            is_active=request.is_active,
+        )
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        return _to_admin_user_response(user)
 
     @app.post("/api/tasks", response_model=TaskCreateResponse)
     def create_task(request: TaskCreateRequest, http_request: Request) -> TaskCreateResponse:
@@ -278,6 +328,17 @@ def _to_user_response(user: dict[str, Any]) -> UserResponse:
         phone=user["phone"],
         is_admin=bool(user.get("is_admin", False)),
         is_active=bool(user.get("is_active", True)),
+    )
+
+
+def _to_admin_user_response(user: dict[str, Any]) -> AdminUserResponse:
+    return AdminUserResponse(
+        user_id=user["id"],
+        name=user["name"],
+        phone=user["phone"],
+        is_admin=bool(user.get("is_admin", False)),
+        is_active=bool(user.get("is_active", True)),
+        task_count=int(user.get("task_count", 0)),
     )
 
 
