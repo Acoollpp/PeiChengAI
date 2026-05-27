@@ -481,7 +481,8 @@ def test_admin_script_calls_required_admin_apis_and_protects_non_admin():
     assert 'method: "PATCH"' in js
     assert 'method: "PUT"' in js
     assert 'fetch(`/api/admin/users/${encodeURIComponent(userId)}/repositories`)' in js
-    assert 'fetch("/api/repositories")' in js
+    assert 'fetch("/api/admin/repositories")' in js
+    assert 'fetch("/api/repositories")' not in js
 
 
 def test_admin_script_contains_user_task_chart_rendering_logic():

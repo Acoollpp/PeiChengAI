@@ -38,7 +38,7 @@ from app.models import (
     UserResponse,
 )
 from app.postgres import PostgresDatabase
-from app.repositories import RepositoryAccessError, match_repository_for_url, repositories_for_user
+from app.repositories import RepositoryAccessError, match_repository_for_url, product_repositories, repositories_for_user
 from app.scheduler import RedisScheduler, Scheduler
 from app.session import SESSION_COOKIE_NAME, SessionManager, normalize_phone
 from app.validation import normalize_revision
@@ -202,6 +202,11 @@ def create_app(
             repository_usage=[RepositoryUsageResponse(**item) for item in dashboard["repository_usage"]],
             recent_tasks=[_to_task_response(task, reports_dir) for task in dashboard["recent_tasks"]],
         )
+
+    @app.get("/api/admin/repositories", response_model=list[RepositoryResponse])
+    def list_admin_repositories(request: Request) -> list[RepositoryResponse]:
+        current_admin_user(request)
+        return [_to_repository_response(item) for item in product_repositories()]
 
     @app.post("/api/admin/users", response_model=AdminUserResponse)
     def create_admin_user(request: AdminUserCreateRequest, http_request: Request) -> AdminUserResponse:

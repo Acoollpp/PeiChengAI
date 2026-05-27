@@ -61,6 +61,10 @@ def repositories_for_user(granted_keys: set[str]) -> list[RepositoryDefinition]:
     return visible
 
 
+def product_repositories() -> list[RepositoryDefinition]:
+    return [repo for repo in REPOSITORIES if not repo.is_public]
+
+
 def validate_repository_keys(repository_keys: list[str] | set[str]) -> list[str]:
     requested = set(repository_keys)
     unknown = sorted(requested - set(PRODUCT_REPOSITORY_KEYS))

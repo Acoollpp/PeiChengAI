@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from app.config import settings
 from app.main import create_app
 from app.models import TaskStatus
+from app.repositories import PRODUCT_REPOSITORY_KEYS
 
 
 PUBLIC_SVN_URL = "https://192.168.0.233/svn/documents/spec.md"
@@ -137,6 +138,25 @@ def test_admin_dashboard_requires_admin(api_client):
     response = api_client.get("/api/admin/dashboard")
 
     assert response.status_code == 403
+
+
+def test_admin_repositories_requires_admin(api_client):
+    login(api_client, name="alice", phone="13800138000")
+
+    response = api_client.get("/api/admin/repositories")
+
+    assert response.status_code == 403
+
+
+def test_admin_repositories_returns_all_product_repositories(admin_api_client):
+    login_admin(admin_api_client)
+
+    response = admin_api_client.get("/api/admin/repositories")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [repository["key"] for repository in body] == list(PRODUCT_REPOSITORY_KEYS)
+    assert all(repository["is_public"] is False for repository in body)
 
 
 def test_admin_dashboard_contains_user_usage_chart_data(admin_api_client, api_repository):

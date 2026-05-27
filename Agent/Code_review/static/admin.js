@@ -74,7 +74,7 @@ async function loadUsers() {
 }
 
 async function loadRepositories() {
-  const response = await fetch("/api/repositories");
+  const response = await fetch("/api/admin/repositories");
   return parseJsonResponse(response, "repositories failed");
 }
 
