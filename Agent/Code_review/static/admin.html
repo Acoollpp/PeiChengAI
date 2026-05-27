@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>管理后台 - 代码审查平台</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="app-shell admin-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Admin Console</p>
+        <h1>管理后台</h1>
+      </div>
+      <div class="topbar-actions">
+        <div class="user-strip">
+          <span id="admin-current-user">校验中...</span>
+          <a class="admin-link" href="/">返回首页</a>
+          <button id="admin-logout-button" type="button">退出</button>
+        </div>
+        <div class="service-state" id="admin-service-state">Loading</div>
+      </div>
+    </header>
+
+    <section class="panel admin-gate is-hidden" id="admin-gate" role="alert">
+      <div class="panel-heading">
+        <h2>无权限访问</h2>
+        <p>当前账号不是管理员，无法打开管理后台。</p>
+      </div>
+      <a class="download-button" href="/">返回首页</a>
+    </section>
+
+    <section class="workspace-grid admin-workbench" id="admin-dashboard">
+      <section class="admin-main-column">
+        <section class="panel admin-metrics-panel">
+          <div class="panel-heading compact-heading">
+            <h2>仪表盘</h2>
+            <button class="secondary-button" id="admin-refresh-button" type="button">刷新</button>
+          </div>
+          <div class="metric-grid" id="metric-grid">
+            <article class="metric-card">
+              <span>总用户</span>
+              <strong id="metric-user-total">0</strong>
+            </article>
+            <article class="metric-card">
+              <span>启用用户</span>
+              <strong id="metric-active-user-total">0</strong>
+            </article>
+            <article class="metric-card">
+              <span>管理员</span>
+              <strong id="metric-admin-total">0</strong>
+            </article>
+            <article class="metric-card">
+              <span>总任务</span>
+              <strong id="metric-task-total">0</strong>
+            </article>
+            <article class="metric-card">
+              <span>今日任务</span>
+              <strong id="metric-today-task-total">0</strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel admin-chart-panel">
+          <div class="panel-heading">
+            <h2>用户-任务数</h2>
+          </div>
+          <div class="usage-chart" id="user-usage-chart"></div>
+        </section>
+
+        <section class="panel admin-chart-panel">
+          <div class="panel-heading">
+            <h2>任务与仓库</h2>
+          </div>
+          <div class="admin-chart-grid">
+            <div>
+              <h3>状态分布</h3>
+              <div class="usage-chart compact-chart" id="status-chart"></div>
+            </div>
+            <div>
+              <h3>仓库使用统计</h3>
+              <div class="usage-chart compact-chart" id="repository-usage-chart"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel admin-table-panel">
+          <div class="panel-heading">
+            <h2>最近任务</h2>
+          </div>
+          <div class="table-scroll">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>提交人</th>
+                  <th>仓库</th>
+                  <th>状态</th>
+                  <th>修订</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody id="recent-tasks-table">
+                <tr><td colspan="5">加载中...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <aside class="admin-side-column">
+        <form class="panel admin-form-panel" id="admin-user-form">
+          <div class="panel-heading">
+            <h2>增加账号</h2>
+          </div>
+          <label for="new-user-phone">手机号</label>
+          <input id="new-user-phone" name="phone" type="tel" autocomplete="off" required>
+          <label for="new-user-name">姓名</label>
+          <input id="new-user-name" name="name" type="text" autocomplete="off" required>
+          <div class="toggle-row">
+            <label class="checkbox-line">
+              <input id="new-user-admin" name="is_admin" type="checkbox">
+              <span>管理员</span>
+            </label>
+            <label class="checkbox-line">
+              <input id="new-user-active" name="is_active" type="checkbox" checked>
+              <span>启用</span>
+            </label>
+          </div>
+          <button class="primary-button" id="create-user-button" type="submit">创建账号</button>
+          <p class="form-message" id="admin-user-form-message" role="status"></p>
+        </form>
+
+        <section class="panel admin-table-panel">
+          <div class="panel-heading">
+            <h2>管理账号</h2>
+          </div>
+          <div class="table-scroll user-table-scroll">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>手机号</th>
+                  <th>姓名</th>
+                  <th>管理员</th>
+                  <th>启用</th>
+                  <th>任务</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="admin-users-table">
+                <tr><td colspan="6">加载中...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel admin-repository-panel">
+          <div class="panel-heading compact-heading">
+            <div>
+              <h2>仓库权限</h2>
+              <p id="repository-permission-title">请选择用户</p>
+            </div>
+            <button class="secondary-button" id="save-repositories-button" type="button" disabled>保存</button>
+          </div>
+          <div class="repository-permissions" id="repository-permissions"></div>
+          <p class="form-message" id="repository-permission-message" role="status"></p>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <script src="/static/admin.js" defer></script>
+</body>
+</html>

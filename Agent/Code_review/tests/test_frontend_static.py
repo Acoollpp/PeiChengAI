@@ -441,3 +441,54 @@ def test_admin_entry_visibility_does_not_interrupt_initialization_when_link_miss
 
     assert result["adminHidden"] is None
     assert "前缀" in result["message"]
+
+
+def test_admin_page_static_shell_and_script_are_present():
+    html = Path("static/admin.html").read_text(encoding="utf-8")
+    css = (PROJECT_ROOT / "static" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'class="workspace-grid admin-workbench"' in html
+    assert 'id="admin-gate"' in html
+    assert 'id="admin-dashboard"' in html
+    assert 'id="user-usage-chart"' in html
+    assert 'id="admin-user-form"' in html
+    assert 'id="admin-users-table"' in html
+    assert 'id="repository-permissions"' in html
+    assert '<script src="/static/admin.js" defer></script>' in html
+    assert ".admin-workbench" in css
+    assert ".usage-chart" in css
+    assert ".repository-permissions" in css
+
+
+def test_admin_route_serves_static_page(api_client):
+    response = api_client.get("/admin")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "admin-dashboard" in response.text
+    assert "/static/admin.js" in response.text
+
+
+def test_admin_script_calls_required_admin_apis_and_protects_non_admin():
+    js = Path("static/admin.js").read_text(encoding="utf-8")
+
+    assert 'fetch("/api/session")' in js
+    assert "session.user.is_admin" in js
+    assert 'window.location.href = "/"' in js
+    assert 'fetch("/api/admin/dashboard")' in js
+    assert 'fetch("/api/admin/users")' in js
+    assert 'method: "POST"' in js
+    assert 'method: "PATCH"' in js
+    assert 'method: "PUT"' in js
+    assert 'fetch(`/api/admin/users/${encodeURIComponent(userId)}/repositories`)' in js
+    assert 'fetch("/api/repositories")' in js
+
+
+def test_admin_script_contains_user_task_chart_rendering_logic():
+    js = Path("static/admin.js").read_text(encoding="utf-8")
+
+    assert "function renderUserUsageChart" in js
+    assert "user.task_count" in js
+    assert "--bar-width" in js
+    assert "user-usage-chart" in js
+    assert "usage-bar" in js

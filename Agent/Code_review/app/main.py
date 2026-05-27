@@ -363,6 +363,10 @@ def create_app(
     def serve_login() -> FileResponse:
         return FileResponse(static_dir / "login.html", media_type="text/html")
 
+    @app.get("/admin")
+    def serve_admin() -> FileResponse:
+        return FileResponse(static_dir / "admin.html", media_type="text/html")
+
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     return app
