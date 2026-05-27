@@ -33,6 +33,8 @@ class UserResponse(BaseModel):
     user_id: str
     name: str
     phone: str
+    is_admin: bool = False
+    is_active: bool = True
 
 
 class SessionResponse(BaseModel):

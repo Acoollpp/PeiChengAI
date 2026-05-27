@@ -57,6 +57,14 @@ def test_events_requires_login(api_client):
     assert response.status_code == 401
 
 
+def test_admin_phone_login_marks_user_as_admin(api_client):
+    response = login(api_client, name="admin", phone="15866582922")
+
+    assert response.status_code == 200
+    assert response.json()["user"]["is_admin"] is True
+    assert response.json()["user"]["is_active"] is True
+
+
 def test_login_page_is_served(api_client):
     response = api_client.get("/login")
 

@@ -30,6 +30,8 @@ class InMemoryTaskRepository:
             "id": str(uuid.uuid4()),
             "name": name,
             "phone": phone,
+            "is_admin": False,
+            "is_active": True,
             "created_at": now,
             "updated_at": now,
             "last_seen_at": now,
@@ -40,6 +42,12 @@ class InMemoryTaskRepository:
     def get_user(self, user_id: str) -> dict[str, Any] | None:
         user = self.users.get(user_id)
         return dict(user) if user else None
+
+    def set_user_admin_if_phone_matches(self, phone: str, admin_phones: tuple[str, ...]) -> None:
+        for user in self.users.values():
+            if user["phone"] == phone and phone in admin_phones:
+                user["is_admin"] = True
+                user["updated_at"] = _utc_now()
 
     def create_task(
         self,

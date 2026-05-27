@@ -131,6 +131,8 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         user = repo.get_or_create_user(name=request.name.strip(), phone=phone)
+        repo.set_user_admin_if_phone_matches(phone, app_settings.admin_phones)
+        user = repo.get_user(user["id"]) or user
         response.set_cookie(
             SESSION_COOKIE_NAME,
             session_manager.create_cookie_value(user["id"]),
@@ -253,7 +255,13 @@ def _get_existing_task(repo: TaskRepository, task_id: str, user_id: str) -> dict
 
 
 def _to_user_response(user: dict[str, Any]) -> UserResponse:
-    return UserResponse(user_id=user["id"], name=user["name"], phone=user["phone"])
+    return UserResponse(
+        user_id=user["id"],
+        name=user["name"],
+        phone=user["phone"],
+        is_admin=bool(user.get("is_admin", False)),
+        is_active=bool(user.get("is_active", True)),
+    )
 
 
 def _publish_event(event_bus, user_id: str, event: str, data: dict) -> None:

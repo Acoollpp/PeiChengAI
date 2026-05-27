@@ -26,10 +26,15 @@ class Settings:
     worker_id: str
     redis_lock_ttl_seconds: int
     heartbeat_seconds: int
+    admin_phones: tuple[str, ...]
 
 
 def _parse_codex_args(value: str) -> tuple[str, ...]:
     return tuple(shlex.split(value, posix=True))
+
+
+def _parse_csv(value: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in value.split(",") if item.strip())
 
 
 def _resolve_path(value: str | os.PathLike[str], base_dir: Path) -> Path:
@@ -82,6 +87,7 @@ def load_settings() -> Settings:
         worker_id=os.getenv("WORKER_ID", f"worker-{os.getpid()}"),
         redis_lock_ttl_seconds=int(os.getenv("REDIS_LOCK_TTL_SECONDS", "3600")),
         heartbeat_seconds=int(os.getenv("HEARTBEAT_SECONDS", "30")),
+        admin_phones=_parse_csv(os.getenv("ADMIN_PHONES", "15866582922")),
     )
 
 

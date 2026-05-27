@@ -27,6 +27,8 @@ class TaskRepository:
                 )
                 """
             )
+            connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE")
+            connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE")
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tasks (
@@ -76,6 +78,21 @@ class TaskRepository:
         with self.database.connect() as connection:
             row = connection.execute("SELECT * FROM users WHERE id = %(id)s", {"id": user_id}).fetchone()
         return dict(row) if row is not None else None
+
+    def set_user_admin_if_phone_matches(self, phone: str, admin_phones: tuple[str, ...]) -> None:
+        if phone not in admin_phones:
+            return
+        now = _utc_now()
+        with self.database.connect() as connection:
+            connection.execute(
+                """
+                UPDATE users
+                SET is_admin = TRUE,
+                    updated_at = %(now)s
+                WHERE phone = %(phone)s
+                """,
+                {"phone": phone, "now": now},
+            )
 
     def create_task(
         self,

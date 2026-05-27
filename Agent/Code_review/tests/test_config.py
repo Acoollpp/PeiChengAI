@@ -76,3 +76,14 @@ def test_models_include_session_request_and_enqueue_failed_status():
     assert request.name == " 张三 "
     assert request.phone == " 13800138000 "
     assert TaskStatus.enqueue_failed.value == "enqueue_failed"
+
+
+def test_admin_phones_are_parsed_from_environment(monkeypatch, tmp_path):
+    monkeypatch.setenv("APP_BASE_DIR", str(tmp_path))
+    monkeypatch.setenv("ADMIN_PHONES", " 15866582922, 13800138000 ,,")
+
+    from app.config import load_settings
+
+    loaded = load_settings()
+
+    assert loaded.admin_phones == ("15866582922", "13800138000")
