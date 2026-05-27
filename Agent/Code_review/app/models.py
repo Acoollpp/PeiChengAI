@@ -89,6 +89,19 @@ class UserStatsResponse(BaseModel):
     enqueue_failed: int
 
 
+class UserUsageResponse(BaseModel):
+    user_id: str
+    name: str
+    phone: str
+    task_count: int
+
+
+class RepositoryUsageResponse(BaseModel):
+    repository_key: str | None
+    repository_name: str | None
+    task_count: int
+
+
 class TaskResponse(BaseModel):
     task_id: str
     svn_url: str
@@ -103,3 +116,15 @@ class TaskResponse(BaseModel):
     finished_at: datetime | None
     error_message: str | None
     report_available: bool
+
+
+class AdminDashboardResponse(BaseModel):
+    user_total: int
+    admin_total: int
+    active_user_total: int
+    task_total: int
+    today_task_total: int
+    status_counts: dict[str, int]
+    user_usage: list[UserUsageResponse]
+    repository_usage: list[RepositoryUsageResponse]
+    recent_tasks: list[TaskResponse]

@@ -212,6 +212,57 @@ class InMemoryTaskRepository:
         stats["total"] = sum(stats[status.value] for status in TaskStatus)
         return stats
 
+    def get_admin_dashboard(self) -> dict[str, Any]:
+        today = _utc_now().date()
+        status_counts = {status.value: 0 for status in TaskStatus}
+        user_counts = {user_id: 0 for user_id in self.users}
+        repository_usage: dict[tuple[str | None, str | None], int] = {}
+        today_task_total = 0
+
+        for task in self.tasks.values():
+            status_counts[task["status"].value] += 1
+            user_counts[task["user_id"]] = user_counts.get(task["user_id"], 0) + 1
+            repository_key = task.get("repository_key")
+            repository_name = task.get("repository_name")
+            repository_usage[(repository_key, repository_name)] = (
+                repository_usage.get((repository_key, repository_name), 0) + 1
+            )
+            if _canonicalize_utc(task["created_at"]).date() == today:
+                today_task_total += 1
+
+        user_usage = [
+            {
+                "user_id": user["id"],
+                "name": user["name"],
+                "phone": user["phone"],
+                "task_count": user_counts.get(user["id"], 0),
+            }
+            for user in self.users.values()
+        ]
+        repository_rows = [
+            {
+                "repository_key": repository_key,
+                "repository_name": repository_name,
+                "task_count": task_count,
+            }
+            for (repository_key, repository_name), task_count in repository_usage.items()
+        ]
+
+        return {
+            "user_total": len(self.users),
+            "admin_total": sum(1 for user in self.users.values() if user.get("is_admin", False)),
+            "active_user_total": sum(1 for user in self.users.values() if user.get("is_active", True)),
+            "task_total": len(self.tasks),
+            "today_task_total": today_task_total,
+            "status_counts": status_counts,
+            "user_usage": sorted(user_usage, key=lambda item: (-item["task_count"], item["name"])),
+            "repository_usage": sorted(
+                repository_rows,
+                key=lambda item: (-item["task_count"], item["repository_key"] or ""),
+            ),
+            "recent_tasks": [dict(task) for task in self._ordered_tasks()[:10]],
+        }
+
     def delete_older_than(self, cutoff_iso: str | datetime) -> list[dict[str, Any]]:
         cutoff = _canonicalize_utc(cutoff_iso)
         deleted = [

@@ -131,6 +131,37 @@ def test_admin_users_requires_admin(api_client):
     assert response.status_code == 403
 
 
+def test_admin_dashboard_requires_admin(api_client):
+    login(api_client, name="alice", phone="13800138000")
+
+    response = api_client.get("/api/admin/dashboard")
+
+    assert response.status_code == 403
+
+
+def test_admin_dashboard_contains_user_usage_chart_data(admin_api_client, api_repository):
+    login_admin(admin_api_client)
+    alice = admin_api_client.post(
+        "/api/admin/users",
+        json={"name": "alice", "phone": "13800138000", "is_admin": False, "is_active": True},
+    ).json()
+    api_repository.set_user_repository_permissions(alice["user_id"], ["home"])
+    admin_api_client.delete("/api/session")
+    login(admin_api_client, name="alice", phone="13800138000")
+    assert create_task(admin_api_client, svn_url=HOME_SVN_URL).status_code == 200
+    assert create_task(admin_api_client, svn_url=HOME_SVN_URL, old_revision="102", new_revision="103").status_code == 200
+    admin_api_client.delete("/api/session")
+    login_admin(admin_api_client)
+
+    response = admin_api_client.get("/api/admin/dashboard")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task_total"] >= 2
+    assert any(item["phone"] == "13800138000" and item["task_count"] == 2 for item in body["user_usage"])
+    assert any(item["repository_key"] == "home" and item["task_count"] == 2 for item in body["repository_usage"])
+
+
 def test_admin_can_create_and_list_users(admin_api_client):
     login_admin(admin_api_client)
 

@@ -20,18 +20,21 @@ from app.config import Settings, settings
 from app.database import TaskRepository
 from app.events import InMemoryEventBus, RedisEventBus, format_sse
 from app.models import (
+    AdminDashboardResponse,
     AdminUserCreateRequest,
     AdminUserResponse,
     AdminUserUpdateRequest,
     RepositoryPermissionResponse,
     RepositoryPermissionUpdateRequest,
     RepositoryResponse,
+    RepositoryUsageResponse,
     SessionCreateRequest,
     SessionResponse,
     TaskCreateRequest,
     TaskCreateResponse,
     TaskResponse,
     TaskStatus,
+    UserUsageResponse,
     UserResponse,
 )
 from app.postgres import PostgresDatabase
@@ -183,6 +186,22 @@ def create_app(
     def list_admin_users(request: Request) -> list[AdminUserResponse]:
         current_admin_user(request)
         return [_to_admin_user_response(user) for user in repo.list_users_with_task_counts()]
+
+    @app.get("/api/admin/dashboard", response_model=AdminDashboardResponse)
+    def admin_dashboard(request: Request) -> AdminDashboardResponse:
+        current_admin_user(request)
+        dashboard = repo.get_admin_dashboard()
+        return AdminDashboardResponse(
+            user_total=dashboard["user_total"],
+            admin_total=dashboard["admin_total"],
+            active_user_total=dashboard["active_user_total"],
+            task_total=dashboard["task_total"],
+            today_task_total=dashboard["today_task_total"],
+            status_counts=dashboard["status_counts"],
+            user_usage=[UserUsageResponse(**item) for item in dashboard["user_usage"]],
+            repository_usage=[RepositoryUsageResponse(**item) for item in dashboard["repository_usage"]],
+            recent_tasks=[_to_task_response(task, reports_dir) for task in dashboard["recent_tasks"]],
+        )
 
     @app.post("/api/admin/users", response_model=AdminUserResponse)
     def create_admin_user(request: AdminUserCreateRequest, http_request: Request) -> AdminUserResponse:

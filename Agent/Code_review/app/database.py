@@ -376,6 +376,89 @@ class TaskRepository:
         stats["total"] = sum(stats[status.value] for status in TaskStatus)
         return stats
 
+    def get_admin_dashboard(self) -> dict[str, Any]:
+        status_counts = {status.value: 0 for status in TaskStatus}
+        with self.database.connect() as connection:
+            totals = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS user_total,
+                    COUNT(*) FILTER (WHERE is_admin) AS admin_total,
+                    COUNT(*) FILTER (WHERE is_active) AS active_user_total
+                FROM users
+                """
+            ).fetchone()
+            task_totals = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS task_total,
+                    COUNT(*) FILTER (WHERE created_at::date = %(today)s) AS today_task_total
+                FROM tasks
+                """,
+                {"today": _utc_now().date()},
+            ).fetchone()
+            status_rows = connection.execute(
+                """
+                SELECT status, COUNT(*) AS count
+                FROM tasks
+                GROUP BY status
+                """
+            ).fetchall()
+            user_usage_rows = connection.execute(
+                """
+                SELECT
+                    users.id AS user_id,
+                    users.name,
+                    users.phone,
+                    COUNT(tasks.id) AS task_count
+                FROM users
+                LEFT JOIN tasks ON tasks.user_id = users.id
+                GROUP BY users.id, users.name, users.phone
+                ORDER BY task_count DESC, users.name ASC
+                """
+            ).fetchall()
+            repository_usage_rows = connection.execute(
+                """
+                SELECT repository_key, repository_name, COUNT(*) AS task_count
+                FROM tasks
+                GROUP BY repository_key, repository_name
+                ORDER BY task_count DESC, repository_key ASC NULLS FIRST
+                """
+            ).fetchall()
+            recent_task_rows = connection.execute(
+                "SELECT * FROM tasks ORDER BY created_at DESC, id DESC LIMIT 10"
+            ).fetchall()
+
+        for row in status_rows:
+            status_counts[str(row["status"])] = int(row["count"])
+
+        return {
+            "user_total": int(totals["user_total"]) if totals is not None else 0,
+            "admin_total": int(totals["admin_total"]) if totals is not None else 0,
+            "active_user_total": int(totals["active_user_total"]) if totals is not None else 0,
+            "task_total": int(task_totals["task_total"]) if task_totals is not None else 0,
+            "today_task_total": int(task_totals["today_task_total"]) if task_totals is not None else 0,
+            "status_counts": status_counts,
+            "user_usage": [
+                {
+                    "user_id": row["user_id"],
+                    "name": row["name"],
+                    "phone": row["phone"],
+                    "task_count": int(row["task_count"]),
+                }
+                for row in user_usage_rows
+            ],
+            "repository_usage": [
+                {
+                    "repository_key": row["repository_key"],
+                    "repository_name": row["repository_name"],
+                    "task_count": int(row["task_count"]),
+                }
+                for row in repository_usage_rows
+            ],
+            "recent_tasks": [_row_to_task(row) for row in recent_task_rows],
+        }
+
     def delete_older_than(self, cutoff_iso: str | datetime) -> list[dict[str, Any]]:
         cutoff = _canonicalize_utc(cutoff_iso)
         with self.database.connect() as connection:
