@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.models import TaskStatus
+from app.repositories import validate_repository_keys
 
 MAX_ERROR_MESSAGE_LENGTH = 2000
 
@@ -53,6 +54,16 @@ class TaskRepository:
             connection.execute("CREATE INDEX IF NOT EXISTS idx_tasks_user_created ON tasks (user_id, created_at DESC)")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status)")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_tasks_heartbeat ON tasks (heartbeat_at)")
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_repository_permissions (
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    repository_key TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    PRIMARY KEY (user_id, repository_key)
+                )
+                """
+            )
 
     def get_or_create_user(self, *, name: str, phone: str) -> dict[str, Any]:
         now = _utc_now()
@@ -93,6 +104,37 @@ class TaskRepository:
                 """,
                 {"phone": phone, "now": now},
             )
+
+    def list_user_repository_permissions(self, user_id: str) -> list[str]:
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT repository_key
+                FROM user_repository_permissions
+                WHERE user_id = %(user_id)s
+                ORDER BY repository_key ASC
+                """,
+                {"user_id": user_id},
+            ).fetchall()
+        return validate_repository_keys([str(row["repository_key"]) for row in rows])
+
+    def set_user_repository_permissions(self, user_id: str, repository_keys: list[str]) -> list[str]:
+        safe_keys = validate_repository_keys(repository_keys)
+        now = _utc_now()
+        with self.database.connect() as connection:
+            connection.execute(
+                "DELETE FROM user_repository_permissions WHERE user_id = %(user_id)s",
+                {"user_id": user_id},
+            )
+            for repository_key in safe_keys:
+                connection.execute(
+                    """
+                    INSERT INTO user_repository_permissions (user_id, repository_key, created_at)
+                    VALUES (%(user_id)s, %(repository_key)s, %(now)s)
+                    """,
+                    {"user_id": user_id, "repository_key": repository_key, "now": now},
+                )
+        return self.list_user_repository_permissions(user_id)
 
     def create_task(
         self,

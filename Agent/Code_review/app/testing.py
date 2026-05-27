@@ -7,12 +7,14 @@ from typing import Any
 
 from app.database import MAX_ERROR_MESSAGE_LENGTH, _canonicalize_utc
 from app.models import TaskStatus
+from app.repositories import validate_repository_keys
 
 
 class InMemoryTaskRepository:
     def __init__(self):
         self.users: dict[str, dict[str, Any]] = {}
         self.tasks: dict[str, dict[str, Any]] = {}
+        self.repository_permissions: dict[str, set[str]] = {}
         self.base_dir = Path.cwd()
 
     def init_schema(self) -> None:
@@ -48,6 +50,14 @@ class InMemoryTaskRepository:
             if user["phone"] == phone and phone in admin_phones:
                 user["is_admin"] = True
                 user["updated_at"] = _utc_now()
+
+    def list_user_repository_permissions(self, user_id: str) -> list[str]:
+        return validate_repository_keys(self.repository_permissions.get(user_id, set()))
+
+    def set_user_repository_permissions(self, user_id: str, repository_keys: list[str]) -> list[str]:
+        safe_keys = validate_repository_keys(repository_keys)
+        self.repository_permissions[user_id] = set(safe_keys)
+        return self.list_user_repository_permissions(user_id)
 
     def create_task(
         self,

@@ -37,6 +37,23 @@ def test_get_or_create_user_creates_and_updates_by_phone(repository):
     assert updated["last_seen_at"] >= created["last_seen_at"]
 
 
+def test_repository_stores_user_repository_permissions(repository):
+    user = repository.get_or_create_user(name="alice", phone="13800138000")
+
+    repository.set_user_repository_permissions(user["id"], ["home", "power"])
+
+    assert repository.list_user_repository_permissions(user["id"]) == ["home", "power"]
+
+
+def test_repository_replaces_user_repository_permissions(repository):
+    user = repository.get_or_create_user(name="alice", phone="13800138000")
+    repository.set_user_repository_permissions(user["id"], ["home", "power"])
+
+    repository.set_user_repository_permissions(user["id"], ["bs"])
+
+    assert repository.list_user_repository_permissions(user["id"]) == ["bs"]
+
+
 def test_create_and_get_task_stores_pending_status_and_requester(repository):
     created = create_sample_task(repository, requester="reviewer")
     fetched = repository.get_task(created["id"])
