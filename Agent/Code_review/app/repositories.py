@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 
 class RepositoryAccessError(ValueError):
@@ -34,12 +35,17 @@ PRODUCT_REPOSITORY_KEYS = tuple(repo.key for repo in REPOSITORIES if not repo.is
 
 
 def match_repository_for_url(svn_url: str) -> RepositoryDefinition:
-    normalized = svn_url.strip().rstrip("/")
-    if not normalized.startswith("https://"):
+    parsed = urlsplit(svn_url.strip())
+    if parsed.scheme != "https":
         raise RepositoryAccessError("SVN 地址必须使用 HTTPS")
 
+    if any(segment in {".", ".."} for segment in parsed.path.split("/")):
+        raise RepositoryAccessError("SVN 地址不允许包含相对路径段")
+
+    normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
     for repo in sorted(REPOSITORIES, key=lambda item: len(item.url_prefix), reverse=True):
-        prefix = repo.url_prefix.rstrip("/")
+        prefix_parts = urlsplit(repo.url_prefix)
+        prefix = f"{prefix_parts.scheme}://{prefix_parts.netloc}{prefix_parts.path}".rstrip("/")
         if normalized == prefix or normalized.startswith(f"{prefix}/"):
             return repo
     raise RepositoryAccessError("SVN 地址不属于已配置仓库")

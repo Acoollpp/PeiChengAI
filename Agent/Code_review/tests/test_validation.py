@@ -1,5 +1,13 @@
 import pytest
 
+from app.repositories import (
+    PRODUCT_REPOSITORY_KEYS,
+    PUBLIC_REPOSITORY_KEYS,
+    RepositoryAccessError,
+    match_repository_for_url,
+    repositories_for_user,
+    validate_repository_keys,
+)
 from app.validation import normalize_revision, validate_svn_url
 
 
@@ -48,15 +56,6 @@ def test_validate_svn_url_rejects_prefix_without_path_boundary():
         )
 
 
-from app.repositories import (
-    PRODUCT_REPOSITORY_KEYS,
-    PUBLIC_REPOSITORY_KEYS,
-    RepositoryAccessError,
-    match_repository_for_url,
-    repositories_for_user,
-)
-
-
 def test_match_repository_for_full_product_url():
     match = match_repository_for_url(
         " https://192.168.0.233/svn/src_home/PCB_1447V320/SST22-1404-T "
@@ -85,3 +84,17 @@ def test_repositories_for_user_includes_public_and_granted_products():
     assert "power" in keys
     assert "bs" not in keys
     assert set(PRODUCT_REPOSITORY_KEYS) >= {"energy", "home", "bs", "moto", "lcd", "linux", "pace_tools", "power"}
+
+
+def test_match_repository_rejects_relative_path_segments():
+    with pytest.raises(RepositoryAccessError, match="相对路径段"):
+        match_repository_for_url("https://192.168.0.233/svn/src_home/../src_power/project")
+
+
+def test_validate_repository_keys_deduplicates_in_product_order():
+    assert validate_repository_keys(["power", "home", "home"]) == ["home", "power"]
+
+
+def test_validate_repository_keys_rejects_public_repository_keys():
+    with pytest.raises(RepositoryAccessError):
+        validate_repository_keys(["documents"])
