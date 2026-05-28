@@ -6,7 +6,7 @@ import { promisify } from 'node:util'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { SkillSyncService } from '../skill-sync'
+import { isInsideDirectory, SkillSyncService } from '../skill-sync'
 
 const execFileAsync = promisify(execFile)
 
@@ -120,5 +120,15 @@ describe('SkillSyncService', () => {
     })
 
     expect(api.downloadActiveSkill).toHaveBeenCalledTimes(2)
+  })
+
+  it('allows root package files and rejects parent traversal paths', () => {
+    const parentDir = join(tmpdir(), 'skill-target')
+
+    expect(isInsideDirectory(parentDir, join(parentDir, 'SKILL.md'))).toBe(true)
+    expect(isInsideDirectory(parentDir, join(parentDir, 'image', 'SKILL', 'diagram.png'))).toBe(
+      true
+    )
+    expect(isInsideDirectory(parentDir, join(parentDir, '..', 'SKILL.md'))).toBe(false)
   })
 })

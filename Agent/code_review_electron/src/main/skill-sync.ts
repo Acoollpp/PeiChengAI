@@ -1,7 +1,7 @@
 import { createWriteStream } from 'node:fs'
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import yauzl from 'yauzl'
 
@@ -161,7 +161,7 @@ const unzipPackage = (zipPath: string, targetDir: string): Promise<void> =>
       zipfile.on('entry', (entry) => {
         const targetPath = resolve(targetDir, entry.fileName)
 
-        if (!targetPath.startsWith(`${resolve(targetDir)}/`) && targetPath !== resolve(targetDir)) {
+        if (!isInsideDirectory(targetDir, targetPath)) {
           zipfile.close()
           rejectPromise(new Error(`Invalid skill package path: ${entry.fileName}`))
           return
@@ -197,3 +197,11 @@ const unzipPackage = (zipPath: string, targetDir: string): Promise<void> =>
       zipfile.on('error', rejectPromise)
     })
   })
+
+export const isInsideDirectory = (parentDir: string, childPath: string): boolean => {
+  const normalizedParent = resolve(parentDir)
+  const normalizedChild = resolve(childPath)
+  const relativePath = relative(normalizedParent, normalizedChild)
+
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
+}
