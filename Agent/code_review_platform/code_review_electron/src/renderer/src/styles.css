@@ -36,18 +36,11 @@ button:disabled {
   overflow: hidden;
   min-height: 100vh;
   padding: 24px;
-  background:
-    linear-gradient(rgb(0 0 0 / 32%), rgb(0 0 0 / 38%)),
-    url("./assets/pace-bg.jpg") center / cover;
+  background: #000000;
 }
 
 .app-shell::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at 28% 10%, rgb(54 112 174 / 22%), transparent 30%),
-    radial-gradient(circle at 72% 26%, rgb(226 96 76 / 18%), transparent 34%);
+  display: none;
 }
 
 .auth-shell {
@@ -62,9 +55,9 @@ button:disabled {
   border: 1px solid rgb(255 255 255 / 14%);
   border-radius: 8px;
   color: #f5f7fb;
-  background: rgb(26 27 32 / 72%);
-  box-shadow: 0 24px 70px rgb(0 0 0 / 30%);
-  backdrop-filter: blur(18px);
+  background: #111418;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .auth-card {
@@ -447,8 +440,9 @@ h2 {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(360px, 440px) minmax(0, 1fr);
+  grid-template-columns: minmax(360px, 430px) minmax(0, 1fr);
   gap: 20px;
+  height: calc(100vh - 48px);
   max-width: 1480px;
   margin: 0 auto;
 }
@@ -458,6 +452,9 @@ h2 {
   align-content: start;
   gap: 16px;
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .workspace-header,
@@ -519,22 +516,28 @@ h2 {
 .task-list {
   display: grid;
   gap: 12px;
+  max-height: 460px;
+  overflow: auto;
 }
 
 .task-card {
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  min-height: 250px;
+  max-height: 320px;
   border: 1px solid rgb(255 255 255 / 12%);
   border-radius: 8px;
   padding: 13px;
-  background: rgb(8 10 12 / 42%);
+  background: #0b0f13;
 }
 
 .task-card strong,
-.task-card p,
+.task-url,
 .task-error {
   overflow-wrap: anywhere;
 }
 
-.task-card p {
+.task-url {
   margin: 10px 0;
   color: rgb(245 247 251 / 66%);
   font-size: 13px;
@@ -589,7 +592,8 @@ h2 {
 .task-log {
   display: grid;
   gap: 6px;
-  max-height: 160px;
+  min-height: 88px;
+  max-height: 118px;
   overflow: auto;
   margin-top: 10px;
   border: 1px solid rgb(255 255 255 / 10%);
@@ -615,7 +619,9 @@ h2 {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
-  min-height: calc(100vh - 48px);
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .preview-toolbar {
@@ -623,14 +629,16 @@ h2 {
   border-bottom: 1px solid rgb(255 255 255 / 12%);
 }
 
-.markdown-preview,
-.preview-empty {
+.preview-scroll {
   min-width: 0;
+  min-height: 0;
   overflow: auto;
   padding: 22px;
 }
 
 .markdown-preview {
+  max-width: 1040px;
+  min-width: 0;
   color: rgb(245 247 251 / 86%);
   line-height: 1.7;
 }
@@ -653,6 +661,33 @@ h2 {
   padding: 2px 5px;
   color: #d9f7ff;
   background: rgb(255 255 255 / 10%);
+}
+
+.markdown-preview table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
+  border-collapse: collapse;
+  margin: 0 0 18px;
+  font-size: 14px;
+}
+
+.markdown-preview th,
+.markdown-preview td {
+  border: 1px solid rgb(255 255 255 / 14%);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown-preview th {
+  color: #ffffff;
+  background: rgb(255 255 255 / 10%);
+}
+
+.markdown-preview tr:nth-child(even) td {
+  background: rgb(255 255 255 / 4%);
 }
 
 @media (max-width: 980px) {

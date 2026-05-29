@@ -18,11 +18,35 @@ export const renderMarkdown = (markdown: string): string => {
     }
   }
 
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
     const trimmed = line.trim()
 
     if (!trimmed) {
       closeList()
+      continue
+    }
+
+    const tableHeader = parseTableRow(trimmed)
+
+    if (tableHeader && index + 1 < lines.length && isTableDivider(lines[index + 1])) {
+      const rows: string[][] = []
+      index += 2
+
+      while (index < lines.length) {
+        const row = parseTableRow(lines[index])
+
+        if (!row || row.length !== tableHeader.length) {
+          index -= 1
+          break
+        }
+
+        rows.push(row)
+        index += 1
+      }
+
+      closeList()
+      html.push(renderTable(tableHeader, rows))
       continue
     }
 
@@ -59,3 +83,31 @@ const renderInline = (value: string): string =>
   escapeHtml(value)
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+
+const parseTableRow = (line: string): string[] | null => {
+  const trimmed = line.trim()
+
+  if (!trimmed.includes('|')) {
+    return null
+  }
+
+  const normalized = trimmed.startsWith('|') ? trimmed.slice(1) : trimmed
+  const withoutTrailing = normalized.endsWith('|') ? normalized.slice(0, -1) : normalized
+  const cells = withoutTrailing.split('|').map((cell) => cell.trim())
+
+  return cells.length > 1 ? cells : null
+}
+
+const isTableDivider = (line: string): boolean => {
+  const cells = parseTableRow(line)
+  return Boolean(cells?.every((cell) => /^:?-{3,}:?$/.test(cell)))
+}
+
+const renderTable = (header: string[], rows: string[][]): string => {
+  const head = `<thead><tr>${header.map((cell) => `<th>${renderInline(cell)}</th>`).join('')}</tr></thead>`
+  const bodyRows = rows
+    .map((row) => `<tr>${row.map((cell) => `<td>${renderInline(cell)}</td>`).join('')}</tr>`)
+    .join('')
+
+  return `<table>${head}<tbody>${bodyRows}</tbody></table>`
+}

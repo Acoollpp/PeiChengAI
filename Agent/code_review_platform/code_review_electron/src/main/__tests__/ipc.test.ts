@@ -38,6 +38,7 @@ describe('registerIpcHandlers', () => {
       'credentials:load',
       'credentials:clear',
       'server-config:load',
+      'task:list',
       'skill:install',
       'environment:check',
       'task:execute',
@@ -174,6 +175,70 @@ describe('registerIpcHandlers', () => {
       status: 'ready',
       reportPath: expect.stringContaining('report.md')
     })
+  })
+
+  it('lists tasks for the authenticated user', async () => {
+    const api = {
+      listTasks: vi.fn(async () => ({
+        data: [
+          {
+            id: 'task-1',
+            svn_url: 'svn://repo/project',
+            old_revision: '1',
+            new_revision: '2',
+            status: 'success'
+          }
+        ],
+        count: 1
+      }))
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never
+    })
+
+    const listHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:list')?.[1]
+
+    await expect(listHandler()).resolves.toEqual({
+      data: [
+        {
+          id: 'task-1',
+          svn_url: 'svn://repo/project',
+          old_revision: '1',
+          new_revision: '2',
+          status: 'success'
+        }
+      ],
+      count: 1
+    })
+    expect(api.listTasks).toHaveBeenCalledWith('token-123')
+  })
+
+  it('rejects task listing when unauthenticated', async () => {
+    const api = {
+      listTasks: vi.fn()
+    }
+    const authStore = {
+      load: vi.fn(async () => null),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never
+    })
+
+    const listHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:list')?.[1]
+
+    await expect(listHandler()).rejects.toThrow('Not authenticated')
+    expect(api.listTasks).not.toHaveBeenCalled()
   })
 
   it('syncs the active skill before checking the environment when authenticated', async () => {

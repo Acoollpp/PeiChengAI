@@ -92,6 +92,40 @@ describe('ApiClient', () => {
     })
   })
 
+  it('lists review tasks with authorization header', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: [
+          {
+            id: 'task-1',
+            svn_url: 'svn://repo/project',
+            old_revision: '12',
+            new_revision: '14',
+            status: 'success',
+            report_path: '/reports/task-1.md'
+          }
+        ],
+        count: 1
+      })
+    )
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    const result = await client.listTasks('token-123')
+
+    expect(result.data).toHaveLength(1)
+    expect(result.data[0]).toMatchObject({
+      id: 'task-1',
+      status: 'success'
+    })
+    expect(fetchMock).toHaveBeenCalledWith('https://server.example/api/v1/review-tasks', {
+      method: 'GET',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer token-123'
+      }
+    })
+  })
+
   it('gets svn credentials with authorization header', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ username: 'ada' }))
     const client = new ApiClient('https://server.example', fetchMock)

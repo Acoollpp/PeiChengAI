@@ -8,6 +8,7 @@ import type {
   LoginRequest,
   RememberedCredentials,
   RegisterRequest,
+  ReviewTasksResponse,
   TaskProgressEvent
 } from '../renderer/src/code-review-api'
 
@@ -22,6 +23,7 @@ contextBridge.exposeInMainWorld('codeReview', {
   clearCredentials: (): Promise<unknown> => ipcRenderer.invoke('credentials:clear'),
   loadServerConfig: (): Promise<{ server_url: string }> =>
     ipcRenderer.invoke('server-config:load'),
+  listTasks: (): Promise<ReviewTasksResponse> => ipcRenderer.invoke('task:list'),
   executeTask: (payload: ExecuteTaskRequest): Promise<ExecuteTaskResult> =>
     ipcRenderer.invoke('task:execute', payload),
   onTaskProgress: (callback: (event: TaskProgressEvent) => void): (() => void) => {

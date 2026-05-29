@@ -25,8 +25,39 @@ export function TaskPage({
   const [markdown, setMarkdown] = useState('')
   const [error, setError] = useState('')
   const [reportMessage, setReportMessage] = useState('')
+  const [isLoadingTasks, setIsLoadingTasks] = useState(true)
 
   const canRunTask = environment?.status === 'ready'
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadTasks = async (): Promise<void> => {
+      setIsLoadingTasks(true)
+      setError('')
+
+      try {
+        const response = await window.codeReview.listTasks()
+        if (isMounted) {
+          setTasks((current) => mergeTasks(response.data, current))
+        }
+      } catch (loadError) {
+        if (isMounted) {
+          setError(loadError instanceof Error ? loadError.message : '任务列表加载失败。')
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingTasks(false)
+        }
+      }
+    }
+
+    void loadTasks()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   useEffect(() => {
     return window.codeReview.onTaskProgress((event) => {
@@ -125,7 +156,7 @@ export function TaskPage({
 
         <section className="panel board-panel">
           <h2>任务看板</h2>
-          <TaskBoard tasks={tasks} />
+          <TaskBoard tasks={tasks} isLoading={isLoadingTasks} />
         </section>
       </aside>
 
@@ -143,6 +174,11 @@ export function TaskPage({
       </section>
     </section>
   )
+}
+
+const mergeTasks = (serverTasks: ReviewTask[], localTasks: ReviewTask[]): ReviewTask[] => {
+  const serverIds = new Set(serverTasks.map((task) => task.id))
+  return [...serverTasks, ...localTasks.filter((task) => !serverIds.has(task.id))]
 }
 
 const applyTaskProgress = (tasks: ReviewTask[], event: TaskProgressEvent): ReviewTask[] => {

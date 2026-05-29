@@ -1,4 +1,9 @@
-import type { EnvironmentStatus, ReviewTaskStatus, TaskProgressEvent } from '../../shared/types'
+import type {
+  EnvironmentStatus,
+  ReviewTask,
+  ReviewTaskStatus,
+  TaskProgressEvent
+} from '../../shared/types'
 
 export type { TaskProgressEvent }
 
@@ -43,6 +48,11 @@ export interface ExecuteTaskResult {
   reportPath?: string
 }
 
+export interface ReviewTasksResponse {
+  data: ReviewTask[]
+  count: number
+}
+
 export interface DownloadCurrentReportResult {
   status: 'ready' | 'missing'
   taskId?: string
@@ -56,6 +66,7 @@ export interface CodeReviewApi {
   loadCredentials(): Promise<RememberedCredentials | null>
   clearCredentials(): Promise<unknown>
   loadServerConfig(): Promise<{ server_url: string }>
+  listTasks(): Promise<ReviewTasksResponse>
   executeTask(payload: ExecuteTaskRequest): Promise<ExecuteTaskResult>
   onTaskProgress(callback: (event: TaskProgressEvent) => void): () => void
   downloadCurrentReport(): Promise<DownloadCurrentReportResult>

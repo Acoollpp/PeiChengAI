@@ -1,3 +1,5 @@
+import type { ReviewTask } from '../shared/types'
+
 export interface TokenPair {
   access_token: string
   refresh_token: string
@@ -35,6 +37,11 @@ export interface UpdateTaskStatusRequest {
 export interface UploadReportRequest {
   report_content: string
   report_path?: string
+}
+
+export interface ReviewTasksResponse {
+  data: ReviewTask[]
+  count: number
 }
 
 export interface ActiveSkill {
@@ -85,6 +92,13 @@ export class ApiClient {
       method: 'POST',
       headers: this.authHeaders(token),
       body: JSON.stringify(payload)
+    })
+  }
+
+  listTasks(token: string): Promise<ReviewTasksResponse> {
+    return this.request<ReviewTasksResponse>('/api/v1/review-tasks', {
+      method: 'GET',
+      headers: this.authHeaders(token)
     })
   }
 

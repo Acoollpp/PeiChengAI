@@ -100,6 +100,17 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     serverConfigStore.load()
   )
 
+  ipcMain.handle('task:list', async () => {
+    const tokens = await authStore.load()
+
+    if (!tokens) {
+      throw new Error('Not authenticated')
+    }
+
+    const taskApi = await createApiClient()
+    return taskApi.listTasks(tokens.access_token)
+  })
+
   ipcMain.handle('skill:install', async (): Promise<EnvironmentCheckResult> => {
     const skillError = await syncSkillForCurrentUser(authStore, syncSkill, {
       loginRequiredMessage: '请先登录后安装 Skill'

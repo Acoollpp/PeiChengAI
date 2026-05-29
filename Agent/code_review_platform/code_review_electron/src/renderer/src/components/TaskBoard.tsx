@@ -2,6 +2,7 @@ import type { ReviewTask } from '../../../shared/types'
 
 type TaskBoardProps = {
   tasks: ReviewTask[]
+  isLoading?: boolean
 }
 
 const statusText: Record<ReviewTask['status'], string> = {
@@ -15,7 +16,11 @@ const statusText: Record<ReviewTask['status'], string> = {
   cancelled: '已取消'
 }
 
-export function TaskBoard({ tasks }: TaskBoardProps): React.JSX.Element {
+export function TaskBoard({ tasks, isLoading = false }: TaskBoardProps): React.JSX.Element {
+  if (isLoading) {
+    return <p className="empty-state">正在加载历史任务...</p>
+  }
+
   if (tasks.length === 0) {
     return <p className="empty-state">暂无任务，填写左侧表单后开始审查。</p>
   }
@@ -28,7 +33,7 @@ export function TaskBoard({ tasks }: TaskBoardProps): React.JSX.Element {
             <strong>{task.id}</strong>
             <span className={`task-status task-status-${task.status}`}>{statusText[task.status]}</span>
           </div>
-          <p>{task.svn_url}</p>
+          <p className="task-url">{task.svn_url}</p>
           <dl className="task-meta">
             <div>
               <dt>旧版本</dt>
