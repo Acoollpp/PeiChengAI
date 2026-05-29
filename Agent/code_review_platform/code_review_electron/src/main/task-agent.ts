@@ -1,10 +1,10 @@
-import { cp, mkdir, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, readFile } from 'node:fs/promises'
 
 import type { ApiClient, CreateTaskRequest, UpdateTaskStatusRequest } from './api-client'
 import { checkEnvironment, type EnvironmentCheckResult } from './environment-checker'
 import { buildReviewPrompt, CodexReviewError, runCodexReview, type CodexErrorCode } from './codex-runner'
 import { ensureReportReady, uploadReportFile } from './report-uploader'
+import { getRuntimePaths } from './runtime-paths'
 import type {
   EnvironmentStatus,
   ReviewTask,
@@ -86,25 +86,14 @@ const toReviewTask = (value: unknown): ReviewTask => {
 }
 
 export const defaultPrepareWorkspace = async (taskId: string): Promise<PreparedWorkspace> => {
-  const { app } = await import('electron')
-  const userData = app.getPath('userData')
-  const cwd = join(userData, 'workspaces', taskId)
-  const sourceSkillPath = join(userData, 'skills', '通用-代码变更审查')
-  const workspaceSkillPath = join(cwd, 'skills', '通用-代码变更审查')
+  const runtimePaths = await getRuntimePaths()
+  const cwd = runtimePaths.workspaceForTask(taskId)
 
   await mkdir(cwd, { recursive: true })
-  await cp(sourceSkillPath, workspaceSkillPath, {
-    recursive: true,
-    force: true,
-    errorOnExist: false
-  }).catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`本机代码审查 Skill 源目录缺失，无法复制到任务工作区：${sourceSkillPath} (${message})`)
-  })
 
   return {
     cwd,
-    reportPath: join(cwd, 'report.md')
+    reportPath: runtimePaths.reportPathForTask(taskId)
   }
 }
 

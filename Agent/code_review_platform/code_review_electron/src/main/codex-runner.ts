@@ -97,7 +97,7 @@ export const buildReviewPrompt = ({
   oldRevision,
   newRevision,
   reportPath
-}: ReviewPromptInput): string => `请使用当前工作区中的 skill：skills/通用-代码变更审查
+}: ReviewPromptInput): string => `请使用本机 Codex 已安装的 skill：通用-代码变更审查
 
 审查输入：
 - 项目路径：${svnUrl}

@@ -248,40 +248,34 @@ describe('executeReviewTask', () => {
 })
 
 describe('defaultPrepareWorkspace', () => {
-  const userData = join(tmpdir(), `code-review-user-data-${Date.now()}`)
+  const appRoot = join(tmpdir(), `code-review-app-${Date.now()}`)
 
   afterEach(async () => {
     vi.restoreAllMocks()
     vi.resetModules()
-    await rm(userData, { recursive: true, force: true })
+    await rm(appRoot, { recursive: true, force: true })
   })
 
-  it('copies the source review skill into the task workspace', async () => {
+  it('creates the task workspace under development runtime-data without copying Skill files', async () => {
     vi.doMock('electron', () => ({
       app: {
-        getPath: vi.fn(() => userData)
+        isPackaged: false,
+        getAppPath: vi.fn(() => appRoot)
       }
     }))
 
-    const sourceSkill = join(userData, 'skills', '通用-代码变更审查')
-    await mkdir(sourceSkill, { recursive: true })
-    await writeFile(join(sourceSkill, 'SKILL.md'), 'review skill')
+    const { defaultPrepareWorkspace } = await import('../task-agent')
+    const workspace = await defaultPrepareWorkspace('task-runtime-workspace')
 
-    const workspace = await defaultPrepareWorkspace('task-copy-skill')
-    const workspaceSkill = join(workspace.cwd, 'skills', '通用-代码变更审查', 'SKILL.md')
-
-    await expect(readFile(workspaceSkill, 'utf8')).resolves.toBe('review skill')
-  })
-
-  it('throws a clear error when the source review skill is missing', async () => {
-    vi.doMock('electron', () => ({
-      app: {
-        getPath: vi.fn(() => userData)
-      }
-    }))
-
-    await expect(defaultPrepareWorkspace('task-missing-skill')).rejects.toThrow(
-      '本机代码审查 Skill 源目录缺失'
-    )
+    expect(workspace).toEqual({
+      cwd: join(appRoot, '.runtime-data', 'workspaces', 'task-runtime-workspace'),
+      reportPath: join(appRoot, '.runtime-data', 'workspaces', 'task-runtime-workspace', 'report.md')
+    })
+    await expect(
+      readFile(join(workspace.cwd, 'skills', '??-??????', 'SKILL.md'), 'utf8')
+    ).rejects.toThrow()
+    await expect(
+      readFile(join(workspace.cwd, 'skills', '???-?????????', 'SKILL.md'), 'utf8')
+    ).rejects.toThrow()
   })
 })
