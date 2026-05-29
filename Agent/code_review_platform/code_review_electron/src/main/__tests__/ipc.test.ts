@@ -39,6 +39,7 @@ describe('registerIpcHandlers', () => {
       'credentials:clear',
       'server-config:load',
       'task:list',
+      'task:report',
       'skill:install',
       'environment:check',
       'task:execute',
@@ -239,6 +240,48 @@ describe('registerIpcHandlers', () => {
 
     await expect(listHandler()).rejects.toThrow('Not authenticated')
     expect(api.listTasks).not.toHaveBeenCalled()
+  })
+
+  it('reads a task report for the authenticated user', async () => {
+    const api = {
+      readTaskReport: vi.fn(async () => '# Report\n')
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never
+    })
+
+    const reportHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:report')?.[1]
+
+    await expect(reportHandler({}, 'task-1')).resolves.toBe('# Report\n')
+    expect(api.readTaskReport).toHaveBeenCalledWith('token-123', 'task-1')
+  })
+
+  it('rejects task report reads when unauthenticated', async () => {
+    const api = {
+      readTaskReport: vi.fn()
+    }
+    const authStore = {
+      load: vi.fn(async () => null),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never
+    })
+
+    const reportHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:report')?.[1]
+
+    await expect(reportHandler({}, 'task-1')).rejects.toThrow('Not authenticated')
+    expect(api.readTaskReport).not.toHaveBeenCalled()
   })
 
   it('syncs the active skill before checking the environment when authenticated', async () => {

@@ -102,6 +102,22 @@ export class ApiClient {
     })
   }
 
+  async readTaskReport(token: string, taskId: string): Promise<string> {
+    const response = await this.fetchImpl(
+      `${this.baseUrl}/api/v1/review-tasks/${encodeURIComponent(taskId)}/report`,
+      {
+        method: 'GET',
+        headers: this.authHeaders(token)
+      }
+    )
+
+    if (!response.ok) {
+      throw new ApiError(response.status, await this.readErrorMessage(response))
+    }
+
+    return response.text()
+  }
+
   getSvnCredential(token: string): Promise<unknown> {
     return this.request('/api/v1/me/svn-credential', {
       method: 'GET',

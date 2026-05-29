@@ -26,6 +26,8 @@ export function TaskPage({
   const [error, setError] = useState('')
   const [reportMessage, setReportMessage] = useState('')
   const [isLoadingTasks, setIsLoadingTasks] = useState(true)
+  const [selectedTaskId, setSelectedTaskId] = useState<string>()
+  const [loadingReportTaskId, setLoadingReportTaskId] = useState<string>()
 
   const canRunTask = environment?.status === 'ready'
 
@@ -84,6 +86,7 @@ export function TaskPage({
       if (result.reportMarkdown) {
         setMarkdown(result.reportMarkdown)
       }
+      setSelectedTaskId(result.taskId)
       if (result.reportPath) {
         setReportMessage(`报告已生成：${result.reportPath}`)
       }
@@ -108,6 +111,22 @@ export function TaskPage({
           task.id === pendingTask.id ? { ...task, status: 'failed', error_message: message } : task
         )
       )
+    }
+  }
+
+  const handleViewReport = async (task: ReviewTask): Promise<void> => {
+    setError('')
+    setReportMessage('')
+    setSelectedTaskId(task.id)
+    setLoadingReportTaskId(task.id)
+
+    try {
+      const reportMarkdown = await window.codeReview.readTaskReport(task.id)
+      setMarkdown(reportMarkdown)
+    } catch (reportError) {
+      setError(reportError instanceof Error ? reportError.message : '历史报告加载失败。')
+    } finally {
+      setLoadingReportTaskId(undefined)
     }
   }
 
@@ -156,7 +175,13 @@ export function TaskPage({
 
         <section className="panel board-panel">
           <h2>任务看板</h2>
-          <TaskBoard tasks={tasks} isLoading={isLoadingTasks} />
+          <TaskBoard
+            tasks={tasks}
+            isLoading={isLoadingTasks}
+            selectedTaskId={selectedTaskId}
+            loadingReportTaskId={loadingReportTaskId}
+            onViewReport={(task) => void handleViewReport(task)}
+          />
         </section>
       </aside>
 

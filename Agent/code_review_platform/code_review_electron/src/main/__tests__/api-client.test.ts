@@ -126,6 +126,29 @@ describe('ApiClient', () => {
     })
   })
 
+  it('reads a review task report as markdown text', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('# Review\n\nLooks good.\n', {
+        status: 200,
+        headers: { 'content-type': 'text/markdown' }
+      })
+    )
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    const result = await client.readTaskReport('token-123', 'task/1')
+
+    expect(result).toBe('# Review\n\nLooks good.\n')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://server.example/api/v1/review-tasks/task%2F1/report',
+      {
+        method: 'GET',
+        headers: {
+          authorization: 'Bearer token-123'
+        }
+      }
+    )
+  })
+
   it('gets svn credentials with authorization header', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ username: 'ada' }))
     const client = new ApiClient('https://server.example', fetchMock)

@@ -67,6 +67,7 @@ export interface CodeReviewApi {
   clearCredentials(): Promise<unknown>
   loadServerConfig(): Promise<{ server_url: string }>
   listTasks(): Promise<ReviewTasksResponse>
+  readTaskReport(taskId: string): Promise<string>
   executeTask(payload: ExecuteTaskRequest): Promise<ExecuteTaskResult>
   onTaskProgress(callback: (event: TaskProgressEvent) => void): () => void
   downloadCurrentReport(): Promise<DownloadCurrentReportResult>

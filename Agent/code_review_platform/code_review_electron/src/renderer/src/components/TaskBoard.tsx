@@ -3,6 +3,9 @@ import type { ReviewTask } from '../../../shared/types'
 type TaskBoardProps = {
   tasks: ReviewTask[]
   isLoading?: boolean
+  selectedTaskId?: string
+  loadingReportTaskId?: string
+  onViewReport?: (task: ReviewTask) => void
 }
 
 const statusText: Record<ReviewTask['status'], string> = {
@@ -16,7 +19,13 @@ const statusText: Record<ReviewTask['status'], string> = {
   cancelled: '已取消'
 }
 
-export function TaskBoard({ tasks, isLoading = false }: TaskBoardProps): React.JSX.Element {
+export function TaskBoard({
+  tasks,
+  isLoading = false,
+  selectedTaskId,
+  loadingReportTaskId,
+  onViewReport
+}: TaskBoardProps): React.JSX.Element {
   if (isLoading) {
     return <p className="empty-state">正在加载历史任务...</p>
   }
@@ -28,7 +37,7 @@ export function TaskBoard({ tasks, isLoading = false }: TaskBoardProps): React.J
   return (
     <div className="task-list" aria-label="任务列表">
       {tasks.map((task) => (
-        <article className="task-card" key={task.id}>
+        <article className={`task-card${task.id === selectedTaskId ? ' is-selected' : ''}`} key={task.id}>
           <div className="task-card-header">
             <strong>{task.id}</strong>
             <span className={`task-status task-status-${task.status}`}>{statusText[task.status]}</span>
@@ -44,6 +53,16 @@ export function TaskBoard({ tasks, isLoading = false }: TaskBoardProps): React.J
               <dd>{task.new_revision}</dd>
             </div>
           </dl>
+          {task.status === 'success' && (
+            <button
+              className="task-action-button"
+              type="button"
+              disabled={loadingReportTaskId === task.id}
+              onClick={() => onViewReport?.(task)}
+            >
+              {loadingReportTaskId === task.id ? '加载中...' : '查看报告'}
+            </button>
+          )}
           {task.progress_message && <p className="task-progress">{task.progress_message}</p>}
           {task.codex_log && task.codex_log.length > 0 && (
             <div className="task-log" aria-label="Codex 执行输出">

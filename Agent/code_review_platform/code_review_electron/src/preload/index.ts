@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('codeReview', {
   loadServerConfig: (): Promise<{ server_url: string }> =>
     ipcRenderer.invoke('server-config:load'),
   listTasks: (): Promise<ReviewTasksResponse> => ipcRenderer.invoke('task:list'),
+  readTaskReport: (taskId: string): Promise<string> => ipcRenderer.invoke('task:report', taskId),
   executeTask: (payload: ExecuteTaskRequest): Promise<ExecuteTaskResult> =>
     ipcRenderer.invoke('task:execute', payload),
   onTaskProgress: (callback: (event: TaskProgressEvent) => void): (() => void) => {
