@@ -183,7 +183,7 @@ describe('registerIpcHandlers', () => {
     }
     const syncSkill = vi.fn(async () => ({
       status: 'synced' as const,
-      skillPath: '/tmp/code-review-user-data/skills/通用-代码变更审查/SKILL.md'
+      packagePath: '/tmp/code-review-runtime/skill-packages/skill.zip'
     }))
     const checkEnvironment = vi.fn(async () => ({ status: 'ready' as const }))
     const { registerIpcHandlers } = await import('../ipc')
@@ -210,7 +210,7 @@ describe('registerIpcHandlers', () => {
     }
     const syncSkill = vi.fn(async () => ({
       status: 'synced' as const,
-      skillPath: '/tmp/code-review-user-data/skills/通用-代码变更审查/SKILL.md'
+      packagePath: '/tmp/code-review-runtime/skill-packages/skill.zip'
     }))
     const checkEnvironment = vi.fn(async () => ({ status: 'ready' as const }))
     const { registerIpcHandlers } = await import('../ipc')
