@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import type { ApiClient, CreateTaskRequest, UpdateTaskStatusRequest } from './api-client'
 import { checkEnvironment, type EnvironmentCheckResult } from './environment-checker'
-import { buildReviewPrompt, runCodexReview } from './codex-runner'
+import { buildReviewPrompt, CodexReviewError, runCodexReview, type CodexErrorCode } from './codex-runner'
 import { ensureReportReady, uploadReportFile } from './report-uploader'
 import type {
   EnvironmentStatus,
@@ -62,6 +62,14 @@ const environmentErrorMessages: Record<Exclude<EnvironmentStatus, 'ready'>, stri
   missing_svn: '本机 SVN CLI 不可用，请联系管理员处理。',
   missing_skill: '本机代码审查 Skill 不可用，请联系管理员处理。',
   failed: '本机审查环境检查失败，请联系管理员处理。'
+}
+
+const codexErrorMessages: Record<CodexErrorCode, string> = {
+  SVN_ERROR: 'SVN 操作失败，请检查项目路径和版本号是否正确。',
+  SKILL_ERROR: '代码审查 Skill 执行异常，请联系管理员处理。',
+  PARAM_ERROR: '输入参数无效，请检查项目路径、版本号等信息。',
+  REPORT_ERROR: '审查报告生成失败，请重试或联系管理员。',
+  INTERNAL_ERROR: 'Codex 执行过程中发生内部错误。',
 }
 
 const toReviewTask = (value: unknown): ReviewTask => {
@@ -189,11 +197,15 @@ export const executeReviewTask = async (
       reportPath: workspace.reportPath
     }
   } catch (error) {
+    const errorMessage = error instanceof CodexReviewError
+      ? `${codexErrorMessages[error.errorCode]}（Codex 分析：${error.message}）`
+      : sanitizeErrorSummary(error, input.token)
+
     await updateStatus(dependencies, input.token, task.id, {
       status: 'failed',
-      error_message: sanitizeErrorSummary(error, input.token)
+      error_message: errorMessage
     })
-    emitStage(onProgress, task.id, 'failed', sanitizeErrorSummary(error, input.token))
+    emitStage(onProgress, task.id, 'failed', errorMessage)
 
     throw error
   }
