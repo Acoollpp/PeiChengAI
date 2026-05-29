@@ -5,7 +5,13 @@ import type { ApiClient, CreateTaskRequest, UpdateTaskStatusRequest } from './ap
 import { checkEnvironment, type EnvironmentCheckResult } from './environment-checker'
 import { buildReviewPrompt, runCodexReview } from './codex-runner'
 import { ensureReportReady, uploadReportFile } from './report-uploader'
-import type { EnvironmentStatus, ReviewTask, ReviewTaskStatus } from '../shared/types'
+import type {
+  EnvironmentStatus,
+  ReviewTask,
+  ReviewTaskStatus,
+  TaskProgressEvent,
+  TaskProgressStage
+} from '../shared/types'
 
 export interface ExecuteReviewTaskInput {
   token: string
@@ -21,6 +27,7 @@ export interface RunCodexInput {
   cwd: string
   reportPath: string
   task: ReviewTask
+  onProgress?: TaskProgressReporter
 }
 
 export interface ExecuteReviewTaskResult {
@@ -47,6 +54,8 @@ export interface TaskAgentDependencies {
   runCodex: (input: RunCodexInput) => Promise<unknown>
   uploadReport: (token: string, taskId: string, reportPath: string) => Promise<unknown>
 }
+
+export type TaskProgressReporter = (event: TaskProgressEvent) => void
 
 const environmentErrorMessages: Record<Exclude<EnvironmentStatus, 'ready'>, string> = {
   missing_codex: '本机 Codex CLI 不可用，请联系管理员处理。',
@@ -91,7 +100,12 @@ export const defaultPrepareWorkspace = async (taskId: string): Promise<PreparedW
   }
 }
 
-export const defaultRunCodex = async ({ cwd, reportPath, task }: RunCodexInput): Promise<void> => {
+export const defaultRunCodex = async ({
+  cwd,
+  reportPath,
+  task,
+  onProgress
+}: RunCodexInput): Promise<void> => {
   await runCodexReview({
     cwd,
     prompt: buildReviewPrompt({
@@ -100,7 +114,14 @@ export const defaultRunCodex = async ({ cwd, reportPath, task }: RunCodexInput):
       newRevision: task.new_revision,
       reportPath
     }),
-    timeoutMs: 30 * 60 * 1000
+    timeoutMs: 30 * 60 * 1000,
+    onOutput: (event) =>
+      onProgress?.({
+        taskId: task.id,
+        type: 'codex_output',
+        stream: event.stream,
+        message: event.text
+      })
   })
 }
 
@@ -114,11 +135,13 @@ export const createTaskAgentDependencies = (api: ApiClient): TaskAgentDependenci
 
 export const executeReviewTask = async (
   input: ExecuteReviewTaskInput,
-  dependencies: TaskAgentDependencies
+  dependencies: TaskAgentDependencies,
+  onProgress?: TaskProgressReporter
 ): Promise<ExecuteReviewTaskResult> => {
   const task = toReviewTask(await dependencies.api.createTask(input.token, input.request))
 
   try {
+    emitStage(onProgress, task.id, 'checking_environment', '检查本机环境')
     await updateStatus(dependencies, input.token, task.id, {
       status: 'checking_environment'
     })
@@ -126,6 +149,7 @@ export const executeReviewTask = async (
     const environment = await dependencies.checkEnvironment()
 
     if (environment.status !== 'ready') {
+      emitStage(onProgress, task.id, 'environment_error', environmentErrorMessages[environment.status])
       await updateStatus(dependencies, input.token, task.id, {
         status: 'environment_error',
         error_message: environmentErrorMessages[environment.status]
@@ -134,17 +158,21 @@ export const executeReviewTask = async (
       return { taskId: task.id, status: 'environment_error' }
     }
 
+    emitStage(onProgress, task.id, 'preparing_workspace', '准备任务工作区')
     const workspace = await dependencies.prepareWorkspace(task.id)
 
+    emitStage(onProgress, task.id, 'running_codex', '启动 Codex 执行审查 Skill')
     await updateStatus(dependencies, input.token, task.id, {
       status: 'running_codex'
     })
 
     await dependencies.runCodex({
       ...workspace,
-      task
+      task,
+      onProgress
     })
 
+    emitStage(onProgress, task.id, 'uploading_report', '上传审查报告')
     await updateStatus(dependencies, input.token, task.id, {
       status: 'uploading_report'
     })
@@ -153,6 +181,7 @@ export const executeReviewTask = async (
     await dependencies.uploadReport(input.token, task.id, workspace.reportPath)
     const reportMarkdown = await readFile(workspace.reportPath, 'utf8')
 
+    emitStage(onProgress, task.id, 'success', '审查完成')
     return {
       taskId: task.id,
       status: 'success',
@@ -164,9 +193,24 @@ export const executeReviewTask = async (
       status: 'failed',
       error_message: sanitizeErrorSummary(error, input.token)
     })
+    emitStage(onProgress, task.id, 'failed', sanitizeErrorSummary(error, input.token))
 
     throw error
   }
+}
+
+const emitStage = (
+  onProgress: TaskProgressReporter | undefined,
+  taskId: string,
+  stage: TaskProgressStage,
+  message: string
+): void => {
+  onProgress?.({
+    taskId,
+    type: 'stage',
+    stage,
+    message
+  })
 }
 
 const updateStatus = (
@@ -186,6 +230,7 @@ const sanitizeErrorSummary = (error: unknown, token: string): string => {
       (_match, key: string, separator: string) => `${key}${separator} [redacted]`
     )
     .replace(/\bBearer\s+("[^"]*"|'[^']*'|[^\s,;]+)/gi, 'Bearer [redacted]')
+    .replace(/[A-Za-z]:\\[^\s:]+/g, '[路径已隐藏]')
     .replace(/\/[^\s:]+/g, '[路径已隐藏]')
     .replace(/\s+/g, ' ')
     .slice(0, 500)

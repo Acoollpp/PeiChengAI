@@ -39,6 +39,16 @@ export function TaskBoard({ tasks }: TaskBoardProps): React.JSX.Element {
               <dd>{task.new_revision}</dd>
             </div>
           </dl>
+          {task.progress_message && <p className="task-progress">{task.progress_message}</p>}
+          {task.codex_log && task.codex_log.length > 0 && (
+            <div className="task-log" aria-label="Codex 执行输出">
+              {task.codex_log.slice(-4).map((event, index) => (
+                <pre className={`task-log-line task-log-${event.type}`} key={`${task.id}-${index}`}>
+                  {event.message.trimEnd()}
+                </pre>
+              ))}
+            </div>
+          )}
           {task.error_message && <p className="task-error">{task.error_message}</p>}
         </article>
       ))}

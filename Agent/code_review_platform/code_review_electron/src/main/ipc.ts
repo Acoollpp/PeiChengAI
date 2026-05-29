@@ -132,7 +132,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
   ipcMain.handle(
     'task:execute',
-    async (_event, payload: CreateTaskRequest): Promise<ExecuteReviewTaskResult> => {
+    async (event, payload: CreateTaskRequest): Promise<ExecuteReviewTaskResult> => {
       const tokens = await authStore.load()
 
       if (!tokens) {
@@ -153,6 +153,9 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
           uploadReport:
             dependencies.uploadReport ??
             ((token, taskId, reportPath) => uploadReportFile(taskApi, token, taskId, reportPath))
+        },
+        (progressEvent) => {
+          event.sender?.send('task:progress', progressEvent)
         }
       )
 

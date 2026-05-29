@@ -1,4 +1,6 @@
-import type { EnvironmentStatus, ReviewTaskStatus } from '../../shared/types'
+import type { EnvironmentStatus, ReviewTaskStatus, TaskProgressEvent } from '../../shared/types'
+
+export type { TaskProgressEvent }
 
 export interface RegisterRequest {
   server_url: string
@@ -55,6 +57,7 @@ export interface CodeReviewApi {
   clearCredentials(): Promise<unknown>
   loadServerConfig(): Promise<{ server_url: string }>
   executeTask(payload: ExecuteTaskRequest): Promise<ExecuteTaskResult>
+  onTaskProgress(callback: (event: TaskProgressEvent) => void): () => void
   downloadCurrentReport(): Promise<DownloadCurrentReportResult>
   installSkill(): Promise<EnvironmentCheckResult>
   checkEnvironment(): Promise<EnvironmentCheckResult>

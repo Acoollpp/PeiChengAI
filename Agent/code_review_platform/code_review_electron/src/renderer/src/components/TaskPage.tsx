@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-import type { ReviewTask } from '../../../shared/types'
+import type { ReviewTask, TaskProgressEvent } from '../../../shared/types'
 import paceLogo from '../assets/pace-logo.png'
 import type { EnvironmentCheckResult, ExecuteTaskRequest } from '../code-review-api'
 import { EnvironmentStatus } from './EnvironmentStatus'
@@ -27,6 +27,12 @@ export function TaskPage({
   const [reportMessage, setReportMessage] = useState('')
 
   const canRunTask = environment?.status === 'ready'
+
+  useEffect(() => {
+    return window.codeReview.onTaskProgress((event) => {
+      setTasks((current) => applyTaskProgress(current, event))
+    })
+  }, [])
 
   const handleTaskSubmit = async (payload: ExecuteTaskRequest): Promise<void> => {
     setError('')
@@ -57,7 +63,8 @@ export function TaskPage({
                 ...task,
                 id: result.taskId,
                 status: result.status,
-                report_path: result.reportPath
+                report_path: result.reportPath,
+                progress_message: result.status === 'success' ? '审查完成' : task.progress_message
               }
             : task
         )
@@ -136,4 +143,44 @@ export function TaskPage({
       </section>
     </section>
   )
+}
+
+const applyTaskProgress = (tasks: ReviewTask[], event: TaskProgressEvent): ReviewTask[] => {
+  const targetIndex = tasks.findIndex(
+    (task) => task.id === event.taskId || task.id.startsWith('local-')
+  )
+
+  if (targetIndex < 0) {
+    return tasks
+  }
+
+  return tasks.map((task, index) => {
+    if (index !== targetIndex) {
+      return task
+    }
+
+    const codexLog = event.type === 'codex_output' ? [...(task.codex_log ?? []), event].slice(-20) : task.codex_log
+
+    return {
+      ...task,
+      id: event.taskId,
+      status: event.type === 'stage' ? mapProgressStageToTaskStatus(event.stage) : task.status,
+      progress_message: event.message,
+      codex_log: codexLog
+    }
+  })
+}
+
+const mapProgressStageToTaskStatus = (
+  stage: Extract<TaskProgressEvent, { type: 'stage' }>['stage']
+): ReviewTask['status'] => {
+  if (stage === 'preparing_workspace') {
+    return 'checking_environment'
+  }
+
+  if (stage === 'created') {
+    return 'created'
+  }
+
+  return stage
 }

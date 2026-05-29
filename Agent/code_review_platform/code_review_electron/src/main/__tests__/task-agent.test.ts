@@ -141,6 +141,49 @@ describe('executeReviewTask', () => {
     )
   })
 
+  it('emits task progress events around environment, workspace, Codex, and upload stages', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, 'report.md')
+    const events: string[] = []
+    const dependencies: TaskAgentDependencies = {
+      api: {
+        createTask: vi.fn(async () => makeTask()),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath })),
+      runCodex: vi.fn(async ({ onProgress }) => {
+        onProgress?.({
+          taskId: 'task-1',
+          type: 'codex_output',
+          stream: 'stdout',
+          message: '读取 Skill\n'
+        })
+        await writeFile(reportPath, '# report\n')
+      }),
+      uploadReport: vi.fn()
+    }
+
+    await executeReviewTask(
+      { token: 'token-123', request },
+      dependencies,
+      (event) => {
+        const detail = event.type === 'stage' ? event.stage : event.stream
+        events.push(`${event.type}:${detail}:${event.message}`)
+      }
+    )
+
+    expect(events).toEqual([
+      'stage:checking_environment:检查本机环境',
+      'stage:preparing_workspace:准备任务工作区',
+      'stage:running_codex:启动 Codex 执行审查 Skill',
+      'codex_output:stdout:读取 Skill\n',
+      'stage:uploading_report:上传审查报告',
+      'stage:success:审查完成'
+    ])
+  })
+
   it('marks task as failed with a sanitized summary when codex throws', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-'))
     tempDirs.push(cwd)

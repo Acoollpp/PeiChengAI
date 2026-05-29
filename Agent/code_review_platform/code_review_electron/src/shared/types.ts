@@ -23,4 +23,30 @@ export interface ReviewTask {
   status: ReviewTaskStatus
   report_path?: string
   error_message?: string
+  progress_message?: string
+  codex_log?: TaskProgressEvent[]
 }
+
+export type TaskProgressStage =
+  | 'created'
+  | 'checking_environment'
+  | 'preparing_workspace'
+  | 'running_codex'
+  | 'uploading_report'
+  | 'success'
+  | 'failed'
+  | 'environment_error'
+
+export type TaskProgressEvent =
+  | {
+      taskId: string
+      type: 'stage'
+      stage: TaskProgressStage
+      message: string
+    }
+  | {
+      taskId: string
+      type: 'codex_output'
+      stream: 'stdout' | 'stderr'
+      message: string
+    }

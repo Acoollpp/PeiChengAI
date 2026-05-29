@@ -7,7 +7,8 @@ import type {
   DownloadCurrentReportResult,
   LoginRequest,
   RememberedCredentials,
-  RegisterRequest
+  RegisterRequest,
+  TaskProgressEvent
 } from '../renderer/src/code-review-api'
 
 contextBridge.exposeInMainWorld('codeReview', {
@@ -23,6 +24,15 @@ contextBridge.exposeInMainWorld('codeReview', {
     ipcRenderer.invoke('server-config:load'),
   executeTask: (payload: ExecuteTaskRequest): Promise<ExecuteTaskResult> =>
     ipcRenderer.invoke('task:execute', payload),
+  onTaskProgress: (callback: (event: TaskProgressEvent) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progressEvent: TaskProgressEvent): void => {
+      callback(progressEvent)
+    }
+    ipcRenderer.on('task:progress', listener)
+    return () => {
+      ipcRenderer.removeListener('task:progress', listener)
+    }
+  },
   downloadCurrentReport: (): Promise<DownloadCurrentReportResult> =>
     ipcRenderer.invoke('report:download-current'),
   installSkill: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('skill:install'),
