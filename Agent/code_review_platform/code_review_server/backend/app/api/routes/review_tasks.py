@@ -57,6 +57,16 @@ def _read_report_path(task: ReviewTask) -> Path:
     return report_path
 
 
+def _task_public(task: ReviewTask, user: User | None = None) -> ReviewTaskPublic:
+    return ReviewTaskPublic.model_validate(
+        task,
+        update={
+            "user_name": user.full_name if user else None,
+            "svn_username": user.svn_username if user else None,
+        },
+    )
+
+
 @router.post("", response_model=ReviewTaskPublic)
 def create_review_task(
     *, session: SessionDep, current_user: CurrentUser, task_in: ReviewTaskCreate
@@ -84,25 +94,38 @@ def create_review_task(
 
 @router.get("", response_model=ReviewTasksPublic)
 def read_review_tasks(
-    session: SessionDep, current_user: CurrentUser, skip: int = 0, limit: int = 100
+    session: SessionDep,
+    current_user: CurrentUser,
+    skip: int = 0,
+    limit: int = 100,
+    user_name: str | None = None,
+    svn_username: str | None = None,
 ) -> Any:
-    if has_admin_privileges(current_user):
-        count_statement = select(func.count()).select_from(ReviewTask)
-        statement = select(ReviewTask)
-    else:
-        count_statement = (
-            select(func.count())
-            .select_from(ReviewTask)
-            .where(ReviewTask.user_id == current_user.id)
-        )
-        statement = select(ReviewTask).where(ReviewTask.user_id == current_user.id)
+    filters = []
+    if not has_admin_privileges(current_user):
+        filters.append(ReviewTask.user_id == current_user.id)
+    if user_name and user_name.strip():
+        filters.append(col(User.full_name).ilike(f"%{user_name.strip()}%"))
+    if svn_username and svn_username.strip():
+        filters.append(col(User.svn_username).ilike(f"%{svn_username.strip()}%"))
 
+    count_statement = (
+        select(func.count())
+        .select_from(ReviewTask)
+        .join(User, ReviewTask.user_id == User.id)
+        .where(*filters)
+    )
+    statement = (
+        select(ReviewTask, User)
+        .join(User, ReviewTask.user_id == User.id)
+        .where(*filters)
+    )
     count = session.exec(count_statement).one()
-    tasks = session.exec(
+    rows = session.exec(
         statement.order_by(col(ReviewTask.created_at).desc()).offset(skip).limit(limit)
     ).all()
     return ReviewTasksPublic(
-        data=[ReviewTaskPublic.model_validate(task) for task in tasks],
+        data=[_task_public(task, user) for task, user in rows],
         count=count,
     )
 
@@ -114,6 +137,27 @@ def read_review_task(
     return _get_task_for_user(
         session=session, current_user=current_user, task_id=task_id
     )
+
+
+@router.delete("/{task_id}")
+def delete_review_task(
+    session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
+) -> dict[str, str]:
+    task = _get_task_for_user(
+        session=session, current_user=current_user, task_id=task_id
+    )
+    report_path = Path(task.report_path) if task.report_path else None
+    if report_path and report_path.is_file():
+        try:
+            report_path.unlink()
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500, detail="Failed to delete review task report"
+            ) from exc
+
+    session.delete(task)
+    session.commit()
+    return {"message": "Review task deleted"}
 
 
 @router.patch("/{task_id}/status", response_model=ReviewTaskPublic)

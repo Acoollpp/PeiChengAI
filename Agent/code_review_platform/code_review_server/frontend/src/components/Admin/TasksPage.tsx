@@ -1,9 +1,24 @@
-import { useSuspenseQuery } from "@tanstack/react-query"
-import { Download, ExternalLink } from "lucide-react"
-import { Suspense } from "react"
+import {
+  useMutation,
+  useQueryClient,
+  useSuspenseQuery,
+} from "@tanstack/react-query"
+import { Download, ExternalLink, Search, Trash2, X } from "lucide-react"
+import { type FormEvent, Suspense, useState } from "react"
+import { toast } from "sonner"
 
 import { OpenAPI } from "@/client"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import {
   Table,
   TableBody,
@@ -15,6 +30,8 @@ import {
 
 type ReviewTask = {
   id: string
+  user_name?: string | null
+  svn_username?: string | null
   svn_url: string
   old_revision: string
   new_revision: string
@@ -29,10 +46,34 @@ type ReviewTasksResponse = {
   count: number
 }
 
-async function readReviewTasks(): Promise<ReviewTasksResponse> {
+type ReviewTaskFilters = {
+  userName: string
+  svnUsername: string
+}
+
+const emptyFilters: ReviewTaskFilters = {
+  userName: "",
+  svnUsername: "",
+}
+
+async function readReviewTasks(
+  filters: ReviewTaskFilters,
+): Promise<ReviewTasksResponse> {
   const token = localStorage.getItem("access_token")
+  const searchParams = new URLSearchParams({ limit: "100" })
+  const userName = filters.userName.trim()
+  const svnUsername = filters.svnUsername.trim()
+
+  if (userName) {
+    searchParams.set("user_name", userName)
+  }
+
+  if (svnUsername) {
+    searchParams.set("svn_username", svnUsername)
+  }
+
   const response = await fetch(
-    `${OpenAPI.BASE}/api/v1/review-tasks?limit=100`,
+    `${OpenAPI.BASE}/api/v1/review-tasks?${searchParams}`,
     {
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     },
@@ -45,10 +86,10 @@ async function readReviewTasks(): Promise<ReviewTasksResponse> {
   return response.json()
 }
 
-function getReviewTasksQueryOptions() {
+function getReviewTasksQueryOptions(filters: ReviewTaskFilters) {
   return {
-    queryFn: readReviewTasks,
-    queryKey: ["review-tasks", "admin"],
+    queryFn: () => readReviewTasks(filters),
+    queryKey: ["review-tasks", "admin", filters],
   }
 }
 
@@ -82,95 +123,232 @@ async function downloadReport(task: ReviewTask) {
   link.click()
 }
 
-function ReviewTasksTable() {
-  const { data: tasks } = useSuspenseQuery(getReviewTasksQueryOptions())
+async function deleteReviewTask(task: ReviewTask) {
+  const token = localStorage.getItem("access_token")
+  const response = await fetch(
+    `${OpenAPI.BASE}/api/v1/review-tasks/${task.id}`,
+    {
+      method: "DELETE",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error("Failed to delete review task")
+  }
+
+  return response.json()
+}
+
+function ReviewTasksTable({ filters }: { filters: ReviewTaskFilters }) {
+  const queryClient = useQueryClient()
+  const [taskToDelete, setTaskToDelete] = useState<ReviewTask | null>(null)
+  const { data: tasks } = useSuspenseQuery(getReviewTasksQueryOptions(filters))
+  const deleteMutation = useMutation({
+    mutationFn: deleteReviewTask,
+    onSuccess: async () => {
+      toast.success("代码审查任务已删除")
+      setTaskToDelete(null)
+      await queryClient.invalidateQueries({ queryKey: ["review-tasks"] })
+    },
+    onError: () => {
+      toast.error("删除代码审查任务失败")
+    },
+  })
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow className="hover:bg-transparent">
-          <TableHead>SVN地址</TableHead>
-          <TableHead>版本</TableHead>
-          <TableHead>状态</TableHead>
-          <TableHead>客户端</TableHead>
-          <TableHead>报告</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {tasks.data.length === 0 ? (
+    <>
+      <Table>
+        <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableCell
-              colSpan={5}
-              className="h-32 text-center text-muted-foreground"
-            >
-              暂无审查任务
-            </TableCell>
+            <TableHead>用户名称</TableHead>
+            <TableHead>SVN账号</TableHead>
+            <TableHead>SVN地址</TableHead>
+            <TableHead>版本</TableHead>
+            <TableHead>状态</TableHead>
+            <TableHead>执行客户端</TableHead>
+            <TableHead>报告</TableHead>
+            <TableHead>操作</TableHead>
           </TableRow>
-        ) : (
-          tasks.data.map((task) => (
-            <TableRow key={task.id}>
-              <TableCell className="max-w-sm truncate font-medium">
-                {task.svn_url}
-              </TableCell>
-              <TableCell>
-                {task.old_revision} → {task.new_revision}
-              </TableCell>
-              <TableCell>{task.status}</TableCell>
-              <TableCell className="text-muted-foreground">
-                {[task.client_hostname, task.client_version]
-                  .filter(Boolean)
-                  .join(" / ") || "-"}
-              </TableCell>
-              <TableCell>
-                {task.report_path ? (
-                  <div className="flex items-center gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="打开报告"
-                      onClick={() => void openReport(task)}
-                    >
-                      <ExternalLink />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="下载报告"
-                      onClick={() => void downloadReport(task)}
-                    >
-                      <Download />
-                    </Button>
-                  </div>
-                ) : (
-                  <span className="text-muted-foreground">-</span>
-                )}
+        </TableHeader>
+        <TableBody>
+          {tasks.data.length === 0 ? (
+            <TableRow className="hover:bg-transparent">
+              <TableCell
+                colSpan={8}
+                className="h-32 text-center text-muted-foreground"
+              >
+                暂无审查任务
               </TableCell>
             </TableRow>
-          ))
-        )}
-      </TableBody>
-    </Table>
+          ) : (
+            tasks.data.map((task) => (
+              <TableRow key={task.id}>
+                <TableCell>{task.user_name || "-"}</TableCell>
+                <TableCell>{task.svn_username || "-"}</TableCell>
+                <TableCell className="max-w-sm truncate font-medium">
+                  {task.svn_url}
+                </TableCell>
+                <TableCell>
+                  {task.old_revision} → {task.new_revision}
+                </TableCell>
+                <TableCell>{task.status}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {[task.client_hostname, task.client_version]
+                    .filter(Boolean)
+                    .join(" / ") || "-"}
+                </TableCell>
+                <TableCell>
+                  {task.report_path ? (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="打开报告"
+                        onClick={() => void openReport(task)}
+                      >
+                        <ExternalLink />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="下载报告"
+                        onClick={() => void downloadReport(task)}
+                      >
+                        <Download />
+                      </Button>
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="删除任务"
+                    onClick={() => setTaskToDelete(task)}
+                  >
+                    <Trash2 />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+      <Dialog
+        open={taskToDelete !== null}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setTaskToDelete(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除代码审查任务</DialogTitle>
+            <DialogDescription>
+              此操作会同时删除任务记录和已上传报告文件，且不可撤销。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4">
+            <DialogClose asChild>
+              <Button variant="outline" disabled={deleteMutation.isPending}>
+                取消
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleteMutation.isPending || taskToDelete === null}
+              onClick={() => {
+                if (taskToDelete) {
+                  deleteMutation.mutate(taskToDelete)
+                }
+              }}
+            >
+              删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
-function ReviewTasksSection() {
+function ReviewTasksSection({ filters }: { filters: ReviewTaskFilters }) {
   return (
     <Suspense fallback={<div className="text-muted-foreground">加载中...</div>}>
-      <ReviewTasksTable />
+      <ReviewTasksTable filters={filters} />
     </Suspense>
   )
 }
 
 export function AdminTasksPage() {
+  const queryClient = useQueryClient()
+  const [draftFilters, setDraftFilters] =
+    useState<ReviewTaskFilters>(emptyFilters)
+  const [filters, setFilters] = useState<ReviewTaskFilters>(emptyFilters)
+
+  const handleSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setFilters({ ...draftFilters })
+  }
+
+  const handleReset = () => {
+    setDraftFilters({ ...emptyFilters })
+    setFilters({ ...emptyFilters })
+    void queryClient.invalidateQueries({ queryKey: ["review-tasks"] })
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">任务管理</h1>
-        <p className="text-muted-foreground">查看审查任务状态和报告。</p>
+        <h1 className="text-2xl font-bold tracking-tight">代码审查任务管理</h1>
+        <p className="text-muted-foreground">查看代码审查任务状态和报告。</p>
       </div>
-      <ReviewTasksSection />
+      <form
+        className="flex flex-col gap-3 md:flex-row md:items-center"
+        onSubmit={handleSearch}
+      >
+        <Input
+          className="md:max-w-56"
+          placeholder="用户姓名"
+          value={draftFilters.userName}
+          onChange={(event) =>
+            setDraftFilters((current) => ({
+              ...current,
+              userName: event.target.value,
+            }))
+          }
+        />
+        <Input
+          className="md:max-w-56"
+          placeholder="SVN账号"
+          value={draftFilters.svnUsername}
+          onChange={(event) =>
+            setDraftFilters((current) => ({
+              ...current,
+              svnUsername: event.target.value,
+            }))
+          }
+        />
+        <div className="flex items-center gap-2">
+          <Button type="submit">
+            <Search />
+            搜索
+          </Button>
+          <Button type="button" variant="outline" onClick={handleReset}>
+            <X />
+            重置
+          </Button>
+        </div>
+      </form>
+      <ReviewTasksSection filters={filters} />
     </div>
   )
 }

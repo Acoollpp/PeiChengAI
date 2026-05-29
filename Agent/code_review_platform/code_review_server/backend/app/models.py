@@ -140,6 +140,8 @@ class ReviewTaskStatusUpdate(SQLModel):
 class ReviewTaskPublic(SQLModel):
     id: uuid.UUID
     user_id: uuid.UUID
+    user_name: str | None = None
+    svn_username: str | None = None
     svn_url: str
     old_revision: str
     new_revision: str

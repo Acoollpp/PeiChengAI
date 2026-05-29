@@ -1,4 +1,4 @@
-import { Briefcase, Home, Library, ListChecks, Users } from "lucide-react"
+import { Briefcase, Home, ListChecks, Users } from "lucide-react"
 
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
@@ -24,9 +24,18 @@ export function AppSidebar() {
   const items = hasAdminPrivileges(currentUser)
     ? [
         ...baseItems,
-        { icon: Users, title: "用户管理", path: "/admin/users" },
-        { icon: ListChecks, title: "任务管理", path: "/admin/tasks" },
-        { icon: Library, title: "Skill库", path: "/admin/skills" },
+        { icon: Users, title: "管理", path: "/admin" },
+        {
+          icon: ListChecks,
+          title: "任务管理",
+          children: [
+            {
+              icon: ListChecks,
+              title: "代码审查任务管理",
+              path: "/admin/tasks/review",
+            },
+          ],
+        },
       ]
     : baseItems
 

@@ -31,6 +31,38 @@ def _create_review_task(
     return response.json()
 
 
+def _create_named_svn_user_task(
+    *,
+    client: TestClient,
+    db: Session,
+    full_name: str,
+    svn_username: str,
+    old_revision: str = "1",
+) -> dict:
+    password = random_lower_string()
+    user = crud.create_user(
+        session=db,
+        user_create=UserCreate(
+            email=random_email(),
+            password=password,
+            full_name=full_name,
+        ),
+    )
+    user.svn_username = f"{svn_username}-{random_lower_string()}"
+    db.add(user)
+    db.commit()
+    user_headers = user_authentication_headers(
+        client=client, email=user.email, password=password
+    )
+    task = _create_review_task(client, user_headers, old_revision=old_revision)
+    return {
+        "task": task,
+        "headers": user_headers,
+        "user": user,
+        "svn_username": user.svn_username,
+    }
+
+
 def test_create_review_task_normalizes_revisions(
     client: TestClient, normal_user_token_headers: dict[str, str]
 ) -> None:
@@ -97,6 +129,145 @@ def test_upload_and_read_review_task_report(
     assert read_response.text == "# Review\n\nLooks good.\n"
 
 
+def test_delete_review_task_removes_task_row(
+    client: TestClient, normal_user_token_headers: dict[str, str]
+) -> None:
+    task = _create_review_task(client, normal_user_token_headers)
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Review task deleted"}
+
+    read_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+    assert read_response.status_code == 404
+
+
+def test_delete_review_task_removes_existing_report_file(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        files={"upload": ("report.md", b"# Review\n", "text/markdown")},
+    )
+    assert upload_response.status_code == 200
+    report_path = Path(upload_response.json()["report_path"])
+    assert report_path.is_file()
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Review task deleted"}
+    assert not report_path.exists()
+
+    read_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+    assert read_response.status_code == 404
+
+
+def test_delete_review_task_succeeds_when_report_file_is_missing(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        files={"upload": ("report.md", b"# Review\n", "text/markdown")},
+    )
+    assert upload_response.status_code == 200
+    report_path = Path(upload_response.json()["report_path"])
+    report_path.unlink()
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Review task deleted"}
+
+
+def test_delete_review_task_keeps_task_when_report_file_delete_fails(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        files={"upload": ("report.md", b"# Review\n", "text/markdown")},
+    )
+    assert upload_response.status_code == 200
+    report_path = Path(upload_response.json()["report_path"])
+    assert report_path.is_file()
+
+    original_unlink = Path.unlink
+
+    def fail_report_unlink(
+        self: Path, missing_ok: bool = False
+    ) -> None:
+        if self == report_path:
+            raise OSError("cannot delete")
+        original_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", fail_report_unlink)
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Failed to delete review task report"
+
+    read_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+    assert read_response.status_code == 200
+
+
+def test_normal_user_cannot_delete_other_user_task(
+    client: TestClient, normal_user_token_headers: dict[str, str], db: Session
+) -> None:
+    other_headers = authentication_token_from_email(
+        client=client, email=random_email(), db=db
+    )
+    task = _create_review_task(client, other_headers)
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Not enough permissions"
+
+
 def test_normal_user_cannot_read_other_user_task(
     client: TestClient, normal_user_token_headers: dict[str, str], db: Session
 ) -> None:
@@ -158,6 +329,180 @@ def test_admin_or_superuser_can_list_all_tasks(
     admin_listed_ids = {task["id"] for task in admin_response.json()["data"]}
     assert user_task["id"] in admin_listed_ids
     assert other_task["id"] in admin_listed_ids
+
+
+def test_admin_task_list_includes_user_identity_fields(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    password = random_lower_string()
+    user = crud.create_user(
+        session=db,
+        user_create=UserCreate(
+            email=random_email(),
+            password=password,
+            full_name="张三",
+        ),
+    )
+    svn_username = f"zhangsan-{random_lower_string()}"
+    user.svn_username = svn_username
+    db.add(user)
+    db.commit()
+    user_headers = user_authentication_headers(
+        client=client, email=user.email, password=password
+    )
+    task = _create_review_task(client, user_headers, old_revision="9")
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    listed_task = next(item for item in content["data"] if item["id"] == task["id"])
+    assert listed_task["user_name"] == "张三"
+    assert listed_task["svn_username"] == svn_username
+
+
+def test_admin_can_filter_review_tasks_by_user_name(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    zhang = _create_named_svn_user_task(
+        client=client,
+        db=db,
+        full_name="张三",
+        svn_username="zhang",
+        old_revision="11",
+    )
+    li = _create_named_svn_user_task(
+        client=client,
+        db=db,
+        full_name="李四",
+        svn_username="lisi",
+        old_revision="12",
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=superuser_token_headers,
+        params={"user_name": "张"},
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    listed_ids = {task["id"] for task in content["data"]}
+    assert zhang["task"]["id"] in listed_ids
+    assert li["task"]["id"] not in listed_ids
+
+
+def test_admin_can_filter_review_tasks_by_svn_username(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    wang = _create_named_svn_user_task(
+        client=client,
+        db=db,
+        full_name="王五",
+        svn_username="wang",
+        old_revision="13",
+    )
+    zhao = _create_named_svn_user_task(
+        client=client,
+        db=db,
+        full_name="赵六",
+        svn_username="zhao",
+        old_revision="14",
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=superuser_token_headers,
+        params={"svn_username": "wang"},
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    listed_ids = {task["id"] for task in content["data"]}
+    assert wang["task"]["id"] in listed_ids
+    assert zhao["task"]["id"] not in listed_ids
+
+
+def test_review_task_filters_are_combined_with_and(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    matching = _create_named_svn_user_task(
+        client=client,
+        db=db,
+        full_name="张三",
+        svn_username="zhang",
+        old_revision="15",
+    )
+    name_only = _create_named_svn_user_task(
+        client=client,
+        db=db,
+        full_name="张四",
+        svn_username="li",
+        old_revision="16",
+    )
+    svn_only = _create_named_svn_user_task(
+        client=client,
+        db=db,
+        full_name="王五",
+        svn_username="zhang",
+        old_revision="17",
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=superuser_token_headers,
+        params={"user_name": "张", "svn_username": matching["svn_username"]},
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    listed_ids = {task["id"] for task in content["data"]}
+    assert matching["task"]["id"] in listed_ids
+    assert name_only["task"]["id"] not in listed_ids
+    assert svn_only["task"]["id"] not in listed_ids
+
+
+def test_normal_user_filters_only_search_own_review_tasks(
+    client: TestClient,
+    db: Session,
+) -> None:
+    own = _create_named_svn_user_task(
+        client=client,
+        db=db,
+        full_name="张三",
+        svn_username="zhang",
+        old_revision="18",
+    )
+    other = _create_named_svn_user_task(
+        client=client,
+        db=db,
+        full_name="张四",
+        svn_username="zhang",
+        old_revision="19",
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=own["headers"],
+        params={"user_name": "张", "svn_username": "zhang"},
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    listed_ids = {task["id"] for task in content["data"]}
+    assert own["task"]["id"] in listed_ids
+    assert other["task"]["id"] not in listed_ids
 
 
 def test_role_admin_can_read_other_user_task_detail(

@@ -1,18 +1,21 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, redirect } from "@tanstack/react-router"
 
-import { AdminTasksPage } from "@/components/Admin/TasksPage"
-import { requireAdminUser } from "@/lib/admin-route"
+import { UsersService } from "@/client"
+import { hasAdminPrivileges } from "@/lib/authz"
 
 export const Route = createFileRoute("/_layout/admin/tasks")({
-  component: AdminTasksPage,
-  beforeLoad: async () => {
-    await requireAdminUser()
+  beforeLoad: async ({ location }) => {
+    const user = await UsersService.readUserMe()
+    if (!hasAdminPrivileges(user)) {
+      throw redirect({
+        to: "/",
+      })
+    }
+
+    if (location.pathname === "/admin/tasks") {
+      throw redirect({
+        to: "/admin/tasks/review",
+      })
+    }
   },
-  head: () => ({
-    meta: [
-      {
-        title: "任务管理 - 沛城科技代码审查平台",
-      },
-    ],
-  }),
 })

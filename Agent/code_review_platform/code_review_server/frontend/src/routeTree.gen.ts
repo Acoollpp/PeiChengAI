@@ -18,10 +18,8 @@ import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
-import { Route as LayoutAdminIndexRouteImport } from './routes/_layout/admin.index'
-import { Route as LayoutAdminUsersRouteImport } from './routes/_layout/admin.users'
 import { Route as LayoutAdminTasksRouteImport } from './routes/_layout/admin.tasks'
-import { Route as LayoutAdminSkillsRouteImport } from './routes/_layout/admin.skills'
+import { Route as LayoutAdminTasksReviewRouteImport } from './routes/_layout/admin.tasks.review'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -67,29 +65,18 @@ const LayoutAdminRoute = LayoutAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutAdminIndexRoute = LayoutAdminIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => LayoutAdminRoute,
-} as any)
-const LayoutAdminUsersRoute = LayoutAdminUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => LayoutAdminRoute,
-} as any)
 const LayoutAdminTasksRoute = LayoutAdminTasksRouteImport.update({
   id: '/tasks',
   path: '/tasks',
   getParentRoute: () => LayoutAdminRoute,
 } as any)
-const LayoutAdminSkillsRoute = LayoutAdminSkillsRouteImport.update({
-  id: '/skills',
-  path: '/skills',
-  getParentRoute: () => LayoutAdminRoute,
+const LayoutAdminTasksReviewRoute = LayoutAdminTasksReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
+  getParentRoute: () => LayoutAdminTasksRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof LayoutIndexRoute
   '/login': typeof LoginRoute
   '/recover-password': typeof RecoverPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -97,23 +84,21 @@ export interface FileRoutesByFullPath {
   '/admin': typeof LayoutAdminRouteWithChildren
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
-  '/admin/skills': typeof LayoutAdminSkillsRoute
-  '/admin/tasks': typeof LayoutAdminTasksRoute
-  '/admin/users': typeof LayoutAdminUsersRoute
-  '/admin/': typeof LayoutAdminIndexRoute
+  '/': typeof LayoutIndexRoute
+  '/admin/tasks': typeof LayoutAdminTasksRouteWithChildren
+  '/admin/tasks/review': typeof LayoutAdminTasksReviewRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/recover-password': typeof RecoverPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
+  '/admin': typeof LayoutAdminRouteWithChildren
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
   '/': typeof LayoutIndexRoute
-  '/admin/skills': typeof LayoutAdminSkillsRoute
-  '/admin/tasks': typeof LayoutAdminTasksRoute
-  '/admin/users': typeof LayoutAdminUsersRoute
-  '/admin': typeof LayoutAdminIndexRoute
+  '/admin/tasks': typeof LayoutAdminTasksRouteWithChildren
+  '/admin/tasks/review': typeof LayoutAdminTasksReviewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -126,15 +111,12 @@ export interface FileRoutesById {
   '/_layout/items': typeof LayoutItemsRoute
   '/_layout/settings': typeof LayoutSettingsRoute
   '/_layout/': typeof LayoutIndexRoute
-  '/_layout/admin/skills': typeof LayoutAdminSkillsRoute
-  '/_layout/admin/tasks': typeof LayoutAdminTasksRoute
-  '/_layout/admin/users': typeof LayoutAdminUsersRoute
-  '/_layout/admin/': typeof LayoutAdminIndexRoute
+  '/_layout/admin/tasks': typeof LayoutAdminTasksRouteWithChildren
+  '/_layout/admin/tasks/review': typeof LayoutAdminTasksReviewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/'
     | '/login'
     | '/recover-password'
     | '/reset-password'
@@ -142,23 +124,21 @@ export interface FileRouteTypes {
     | '/admin'
     | '/items'
     | '/settings'
-    | '/admin/skills'
+    | '/'
     | '/admin/tasks'
-    | '/admin/users'
-    | '/admin/'
+    | '/admin/tasks/review'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
     | '/recover-password'
     | '/reset-password'
     | '/signup'
+    | '/admin'
     | '/items'
     | '/settings'
     | '/'
-    | '/admin/skills'
     | '/admin/tasks'
-    | '/admin/users'
-    | '/admin'
+    | '/admin/tasks/review'
   id:
     | '__root__'
     | '/_layout'
@@ -170,10 +150,8 @@ export interface FileRouteTypes {
     | '/_layout/items'
     | '/_layout/settings'
     | '/_layout/'
-    | '/_layout/admin/skills'
     | '/_layout/admin/tasks'
-    | '/_layout/admin/users'
-    | '/_layout/admin/'
+    | '/_layout/admin/tasks/review'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -217,7 +195,7 @@ declare module '@tanstack/react-router' {
     '/_layout': {
       id: '/_layout'
       path: ''
-      fullPath: '/'
+      fullPath: ''
       preLoaderRoute: typeof LayoutRouteImport
       parentRoute: typeof rootRouteImport
     }
@@ -249,20 +227,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/admin/': {
-      id: '/_layout/admin/'
-      path: '/'
-      fullPath: '/admin/'
-      preLoaderRoute: typeof LayoutAdminIndexRouteImport
-      parentRoute: typeof LayoutAdminRoute
-    }
-    '/_layout/admin/users': {
-      id: '/_layout/admin/users'
-      path: '/users'
-      fullPath: '/admin/users'
-      preLoaderRoute: typeof LayoutAdminUsersRouteImport
-      parentRoute: typeof LayoutAdminRoute
-    }
     '/_layout/admin/tasks': {
       id: '/_layout/admin/tasks'
       path: '/tasks'
@@ -270,28 +234,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminTasksRouteImport
       parentRoute: typeof LayoutAdminRoute
     }
-    '/_layout/admin/skills': {
-      id: '/_layout/admin/skills'
-      path: '/skills'
-      fullPath: '/admin/skills'
-      preLoaderRoute: typeof LayoutAdminSkillsRouteImport
-      parentRoute: typeof LayoutAdminRoute
+    '/_layout/admin/tasks/review': {
+      id: '/_layout/admin/tasks/review'
+      path: '/review'
+      fullPath: '/admin/tasks/review'
+      preLoaderRoute: typeof LayoutAdminTasksReviewRouteImport
+      parentRoute: typeof LayoutAdminTasksRoute
     }
   }
 }
 
+interface LayoutAdminTasksRouteChildren {
+  LayoutAdminTasksReviewRoute: typeof LayoutAdminTasksReviewRoute
+}
+
+const LayoutAdminTasksRouteChildren: LayoutAdminTasksRouteChildren = {
+  LayoutAdminTasksReviewRoute: LayoutAdminTasksReviewRoute,
+}
+
+const LayoutAdminTasksRouteWithChildren =
+  LayoutAdminTasksRoute._addFileChildren(LayoutAdminTasksRouteChildren)
+
 interface LayoutAdminRouteChildren {
-  LayoutAdminSkillsRoute: typeof LayoutAdminSkillsRoute
-  LayoutAdminTasksRoute: typeof LayoutAdminTasksRoute
-  LayoutAdminUsersRoute: typeof LayoutAdminUsersRoute
-  LayoutAdminIndexRoute: typeof LayoutAdminIndexRoute
+  LayoutAdminTasksRoute: typeof LayoutAdminTasksRouteWithChildren
 }
 
 const LayoutAdminRouteChildren: LayoutAdminRouteChildren = {
-  LayoutAdminSkillsRoute: LayoutAdminSkillsRoute,
-  LayoutAdminTasksRoute: LayoutAdminTasksRoute,
-  LayoutAdminUsersRoute: LayoutAdminUsersRoute,
-  LayoutAdminIndexRoute: LayoutAdminIndexRoute,
+  LayoutAdminTasksRoute: LayoutAdminTasksRouteWithChildren,
 }
 
 const LayoutAdminRouteWithChildren = LayoutAdminRoute._addFileChildren(

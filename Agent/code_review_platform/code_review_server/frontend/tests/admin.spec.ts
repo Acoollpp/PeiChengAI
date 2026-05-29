@@ -4,7 +4,9 @@ import { createUser } from "./utils/privateApi"
 import { randomEmail, randomPassword } from "./utils/random"
 import { logInUser } from "./utils/user"
 
-test("Admin users page is accessible", async ({ page }) => {
+test("Admin page is accessible and shows current management sections", async ({
+  page,
+}) => {
   await page.goto("/admin")
   await expect(page.getByRole("heading", { name: "用户管理" })).toBeVisible()
   await expect(
@@ -23,13 +25,21 @@ test("Admin users page is accessible", async ({ page }) => {
   await expect(
     usersTable.getByRole("columnheader", { name: "状态" }),
   ).toBeVisible()
-  await expect(page).toHaveURL(/\/admin\/users/)
 })
 
 test("Admin tasks page is accessible", async ({ page }) => {
   await page.goto("/admin/tasks")
-  await expect(page.getByRole("heading", { name: "任务管理" })).toBeVisible()
+  await expect(page).toHaveURL(/\/admin\/tasks\/review/)
+  await expect(
+    page.getByRole("heading", { name: "代码审查任务管理" }),
+  ).toBeVisible()
   const tasksTable = page.getByRole("table").first()
+  await expect(
+    tasksTable.getByRole("columnheader", { name: "用户名称" }),
+  ).toBeVisible()
+  await expect(
+    tasksTable.getByRole("columnheader", { name: "SVN账号" }),
+  ).toBeVisible()
   await expect(
     tasksTable.getByRole("columnheader", { name: "SVN地址" }),
   ).toBeVisible()
@@ -40,40 +50,41 @@ test("Admin tasks page is accessible", async ({ page }) => {
     tasksTable.getByRole("columnheader", { name: "状态" }),
   ).toBeVisible()
   await expect(
-    tasksTable.getByRole("columnheader", { name: "客户端" }),
+    tasksTable.getByRole("columnheader", { name: "执行客户端" }),
   ).toBeVisible()
   await expect(
     tasksTable.getByRole("columnheader", { name: "报告" }),
   ).toBeVisible()
-})
-
-test("Admin skills page is accessible", async ({ page }) => {
-  await page.goto("/admin/skills")
-  await expect(page.getByRole("heading", { name: "Skill库" })).toBeVisible()
   await expect(
-    page.getByText("管理审查Skill文件、版本和启用状态。"),
+    tasksTable.getByRole("columnheader", { name: "操作" }),
   ).toBeVisible()
-  await expect(page.getByLabel("md文件")).toBeVisible()
-  await expect(page.getByLabel("版本")).toBeVisible()
-  await expect(page.getByLabel("描述")).toBeVisible()
-  await expect(page.getByLabel("激活状态")).toBeVisible()
 })
 
-test("Admin sidebar entries are visible", async ({ page }) => {
+test("Admin review tasks page has user filters", async ({ page }) => {
+  await page.goto("/admin/tasks/review")
+  await expect(page.getByPlaceholder("用户姓名")).toBeVisible()
+  await expect(page.getByPlaceholder("SVN账号")).toBeVisible()
+  await expect(page.getByRole("button", { name: "搜索" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "重置" })).toBeVisible()
+})
+
+test("Admin sidebar entry is visible", async ({ page }) => {
   await page.goto("/admin")
-  await expect(page.getByRole("link", { name: "用户管理" })).toBeVisible()
-  await expect(page.getByRole("link", { name: "任务管理" })).toBeVisible()
-  await expect(page.getByRole("link", { name: "Skill库" })).toBeVisible()
+  await expect(page.getByRole("link", { name: "管理" })).toBeVisible()
+  await expect(page.getByText("任务管理")).toBeVisible()
+  await expect(
+    page.getByRole("link", { name: "代码审查任务管理" }),
+  ).toBeVisible()
 })
 
 test("Add User button is visible", async ({ page }) => {
-  await page.goto("/admin/users")
+  await page.goto("/admin")
   await expect(page.getByRole("button", { name: "Add User" })).toBeVisible()
 })
 
 test.describe("Admin user management", () => {
   test("Create a new user successfully", async ({ page }) => {
-    await page.goto("/admin/users")
+    await page.goto("/admin")
 
     const email = randomEmail()
     const password = randomPassword()
@@ -97,7 +108,7 @@ test.describe("Admin user management", () => {
   })
 
   test("Create a superuser", async ({ page }) => {
-    await page.goto("/admin/users")
+    await page.goto("/admin")
 
     const email = randomEmail()
     const password = randomPassword()
@@ -121,7 +132,7 @@ test.describe("Admin user management", () => {
   })
 
   test("Edit a user successfully", async ({ page }) => {
-    await page.goto("/admin/users")
+    await page.goto("/admin")
 
     const email = randomEmail()
     const password = randomPassword()
@@ -151,7 +162,7 @@ test.describe("Admin user management", () => {
   })
 
   test("Delete a user successfully", async ({ page }) => {
-    await page.goto("/admin/users")
+    await page.goto("/admin")
 
     const email = randomEmail()
     const password = randomPassword()
@@ -183,7 +194,7 @@ test.describe("Admin user management", () => {
   })
 
   test("Cancel user creation", async ({ page }) => {
-    await page.goto("/admin/users")
+    await page.goto("/admin")
 
     await page.getByRole("button", { name: "Add User" }).click()
     await page.getByPlaceholder("Email").fill("test@example.com")
@@ -194,7 +205,7 @@ test.describe("Admin user management", () => {
   })
 
   test("Email is required and must be valid", async ({ page }) => {
-    await page.goto("/admin/users")
+    await page.goto("/admin")
 
     await page.getByRole("button", { name: "Add User" }).click()
 
@@ -205,7 +216,7 @@ test.describe("Admin user management", () => {
   })
 
   test("Password must be at least 8 characters", async ({ page }) => {
-    await page.goto("/admin/users")
+    await page.goto("/admin")
 
     await page.getByRole("button", { name: "Add User" }).click()
 
@@ -220,7 +231,7 @@ test.describe("Admin user management", () => {
   })
 
   test("Passwords must match", async ({ page }) => {
-    await page.goto("/admin/users")
+    await page.goto("/admin")
 
     await page.getByRole("button", { name: "Add User" }).click()
 
@@ -243,7 +254,7 @@ test.describe("Admin page access control", () => {
     await createUser({ email, password })
     await logInUser(page, email, password)
 
-    await page.goto("/admin/users")
+    await page.goto("/admin")
 
     await expect(
       page.getByRole("heading", { name: "用户管理" }),
@@ -254,7 +265,7 @@ test.describe("Admin page access control", () => {
   test("Superuser can access admin page", async ({ page }) => {
     await logInUser(page, firstSuperuser, firstSuperuserPassword)
 
-    await page.goto("/admin/users")
+    await page.goto("/admin")
 
     await expect(page.getByRole("heading", { name: "用户管理" })).toBeVisible()
   })
