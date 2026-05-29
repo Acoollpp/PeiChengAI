@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { spawn, type SpawnOptionsWithoutStdio } from 'node:child_process'
 
 import type { EnvironmentStatus } from '../shared/types'
+import { codexSkillDir } from './skill-sync'
 
 interface EnvironmentChecks {
   codexOk: boolean
@@ -132,8 +133,7 @@ const findVersionCommand = async (command: string, args: string[]): Promise<Comm
 }
 
 const checkSkillExists = async (): Promise<boolean> => {
-  const { app } = await import('electron')
-  const skillPath = join(app.getPath('userData'), 'skills', '通用-代码变更审查', 'SKILL.md')
+  const skillPath = join(codexSkillDir(), 'SKILL.md')
 
   try {
     await access(skillPath)

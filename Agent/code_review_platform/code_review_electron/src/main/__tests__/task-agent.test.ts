@@ -249,21 +249,25 @@ describe('executeReviewTask', () => {
 
 describe('defaultPrepareWorkspace', () => {
   const userData = join(tmpdir(), `code-review-user-data-${Date.now()}`)
+  const codexHome = join(tmpdir(), `code-review-codex-home-${Date.now()}`)
 
   afterEach(async () => {
     vi.restoreAllMocks()
     vi.resetModules()
+    delete process.env.CODEX_HOME
     await rm(userData, { recursive: true, force: true })
+    await rm(codexHome, { recursive: true, force: true })
   })
 
-  it('copies the source review skill into the task workspace', async () => {
+  it('copies the Codex-installed review skill into the task workspace', async () => {
     vi.doMock('electron', () => ({
       app: {
         getPath: vi.fn(() => userData)
       }
     }))
+    process.env.CODEX_HOME = codexHome
 
-    const sourceSkill = join(userData, 'skills', '通用-代码变更审查')
+    const sourceSkill = join(codexHome, 'skills', '通用-代码变更审查')
     await mkdir(sourceSkill, { recursive: true })
     await writeFile(join(sourceSkill, 'SKILL.md'), 'review skill')
 
@@ -279,6 +283,7 @@ describe('defaultPrepareWorkspace', () => {
         getPath: vi.fn(() => userData)
       }
     }))
+    process.env.CODEX_HOME = codexHome
 
     await expect(defaultPrepareWorkspace('task-missing-skill')).rejects.toThrow(
       '本机代码审查 Skill 源目录缺失'

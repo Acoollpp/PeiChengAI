@@ -13,6 +13,7 @@ from app.models import SkillPackage, get_datetime_utc
 
 
 SKILL_FILENAME = "SKILL.md"
+ORIGINAL_PACKAGE_FILENAME = ".original-skill.zip"
 
 
 def path_for_skill(skill_id: uuid.UUID) -> Path:
@@ -32,6 +33,7 @@ async def save_upload(skill_id: uuid.UUID, upload: UploadFile) -> tuple[Path, st
     if skill_path.exists():
         shutil.rmtree(skill_path)
     skill_path.mkdir(parents=True, exist_ok=True)
+    (skill_path / ORIGINAL_PACKAGE_FILENAME).write_bytes(content)
 
     with ZipFile(io.BytesIO(content)) as archive:
         for entry in entries:
@@ -52,9 +54,17 @@ def read_skill_content(skill: SkillPackage) -> bytes:
     if not skill_path.is_dir() or not (skill_path / SKILL_FILENAME).is_file():
         raise HTTPException(status_code=404, detail="Skill package not found")
 
+    original_package_path = skill_path / ORIGINAL_PACKAGE_FILENAME
+    if original_package_path.is_file():
+        return original_package_path.read_bytes()
+
     buffer = io.BytesIO()
     with ZipFile(buffer, "w") as archive:
-        for path in sorted(p for p in skill_path.rglob("*") if p.is_file()):
+        for path in sorted(
+            p
+            for p in skill_path.rglob("*")
+            if p.is_file() and p.name != ORIGINAL_PACKAGE_FILENAME
+        ):
             archive.write(path, path.relative_to(skill_path).as_posix())
     return buffer.getvalue()
 

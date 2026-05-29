@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { ApiClient, CreateTaskRequest, UpdateTaskStatusRequest } from './api-client'
 import { checkEnvironment, type EnvironmentCheckResult } from './environment-checker'
 import { buildReviewPrompt, CodexReviewError, runCodexReview, type CodexErrorCode } from './codex-runner'
+import { codexSkillDir } from './skill-sync'
 import { ensureReportReady, uploadReportFile } from './report-uploader'
 import type {
   EnvironmentStatus,
@@ -89,7 +90,7 @@ export const defaultPrepareWorkspace = async (taskId: string): Promise<PreparedW
   const { app } = await import('electron')
   const userData = app.getPath('userData')
   const cwd = join(userData, 'workspaces', taskId)
-  const sourceSkillPath = join(userData, 'skills', '通用-代码变更审查')
+  const sourceSkillPath = codexSkillDir()
   const workspaceSkillPath = join(cwd, 'skills', '通用-代码变更审查')
 
   await mkdir(cwd, { recursive: true })

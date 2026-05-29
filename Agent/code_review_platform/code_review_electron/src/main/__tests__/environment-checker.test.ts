@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { buildVersionCommandOptions, classifyEnvironment } from '../environment-checker'
+import { codexSkillDir } from '../skill-sync'
 import type { EnvironmentCheckResult } from '../environment-checker'
 
 describe('classifyEnvironment', () => {
@@ -41,5 +42,13 @@ describe('buildVersionCommandOptions', () => {
     const options = buildVersionCommandOptions('win32')
 
     expect(options.shell).toBe(true)
+  })
+})
+
+describe('codexSkillDir', () => {
+  it('resolves the review skill under Codex home', () => {
+    expect(codexSkillDir('/tmp/codex-home')).toBe(
+      '/tmp/codex-home/skills/通用-代码变更审查'
+    )
   })
 })

@@ -1,5 +1,7 @@
 import { createWriteStream } from 'node:fs'
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { homedir } from 'node:os'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
@@ -26,37 +28,63 @@ export interface SkillSyncResult {
   skillPath: string
 }
 
+export const codexSkillDir = (
+  codexHomePath = process.env.CODEX_HOME ?? join(homedir(), '.codex')
+): string => join(codexHomePath, 'skills', REVIEW_SKILL_NAME)
+
 export class SkillSyncService {
   private readonly api: SkillSyncApi
   private readonly userDataPath: string
+  private readonly codexHomePath: string
 
-  constructor(api: SkillSyncApi | ApiClient, userDataPath?: string) {
+  constructor(api: SkillSyncApi | ApiClient, userDataPath?: string, codexHomePath?: string) {
     this.api = api
     this.userDataPath = userDataPath ?? ''
+    this.codexHomePath = codexHomePath ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
   }
 
   async sync(token: string): Promise<SkillSyncResult> {
     const activeSkill = await this.api.getActiveSkill(token)
-    const skillDir = this.skillDir()
-    const skillPath = join(skillDir, 'SKILL.md')
-    const manifestPath = join(skillDir, 'manifest.json')
+    const packagePath = this.packagePath()
+    const codexSkillPath = join(this.codexSkillDir(), 'SKILL.md')
+    const manifestPath = this.manifestPath()
     const manifest = this.toManifest(activeSkill)
     const currentManifest = await this.readManifest(manifestPath)
 
-    if (this.manifestMatches(currentManifest, manifest) && (await this.fileExists(skillPath))) {
-      return { status: 'current', skillPath }
+    if (
+      this.manifestMatches(currentManifest, manifest) &&
+      (await this.fileExists(packagePath)) &&
+      (await this.fileExists(codexSkillPath))
+    ) {
+      return { status: 'current', skillPath: codexSkillPath }
     }
 
     const packageBytes = await this.api.downloadActiveSkill(token)
+    this.assertPackageHash(packageBytes, manifest)
 
-    await this.replaceSkillDir(skillDir, packageBytes)
+    await mkdir(dirname(packagePath), { recursive: true })
+    await writeFile(packagePath, Buffer.from(packageBytes))
+    await installSkillPackage(packagePath, this.codexSkillDir())
+    await mkdir(dirname(manifestPath), { recursive: true })
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 
-    return { status: 'synced', skillPath }
+    return { status: 'synced', skillPath: codexSkillPath }
   }
 
-  private skillDir(): string {
-    return join(this.userData(), 'skills', REVIEW_SKILL_NAME)
+  private packagePath(): string {
+    return join(this.cacheDir(), 'skill.zip')
+  }
+
+  private manifestPath(): string {
+    return join(this.cacheDir(), 'manifest.json')
+  }
+
+  private cacheDir(): string {
+    return join(this.userData(), 'skill-packages', REVIEW_SKILL_NAME)
+  }
+
+  private codexSkillDir(): string {
+    return codexSkillDir(this.codexHomePath)
   }
 
   private userData(): string {
@@ -100,26 +128,6 @@ export class SkillSyncService {
     }
   }
 
-  private async replaceSkillDir(skillDir: string, packageBytes: ArrayBuffer): Promise<void> {
-    const tempDir = await mkdtemp(join(tmpdir(), 'code-review-skill-'))
-    const zipPath = join(tempDir, 'skill.zip')
-
-    try {
-      await writeFile(zipPath, Buffer.from(packageBytes))
-      await unzipPackage(zipPath, tempDir)
-
-      const extractedSkillPath = join(tempDir, 'SKILL.md')
-      await access(extractedSkillPath)
-
-      await rm(skillDir, { recursive: true, force: true })
-      await mkdir(skillDir, { recursive: true })
-      await unzipPackage(zipPath, skillDir)
-      await rm(join(skillDir, 'skill.zip'), { force: true })
-    } finally {
-      await rm(tempDir, { recursive: true, force: true })
-    }
-  }
-
   private manifestMatches(current: SkillManifest | null, expected: SkillManifest): boolean {
     if (!current) {
       return false
@@ -142,11 +150,40 @@ export class SkillSyncService {
       typeof value.version === 'string'
     )
   }
+
+  private assertPackageHash(packageBytes: ArrayBuffer, manifest: SkillManifest): void {
+    const expectedHash = manifest.content_hash ?? manifest.hash
+    if (!expectedHash) {
+      return
+    }
+
+    const receivedHash = createHash('sha256').update(Buffer.from(packageBytes)).digest('hex')
+    if (receivedHash !== expectedHash) {
+      throw new Error(
+        `Skill package hash mismatch: expected ${expectedHash}, received ${receivedHash}`
+      )
+    }
+  }
 }
 
 export const createSkillSyncService = async (api: ApiClient): Promise<SkillSyncService> => {
   const { app } = await import('electron')
   return new SkillSyncService(api, app.getPath('userData'))
+}
+
+export const installSkillPackage = async (zipPath: string, skillDir: string): Promise<void> => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'code-review-skill-'))
+
+  try {
+    await unzipPackage(zipPath, tempDir)
+    const extractedSkillDir = await findExtractedSkillDir(tempDir)
+
+    await rm(skillDir, { recursive: true, force: true })
+    await mkdir(skillDir, { recursive: true })
+    await cp(extractedSkillDir, skillDir, { recursive: true })
+  } finally {
+    await rm(tempDir, { recursive: true, force: true })
+  }
 }
 
 const unzipPackage = (zipPath: string, targetDir: string): Promise<void> =>
@@ -197,6 +234,34 @@ const unzipPackage = (zipPath: string, targetDir: string): Promise<void> =>
       zipfile.on('error', rejectPromise)
     })
   })
+
+const findExtractedSkillDir = async (tempDir: string): Promise<string> => {
+  const rootSkillPath = join(tempDir, 'SKILL.md')
+  if (await fileExists(rootSkillPath)) {
+    return tempDir
+  }
+
+  const entries = await readdir(tempDir, { withFileTypes: true })
+  const topLevelDirs = entries.filter((entry) => entry.isDirectory())
+
+  for (const entry of topLevelDirs) {
+    const skillDir = join(tempDir, entry.name)
+    if (await fileExists(join(skillDir, 'SKILL.md'))) {
+      return skillDir
+    }
+  }
+
+  throw new Error('Skill package must contain SKILL.md')
+}
+
+const fileExists = async (filePath: string): Promise<boolean> => {
+  try {
+    await access(filePath)
+    return true
+  } catch {
+    return false
+  }
+}
 
 export const isInsideDirectory = (parentDir: string, childPath: string): boolean => {
   const normalizedParent = resolve(parentDir)
