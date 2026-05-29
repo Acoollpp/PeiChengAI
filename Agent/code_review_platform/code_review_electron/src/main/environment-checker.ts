@@ -1,7 +1,7 @@
 import { access } from 'node:fs/promises'
 import { delimiter } from 'node:path'
 import { join } from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, type SpawnOptionsWithoutStdio } from 'node:child_process'
 
 import type { EnvironmentStatus } from '../shared/types'
 
@@ -47,6 +47,8 @@ export const classifyEnvironment = ({
 }
 
 const extraSearchPaths = [
+  join(process.env.LOCALAPPDATA ?? '', 'Microsoft/WindowsApps'),
+  join(process.env.APPDATA ?? '', 'npm'),
   '/opt/homebrew/bin',
   '/opt/homebrew/sbin',
   '/usr/local/bin',
@@ -59,6 +61,7 @@ const extraSearchPaths = [
 const commandCandidates: Record<string, string[]> = {
   codex: [
     'codex',
+    'codex.cmd',
     join(process.env.HOME ?? '', '.local/bin/codex'),
     '/Applications/Codex.app/Contents/Resources/codex'
   ],
@@ -74,9 +77,17 @@ const buildCommandEnv = (): NodeJS.ProcessEnv => {
   }
 }
 
+export const buildVersionCommandOptions = (
+  platform: NodeJS.Platform = process.platform
+): SpawnOptionsWithoutStdio => ({
+  env: buildCommandEnv(),
+  shell: platform === 'win32',
+  windowsHide: true
+})
+
 const runVersionCommand = (command: string, args: string[]): Promise<CommandResult> =>
   new Promise((resolve) => {
-    const child = spawn(command, args, { env: buildCommandEnv(), windowsHide: true })
+    const child = spawn(command, args, buildVersionCommandOptions())
     const chunks: Buffer[] = []
     let settled = false
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { classifyEnvironment } from '../environment-checker'
+import { buildVersionCommandOptions, classifyEnvironment } from '../environment-checker'
 import type { EnvironmentCheckResult } from '../environment-checker'
 
 describe('classifyEnvironment', () => {
@@ -33,5 +33,13 @@ describe('classifyEnvironment', () => {
     }
 
     expect(result.skillError).toBe('No active skill')
+  })
+})
+
+describe('buildVersionCommandOptions', () => {
+  it('runs Codex through the shell on Windows so app execution aliases can resolve', () => {
+    const options = buildVersionCommandOptions('win32')
+
+    expect(options.shell).toBe(true)
   })
 })
