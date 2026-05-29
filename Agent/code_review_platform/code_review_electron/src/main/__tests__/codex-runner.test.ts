@@ -29,10 +29,12 @@ describe('runCodexReview', () => {
     const child = new EventEmitter() as EventEmitterType & {
       stdout: EventEmitterType
       stderr: EventEmitterType
+      stdin: { end: ReturnType<typeof vi.fn> }
       kill: ReturnType<typeof vi.fn>
     }
     child.stdout = new EventEmitter()
     child.stderr = new EventEmitter()
+    child.stdin = { end: vi.fn() }
     child.kill = vi.fn()
     spawnMock.mockReturnValue(child)
     const chunks: Array<{ stream: string; text: string }> = []
@@ -64,6 +66,7 @@ describe('runCodexReview', () => {
         shell: false
       })
     )
+    expect(child.stdin.end).toHaveBeenCalledWith()
   })
 })
 
