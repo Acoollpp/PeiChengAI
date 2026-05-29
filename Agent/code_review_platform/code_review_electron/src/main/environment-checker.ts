@@ -1,9 +1,10 @@
-import { access } from 'node:fs/promises'
-import { delimiter } from 'node:path'
-import { join } from 'node:path'
 import { spawn, type SpawnOptionsWithoutStdio } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { delimiter, join } from 'node:path'
 
 import type { EnvironmentStatus } from '../shared/types'
+import { getRuntimePaths } from './runtime-paths'
 
 interface EnvironmentChecks {
   codexOk: boolean
@@ -131,12 +132,32 @@ const findVersionCommand = async (command: string, args: string[]): Promise<Comm
   return { ok: false }
 }
 
-const checkSkillExists = async (): Promise<boolean> => {
-  const { app } = await import('electron')
-  const skillPath = join(app.getPath('userData'), 'skills', '通用-代码变更审查', 'SKILL.md')
+export const checkRuntimeWritable = async (runtimeRoot: string): Promise<boolean> => {
+  const probePath = join(runtimeRoot, `.write-check-${randomUUID()}`)
 
   try {
-    await access(skillPath)
+    await mkdir(runtimeRoot, { recursive: true })
+    await writeFile(probePath, 'ok')
+    await rm(probePath, { force: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export const checkSkillPackageReady = async (manifestPath: string): Promise<boolean> => {
+  try {
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as unknown
+    if (
+      typeof manifest !== 'object' ||
+      manifest === null ||
+      !('package_path' in manifest) ||
+      typeof manifest.package_path !== 'string'
+    ) {
+      return false
+    }
+
+    await access(manifest.package_path)
     return true
   } catch {
     return false
@@ -144,21 +165,33 @@ const checkSkillExists = async (): Promise<boolean> => {
 }
 
 export const checkEnvironment = async (): Promise<EnvironmentCheckResult> => {
-  const [codexResult, svnResult, skillOk] = await Promise.all([
-    findVersionCommand('codex', ['--version']),
-    findVersionCommand('svn', ['--version', '--quiet']),
-    checkSkillExists()
-  ])
+  try {
+    const runtimePaths = await getRuntimePaths()
+    const [codexResult, svnResult, runtimeWritable, skillOk] = await Promise.all([
+      findVersionCommand('codex', ['--version']),
+      findVersionCommand('svn', ['--version', '--quiet']),
+      checkRuntimeWritable(runtimePaths.runtimeRoot),
+      checkSkillPackageReady(runtimePaths.skillManifestPath)
+    ])
 
-  return {
-    status: classifyEnvironment({
-      codexOk: codexResult.ok,
-      svnOk: svnResult.ok,
-      skillOk
-    }),
-    codexVersion: codexResult.output,
-    svnVersion: svnResult.output,
-    codexPath: codexResult.path,
-    svnPath: svnResult.path
+    return {
+      status: runtimeWritable
+        ? classifyEnvironment({
+            codexOk: codexResult.ok,
+            svnOk: svnResult.ok,
+            skillOk
+          })
+        : 'failed',
+      codexVersion: codexResult.output,
+      svnVersion: svnResult.output,
+      codexPath: codexResult.path,
+      svnPath: svnResult.path,
+      ...(runtimeWritable ? {} : { skillError: `客户端运行目录不可写：${runtimePaths.runtimeRoot}` })
+    }
+  } catch (error) {
+    return {
+      status: 'failed',
+      skillError: error instanceof Error ? error.message : String(error)
+    }
   }
 }

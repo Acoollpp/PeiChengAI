@@ -91,7 +91,9 @@ describe('buildReviewPrompt', () => {
       reportPath: '/tmp/review/report.md'
     })
 
-    expect(prompt).toContain('skills/通用-代码变更审查')
+    expect(prompt).toContain('Codex')
+    expect(prompt).toContain('skill')
+    expect(prompt).not.toContain('skills/')
     expect(prompt).toContain('项目路径：svn://example.com/repo/project')
     expect(prompt).toContain('旧版本号：123')
     expect(prompt).toContain('新版本号：130')

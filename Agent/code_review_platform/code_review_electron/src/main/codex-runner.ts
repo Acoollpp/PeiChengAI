@@ -97,7 +97,7 @@ export const buildReviewPrompt = ({
   oldRevision,
   newRevision,
   reportPath
-}: ReviewPromptInput): string => `请使用当前工作区中的 skill：skills/通用-代码变更审查
+}: ReviewPromptInput): string => `请使用本机 Codex 已安装的 skill：通用-代码变更审查
 
 审查输入：
 - 项目路径：${svnUrl}
@@ -112,21 +112,26 @@ export const buildReviewPrompt = ({
 
 错误处理规范（必须严格遵守）：
 
-在执行任何步骤前，先进行前置检查。如果遇到以下错误，立即终止并输出以下格式的错误信息到标准错误输出（stderr）：
-[CODEX_ERROR::<错误码>] <具体错误描述>
+核心原则：Skill 内部已定义了错误恢复策略（如 SVN 远端 diff 失败后切换为双版本导出本地比对）。
+遇到错误时，必须先按 Skill 定义的恢复策略逐一尝试，只有所有恢复策略都失败后，才输出错误码终止。
+
+错误输出格式（仅在穷尽所有恢复策略后使用）：
+[CODEX_ERROR::<错误码>] <具体错误描述，包括已尝试过的恢复策略和每一步的失败原因>
 
 已定义的错误码：
-- SVN_ERROR：SVN 操作失败（无法获取差异、导出文件、连接 SVN 服务器等）
+- SVN_ERROR：SVN 操作失败，且 Skill 定义的兜底策略（如远端 diff 失败后双版本导出本地比对）也全部失败
 - SKILL_ERROR：Skill 文件缺失、无法读取或格式错误
 - PARAM_ERROR：输入参数无效（路径为空、版本号格式错误等）
 - REPORT_ERROR：审查报告文件写入失败（磁盘空间不足、权限不足等）
 - INTERNAL_ERROR：其他未预期的错误。使用此错误码时，必须附带你对错误原因的详细分析，包括可能的原因和建议的解决方案
 
 规则：
-1. 遇到以上错误时，不要尝试重试或继续执行，立即终止
-2. [CODEX_ERROR::...] 标记只能出现一次，放在错误描述的最前面
-3. 错误描述应包含足够的信息帮助用户定位问题
-4. 对于不在上述列表中的错误，一律使用 INTERNAL_ERROR 并附上你的分析`
+1. 遇到操作失败时，优先按 Skill 中定义的恢复策略尝试恢复，不要立即放弃
+2. 例如 SVN 远端 diff 失败时，必须切换为双版本导出本地比对（参见 SVN 获取策略中的"远端 diff 异常兜底"）
+3. 只有所有恢复策略都穷尽后，才输出 [CODEX_ERROR::...] 标记并终止
+4. [CODEX_ERROR::...] 标记只能出现一次，放在错误描述的最前面
+5. 错误描述应包含已尝试的恢复策略、每步失败的具体原因，帮助用户定位问题
+6. 对于不在上述列表中的错误，一律使用 INTERNAL_ERROR 并附上你的分析`
 
 export const runCodexReview = ({
   cwd,
