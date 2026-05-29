@@ -71,10 +71,25 @@ test("Admin review tasks page has user filters", async ({ page }) => {
 test("Admin sidebar entry is visible", async ({ page }) => {
   await page.goto("/admin")
   await expect(page.getByRole("link", { name: "管理" })).toBeVisible()
-  await expect(page.getByText("任务管理")).toBeVisible()
+  await expect(page.getByRole("link", { name: "Skill库" })).toBeVisible()
+  const taskMenu = page.getByRole("button", { name: "任务管理" })
+  await expect(taskMenu).toBeVisible()
+  await expect(taskMenu).toHaveAttribute("aria-expanded", "false")
+  await expect(
+    page.getByRole("link", { name: "代码审查任务管理" }),
+  ).not.toBeVisible()
+
+  await taskMenu.click()
+  await expect(taskMenu).toHaveAttribute("aria-expanded", "true")
   await expect(
     page.getByRole("link", { name: "代码审查任务管理" }),
   ).toBeVisible()
+
+  await taskMenu.click()
+  await expect(taskMenu).toHaveAttribute("aria-expanded", "false")
+  await expect(
+    page.getByRole("link", { name: "代码审查任务管理" }),
+  ).not.toBeVisible()
 })
 
 test("Add User button is visible", async ({ page }) => {

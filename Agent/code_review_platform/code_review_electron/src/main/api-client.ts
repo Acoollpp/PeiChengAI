@@ -41,6 +41,7 @@ export interface ActiveSkill {
   id: string
   version: string
   content_hash?: string
+  file_size?: number
   hash?: string
 }
 

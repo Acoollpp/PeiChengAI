@@ -1,5 +1,7 @@
 import { Link as RouterLink, useRouterState } from "@tanstack/react-router"
 import type { LucideIcon } from "lucide-react"
+import { ChevronRight } from "lucide-react"
+import { useEffect, useState } from "react"
 
 import {
   SidebarGroup,
@@ -7,6 +9,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   useSidebar,
 } from "@/components/ui/sidebar"
 
@@ -35,12 +40,29 @@ export function Main({ items }: MainProps) {
   const { isMobile, setOpenMobile } = useSidebar()
   const router = useRouterState()
   const currentPath = router.location.pathname
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
 
   const handleMenuClick = () => {
     if (isMobile) {
       setOpenMobile(false)
     }
   }
+
+  useEffect(() => {
+    setOpenGroups((current) => {
+      let next = current
+      for (const item of items) {
+        if (!isGroupItem(item)) continue
+        const isActive = item.children.some(
+          (child) => currentPath === child.path,
+        )
+        if (isActive && current[item.title] !== true) {
+          next = { ...next, [item.title]: true }
+        }
+      }
+      return next
+    })
+  }, [currentPath, items])
 
   return (
     <SidebarGroup>
@@ -51,43 +73,54 @@ export function Main({ items }: MainProps) {
               const isActive = item.children.some(
                 (child) => currentPath === child.path,
               )
-              const firstChild = item.children[0]
+              const isOpen = openGroups[item.title] ?? isActive
 
               return (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
+                    type="button"
                     tooltip={item.title}
                     isActive={isActive}
-                    asChild
+                    aria-expanded={isOpen}
+                    onClick={() =>
+                      setOpenGroups((current) => ({
+                        ...current,
+                        [item.title]: !(current[item.title] ?? isActive),
+                      }))
+                    }
                   >
-                    <RouterLink to={firstChild.path} onClick={handleMenuClick}>
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </RouterLink>
+                    <item.icon />
+                    <span>{item.title}</span>
+                    <ChevronRight
+                      className={`ml-auto transition-transform group-data-[collapsible=icon]:hidden ${
+                        isOpen ? "rotate-90" : ""
+                      }`}
+                    />
                   </SidebarMenuButton>
-                  <SidebarMenu className="gap-0 pl-6 group-data-[collapsible=icon]:hidden">
-                    {item.children.map((child) => {
-                      const isChildActive = currentPath === child.path
+                  {isOpen ? (
+                    <SidebarMenuSub>
+                      {item.children.map((child) => {
+                        const isChildActive = currentPath === child.path
 
-                      return (
-                        <SidebarMenuItem key={child.title}>
-                          <SidebarMenuButton
-                            tooltip={child.title}
-                            isActive={isChildActive}
-                            asChild
-                          >
-                            <RouterLink
-                              to={child.path}
-                              onClick={handleMenuClick}
+                        return (
+                          <SidebarMenuSubItem key={child.title}>
+                            <SidebarMenuSubButton
+                              isActive={isChildActive}
+                              asChild
                             >
-                              <child.icon />
-                              <span>{child.title}</span>
-                            </RouterLink>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      )
-                    })}
-                  </SidebarMenu>
+                              <RouterLink
+                                to={child.path}
+                                onClick={handleMenuClick}
+                              >
+                                <child.icon />
+                                <span>{child.title}</span>
+                              </RouterLink>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        )
+                      })}
+                    </SidebarMenuSub>
+                  ) : null}
                 </SidebarMenuItem>
               )
             }

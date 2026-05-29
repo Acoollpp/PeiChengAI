@@ -31,6 +31,7 @@ def test_admin_can_upload_activate_and_download_skill_package(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "SKILL_STORAGE_DIR", str(tmp_path))
+    skill_zip = _skill_zip()
 
     upload_response = client.post(
         f"{settings.API_V1_STR}/skills",
@@ -44,7 +45,7 @@ def test_admin_can_upload_activate_and_download_skill_package(
         files={
             "upload": (
                 "skill.zip",
-                _skill_zip(),
+                skill_zip,
                 "application/zip",
             )
         },
@@ -56,6 +57,7 @@ def test_admin_can_upload_activate_and_download_skill_package(
     assert uploaded["version"] == "2026.05.28"
     assert uploaded["is_active"] is True
     assert uploaded["content_hash"]
+    assert uploaded["file_size"] == len(skill_zip)
 
     active_response = client.get(
         f"{settings.API_V1_STR}/skills/active",
@@ -64,6 +66,7 @@ def test_admin_can_upload_activate_and_download_skill_package(
 
     assert active_response.status_code == 200
     assert active_response.json()["id"] == uploaded["id"]
+    assert active_response.json()["file_size"] == len(skill_zip)
 
     download_response = client.get(
         f"{settings.API_V1_STR}/skills/active/download",

@@ -66,12 +66,15 @@ async def upload_skill(
     activate: bool = Form(default=True),
     upload: UploadFile = File(...),
 ) -> Any:
+    upload_content = await upload.read()
+    await upload.seek(0)
     skill = SkillPackage(
         name=name,
         version=version,
         description=description,
         content_hash="",
         file_path="",
+        file_size=len(upload_content),
         is_active=False,
         created_by_user_id=current_user.id,
     )

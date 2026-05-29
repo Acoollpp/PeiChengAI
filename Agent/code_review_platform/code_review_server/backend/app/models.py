@@ -170,6 +170,7 @@ class SkillPackage(SQLModel, table=True):
     description: str | None = Field(default=None, max_length=1024)
     content_hash: str = Field(max_length=64, index=True)
     file_path: str = Field(max_length=2048)
+    file_size: int = Field(default=0)
     is_active: bool = Field(default=False, index=True)
     created_by_user_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")
     created_at: datetime | None = Field(
@@ -188,6 +189,7 @@ class SkillPackagePublic(SQLModel):
     version: str
     description: str | None = None
     content_hash: str
+    file_size: int
     is_active: bool
     created_by_user_id: uuid.UUID | None = None
     created_at: datetime | None = None

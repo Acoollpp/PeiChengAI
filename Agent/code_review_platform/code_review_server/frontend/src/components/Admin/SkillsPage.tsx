@@ -37,6 +37,7 @@ type Skill = {
   version?: string | null
   description?: string | null
   content_hash?: string | null
+  file_size?: number | null
   is_active?: boolean | null
   active?: boolean | null
   created_at?: string | null
