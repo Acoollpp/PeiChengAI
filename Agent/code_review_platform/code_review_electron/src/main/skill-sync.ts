@@ -1,13 +1,10 @@
-import { createWriteStream } from 'node:fs'
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import { pipeline } from 'node:stream/promises'
-import yauzl from 'yauzl'
+import { createHash } from 'node:crypto'
+import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 
 import type { ActiveSkill, ApiClient } from './api-client'
-
-const REVIEW_SKILL_NAME = '通用-代码变更审查'
+import { installCodexSkillFromZip } from './codex-skill-installer'
+import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
 
 export interface SkillSyncApi {
   getActiveSkill(token: string): Promise<ActiveSkill>
@@ -19,67 +16,100 @@ export interface SkillManifest {
   version: string
   content_hash?: string
   hash?: string
+  file_size?: number
+  package_path: string
+  installed_at: string
 }
 
 export interface SkillSyncResult {
   status: 'current' | 'synced'
-  skillPath: string
+  packagePath: string
+}
+
+interface ExpectedSkillManifest {
+  id: string
+  version: string
+  content_hash?: string
+  hash?: string
+  file_size?: number
+}
+
+interface SkillSyncOptions {
+  runtimePaths: RuntimePaths
+  installSkill?: (input: { packagePath: string }) => Promise<unknown>
 }
 
 export class SkillSyncService {
   private readonly api: SkillSyncApi
-  private readonly userDataPath: string
+  private readonly runtimePaths: RuntimePaths
+  private readonly installSkill: (input: { packagePath: string }) => Promise<unknown>
 
-  constructor(api: SkillSyncApi | ApiClient, userDataPath?: string) {
+  constructor(api: SkillSyncApi | ApiClient, options: SkillSyncOptions) {
     this.api = api
-    this.userDataPath = userDataPath ?? ''
+    this.runtimePaths = options.runtimePaths
+    this.installSkill = options.installSkill ?? installCodexSkillFromZip
   }
 
   async sync(token: string): Promise<SkillSyncResult> {
     const activeSkill = await this.api.getActiveSkill(token)
-    const skillDir = this.skillDir()
-    const skillPath = join(skillDir, 'SKILL.md')
-    const manifestPath = join(skillDir, 'manifest.json')
     const manifest = this.toManifest(activeSkill)
-    const currentManifest = await this.readManifest(manifestPath)
+    const currentManifest = await this.readManifest()
 
-    if (this.manifestMatches(currentManifest, manifest) && (await this.fileExists(skillPath))) {
-      return { status: 'current', skillPath }
+    if (currentManifest && (await this.cachedPackageMatches(currentManifest, manifest))) {
+      return { status: 'current', packagePath: currentManifest.package_path }
     }
 
-    const packageBytes = await this.api.downloadActiveSkill(token)
+    const packageBytes = Buffer.from(await this.api.downloadActiveSkill(token))
+    const contentHash = hashBuffer(packageBytes)
+    const expectedHash = manifest.content_hash ?? manifest.hash
 
-    await this.replaceSkillDir(skillDir, packageBytes)
-    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
-
-    return { status: 'synced', skillPath }
-  }
-
-  private skillDir(): string {
-    return join(this.userData(), 'skills', REVIEW_SKILL_NAME)
-  }
-
-  private userData(): string {
-    if (this.userDataPath) {
-      return this.userDataPath
+    if (expectedHash && contentHash !== expectedHash) {
+      throw new Error(`Skill package hash mismatch: expected ${expectedHash}, received ${contentHash}`)
     }
 
-    throw new Error('SkillSyncService requires a userData path')
+    if (manifest.file_size !== undefined && packageBytes.byteLength !== manifest.file_size) {
+      throw new Error(
+        `Skill package size mismatch: expected ${manifest.file_size}, received ${packageBytes.byteLength}`
+      )
+    }
+
+    await mkdir(this.runtimePaths.skillPackagesDir, { recursive: true })
+    const packagePath = join(
+      this.runtimePaths.skillPackagesDir,
+      `${sanitizePathSegment(manifest.id)}-${sanitizePathSegment(manifest.version)}-${sanitizePathSegment(
+        expectedHash ?? contentHash
+      )}.zip`
+    )
+    await writeFile(packagePath, packageBytes)
+    await this.installSkill({ packagePath })
+
+    const installedManifest: SkillManifest = {
+      ...manifest,
+      content_hash: expectedHash ?? contentHash,
+      hash: expectedHash ?? contentHash,
+      file_size: manifest.file_size ?? packageBytes.byteLength,
+      package_path: packagePath,
+      installed_at: new Date().toISOString()
+    }
+    await writeFile(this.runtimePaths.skillManifestPath, `${JSON.stringify(installedManifest, null, 2)}\n`)
+
+    return { status: 'synced', packagePath }
   }
 
-  private toManifest(activeSkill: ActiveSkill): SkillManifest {
+  private toManifest(activeSkill: ActiveSkill): ExpectedSkillManifest {
     const contentHash = activeSkill.content_hash ?? activeSkill.hash
 
     return {
       id: activeSkill.id,
       version: activeSkill.version,
-      ...(contentHash ? { content_hash: contentHash, hash: contentHash } : {})
+      ...(contentHash ? { content_hash: contentHash, hash: contentHash } : {}),
+      ...(activeSkill.file_size !== undefined ? { file_size: activeSkill.file_size } : {})
     }
   }
 
-  private async readManifest(manifestPath: string): Promise<SkillManifest | null> {
+  private async readManifest(): Promise<SkillManifest | null> {
     try {
-      const parsed = JSON.parse(await readFile(manifestPath, 'utf8')) as unknown
+      const parsed = JSON.parse(await readFile(this.runtimePaths.skillManifestPath, 'utf8')) as unknown
 
       if (this.isManifest(parsed)) {
         return parsed
@@ -91,45 +121,30 @@ export class SkillSyncService {
     return null
   }
 
-  private async fileExists(filePath: string): Promise<boolean> {
+  private async cachedPackageMatches(
+    current: SkillManifest,
+    expected: ExpectedSkillManifest
+  ): Promise<boolean> {
+    const expectedHash = expected.content_hash ?? expected.hash
+    const currentHash = current.content_hash ?? current.hash
+
+    if (current.id !== expected.id || current.version !== expected.version || currentHash !== expectedHash) {
+      return false
+    }
+
     try {
-      await access(filePath)
+      await access(current.package_path)
+      const packageStat = await stat(current.package_path)
+      if (expected.file_size !== undefined && packageStat.size !== expected.file_size) {
+        return false
+      }
+      if (expectedHash && (await hashFile(current.package_path)) !== expectedHash) {
+        return false
+      }
       return true
     } catch {
       return false
     }
-  }
-
-  private async replaceSkillDir(skillDir: string, packageBytes: ArrayBuffer): Promise<void> {
-    const tempDir = await mkdtemp(join(tmpdir(), 'code-review-skill-'))
-    const zipPath = join(tempDir, 'skill.zip')
-
-    try {
-      await writeFile(zipPath, Buffer.from(packageBytes))
-      await unzipPackage(zipPath, tempDir)
-
-      const extractedSkillPath = join(tempDir, 'SKILL.md')
-      await access(extractedSkillPath)
-
-      await rm(skillDir, { recursive: true, force: true })
-      await mkdir(skillDir, { recursive: true })
-      await unzipPackage(zipPath, skillDir)
-      await rm(join(skillDir, 'skill.zip'), { force: true })
-    } finally {
-      await rm(tempDir, { recursive: true, force: true })
-    }
-  }
-
-  private manifestMatches(current: SkillManifest | null, expected: SkillManifest): boolean {
-    if (!current) {
-      return false
-    }
-
-    return (
-      current.id === expected.id &&
-      current.version === expected.version &&
-      (current.content_hash ?? current.hash) === (expected.content_hash ?? expected.hash)
-    )
   }
 
   private isManifest(value: unknown): value is SkillManifest {
@@ -138,70 +153,23 @@ export class SkillSyncService {
       value !== null &&
       'id' in value &&
       'version' in value &&
+      'package_path' in value &&
+      'installed_at' in value &&
       typeof value.id === 'string' &&
-      typeof value.version === 'string'
+      typeof value.version === 'string' &&
+      typeof value.package_path === 'string' &&
+      typeof value.installed_at === 'string'
     )
   }
 }
 
-export const createSkillSyncService = async (api: ApiClient): Promise<SkillSyncService> => {
-  const { app } = await import('electron')
-  return new SkillSyncService(api, app.getPath('userData'))
-}
-
-const unzipPackage = (zipPath: string, targetDir: string): Promise<void> =>
-  new Promise((resolvePromise, rejectPromise) => {
-    yauzl.open(zipPath, { lazyEntries: true }, (openError, zipfile) => {
-      if (openError || !zipfile) {
-        rejectPromise(openError ?? new Error('Failed to open skill package'))
-        return
-      }
-
-      zipfile.readEntry()
-      zipfile.on('entry', (entry) => {
-        const targetPath = resolve(targetDir, entry.fileName)
-
-        if (!isInsideDirectory(targetDir, targetPath)) {
-          zipfile.close()
-          rejectPromise(new Error(`Invalid skill package path: ${entry.fileName}`))
-          return
-        }
-
-        if (/\/$/.test(entry.fileName)) {
-          mkdir(targetPath, { recursive: true })
-            .then(() => zipfile.readEntry())
-            .catch((error: unknown) => {
-              zipfile.close()
-              rejectPromise(error)
-            })
-          return
-        }
-
-        zipfile.openReadStream(entry, (streamError, readStream) => {
-          if (streamError || !readStream) {
-            zipfile.close()
-            rejectPromise(streamError ?? new Error(`Failed to read ${entry.fileName}`))
-            return
-          }
-
-          mkdir(dirname(targetPath), { recursive: true })
-            .then(() => pipeline(readStream, createWriteStream(targetPath)))
-            .then(() => zipfile.readEntry())
-            .catch((error: unknown) => {
-              zipfile.close()
-              rejectPromise(error)
-            })
-        })
-      })
-      zipfile.on('end', () => resolvePromise())
-      zipfile.on('error', rejectPromise)
-    })
+export const createSkillSyncService = async (api: ApiClient): Promise<SkillSyncService> =>
+  new SkillSyncService(api, {
+    runtimePaths: await getRuntimePaths()
   })
 
-export const isInsideDirectory = (parentDir: string, childPath: string): boolean => {
-  const normalizedParent = resolve(parentDir)
-  const normalizedChild = resolve(childPath)
-  const relativePath = relative(normalizedParent, normalizedChild)
+const hashBuffer = (buffer: Buffer): string => createHash('sha256').update(buffer).digest('hex')
 
-  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
-}
+const hashFile = async (filePath: string): Promise<string> => hashBuffer(await readFile(filePath))
+
+const sanitizePathSegment = (value: string): string => value.replace(/[^a-zA-Z0-9._-]/g, '_')
