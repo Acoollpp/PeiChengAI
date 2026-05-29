@@ -1,4 +1,5 @@
 import io
+import hashlib
 import zipfile
 from pathlib import Path
 
@@ -56,7 +57,7 @@ def test_admin_can_upload_activate_and_download_skill_package(
     assert uploaded["name"] == "通用-代码变更审查"
     assert uploaded["version"] == "2026.05.28"
     assert uploaded["is_active"] is True
-    assert uploaded["content_hash"]
+    assert uploaded["content_hash"] == hashlib.sha256(skill_zip).hexdigest()
     assert uploaded["file_size"] == len(skill_zip)
 
     active_response = client.get(
@@ -75,16 +76,19 @@ def test_admin_can_upload_activate_and_download_skill_package(
 
     assert download_response.status_code == 200
     assert download_response.headers["content-type"].startswith("application/zip")
+    assert download_response.content == skill_zip
     with zipfile.ZipFile(io.BytesIO(download_response.content)) as archive:
         assert sorted(archive.namelist()) == [
-            "SKILL.md",
-            "image/SKILL/diagram.png",
+            "__MACOSX/._SKILL.md",
+            "通用-代码变更审查/.DS_Store",
+            "通用-代码变更审查/SKILL.md",
+            "通用-代码变更审查/image/SKILL/diagram.png",
         ]
         assert (
-            archive.read("SKILL.md").decode()
+            archive.read("通用-代码变更审查/SKILL.md").decode()
             == "---\nname: test\n---\n\n# Code Review Skill\n![diagram](image/SKILL/diagram.png)\n"
         )
-        assert archive.read("image/SKILL/diagram.png") == b"png bytes"
+        assert archive.read("通用-代码变更审查/image/SKILL/diagram.png") == b"png bytes"
 
 
 def test_upload_skill_package_requires_skill_md(
