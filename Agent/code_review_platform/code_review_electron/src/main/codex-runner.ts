@@ -1,4 +1,8 @@
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { buildVersionCommandOptions } from './environment-checker'
 
 export interface ReviewPromptInput {
   svnUrl: string
@@ -11,12 +15,49 @@ export interface RunCodexReviewOptions {
   cwd: string
   prompt: string
   timeoutMs: number
+  onOutput?: (event: CodexOutputEvent) => void
 }
 
 export interface CodexReviewResult {
   stdout: string
   stderr: string
 }
+
+export interface CodexOutputEvent {
+  stream: 'stdout' | 'stderr'
+  text: string
+}
+
+export const buildWindowsCodexBinaryPath = (): string =>
+  join(
+    process.env.APPDATA ?? '',
+    'npm',
+    'node_modules',
+    '@openai',
+    'codex',
+    'node_modules',
+    '@openai',
+    'codex-win32-x64',
+    'vendor',
+    'x86_64-pc-windows-msvc',
+    'bin',
+    'codex.exe'
+  )
+
+export const buildCodexCommand = (platform: NodeJS.Platform = process.platform): string => {
+  if (platform !== 'win32') {
+    return 'codex'
+  }
+
+  const bundledBinary = buildWindowsCodexBinaryPath()
+  return existsSync(bundledBinary) ? bundledBinary : 'codex'
+}
+
+export const buildCodexExecArgs = (prompt: string): string[] => [
+  'exec',
+  '--dangerously-bypass-approvals-and-sandbox',
+  prompt
+]
 
 export const buildReviewPrompt = ({
   svnUrl,
@@ -37,22 +78,26 @@ export const buildReviewPrompt = ({
 export const runCodexReview = ({
   cwd,
   prompt,
-  timeoutMs
+  timeoutMs,
+  onOutput
 }: RunCodexReviewOptions): Promise<CodexReviewResult> =>
   new Promise((resolve, reject) => {
-    const child = spawn('codex', [prompt], {
+    const commandOptions = buildVersionCommandOptions()
+    const child = spawn(buildCodexCommand(), buildCodexExecArgs(prompt), {
+      ...commandOptions,
       cwd,
-      windowsHide: true,
-      shell: false
+      shell: false,
+      env: {
+        ...commandOptions.env,
+        CODEX_UNSAFE_ALLOW_NO_SANDBOX: '1'
+      }
     })
 
     const stdoutChunks: Buffer[] = []
     const stderrChunks: Buffer[] = []
     let settled = false
 
-    const settle = (
-      callback: () => void
-    ): void => {
+    const settle = (callback: () => void): void => {
       if (!settled) {
         settled = true
         clearTimeout(timeout)
@@ -69,10 +114,12 @@ export const runCodexReview = ({
 
     child.stdout.on('data', (chunk: Buffer) => {
       stdoutChunks.push(chunk)
+      onOutput?.({ stream: 'stdout', text: chunk.toString('utf8') })
     })
 
     child.stderr.on('data', (chunk: Buffer) => {
       stderrChunks.push(chunk)
+      onOutput?.({ stream: 'stderr', text: chunk.toString('utf8') })
     })
 
     child.on('error', (error) => {
