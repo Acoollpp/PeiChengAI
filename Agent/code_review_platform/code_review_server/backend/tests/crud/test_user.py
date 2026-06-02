@@ -222,7 +222,7 @@ def test_email_utils_are_disabled_after_email_settings_removed() -> None:
 
 
 def test_init_db_creates_local_admin_without_svn_username(db: Session) -> None:
-    db.exec(delete(User).where(User.is_superuser == True))
+    db.exec(delete(User).where(User.is_superuser))
     db.exec(delete(User).where(User.full_name == settings.FIRST_SUPERUSER))
     db.exec(delete(User).where(User.svn_username == settings.FIRST_SUPERUSER))
     db.commit()
@@ -243,7 +243,7 @@ def test_init_db_creates_local_admin_without_svn_username(db: Session) -> None:
 def test_init_db_reuses_legacy_superuser_without_creating_duplicate(
     db: Session,
 ) -> None:
-    db.exec(delete(User).where(User.is_superuser == True))
+    db.exec(delete(User).where(User.is_superuser))
     db.exec(delete(User).where(User.full_name == settings.FIRST_SUPERUSER))
     db.exec(delete(User).where(User.svn_username == settings.FIRST_SUPERUSER))
     db.commit()
@@ -262,6 +262,6 @@ def test_init_db_reuses_legacy_superuser_without_creating_duplicate(
 
     init_db(db)
 
-    superusers = db.exec(select(User).where(User.is_superuser == True)).all()
+    superusers = db.exec(select(User).where(User.is_superuser)).all()
     assert len(superusers) == 1
     assert superusers[0].id == legacy_user.id

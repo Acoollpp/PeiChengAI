@@ -26,8 +26,9 @@ def auth_headers_for_user_id(user_id: object) -> dict[str, str]:
 
 
 def get_superuser_token_headers(client: TestClient) -> dict[str, str]:
+    _ = client
     with Session(engine) as session:
-        superuser = session.exec(select(User).where(User.is_superuser == True)).first()
+        superuser = session.exec(select(User).where(User.is_superuser)).first()
         if not superuser:
             superuser = session.exec(
                 select(User).where(User.full_name == settings.FIRST_SUPERUSER)

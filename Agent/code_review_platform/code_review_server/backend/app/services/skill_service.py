@@ -11,7 +11,6 @@ from sqlmodel import Session, col, select
 from app.core.config import settings
 from app.models import SkillPackage, get_datetime_utc
 
-
 SKILL_FILENAME = "SKILL.md"
 ORIGINAL_PACKAGE_FILENAME = ".original-skill.zip"
 

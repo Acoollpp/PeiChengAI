@@ -1,12 +1,8 @@
 import { expect, test } from "@playwright/test"
-import { createUser } from "./utils/privateApi"
-import {
-  randomEmail,
-  randomItemDescription,
-  randomItemTitle,
-  randomPassword,
-} from "./utils/random"
-import { logInUser } from "./utils/user"
+import { createUser, uniqueSvnUsername } from "./utils/privateApi"
+import { randomItemDescription, randomItemTitle } from "./utils/random"
+import { testSvnPassword } from "./config.ts"
+import { logInWithSvn } from "./utils/user"
 
 test("Items page is accessible and shows correct title", async ({ page }) => {
   await page.goto("/items")
@@ -21,16 +17,15 @@ test("Add Item button is visible", async ({ page }) => {
 
 test.describe("Items management", () => {
   test.use({ storageState: { cookies: [], origins: [] } })
-  let email: string
-  const password = randomPassword()
+  let svnUsername: string
 
   test.beforeAll(async () => {
-    email = randomEmail()
-    await createUser({ email, password })
+    svnUsername = uniqueSvnUsername()
+    await createUser({ svnUsername })
   })
 
   test.beforeEach(async ({ page }) => {
-    await logInUser(page, email, password)
+    await logInWithSvn(page, svnUsername, testSvnPassword)
     await page.goto("/items")
   })
 
@@ -119,10 +114,9 @@ test.describe("Items empty state", () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
   test("Shows empty state message when no items exist", async ({ page }) => {
-    const email = randomEmail()
-    const password = randomPassword()
-    await createUser({ email, password })
-    await logInUser(page, email, password)
+    const svnUsername = uniqueSvnUsername()
+    await createUser({ svnUsername })
+    await logInWithSvn(page, svnUsername, testSvnPassword)
 
     await page.goto("/items")
 

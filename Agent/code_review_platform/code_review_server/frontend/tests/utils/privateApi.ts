@@ -1,22 +1,26 @@
 // Note: the `PrivateService` is only available when generating the client
-// for local environments
+// for local environments.
 import { OpenAPI, PrivateService } from "../../src/client"
 
 OpenAPI.BASE = `${process.env.VITE_API_URL}`
 
+export const uniqueSvnUsername = () =>
+  `svn_${Math.random().toString(36).substring(2, 10)}`
+
 export const createUser = async ({
-  email,
-  password,
+  fullName,
+  svnUsername,
+  isSuperuser = false,
 }: {
-  email: string
-  password: string
+  fullName?: string
+  svnUsername: string
+  isSuperuser?: boolean
 }) => {
   return await PrivateService.createUser({
     requestBody: {
-      email,
-      password,
-      is_verified: true,
-      full_name: "Test User",
+      full_name: fullName ?? `Test User ${svnUsername}`,
+      svn_username: svnUsername,
+      is_superuser: isSuperuser,
     },
   })
 }

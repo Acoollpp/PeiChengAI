@@ -1,8 +1,7 @@
 import { expect, test } from "@playwright/test"
-import { firstSuperuser, firstSuperuserPassword } from "./config.ts"
-import { createUser } from "./utils/privateApi"
-import { randomEmail, randomPassword } from "./utils/random"
-import { logInUser } from "./utils/user"
+import { testApiKey, testSvnPassword } from "./config.ts"
+import { createUser, uniqueSvnUsername } from "./utils/privateApi"
+import { logInWithKey, logInWithSvn } from "./utils/user"
 
 const randomSvnUsername = () =>
   `svn_${Math.random().toString(36).substring(2, 10)}`
@@ -239,11 +238,10 @@ test.describe("Admin page access control", () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
   test("Non-superuser cannot access admin page", async ({ page }) => {
-    const email = randomEmail()
-    const password = randomPassword()
+    const svnUsername = uniqueSvnUsername()
 
-    await createUser({ email, password })
-    await logInUser(page, email, password)
+    await createUser({ svnUsername })
+    await logInWithSvn(page, svnUsername, testSvnPassword)
 
     await page.goto("/admin")
 
@@ -254,7 +252,7 @@ test.describe("Admin page access control", () => {
   })
 
   test("Superuser can access admin page", async ({ page }) => {
-    await logInUser(page, firstSuperuser, firstSuperuserPassword)
+    await logInWithKey(page, testApiKey)
 
     await page.goto("/admin")
 

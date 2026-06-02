@@ -16,6 +16,7 @@ def user_authentication_headers(
     email: str | None = None,
     password: str | None = None,
 ) -> dict[str, str]:
+    _ = (client, email, password)
     if user_id is not None:
         return auth_headers_for_user_id(user_id)
     if user is not None:
@@ -75,6 +76,7 @@ def create_key_user(
 def authentication_token_from_key(
     *, client: TestClient, key: str, db: Session
 ) -> dict[str, str]:
+    _ = client
     api_key = crud.get_user_api_key_by_key(session=db, key=key)
     if not api_key:
         _, api_key = create_key_user(db, key=key)
@@ -84,5 +86,6 @@ def authentication_token_from_key(
 def authentication_token_from_email(
     *, client: TestClient, email: str, db: Session
 ) -> dict[str, str]:
+    _ = (client, email)
     user = create_random_user(db)
     return auth_headers_for_user_id(user.id)

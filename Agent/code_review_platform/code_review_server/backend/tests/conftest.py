@@ -56,5 +56,6 @@ def superuser_token_headers(client: TestClient) -> dict[str, str]:
 
 @pytest.fixture(scope="module")
 def normal_user_token_headers(client: TestClient, db: Session) -> dict[str, str]:
+    _ = client
     user = create_random_user(db)
     return auth_headers_for_user_id(user.id)

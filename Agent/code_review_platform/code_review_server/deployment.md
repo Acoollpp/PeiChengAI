@@ -161,11 +161,14 @@ export SECRET_KEY="changethis"
 
 Note: you can use the Python command above to generate a secure secret key.
 
-Set the `FIRST_SUPER_USER_PASSWORD` to something different than `changethis`:
+Set the CCH database connection and SVN credential encryption key:
 
 ```bash
-export FIRST_SUPERUSER_PASSWORD="changethis"
+export CCH_DATABASE_URL="postgresql://user:password@cch-db:5432/claude_code_hub"
+export SVN_CREDENTIAL_MASTER_KEY="replace-with-a-32-byte-url-safe-production-key"
 ```
+
+管理员在 Web 管理后台点击“同步 CCH 用户”后，服务端会使用 `CCH_DATABASE_URL` 连接 Claude Code Hub PostgreSQL，同步 CCH 用户名、角色和 Key 到本地库。Web 管理后台和 Electron 客户端支持 Key 登录和 SVN 账号密码登录；邮箱注册、邮箱登录、找回密码和修改密码已移除。
 
 Set the `BACKEND_CORS_ORIGINS` to include your domain:
 
@@ -175,14 +178,11 @@ export BACKEND_CORS_ORIGINS="https://dashboard.${DOMAIN?Variable not set},https:
 
 You can set several other environment variables:
 
-* `PROJECT_NAME`: The name of the project, used in the API for the docs and emails.
+* `PROJECT_NAME`: The name of the project, used in the API docs.
 * `STACK_NAME`: The name of the stack used for Docker Compose labels and project name, this should be different for `staging`, `production`, etc. You could use the same domain replacing dots with dashes, e.g. `fastapi-project-example-com` and `staging-fastapi-project-example-com`.
 * `BACKEND_CORS_ORIGINS`: A list of allowed CORS origins separated by commas.
-* `FIRST_SUPERUSER`: The email of the first superuser, this superuser will be the one that can create new users.
-* `SMTP_HOST`: The SMTP server host to send emails, this would come from your email provider (E.g. Mailgun, Sparkpost, Sendgrid, etc).
-* `SMTP_USER`: The SMTP server user to send emails.
-* `SMTP_PASSWORD`: The SMTP server password to send emails.
-* `EMAILS_FROM_EMAIL`: The email account to send emails from.
+* `CCH_DATABASE_URL`: Claude Code Hub PostgreSQL 连接串，用于同步 CCH 用户名、角色和 Key。
+* `SVN_CREDENTIAL_MASTER_KEY`: SVN 凭据加密主密钥；上线后应稳定保存。
 * `POSTGRES_SERVER`: The hostname of the PostgreSQL server. You can leave the default of `db`, provided by the same Docker Compose. You normally wouldn't need to change this unless you are using a third-party provider.
 * `POSTGRES_PORT`: The port of the PostgreSQL server. You can leave the default. You normally wouldn't need to change this unless you are using a third-party provider.
 * `POSTGRES_USER`: The Postgres user, you can leave the default.

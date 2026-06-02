@@ -1,31 +1,28 @@
 import { expect, type Page } from "@playwright/test"
 
-export async function signUpNewUser(
-  page: Page,
-  name: string,
-  email: string,
-  password: string,
-) {
-  await page.goto("/signup")
-
-  await page.getByTestId("full-name-input").fill(name)
-  await page.getByTestId("email-input").fill(email)
-  await page.getByTestId("password-input").fill(password)
-  await page.getByTestId("confirm-password-input").fill(password)
-  await page.getByRole("button", { name: "Sign Up" }).click()
+export async function logInWithKey(page: Page, key: string) {
   await page.goto("/login")
+
+  await page.getByRole("tab", { name: "Key 登录" }).click()
+  await page.getByLabel("Key").fill(key)
+  await page.getByRole("button", { name: "登录" }).click()
+  await page.waitForURL("/")
+  await expect(page.getByTestId("user-menu")).toBeVisible()
 }
 
-export async function logInUser(page: Page, email: string, password: string) {
+export async function logInWithSvn(
+  page: Page,
+  svnUsername: string,
+  svnPassword: string,
+) {
   await page.goto("/login")
 
-  await page.getByTestId("email-input").fill(email)
-  await page.getByTestId("password-input").fill(password)
-  await page.getByRole("button", { name: "Log In" }).click()
+  await page.getByRole("tab", { name: "SVN 登录" }).click()
+  await page.getByLabel("SVN账号").fill(svnUsername)
+  await page.getByLabel("SVN密码").fill(svnPassword)
+  await page.getByRole("button", { name: "登录" }).click()
   await page.waitForURL("/")
-  await expect(
-    page.getByText("Welcome back, nice to see you again!"),
-  ).toBeVisible()
+  await expect(page.getByTestId("user-menu")).toBeVisible()
 }
 
 export async function logOutUser(page: Page) {

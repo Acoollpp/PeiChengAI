@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from jinja2 import Template
+
 from app.core.config import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -30,6 +31,7 @@ def send_email(
     subject: str = "",
     html_content: str = "",
 ) -> None:
+    _ = (email_to, subject, html_content)
     raise RuntimeError("Email delivery is disabled")
 
 
@@ -44,6 +46,7 @@ def generate_test_email(email_to: str) -> EmailData:
 
 
 def generate_reset_password_email(email_to: str, email: str, token: str) -> EmailData:
+    _ = (email_to, email, token)
     raise RuntimeError("Password reset email support is disabled")
 
 
@@ -66,8 +69,10 @@ def generate_new_account_email(
 
 
 def generate_password_reset_token(email: str) -> str:
+    _ = email
     raise RuntimeError("Password reset email support is disabled")
 
 
 def verify_password_reset_token(token: str) -> str | None:
+    _ = token
     return None
