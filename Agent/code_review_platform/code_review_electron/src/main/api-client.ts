@@ -7,7 +7,7 @@ export interface TokenPair {
 
 export interface KeyLoginRequest {
   server_url: string
-  access_key: string
+  key: string
 }
 
 export interface SvnLoginRequest {

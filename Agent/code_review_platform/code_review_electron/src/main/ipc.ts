@@ -66,7 +66,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     const serverUrl = normalizeServerUrl(payload.server_url)
     const api = apiOverride ?? new ApiClient(serverUrl)
     const tokens = await api.keyLogin({
-      access_key: payload.access_key
+      key: payload.key
     })
     await serverConfigStore.save({ server_url: serverUrl })
     await authStore.save(tokens)

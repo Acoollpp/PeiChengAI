@@ -9,7 +9,7 @@ export type { TaskProgressEvent }
 
 export interface KeyLoginRequest {
   server_url: string
-  access_key: string
+  key: string
 }
 
 export interface SvnLoginRequest {

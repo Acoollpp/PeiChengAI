@@ -22,7 +22,7 @@ describe('ApiClient', () => {
     const client = new ApiClient('https://server.example/', fetchMock)
 
     const result = await client.keyLogin({
-      access_key: 'key-123'
+      key: 'sk-cch-test'
     })
 
     expect(result).toEqual({
@@ -35,7 +35,7 @@ describe('ApiClient', () => {
         'content-type': 'application/json'
       },
       body: JSON.stringify({
-        access_key: 'key-123'
+        key: 'sk-cch-test'
       })
     })
   })

@@ -101,7 +101,7 @@ describe('registerIpcHandlers', () => {
     await expect(
       loginHandler({}, {
         server_url: 'http://172.23.17.190:8000/',
-        access_key: 'key-123'
+        key: 'sk-cch-test'
       })
     ).resolves.toBe(true)
 
@@ -111,7 +111,7 @@ describe('registerIpcHandlers', () => {
         'content-type': 'application/json'
       },
       body: JSON.stringify({
-        access_key: 'key-123'
+        key: 'sk-cch-test'
       })
     })
     expect(serverConfigStore.save).toHaveBeenCalledWith({
