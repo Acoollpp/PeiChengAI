@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.routes import (
+    cch_sync,
     credentials,
     items,
     login,
@@ -19,6 +20,7 @@ api_router.include_router(utils.router)
 api_router.include_router(items.router)
 api_router.include_router(review_tasks.router)
 api_router.include_router(credentials.router)
+api_router.include_router(cch_sync.router)
 api_router.include_router(skills.router)
 
 
