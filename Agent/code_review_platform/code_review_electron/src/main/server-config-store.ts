@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 
 const SERVER_CONFIG_FILE_NAME = 'server-config.json'
 export const DEFAULT_API_BASE_URL =
-  process.env.CODE_REVIEW_API_BASE_URL ?? 'http://172.23.17.190:8000'
+  process.env.CODE_REVIEW_API_BASE_URL ?? 'http://172.23.17.242:8000'
 
 export interface ServerConfig {
   server_url: string

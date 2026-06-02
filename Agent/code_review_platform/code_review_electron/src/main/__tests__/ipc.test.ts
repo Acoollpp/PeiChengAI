@@ -49,7 +49,7 @@ describe('registerIpcHandlers', () => {
 
   it('loads the default server config for the login page', async () => {
     const serverConfigStore = {
-      load: vi.fn(async () => ({ server_url: 'http://172.23.17.190:8000' })),
+      load: vi.fn(async () => ({ server_url: 'http://172.23.17.242:8000' })),
       save: vi.fn()
     }
     const { registerIpcHandlers } = await import('../ipc')
@@ -63,7 +63,7 @@ describe('registerIpcHandlers', () => {
     )?.[1]
 
     await expect(loadServerConfigHandler()).resolves.toEqual({
-      server_url: 'http://172.23.17.190:8000'
+      server_url: 'http://172.23.17.242:8000'
     })
   })
 
@@ -100,12 +100,12 @@ describe('registerIpcHandlers', () => {
 
     await expect(
       loginHandler({}, {
-        server_url: 'http://172.23.17.190:8000/',
+        server_url: 'http://172.23.17.242:8000/',
         key: 'sk-cch-test'
       })
     ).resolves.toBe(true)
 
-    expect(fetchMock).toHaveBeenCalledWith('http://172.23.17.190:8000/api/v1/auth/key-login', {
+    expect(fetchMock).toHaveBeenCalledWith('http://172.23.17.242:8000/api/v1/auth/key-login', {
       method: 'POST',
       headers: {
         'content-type': 'application/json'
@@ -115,7 +115,7 @@ describe('registerIpcHandlers', () => {
       })
     })
     expect(serverConfigStore.save).toHaveBeenCalledWith({
-      server_url: 'http://172.23.17.190:8000'
+      server_url: 'http://172.23.17.242:8000'
     })
     expect(authStore.save).toHaveBeenCalledWith({
       access_token: 'token-123',
@@ -156,13 +156,13 @@ describe('registerIpcHandlers', () => {
 
     await expect(
       loginHandler({}, {
-        server_url: 'http://172.23.17.190:8000/',
+        server_url: 'http://172.23.17.242:8000/',
         svn_username: 'ada',
         svn_password: 'secret'
       })
     ).resolves.toBe(true)
 
-    expect(fetchMock).toHaveBeenCalledWith('http://172.23.17.190:8000/api/v1/auth/login', {
+    expect(fetchMock).toHaveBeenCalledWith('http://172.23.17.242:8000/api/v1/auth/login', {
       method: 'POST',
       headers: {
         'content-type': 'application/json'
@@ -173,7 +173,7 @@ describe('registerIpcHandlers', () => {
       })
     })
     expect(serverConfigStore.save).toHaveBeenCalledWith({
-      server_url: 'http://172.23.17.190:8000'
+      server_url: 'http://172.23.17.242:8000'
     })
     expect(authStore.save).toHaveBeenCalledWith({
       access_token: 'token-123',

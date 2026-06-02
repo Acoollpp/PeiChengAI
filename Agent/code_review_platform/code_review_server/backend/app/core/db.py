@@ -4,6 +4,7 @@ from app.core.config import settings
 from app.models import AuthSource, User, UserRole
 
 engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
+DEFAULT_LOCAL_ADMIN_NAME = "Local Admin"
 
 
 # make sure all SQLModel models are imported (app.models) before initializing DB
@@ -29,7 +30,7 @@ def init_db(session: Session) -> None:
     ).first()
     if not superuser:
         superuser = User(
-            full_name=settings.FIRST_SUPERUSER,
+            full_name=DEFAULT_LOCAL_ADMIN_NAME,
             is_active=True,
             is_superuser=True,
             role=UserRole.admin,

@@ -4,7 +4,7 @@ from sqlmodel import Session, delete, select
 
 from app import crud
 from app.core.config import settings
-from app.core.db import init_db
+from app.core.db import DEFAULT_LOCAL_ADMIN_NAME, init_db
 from app.models import AuthSource, User, UserApiKey, UserCreate, UserRole, UserUpdate
 from app.utils import generate_password_reset_token, send_email
 from tests.utils.user import authentication_token_from_email
@@ -224,15 +224,17 @@ def test_email_utils_are_disabled_after_email_settings_removed() -> None:
 def test_init_db_creates_local_admin_without_svn_username(db: Session) -> None:
     db.exec(delete(User).where(User.is_superuser))
     db.exec(delete(User).where(User.full_name == settings.FIRST_SUPERUSER))
+    db.exec(delete(User).where(User.full_name == DEFAULT_LOCAL_ADMIN_NAME))
     db.exec(delete(User).where(User.svn_username == settings.FIRST_SUPERUSER))
     db.commit()
 
     init_db(db)
 
     user = db.exec(
-        select(User).where(User.full_name == settings.FIRST_SUPERUSER)
+        select(User).where(User.full_name == DEFAULT_LOCAL_ADMIN_NAME)
     ).first()
     assert user
+    assert "@" not in user.full_name
     assert user.svn_username is None
     assert user.is_active is True
     assert user.is_superuser is True

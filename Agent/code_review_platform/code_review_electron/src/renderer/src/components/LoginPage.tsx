@@ -44,7 +44,7 @@ export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX
           return
         }
 
-        setServerUrl('http://172.23.17.190:8000')
+        setServerUrl('http://172.23.17.242:8000')
       })
 
     return () => {
@@ -128,7 +128,7 @@ export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX
             required
             value={serverUrl}
             inputMode="url"
-            placeholder="http://172.23.17.190:8000"
+            placeholder="http://172.23.17.242:8000"
             autoComplete="url"
             onChange={(event) => setServerUrl(event.target.value)}
           />

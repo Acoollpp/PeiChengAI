@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 
 from app.core import security
 from app.core.config import settings
-from app.core.db import engine
+from app.core.db import DEFAULT_LOCAL_ADMIN_NAME, engine
 from app.models import AuthSource, User, UserRole
 
 
@@ -35,7 +35,7 @@ def get_superuser_token_headers(client: TestClient) -> dict[str, str]:
             ).first()
         if not superuser:
             superuser = User(
-                full_name=settings.FIRST_SUPERUSER,
+                full_name=DEFAULT_LOCAL_ADMIN_NAME,
                 is_active=True,
                 is_superuser=True,
                 role=UserRole.admin,
