@@ -20,13 +20,16 @@ def init_db(session: Session) -> None:
     # This works because the models are already imported and registered from app.models
     # SQLModel.metadata.create_all(engine)
 
+    superuser = session.exec(select(User).where(User.is_superuser == True)).first()
+    if superuser:
+        return
+
     superuser = session.exec(
-        select(User).where(User.svn_username == settings.FIRST_SUPERUSER)
+        select(User).where(User.full_name == settings.FIRST_SUPERUSER)
     ).first()
     if not superuser:
         superuser = User(
-            full_name="Initial superuser",
-            svn_username=settings.FIRST_SUPERUSER,
+            full_name=settings.FIRST_SUPERUSER,
             is_active=True,
             is_superuser=True,
             role=UserRole.admin,
