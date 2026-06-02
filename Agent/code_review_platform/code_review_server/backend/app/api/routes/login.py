@@ -9,6 +9,7 @@ from app.core import security
 from app.core.config import settings
 from app.models import Token, User, UserPublic
 from app.services.credential_service import CredentialService
+from app.services.user_api_key_service import UserApiKeyService
 
 router = APIRouter(tags=["login"])
 
@@ -16,6 +17,10 @@ router = APIRouter(tags=["login"])
 class SvnLogin(SQLModel):
     svn_username: str
     svn_password: str
+
+
+class KeyLogin(SQLModel):
+    key: str
 
 
 class AuthToken(Token):
@@ -54,6 +59,18 @@ def login_svn_account(session: SessionDep, body: SvnLogin) -> AuthToken:
     svn_password = credential_service.get_svn_password(session, user.id)
     if svn_password != body.svn_password:
         raise HTTPException(status_code=401, detail="Incorrect SVN username or password")
+
+    return _create_auth_tokens(user.id)
+
+
+@router.post("/auth/key-login", response_model=AuthToken)
+def login_with_key(session: SessionDep, body: KeyLogin) -> AuthToken:
+    """
+    Authenticate with a locally stored API key.
+    """
+    user = UserApiKeyService().authenticate(session, body.key)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid or inactive key")
 
     return _create_auth_tokens(user.id)
 

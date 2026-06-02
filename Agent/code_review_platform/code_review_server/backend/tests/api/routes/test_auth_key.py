@@ -1,9 +1,12 @@
 import uuid
 
+from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+from app.core.config import settings
 from app.models import AuthSource, User, UserApiKey, UserRole
+from tests.utils.user import create_key_user
 
 
 def test_cch_user_and_plaintext_api_key_can_be_persisted(db: Session) -> None:
@@ -91,3 +94,59 @@ def test_duplicate_plaintext_api_keys_are_rejected(db: Session) -> None:
     else:
         db.rollback()
         raise AssertionError("Duplicate plaintext API keys should be rejected")
+
+
+def test_key_login_with_valid_key_returns_tokens(
+    client: TestClient, db: Session
+) -> None:
+    _, api_key = create_key_user(db)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/auth/key-login", json={"key": api_key.key}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["access_token"]
+    assert body["refresh_token"]
+    assert body["token_type"] == "bearer"
+
+
+def test_key_login_with_disabled_key_returns_401(
+    client: TestClient, db: Session
+) -> None:
+    _, api_key = create_key_user(db, is_active=False)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/auth/key-login", json={"key": api_key.key}
+    )
+
+    assert response.status_code == 401
+
+
+def test_key_login_with_disabled_user_returns_401(
+    client: TestClient, db: Session
+) -> None:
+    user, api_key = create_key_user(db)
+    user.is_active = False
+    db.add(user)
+    db.commit()
+
+    response = client.post(
+        f"{settings.API_V1_STR}/auth/key-login", json={"key": api_key.key}
+    )
+
+    assert response.status_code == 401
+
+
+def test_openapi_security_scheme_uses_http_bearer(client: TestClient) -> None:
+    response = client.get(f"{settings.API_V1_STR}/openapi.json")
+
+    assert response.status_code == 200
+    security_schemes = response.json()["components"]["securitySchemes"]
+    bearer_scheme = security_schemes["HTTPBearer"]
+
+    assert bearer_scheme["type"] == "http"
+    assert bearer_scheme["scheme"] == "bearer"
+    assert "flows" not in bearer_scheme
+    assert "tokenUrl" not in str(security_schemes)
