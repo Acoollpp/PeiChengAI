@@ -14,6 +14,7 @@ from app.models import (
     ReviewTask,
     SkillPackage,
     User,
+    UserApiKey,
     UserSvnCredential,
 )
 from tests.utils.user import authentication_token_from_email
@@ -25,6 +26,8 @@ def db() -> Generator[Session, None, None]:
     with Session(engine) as session:
         init_db(session)
         yield session
+        statement = delete(UserApiKey)
+        session.execute(statement)
         statement = delete(UserSvnCredential)
         session.execute(statement)
         statement = delete(Item)

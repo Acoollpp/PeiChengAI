@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from pydantic import EmailStr
 from sqlalchemy import JSON, DateTime
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -15,6 +14,11 @@ def get_datetime_utc() -> datetime:
 class UserRole(str, Enum):
     admin = "admin"
     user = "user"
+
+
+class AuthSource(str, Enum):
+    local = "local"
+    cch = "cch"
 
 
 class ReviewTaskStatus(str, Enum):
@@ -30,7 +34,6 @@ class ReviewTaskStatus(str, Enum):
 
 # Shared properties
 class UserBase(SQLModel):
-    email: EmailStr = Field(unique=True, index=True, max_length=255)
     is_active: bool = True
     is_superuser: bool = False
     full_name: str | None = Field(default=None, max_length=255)
@@ -38,24 +41,19 @@ class UserBase(SQLModel):
 
 # Properties to receive via API on creation
 class UserCreate(UserBase):
-    password: str = Field(min_length=8, max_length=128)
-
-
-class UserRegister(SQLModel):
-    email: EmailStr = Field(max_length=255)
-    password: str = Field(min_length=8, max_length=128)
-    full_name: str | None = Field(default=None, max_length=255)
+    svn_username: str | None = Field(default=None, max_length=255)
+    role: UserRole = UserRole.user
 
 
 # Properties to receive via API on update, all are optional
-class UserUpdate(UserBase):
-    email: EmailStr | None = Field(default=None, max_length=255)  # type: ignore[assignment]
-    password: str | None = Field(default=None, min_length=8, max_length=128)
+class UserUpdate(SQLModel):
+    full_name: str | None = Field(default=None, max_length=255)
+    svn_username: str | None = Field(default=None, max_length=255)
+    role: UserRole | None = None
 
 
 class UserUpdateMe(SQLModel):
     full_name: str | None = Field(default=None, max_length=255)
-    email: EmailStr | None = Field(default=None, max_length=255)
 
 
 class UpdatePassword(SQLModel):
@@ -66,11 +64,17 @@ class UpdatePassword(SQLModel):
 # Database model, database table inferred from class name
 class User(UserBase, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    hashed_password: str
     svn_username: str | None = Field(
         default=None, unique=True, index=True, max_length=255
     )
     role: UserRole = Field(default=UserRole.user, index=True)
+    auth_source: AuthSource = Field(default=AuthSource.local, index=True)
+    cch_user_id: int | None = Field(default=None, unique=True, index=True)
+    disabled_reason: str | None = Field(default=None, max_length=255)
+    last_synced_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
@@ -87,6 +91,32 @@ class UserSvnCredential(SQLModel, table=True):
     )
     encrypted_password: str
     encryption_version: str = Field(max_length=64)
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class UserApiKey(SQLModel, table=True):
+    __tablename__ = "user_api_key"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(
+        foreign_key="user.id", nullable=False, index=True, ondelete="CASCADE"
+    )
+    cch_key_id: int = Field(unique=True, index=True)
+    key: str = Field(unique=True, index=True, max_length=2048)
+    name: str | None = Field(default=None, max_length=255)
+    is_active: bool = Field(default=True, index=True)
+    disabled_reason: str | None = Field(default=None, max_length=255)
+    last_synced_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
     updated_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
@@ -220,8 +250,11 @@ class UserPublic(UserBase):
     id: uuid.UUID
     svn_username: str | None = None
     role: UserRole = UserRole.user
+    auth_source: AuthSource = AuthSource.local
+    cch_user_id: int | None = None
+    disabled_reason: str | None = None
+    last_synced_at: datetime | None = None
     created_at: datetime | None = None
-
 
 class UsersPublic(SQLModel):
     data: list[UserPublic]
