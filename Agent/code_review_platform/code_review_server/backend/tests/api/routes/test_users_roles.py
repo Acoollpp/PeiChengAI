@@ -2,11 +2,7 @@ from app.models import ReviewTask, ReviewTaskStatus, User, UserPublic, UserRole
 
 
 def test_user_has_svn_username_and_role() -> None:
-    user = User(
-        email="reviewer@example.com",
-        hashed_password="not-a-real-hash",
-        svn_username="svn-reviewer",
-    )
+    user = User(svn_username="svn-reviewer")
 
     assert user.svn_username == "svn-reviewer"
     assert user.role == UserRole.user
@@ -14,7 +10,7 @@ def test_user_has_svn_username_and_role() -> None:
 
 def test_review_task_defaults_to_created() -> None:
     task = ReviewTask(
-        user_id=User(email="reviewer@example.com", hashed_password="not-a-real-hash").id,
+        user_id=User().id,
         svn_url="https://svn.example.com/project/trunk",
         old_revision="100",
         new_revision="101",
