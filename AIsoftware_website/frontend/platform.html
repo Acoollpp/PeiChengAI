@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>智能体应用 - 软件部 AI 应用中心</title>
+    <link rel="stylesheet" href="styles.css?v=20260602-code-review-actions-2" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="index.html#home" aria-label="软件部 AI 应用中心首页">
+          <img src="assets/companylogo.png" alt="公司 Logo" />
+          <span>软件部 AI 应用中心</span>
+        </a>
+        <nav class="main-nav" aria-label="主导航">
+          <a href="index.html#home">首页</a>
+          <a href="platform.html">智能体应用</a>
+          <a href="skills.html">Skills 库</a>
+          <a href="index.html#request">需求对接</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="page-hero page-hero-directory">
+        <div class="container">
+          <div class="page-hero-grid page-hero-grid-single">
+            <div>
+              <p class="section-kicker">AI 应用案例</p>
+              <h1>智能体应用</h1>
+              <p>集中展示软件部已上线、试点中及开发中的平台型 AI 应用，便于各部门了解应用建设情况、适用场景及访问方式。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <div class="section-head">
+            <div>
+              <h2>平台目录</h2>
+            </div>
+            <span class="section-count" id="platformCount"></span>
+          </div>
+
+          <div class="directory-toolbar" aria-label="平台筛选">
+            <div class="filter-group" id="platformFilters"></div>
+            <div class="search-wrap">
+              <input id="platformSearch" type="search" placeholder="搜索平台、场景或部门" aria-label="搜索智能体应用" />
+            </div>
+          </div>
+
+          <div class="project-grid full-grid directory-grid" id="platformGrid"></div>
+          <div class="empty-state" id="platformEmpty">没有找到匹配的平台，请调整筛选条件。</div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <span>软件部 AI 应用中心</span>
+        <span>仅限公司内部访问，涉敏内容请按规范脱敏展示</span>
+      </div>
+    </footer>
+
+    <script src="data/platform-urls.js?v=20260602-code-review-actions-2"></script>
+    <script src="data/site-data.js?v=20260602-code-review-actions-2"></script>
+    <script src="script.js?v=20260602-code-review-actions-2"></script>
+  </body>
+</html>

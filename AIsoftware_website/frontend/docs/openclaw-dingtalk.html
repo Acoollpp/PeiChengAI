@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Openclaw 智能体监控平台使用文档</title>
+    <link rel="stylesheet" href="../styles.css?v=20260602-code-review-actions-2" />
+  </head>
+  <body class="doc-page docs-page-light">
+    <header class="doc-header docs-topbar">
+      <div class="container doc-header-inner">
+        <a class="doc-back" href="../index.html#agent-platform">返回智能体应用</a>
+        <strong>Openclaw 智能体监控平台使用文档</strong>
+      </div>
+    </header>
+
+    <main class="docs-shell">
+      <aside class="docs-sidebar" aria-label="文档导航">
+        <a class="docs-logo" href="#overview">Openclaw 监控</a>
+        <nav>
+          <a href="#overview">概览</a>
+          <a href="#outcome">平台实际效果</a>
+          <a href="#features">功能概览</a>
+          <a href="#deployment">部署情况</a>
+          <a href="#audience">适用对象</a>
+          <a href="#use">访问与使用</a>
+          <a href="#faq">常见问题</a>
+          <a href="#source">建设说明</a>
+        </nav>
+      </aside>
+
+      <article class="docs-content">
+        <section class="docs-hero" id="overview">
+          <p class="section-kicker">已部署内部看板</p>
+          <h1>Openclaw 智能体监控平台</h1>
+          <p>
+            Openclaw 智能体监控平台是软件部围绕钉钉智能体建设的内部运行看板。前期团队基于 Openclaw 开发了钉钉智能体能力，该平台用于集中查看 Agent 登录状态、任务处理状态、常用指令模板和部署情况，帮助开发同事定位问题，也帮助业务同事了解钉钉智能体服务是否稳定。
+          </p>
+          <div class="doc-action-row">
+            <a class="button primary" href="#" data-platform-url="openclawDev" target="_blank" rel="noopener noreferrer">访问开发专用平台</a>
+            <a class="button secondary" href="#" data-platform-url="openclawDepartment" target="_blank" rel="noopener noreferrer">访问其他部门专用平台</a>
+          </div>
+        </section>
+
+        <section class="doc-grid-3" id="outcome" aria-label="平台实际效果">
+          <article>
+            <span>01</span>
+            <strong>运行状态集中观测</strong>
+            <p>集中展示多台 Mac 上 OpenClaw Agent 的钉钉登录状态、使用状态和最近刷新结果，快速判断服务是否正常。</p>
+          </article>
+          <article>
+            <span>02</span>
+            <strong>Agent 使用情况可见</strong>
+            <p>通过进程监控区分使用中和空闲中 Agent，帮助团队了解当前哪个 Agent 正在处理钉钉消息。</p>
+          </article>
+          <article>
+            <span>03</span>
+            <strong>指令模板快速复用</strong>
+            <p>沉淀钉钉机器人对话中的常用提示词模板，支持搜索和一键复制，降低使用门槛。</p>
+          </article>
+        </section>
+
+        <section id="features">
+          <h2>功能概览</h2>
+          <div class="doc-flow">
+            <article>
+              <span>1</span>
+              <strong>Agent 状态</strong>
+              <p>自动读取每个 Agent 的 dws token，展示钉钉登录账号姓名，并每 60 秒刷新一次状态。</p>
+            </article>
+            <article>
+              <span>2</span>
+              <strong>使用中 / 空闲中</strong>
+              <p>通过进程监控判断哪个 Agent 正在处理钉钉消息，使用中状态以橙色脉冲提示。</p>
+            </article>
+            <article>
+              <span>3</span>
+              <strong>扫码登录</strong>
+              <p>点击登录按钮后，后台自动清理 app.json 并解锁 keychain，生成二维码后可直接在页面扫码授权，无需命令行操作。</p>
+            </article>
+            <article>
+              <span>4</span>
+              <strong>任务状态看板</strong>
+              <p>查看 Agent 登录、使用、空闲和异常情况，结合部署信息完成钉钉智能体运行复盘。</p>
+            </article>
+          </div>
+
+          <div class="doc-section-intro">
+            <p class="section-kicker">常用指令</p>
+            <h3>把高频提示词整理成可复制模板</h3>
+            <p>平台整理了钉钉机器人对话中常用的提示词模板，点击任意卡片可一键复制，粘贴到钉钉对话框直接使用，并支持关键词搜索。</p>
+          </div>
+          <div class="doc-grid-3">
+            <article>
+              <span>WRITE</span>
+              <strong>文档写作</strong>
+              <p>用于方案、说明、总结、制度和项目材料的初稿生成与润色。</p>
+            </article>
+            <article>
+              <span>DATA</span>
+              <strong>数据分析</strong>
+              <p>用于表格解读、指标归因、异常分析和数据结论整理。</p>
+            </article>
+            <article>
+              <span>MAIL</span>
+              <strong>消息邮件</strong>
+              <p>用于通知、邮件、钉钉消息和对外沟通内容的整理。</p>
+            </article>
+            <article>
+              <span>MEET</span>
+              <strong>会议日程</strong>
+              <p>用于会议纪要、议程安排、行动项和待办事项整理。</p>
+            </article>
+            <article>
+              <span>INFO</span>
+              <strong>信息查询</strong>
+              <p>用于资料检索、上下文整理、问题归纳和知识查询。</p>
+            </article>
+            <article>
+              <span>TASK</span>
+              <strong>任务管理</strong>
+              <p>用于任务拆解、责任人梳理、进度跟踪和风险提醒。</p>
+            </article>
+          </div>
+
+          <div class="doc-screenshot-section" aria-label="平台截图">
+            <div class="doc-section-intro">
+              <p class="section-kicker">平台截图</p>
+              <h3>主要界面预览</h3>
+            </div>
+            <div class="doc-screenshot-grid">
+              <figure>
+                <a href="../assets/openclaw-monitor-dev.jpg" target="_blank" rel="noopener noreferrer">
+                  <img src="../assets/openclaw-monitor-dev.jpg" alt="Openclaw 智能体监控平台软件部专用看板截图" loading="lazy" />
+                </a>
+                <figcaption>
+                  <strong>软件部专用看板</strong>
+                  <span>查看软件部专用 Agent 的登录、空闲和使用状态。</span>
+                </figcaption>
+              </figure>
+              <figure>
+                <a href="../assets/openclaw-monitor-department.jpg" target="_blank" rel="noopener noreferrer">
+                  <img src="../assets/openclaw-monitor-department.jpg" alt="Openclaw 智能体监控平台其他部门专用看板截图" loading="lazy" />
+                </a>
+                <figcaption>
+                  <strong>其他部门专用看板</strong>
+                  <span>查看其他部门专用 Agent 的登录和部署状态。</span>
+                </figcaption>
+              </figure>
+              <figure>
+                <a href="../assets/openclaw-dingtalk-bot.png" target="_blank" rel="noopener noreferrer">
+                  <img src="../assets/openclaw-dingtalk-bot.png" alt="Openclaw 智能体监控平台钉钉端机器人截图" loading="lazy" />
+                </a>
+                <figcaption>
+                  <strong>钉钉端机器人</strong>
+                  <span>在钉钉中与智能体对话，完成消息处理和任务协同。</span>
+                </figcaption>
+              </figure>
+              <figure>
+                <a href="../assets/openclaw-dingtalk-effect.png" target="_blank" rel="noopener noreferrer">
+                  <img src="../assets/openclaw-dingtalk-effect.png" alt="Openclaw 智能体监控平台钉钉端机器人对话效果截图" loading="lazy" />
+                </a>
+                <figcaption>
+                  <strong>钉钉端对话效果</strong>
+                  <span>查看智能体在钉钉中的登录信息查询和对话回复效果。</span>
+                </figcaption>
+              </figure>
+            </div>
+          </div>
+        </section>
+
+        <section id="deployment">
+          <h2>部署情况</h2>
+          <p>当前平台分为软件部专用和其他部门专用两个入口，均已配置开机自启和异常自动重启，局域网内可直接访问。</p>
+          <div class="doc-table-wrap">
+            <table class="doc-table">
+              <thead>
+                <tr>
+                  <th>地址</th>
+                  <th>使用范围</th>
+                  <th>Agent 数量</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><a href="#" data-platform-url="openclawDev" data-platform-url-label="url" target="_blank" rel="noopener noreferrer">开发专用平台</a></td>
+                  <td>软件部</td>
+                  <td>5 个（主控、助理、AI应用、主任助理、CPA监控）</td>
+                </tr>
+                <tr>
+                  <td><a href="#" data-platform-url="openclawDepartment" data-platform-url-label="url" target="_blank" rel="noopener noreferrer">其他部门专用平台</a></td>
+                  <td>其他部门</td>
+                  <td>14 个（龚总监助理、张经理助理等）</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="audience">
+          <h2>适用对象</h2>
+          <p>平台面向公司内部使用，不要求普通同事自行部署。不同角色可根据关注点查看对应运行数据和问题线索。</p>
+          <div class="doc-table-wrap">
+            <table class="doc-table">
+              <thead>
+                <tr>
+                  <th>使用对象</th>
+                  <th>可以查看什么</th>
+                  <th>使用价值</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>软件部开发同事</td>
+                  <td>Agent 登录、处理状态、异常记录</td>
+                  <td>定位钉钉智能体运行问题</td>
+                </tr>
+                <tr>
+                  <td>AI 应用负责人</td>
+                  <td>Agent 使用、服务状态、部署范围</td>
+                  <td>评估智能体稳定性和效果</td>
+                </tr>
+                <tr>
+                  <td>业务部门同事</td>
+                  <td>服务状态、常用指令、运行情况</td>
+                  <td>确认钉钉智能体可用</td>
+                </tr>
+                <tr>
+                  <td>平台运维/管理同事</td>
+                  <td>部署范围、Agent 数量、自动重启</td>
+                  <td>支撑运行巡检和问题跟踪</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="use">
+          <h2>访问与使用</h2>
+          <div class="doc-callout">
+            <strong>访问入口</strong>
+            <p>开发专用平台：<a href="#" data-platform-url="openclawDev" data-platform-url-label="url" target="_blank" rel="noopener noreferrer">开发专用平台</a>。其他部门专用平台：<a href="#" data-platform-url="openclawDepartment" data-platform-url-label="url" target="_blank" rel="noopener noreferrer">其他部门专用平台</a>。</p>
+          </div>
+          <div class="doc-flow">
+            <article>
+              <span>1</span>
+              <strong>选择入口</strong>
+              <p>开发、调试和联调进入开发专用平台；业务查看和反馈进入其他部门专用平台。</p>
+            </article>
+            <article>
+              <span>2</span>
+              <strong>查看 Agent 状态</strong>
+              <p>先确认 Agent 是否登录、当前是使用中还是空闲中，以及页面最近一次刷新时间。</p>
+            </article>
+            <article>
+              <span>3</span>
+              <strong>扫码授权</strong>
+              <p>如果 Agent 未登录，可点击登录按钮生成二维码，在页面扫码完成授权。</p>
+            </article>
+            <article>
+              <span>4</span>
+              <strong>复制常用指令</strong>
+              <p>按场景搜索常用指令模板，一键复制后粘贴到钉钉机器人对话框使用。</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="faq">
+          <h2>常见问题</h2>
+          <div class="doc-table-wrap">
+            <table class="doc-table">
+              <thead>
+                <tr>
+                  <th>问题</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>不知道访问哪个入口</td>
+                  <td>开发调试使用开发专用平台，业务部门查看使用其他部门专用平台。</td>
+                </tr>
+                <tr>
+                  <td>Agent 显示未登录</td>
+                  <td>可点击登录按钮生成二维码，按页面提示扫码授权。</td>
+                </tr>
+                <tr>
+                  <td>Agent 一直显示使用中</td>
+                  <td>先确认是否正在处理钉钉消息，长时间无变化请联系软件部。</td>
+                </tr>
+                <tr>
+                  <td>无法访问平台</td>
+                  <td>请确认是否处于公司内网环境，并检查访问地址是否正确。</td>
+                </tr>
+                <tr>
+                  <td>常用指令效果不理想</td>
+                  <td>可补充业务背景、目标格式和限制条件，再粘贴到钉钉机器人对话中使用。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="source">
+          <h2>建设说明</h2>
+          <div class="doc-callout">
+            <strong>建设背景</strong>
+            <p>前期团队基于 Openclaw 开发了钉钉智能体能力。为便于登录、排查和复盘，软件部建设了该监控看板。</p>
+          </div>
+          <div class="doc-table-wrap">
+            <table class="doc-table">
+              <thead>
+                <tr>
+                  <th>建设内容</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Openclaw 智能体能力</td>
+                  <td>作为钉钉智能体能力基础，支撑 Agent 编排、钉钉登录和消息处理。</td>
+                </tr>
+                <tr>
+                  <td>钉钉协同场景</td>
+                  <td>面向办公协同、信息处理、任务跟进、消息整理等场景。</td>
+                </tr>
+                <tr>
+                  <td>运行监控看板</td>
+                  <td>查看 Agent 登录、使用、常用指令和部署情况，支撑日常运维。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </article>
+
+      <aside class="docs-toc" aria-label="页面目录">
+        <strong>On this page</strong>
+        <a href="#overview">概览</a>
+        <a href="#outcome">平台实际效果</a>
+        <a href="#features">功能概览</a>
+        <a href="#deployment">部署情况</a>
+        <a href="#audience">适用对象</a>
+        <a href="#use">访问与使用</a>
+        <a href="#faq">常见问题</a>
+        <a href="#source">建设说明</a>
+      </aside>
+    </main>
+    <script src="../data/platform-urls.js?v=20260602-code-review-actions-2"></script>
+    <script src="../script.js?v=20260602-code-review-actions-2"></script>
+  </body>
+</html>

@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GPT 账号管理平台使用文档</title>
+    <link rel="stylesheet" href="../styles.css?v=20260602-code-review-actions-2" />
+  </head>
+  <body class="doc-page docs-page-light">
+    <header class="doc-header docs-topbar">
+      <div class="container doc-header-inner">
+        <a class="doc-back" href="../index.html#agent-platform">返回智能体应用</a>
+        <strong>GPT 账号管理平台使用文档</strong>
+      </div>
+    </header>
+
+    <main class="docs-shell">
+      <aside class="docs-sidebar" aria-label="文档导航">
+        <a class="docs-logo" href="#overview">GPT 账号</a>
+        <nav>
+          <a href="#overview">概览</a>
+          <a href="#outcome">平台实际效果</a>
+          <a href="#audience">适用对象</a>
+          <a href="#features">功能展示</a>
+          <a href="#use">访问与使用</a>
+          <a href="#faq">常见问题</a>
+          <a href="#source">建设说明</a>
+        </nav>
+      </aside>
+
+      <article class="docs-content">
+        <section class="docs-hero" id="overview">
+          <p class="section-kicker">已上线内部平台</p>
+          <h1>GPT 账号管理平台</h1>
+          <p>
+            GPT 账号管理平台是软件部基于 Sub2API 搭建的内部 GPT 能力接入与账号治理平台，用于集中管理 GPT 订阅账号、API Key、额度分配、用量统计和访问控制。公司内部同事可通过内网地址访问平台，按需查看账号资源、申请接入能力或跟踪使用情况。
+          </p>
+          <div class="doc-action-row">
+            <a class="button primary" href="#" data-platform-url="gptAccount" target="_blank" rel="noopener noreferrer">访问 GPT 账号管理平台</a>
+            <a class="button secondary" href="#source">查看建设来源</a>
+          </div>
+        </section>
+
+        <section class="doc-grid-3" id="outcome" aria-label="平台实际效果">
+          <article>
+            <span>01</span>
+            <strong>订阅能力统一接入</strong>
+            <p>将 GPT 订阅账号统一纳入平台管理，对外提供标准化 API 接入方式，减少账号分散使用和重复配置。</p>
+          </article>
+          <article>
+            <span>02</span>
+            <strong>API Key 分发更清晰</strong>
+            <p>按用户、团队或业务场景分配 API Key，明确可用范围、额度规则和使用责任。</p>
+          </article>
+          <article>
+            <span>03</span>
+            <strong>用量统计支撑治理</strong>
+            <p>沉淀请求量、额度消耗和使用记录，支撑后续资源分配、异常排查和成本评估。</p>
+          </article>
+        </section>
+
+        <section id="audience">
+          <h2>适用对象</h2>
+          <p>平台面向公司内部使用，不要求普通同事自行部署。不同角色可以根据关注点查看账号、密钥、额度和使用情况。</p>
+          <div class="doc-table-wrap">
+            <table class="doc-table">
+              <thead>
+                <tr>
+                  <th>使用对象</th>
+                  <th>可以查看什么</th>
+                  <th>使用价值</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>软件部管理员</td>
+                  <td>账号池、API Key、额度规则、运行状态</td>
+                  <td>统一维护 GPT 接入资源</td>
+                </tr>
+                <tr>
+                  <td>AI 应用负责人</td>
+                  <td>密钥用量、额度消耗、调用趋势</td>
+                  <td>评估应用资源需求</td>
+                </tr>
+                <tr>
+                  <td>开发同事</td>
+                  <td>接入地址、API Key、访问限制</td>
+                  <td>快速接入 GPT 能力</td>
+                </tr>
+                <tr>
+                  <td>管理/运营同事</td>
+                  <td>账号分布、使用记录、资源消耗</td>
+                  <td>了解 GPT 资源使用情况</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="features">
+          <h2>功能展示</h2>
+          <div class="doc-flow">
+            <article>
+              <span>1</span>
+              <strong>账号池管理</strong>
+              <p>集中维护 GPT 订阅账号、可用状态和归属信息，减少账号混用和人工登记成本。</p>
+            </article>
+            <article>
+              <span>2</span>
+              <strong>API Key 管理</strong>
+              <p>为不同用户或业务场景生成 API Key，并配置可用模型、访问范围和密钥状态。</p>
+            </article>
+            <article>
+              <span>3</span>
+              <strong>额度与用量追踪</strong>
+              <p>查看请求量、Token 消耗、额度余额和使用明细，辅助判断资源是否需要调整。</p>
+            </article>
+            <article>
+              <span>4</span>
+              <strong>调度与访问控制</strong>
+              <p>结合账号状态、并发限制和访问频率进行调度，降低单个账号过载或异常使用风险。</p>
+            </article>
+          </div>
+
+          <div class="doc-screenshot-section" aria-label="平台截图">
+            <div class="doc-section-intro">
+              <p class="section-kicker">平台截图</p>
+              <h3>主要界面预览</h3>
+            </div>
+            <div class="doc-screenshot-grid">
+              <figure>
+                <a href="../assets/gpt-account-dashboard.jpg" target="_blank" rel="noopener noreferrer">
+                  <img src="../assets/gpt-account-dashboard.jpg" alt="GPT 账号管理平台仪表盘总览截图" loading="lazy" />
+                </a>
+                <figcaption>
+                  <strong>仪表盘总览</strong>
+                  <span>查看 API 密钥、账号、请求量、Token 消耗和模型分布。</span>
+                </figcaption>
+              </figure>
+              <figure>
+                <a href="../assets/gpt-account-usage.jpg" target="_blank" rel="noopener noreferrer">
+                  <img src="../assets/gpt-account-usage.jpg" alt="GPT 账号管理平台使用记录分析截图" loading="lazy" />
+                </a>
+                <figcaption>
+                  <strong>使用记录分析</strong>
+                  <span>查看请求数、Token、成本、模型分布和调用趋势。</span>
+                </figcaption>
+              </figure>
+              <figure>
+                <a href="../assets/gpt-account-groups.jpg" target="_blank" rel="noopener noreferrer">
+                  <img src="../assets/gpt-account-groups.jpg" alt="GPT 账号管理平台分组管理截图" loading="lazy" />
+                </a>
+                <figcaption>
+                  <strong>分组管理</strong>
+                  <span>按平台、状态、容量和用量维护 API 密钥分组。</span>
+                </figcaption>
+              </figure>
+              <figure>
+                <a href="../assets/gpt-account-ops.jpg" target="_blank" rel="noopener noreferrer">
+                  <img src="../assets/gpt-account-ops.jpg" alt="GPT 账号管理平台运维监控截图" loading="lazy" />
+                </a>
+                <figcaption>
+                  <strong>运维监控</strong>
+                  <span>查看健康状态、请求错误、响应耗时和系统资源。</span>
+                </figcaption>
+              </figure>
+            </div>
+          </div>
+        </section>
+
+        <section id="use">
+          <h2>访问与使用</h2>
+          <div class="doc-callout">
+            <strong>访问地址</strong>
+            <p>公司内网访问：<a href="#" data-platform-url="gptAccount" data-platform-url-label="url" target="_blank" rel="noopener noreferrer">GPT 账号管理平台</a>。该地址面向公司内部网络环境使用。</p>
+          </div>
+          <div class="doc-flow">
+            <article>
+              <span>1</span>
+              <strong>访问平台</strong>
+              <p>在公司内网环境打开平台地址，进入 GPT 账号管理平台。</p>
+            </article>
+            <article>
+              <span>2</span>
+              <strong>查看账号资源</strong>
+              <p>先查看账号池状态、API Key 分配情况和当前额度使用情况。</p>
+            </article>
+            <article>
+              <span>3</span>
+              <strong>按场景申请接入</strong>
+              <p>根据应用、团队或测试场景申请 API Key，明确使用范围和额度需求。</p>
+            </article>
+            <article>
+              <span>4</span>
+              <strong>跟踪使用情况</strong>
+              <p>上线后持续查看用量、异常请求和额度变化，必要时联系软件部 AI 对接人调整。</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="faq">
+          <h2>常见问题</h2>
+          <div class="doc-table-wrap">
+            <table class="doc-table">
+              <thead>
+                <tr>
+                  <th>问题</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>无法访问平台</td>
+                  <td>请确认是否处于公司内网环境，访问地址是否正确。</td>
+                </tr>
+                <tr>
+                  <td>需要申请 API Key</td>
+                  <td>请说明使用场景、预计调用量和负责人，联系软件部 AI 对接人确认。</td>
+                </tr>
+                <tr>
+                  <td>额度或用量异常</td>
+                  <td>先确认统计周期、密钥归属和实际调用来源，再反馈给平台管理员。</td>
+                </tr>
+                <tr>
+                  <td>调用 GPT 能力失败</td>
+                  <td>请检查 API Key 状态、访问范围和额度情况，必要时提交异常时间与请求信息。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="source">
+          <h2>建设说明</h2>
+          <div class="doc-callout">
+            <strong>建设来源</strong>
+            <p>
+              本平台基于开源项目
+              <a href="https://github.com/Wei-Shaw/sub2api" target="_blank" rel="noopener noreferrer">Wei-Shaw/sub2api</a>
+              搭建。Sub2API 是面向订阅额度分发的 AI API 网关平台，支持多账号管理、API Key 分发、用量统计、智能调度、并发控制、速率限制和管理后台。软件部在此基础上结合公司内部 GPT 账号治理场景进行部署和使用。
+            </p>
+          </div>
+          <div class="doc-table-wrap">
+            <table class="doc-table">
+              <thead>
+                <tr>
+                  <th>建设内容</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>账号统一接入</td>
+                  <td>将 GPT 订阅账号纳入统一管理，减少分散维护和重复配置。</td>
+                </tr>
+                <tr>
+                  <td>密钥与额度治理</td>
+                  <td>通过 API Key、额度规则和使用记录，支撑规范化分配。</td>
+                </tr>
+                <tr>
+                  <td>使用数据沉淀</td>
+                  <td>沉淀调用量、消耗和异常信息，为资源优化提供依据。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </article>
+
+      <aside class="docs-toc" aria-label="页面目录">
+        <strong>On this page</strong>
+        <a href="#overview">概览</a>
+        <a href="#outcome">平台实际效果</a>
+        <a href="#audience">适用对象</a>
+        <a href="#features">功能展示</a>
+        <a href="#use">访问与使用</a>
+        <a href="#faq">常见问题</a>
+        <a href="#source">建设说明</a>
+      </aside>
+    </main>
+    <script src="../data/platform-urls.js?v=20260602-code-review-actions-2"></script>
+    <script src="../script.js?v=20260602-code-review-actions-2"></script>
+  </body>
+</html>
