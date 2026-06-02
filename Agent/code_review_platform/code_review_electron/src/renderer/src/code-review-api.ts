@@ -7,14 +7,12 @@ import type {
 
 export type { TaskProgressEvent }
 
-export interface RegisterRequest {
+export interface KeyLoginRequest {
   server_url: string
-  full_name: string
-  svn_username: string
-  svn_password: string
+  access_key: string
 }
 
-export interface LoginRequest {
+export interface SvnLoginRequest {
   server_url: string
   svn_username: string
   svn_password: string
@@ -60,8 +58,8 @@ export interface DownloadCurrentReportResult {
 }
 
 export interface CodeReviewApi {
-  register(payload: RegisterRequest): Promise<unknown>
-  login(payload: LoginRequest): Promise<unknown>
+  keyLogin(payload: KeyLoginRequest): Promise<unknown>
+  svnLogin(payload: SvnLoginRequest): Promise<unknown>
   saveCredentials(payload: RememberedCredentials): Promise<unknown>
   loadCredentials(): Promise<RememberedCredentials | null>
   clearCredentials(): Promise<unknown>

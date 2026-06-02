@@ -1,6 +1,11 @@
 import { ipcMain } from 'electron'
 
-import { ApiClient, type CreateTaskRequest, type LoginRequest, type RegisterRequest } from './api-client'
+import {
+  ApiClient,
+  type CreateTaskRequest,
+  type KeyLoginRequest,
+  type SvnLoginRequest
+} from './api-client'
 import { AuthStore } from './auth-store'
 import { CredentialStore, type RememberedCredentials } from './credential-store'
 import { checkEnvironment } from './environment-checker'
@@ -57,23 +62,21 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     })
   let latestSuccessfulReport: DownloadCurrentReportResult | null = null
 
-  ipcMain.handle('auth:register', async (_event, payload: RegisterRequest): Promise<true> => {
+  ipcMain.handle('auth:key-login', async (_event, payload: KeyLoginRequest): Promise<true> => {
     const serverUrl = normalizeServerUrl(payload.server_url)
     const api = apiOverride ?? new ApiClient(serverUrl)
-    const tokens = await api.register({
-      full_name: payload.full_name,
-      svn_username: payload.svn_username,
-      svn_password: payload.svn_password
+    const tokens = await api.keyLogin({
+      access_key: payload.access_key
     })
     await serverConfigStore.save({ server_url: serverUrl })
     await authStore.save(tokens)
     return true
   })
 
-  ipcMain.handle('auth:login', async (_event, payload: LoginRequest): Promise<true> => {
+  ipcMain.handle('auth:svn-login', async (_event, payload: SvnLoginRequest): Promise<true> => {
     const serverUrl = normalizeServerUrl(payload.server_url)
     const api = apiOverride ?? new ApiClient(serverUrl)
-    const tokens = await api.login({
+    const tokens = await api.svnLogin({
       svn_username: payload.svn_username,
       svn_password: payload.svn_password
     })
