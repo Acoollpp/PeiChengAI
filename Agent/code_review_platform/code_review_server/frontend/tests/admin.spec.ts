@@ -4,11 +4,17 @@ import { createUser } from "./utils/privateApi"
 import { randomEmail, randomPassword } from "./utils/random"
 import { logInUser } from "./utils/user"
 
+const randomSvnUsername = () =>
+  `svn_${Math.random().toString(36).substring(2, 10)}`
+
 test("Admin page is accessible and shows current management sections", async ({
   page,
 }) => {
   await page.goto("/admin")
   await expect(page.getByRole("heading", { name: "用户管理" })).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "同步 CCH 用户" }),
+  ).toBeVisible()
   await expect(
     page.getByText("SVN账号和密码管理将在专用用户接口接入后启用。"),
   ).toBeVisible()
@@ -18,6 +24,15 @@ test("Admin page is accessible and shows current management sections", async ({
   ).toBeVisible()
   await expect(
     usersTable.getByRole("columnheader", { name: "SVN账号" }),
+  ).toBeVisible()
+  await expect(
+    usersTable.getByRole("columnheader", { name: "来源" }),
+  ).toBeVisible()
+  await expect(
+    usersTable.getByRole("columnheader", { name: "CCH用户ID" }),
+  ).toBeVisible()
+  await expect(
+    usersTable.getByRole("columnheader", { name: "最近同步" }),
   ).toBeVisible()
   await expect(
     usersTable.getByRole("columnheader", { name: "角色" }),
@@ -101,16 +116,13 @@ test.describe("Admin user management", () => {
   test("Create a new user successfully", async ({ page }) => {
     await page.goto("/admin")
 
-    const email = randomEmail()
-    const password = randomPassword()
-    const fullName = "Test User Admin"
+    const svnUsername = randomSvnUsername()
+    const fullName = `Test User ${svnUsername}`
 
     await page.getByRole("button", { name: "Add User" }).click()
 
-    await page.getByPlaceholder("Email").fill(email)
     await page.getByPlaceholder("Full name").fill(fullName)
-    await page.getByPlaceholder("Password").first().fill(password)
-    await page.getByPlaceholder("Password").last().fill(password)
+    await page.getByPlaceholder("SVN username").fill(svnUsername)
 
     await page.getByRole("button", { name: "Save" }).click()
 
@@ -118,21 +130,19 @@ test.describe("Admin user management", () => {
 
     await expect(page.getByRole("dialog")).not.toBeVisible()
 
-    const userRow = page.getByRole("row").filter({ hasText: email })
+    const userRow = page.getByRole("row").filter({ hasText: svnUsername })
     await expect(userRow).toBeVisible()
+    await expect(userRow.getByText(fullName)).toBeVisible()
   })
 
   test("Create a superuser", async ({ page }) => {
     await page.goto("/admin")
 
-    const email = randomEmail()
-    const password = randomPassword()
+    const svnUsername = randomSvnUsername()
 
     await page.getByRole("button", { name: "Add User" }).click()
 
-    await page.getByPlaceholder("Email").fill(email)
-    await page.getByPlaceholder("Password").first().fill(password)
-    await page.getByPlaceholder("Password").last().fill(password)
+    await page.getByPlaceholder("SVN username").fill(svnUsername)
     await page.getByLabel("Is superuser?").check()
     await page.getByLabel("Is active?").check()
 
@@ -142,29 +152,26 @@ test.describe("Admin user management", () => {
 
     await expect(page.getByRole("dialog")).not.toBeVisible()
 
-    const userRow = page.getByRole("row").filter({ hasText: email })
+    const userRow = page.getByRole("row").filter({ hasText: svnUsername })
     await expect(userRow.getByText("管理员")).toBeVisible()
   })
 
   test("Edit a user successfully", async ({ page }) => {
     await page.goto("/admin")
 
-    const email = randomEmail()
-    const password = randomPassword()
-    const originalName = "Original Name"
-    const updatedName = "Updated Name"
+    const svnUsername = randomSvnUsername()
+    const originalName = `Original ${svnUsername}`
+    const updatedName = `Updated ${svnUsername}`
 
     await page.getByRole("button", { name: "Add User" }).click()
-    await page.getByPlaceholder("Email").fill(email)
     await page.getByPlaceholder("Full name").fill(originalName)
-    await page.getByPlaceholder("Password").first().fill(password)
-    await page.getByPlaceholder("Password").last().fill(password)
+    await page.getByPlaceholder("SVN username").fill(svnUsername)
     await page.getByRole("button", { name: "Save" }).click()
 
     await expect(page.getByText("User created successfully")).toBeVisible()
     await expect(page.getByRole("dialog")).not.toBeVisible()
 
-    const userRow = page.getByRole("row").filter({ hasText: email })
+    const userRow = page.getByRole("row").filter({ hasText: svnUsername })
     await userRow.getByRole("button").click()
 
     await page.getByRole("menuitem", { name: "Edit User" }).click()
@@ -179,20 +186,17 @@ test.describe("Admin user management", () => {
   test("Delete a user successfully", async ({ page }) => {
     await page.goto("/admin")
 
-    const email = randomEmail()
-    const password = randomPassword()
+    const svnUsername = randomSvnUsername()
 
     await page.getByRole("button", { name: "Add User" }).click()
-    await page.getByPlaceholder("Email").fill(email)
-    await page.getByPlaceholder("Password").first().fill(password)
-    await page.getByPlaceholder("Password").last().fill(password)
+    await page.getByPlaceholder("SVN username").fill(svnUsername)
     await page.getByRole("button", { name: "Save" }).click()
 
     await expect(page.getByText("User created successfully")).toBeVisible()
 
     await expect(page.getByRole("dialog")).not.toBeVisible()
 
-    const userRow = page.getByRole("row").filter({ hasText: email })
+    const userRow = page.getByRole("row").filter({ hasText: svnUsername })
     await userRow.getByRole("button").click()
 
     await page.getByRole("menuitem", { name: "Delete User" }).click()
@@ -204,7 +208,7 @@ test.describe("Admin user management", () => {
     ).toBeVisible()
 
     await expect(
-      page.getByRole("row").filter({ hasText: email }),
+      page.getByRole("row").filter({ hasText: svnUsername }),
     ).not.toBeVisible()
   })
 
@@ -212,50 +216,22 @@ test.describe("Admin user management", () => {
     await page.goto("/admin")
 
     await page.getByRole("button", { name: "Add User" }).click()
-    await page.getByPlaceholder("Email").fill("test@example.com")
+    await page.getByPlaceholder("SVN username").fill(randomSvnUsername())
 
     await page.getByRole("button", { name: "Cancel" }).click()
 
     await expect(page.getByRole("dialog")).not.toBeVisible()
   })
 
-  test("Email is required and must be valid", async ({ page }) => {
+  test("SVN username is required", async ({ page }) => {
     await page.goto("/admin")
 
     await page.getByRole("button", { name: "Add User" }).click()
 
-    await page.getByPlaceholder("Email").fill("invalid-email")
-    await page.getByPlaceholder("Email").blur()
-
-    await expect(page.getByText("Invalid email address")).toBeVisible()
-  })
-
-  test("Password must be at least 8 characters", async ({ page }) => {
-    await page.goto("/admin")
-
-    await page.getByRole("button", { name: "Add User" }).click()
-
-    await page.getByPlaceholder("Email").fill(randomEmail())
-    await page.getByPlaceholder("Password").first().fill("short")
-    await page.getByPlaceholder("Password").last().fill("short")
+    await page.getByPlaceholder("SVN username").fill(" ")
     await page.getByRole("button", { name: "Save" }).click()
 
-    await expect(
-      page.getByText("Password must be at least 8 characters"),
-    ).toBeVisible()
-  })
-
-  test("Passwords must match", async ({ page }) => {
-    await page.goto("/admin")
-
-    await page.getByRole("button", { name: "Add User" }).click()
-
-    await page.getByPlaceholder("Email").fill(randomEmail())
-    await page.getByPlaceholder("Password").first().fill(randomPassword())
-    await page.getByPlaceholder("Password").last().fill("different12345")
-    await page.getByPlaceholder("Password").last().blur()
-
-    await expect(page.getByText("The passwords don't match")).toBeVisible()
+    await expect(page.getByText("SVN username is required")).toBeVisible()
   })
 })
 

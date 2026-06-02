@@ -1,8 +1,16 @@
-import { useSuspenseQuery } from "@tanstack/react-query"
+import {
+  useMutation,
+  useQueryClient,
+  useSuspenseQuery,
+} from "@tanstack/react-query"
+import { Loader2, RefreshCw } from "lucide-react"
 import { Suspense } from "react"
 
-import { type UserPublic, UsersService } from "@/client"
+import { CchSyncService, type UserPublic, UsersService } from "@/client"
+import { Button } from "@/components/ui/button"
 import useAuth from "@/hooks/useAuth"
+import useCustomToast from "@/hooks/useCustomToast"
+import { handleError } from "@/utils"
 import { DataTable } from "../Common/DataTable"
 import PendingUsers from "../Pending/PendingUsers"
 import AddUser from "./AddUser"
@@ -13,6 +21,38 @@ function getUsersQueryOptions() {
     queryFn: () => UsersService.readUsers({ skip: 0, limit: 100 }),
     queryKey: ["users"],
   }
+}
+
+function SyncCchUsersButton() {
+  const queryClient = useQueryClient()
+  const { showErrorToast, showSuccessToast } = useCustomToast()
+
+  const mutation = useMutation({
+    mutationFn: () => CchSyncService.syncCchUsers(),
+    onSuccess: (result) => {
+      showSuccessToast(
+        `同步完成：新增 ${result.created}，更新 ${result.updated}，禁用 ${result.disabled}`,
+      )
+      queryClient.invalidateQueries({ queryKey: ["users"] })
+    },
+    onError: handleError.bind(showErrorToast),
+  })
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      onClick={() => mutation.mutate()}
+      disabled={mutation.isPending}
+    >
+      {mutation.isPending ? (
+        <Loader2 className="mr-2 animate-spin" />
+      ) : (
+        <RefreshCw className="mr-2" />
+      )}
+      同步 CCH 用户
+    </Button>
+  )
 }
 
 function UsersTableContent() {
@@ -45,7 +85,10 @@ export function AdminUsersPage() {
             SVN账号和密码管理将在专用用户接口接入后启用。
           </p>
         </div>
-        <AddUser />
+        <div className="flex items-center gap-2">
+          <SyncCchUsersButton />
+          <AddUser />
+        </div>
       </div>
       <UsersTable />
     </div>
