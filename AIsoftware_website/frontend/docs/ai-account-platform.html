@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>API 管理平台使用文档</title>
+    <link rel="stylesheet" href="../styles.css?v=20260602-code-review-actions-2" />
+  </head>
+  <body class="doc-page docs-page-light">
+    <header class="doc-header docs-topbar">
+      <div class="container doc-header-inner">
+        <a class="doc-back" href="../index.html#agent-platform">返回智能体应用</a>
+        <strong>API 管理平台使用文档</strong>
+      </div>
+    </header>
+
+    <main class="docs-shell">
+      <aside class="docs-sidebar" aria-label="文档导航">
+        <a class="docs-logo" href="#overview">API 管理平台</a>
+        <nav>
+          <a href="#overview">概览</a>
+          <a href="#outcome">平台实际效果</a>
+          <a href="#audience">适用对象</a>
+          <a href="#features">功能展示</a>
+          <a href="#use">访问与使用</a>
+          <a href="#faq">常见问题</a>
+          <a href="#source">建设说明</a>
+        </nav>
+      </aside>
+
+      <article class="docs-content">
+        <section class="docs-hero" id="overview">
+          <p class="section-kicker">已部署内部平台</p>
+          <h1>API 管理平台</h1>
+          <p>
+            API 管理平台是软件部已部署的内部 API 资源管理入口，用于集中展示账号资源、API 访问、供应商配置、调用统计和使用情况。公司内部同事可通过内网地址直接访问平台，了解当前 API 能力的使用状态和治理情况。
+          </p>
+          <div class="doc-action-row">
+            <a class="button primary" href="#" data-platform-url="apiManagement" target="_blank" rel="noopener noreferrer">访问 API 管理平台</a>
+            <a class="button secondary" href="#source">查看建设来源</a>
+          </div>
+        </section>
+
+        <section class="doc-grid-3" id="outcome" aria-label="平台实际效果">
+          <article>
+            <span>01</span>
+            <strong>账号资源集中管理</strong>
+            <p>展示 API 账号、访问凭证、供应商和可用状态，帮助管理员了解当前资源是否可用、是否需要维护。</p>
+          </article>
+          <article>
+            <span>02</span>
+            <strong>API 调用情况可视化</strong>
+            <p>展示请求量、调用趋势、失败情况和响应状态，帮助负责人判断 API 使用热度和稳定性。</p>
+          </article>
+          <article>
+            <span>03</span>
+            <strong>使用数据支撑治理</strong>
+            <p>展示不同账号、供应商或模型的使用情况，支撑后续额度分配、异常排查和资源优化。</p>
+          </article>
+        </section>
+
+        <section id="audience">
+          <h2>适用对象</h2>
+          <p>平台面向公司内部使用，不要求普通同事自行部署。不同角色可以根据关注点查看对应数据和功能入口。</p>
+          <div class="doc-table-wrap">
+            <table class="doc-table">
+              <thead>
+                <tr>
+                  <th>使用对象</th>
+                  <th>可以查看什么</th>
+                  <th>使用价值</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>软件部管理员</td>
+                  <td>账号、供应商、Token、配置状态</td>
+                  <td>统一维护 API 资源</td>
+                </tr>
+                <tr>
+                  <td>AI 应用负责人</td>
+                  <td>调用量、失败率、使用趋势</td>
+                  <td>评估应用运行情况</td>
+                </tr>
+                <tr>
+                  <td>开发同事</td>
+                  <td>API 地址、接入状态、异常信息</td>
+                  <td>支撑问题定位和能力接入</td>
+                </tr>
+                <tr>
+                  <td>管理/运营同事</td>
+                  <td>使用统计、趋势数据、资源分布</td>
+                  <td>了解 AI 能力使用情况</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="features">
+          <h2>功能展示</h2>
+          <div class="doc-flow">
+            <article>
+              <span>1</span>
+              <strong>账号与凭证管理</strong>
+              <p>统一查看账号资源、账号状态、归属关系和可用范围，支撑后续权限治理。</p>
+            </article>
+            <article>
+              <span>2</span>
+              <strong>供应商与模型管理</strong>
+              <p>查看不同供应商或模型资源，判断当前 API 能力是否可用，辅助后续接入和维护。</p>
+            </article>
+            <article>
+              <span>3</span>
+              <strong>调用统计与趋势</strong>
+              <p>查看请求量、调用趋势、失败情况和响应变化，支撑平台运行分析和资源评估。</p>
+            </article>
+            <article>
+              <span>4</span>
+              <strong>异常和使用情况排查</strong>
+              <p>查看异常请求和使用波动，辅助定位 API 不可用、调用失败或响应慢等问题。</p>
+            </article>
+          </div>
+
+          <div class="doc-screenshot-section" aria-label="平台截图">
+            <div class="doc-section-intro">
+              <p class="section-kicker">平台截图</p>
+              <h3>从总览到运维，快速了解平台实际界面</h3>
+            </div>
+            <div class="doc-screenshot-grid">
+              <figure>
+                <a href="../assets/api-management-dashboard.jpg" target="_blank" rel="noopener noreferrer">
+                  <img src="../assets/api-management-dashboard.jpg" alt="API 管理平台仪表盘总览截图" loading="lazy" />
+                </a>
+                <figcaption>
+                  <strong>仪表盘总览</strong>
+                  <span>集中查看请求量、费用、响应耗时和使用趋势。</span>
+                </figcaption>
+              </figure>
+              <figure>
+                <a href="../assets/api-management-provider.jpg" target="_blank" rel="noopener noreferrer">
+                  <img src="../assets/api-management-provider.jpg" alt="API 管理平台供应商与模型管理截图" loading="lazy" />
+                </a>
+                <figcaption>
+                  <strong>供应商与模型管理</strong>
+                  <span>查看供应商配置、模型资源和调用状态。</span>
+                </figcaption>
+              </figure>
+              <figure>
+                <a href="../assets/api-management-availability.jpg" target="_blank" rel="noopener noreferrer">
+                  <img src="../assets/api-management-availability.jpg" alt="API 管理平台可用性监控截图" loading="lazy" />
+                </a>
+                <figcaption>
+                  <strong>可用性监控</strong>
+                  <span>跟踪账号、供应商和服务状态，辅助定位异常。</span>
+                </figcaption>
+              </figure>
+              <figure>
+                <a href="../assets/api-management-settings.jpg" target="_blank" rel="noopener noreferrer">
+                  <img src="../assets/api-management-settings.jpg" alt="API 管理平台系统设置截图" loading="lazy" />
+                </a>
+                <figcaption>
+                  <strong>系统设置</strong>
+                  <span>管理平台基础配置、访问策略和运行参数。</span>
+                </figcaption>
+              </figure>
+            </div>
+          </div>
+        </section>
+
+        <section id="use">
+          <h2>访问与使用</h2>
+          <div class="doc-callout">
+            <strong>访问地址</strong>
+            <p>公司内网访问：<a href="#" data-platform-url="apiManagement" data-platform-url-label="url" target="_blank" rel="noopener noreferrer">API 管理平台</a>。该地址面向公司内部网络环境使用。</p>
+          </div>
+          <div class="doc-flow">
+            <article>
+              <span>1</span>
+              <strong>访问平台</strong>
+              <p>在公司内网环境下打开平台地址，进入 API 管理平台页面。</p>
+            </article>
+            <article>
+              <span>2</span>
+              <strong>查看平台总览</strong>
+              <p>先查看账号资源、供应商状态和总体调用情况，判断平台整体运行情况。</p>
+            </article>
+            <article>
+              <span>3</span>
+              <strong>按角色查看模块</strong>
+              <p>管理员查看账号和供应商，负责人查看统计和趋势，开发同事查看接入和异常信息。</p>
+            </article>
+            <article>
+              <span>4</span>
+              <strong>反馈问题或补充需求</strong>
+              <p>如果发现账号不可用、调用异常或统计不准确，可联系软件部 AI 对接人确认。</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="faq">
+          <h2>常见问题</h2>
+          <div class="doc-table-wrap">
+            <table class="doc-table">
+              <thead>
+                <tr>
+                  <th>问题</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>无法访问平台</td>
+                  <td>请确认是否处于公司内网环境，访问地址是否正确。</td>
+                </tr>
+                <tr>
+                  <td>不知道应该看哪个模块</td>
+                  <td>管理员优先查看账号和供应商，负责人优先查看统计和趋势。</td>
+                </tr>
+                <tr>
+                  <td>数据和预期不一致</td>
+                  <td>先确认统计时间范围、账号归属和调用来源。</td>
+                </tr>
+                <tr>
+                  <td>需要新增 API 或账号</td>
+                  <td>联系软件部 AI 对接人进行需求确认。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="source">
+          <h2>建设说明</h2>
+          <div class="doc-callout">
+            <strong>建设来源</strong>
+            <p>
+              本平台参考开源项目
+              <a href="https://github.com/ding113/claude-code-hub" target="_blank" rel="noopener noreferrer">ding113/claude-code-hub</a>
+              搭建，并结合公司内部 API 资源管理场景进行部署和使用。普通使用者无需关注部署过程，如需了解建设来源，可查看开源项目。
+            </p>
+          </div>
+          <div class="doc-table-wrap">
+            <table class="doc-table">
+              <thead>
+                <tr>
+                  <th>技术组件</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Next.js 15 / Hono</td>
+                  <td>用于平台前后端能力组织。</td>
+                </tr>
+                <tr>
+                  <td>PostgreSQL / Redis</td>
+                  <td>用于数据存储、缓存和运行支撑。</td>
+                </tr>
+                <tr>
+                  <td>Docker Compose</td>
+                  <td>用于内部部署和服务编排。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </article>
+
+      <aside class="docs-toc" aria-label="页面目录">
+        <strong>On this page</strong>
+        <a href="#overview">概览</a>
+        <a href="#outcome">平台实际效果</a>
+        <a href="#audience">适用对象</a>
+        <a href="#features">功能展示</a>
+        <a href="#use">访问与使用</a>
+        <a href="#faq">常见问题</a>
+        <a href="#source">建设说明</a>
+      </aside>
+    </main>
+    <script src="../data/platform-urls.js?v=20260602-code-review-actions-2"></script>
+    <script src="../script.js?v=20260602-code-review-actions-2"></script>
+  </body>
+</html>
