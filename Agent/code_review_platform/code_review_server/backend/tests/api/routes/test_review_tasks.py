@@ -4,14 +4,13 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from app import crud
 from app.core.config import settings
-from app.models import UserCreate, UserRole
+from app.models import UserRole
 from tests.utils.user import (
-    authentication_token_from_email,
-    user_authentication_headers,
+    authentication_token_from_key,
+    create_key_user,
 )
-from tests.utils.utils import random_email, random_lower_string
+from tests.utils.utils import random_lower_string
 
 
 def _create_review_task(
@@ -39,20 +38,14 @@ def _create_named_svn_user_task(
     svn_username: str,
     old_revision: str = "1",
 ) -> dict:
-    password = random_lower_string()
-    user = crud.create_user(
-        session=db,
-        user_create=UserCreate(
-            email=random_email(),
-            password=password,
-            full_name=full_name,
-        ),
-    )
+    user, api_key = create_key_user(db)
+    user.full_name = full_name
     user.svn_username = f"{svn_username}-{random_lower_string()}"
     db.add(user)
     db.commit()
-    user_headers = user_authentication_headers(
-        client=client, email=user.email, password=password
+    db.refresh(user)
+    user_headers = authentication_token_from_key(
+        client=client, key=api_key.key, db=db
     )
     task = _create_review_task(client, user_headers, old_revision=old_revision)
     return {
@@ -254,8 +247,9 @@ def test_delete_review_task_keeps_task_when_report_file_delete_fails(
 def test_normal_user_cannot_delete_other_user_task(
     client: TestClient, normal_user_token_headers: dict[str, str], db: Session
 ) -> None:
-    other_headers = authentication_token_from_email(
-        client=client, email=random_email(), db=db
+    _, other_api_key = create_key_user(db)
+    other_headers = authentication_token_from_key(
+        client=client, key=other_api_key.key, db=db
     )
     task = _create_review_task(client, other_headers)
 
@@ -271,8 +265,9 @@ def test_normal_user_cannot_delete_other_user_task(
 def test_normal_user_cannot_read_other_user_task(
     client: TestClient, normal_user_token_headers: dict[str, str], db: Session
 ) -> None:
-    other_headers = authentication_token_from_email(
-        client=client, email=random_email(), db=db
+    _, other_api_key = create_key_user(db)
+    other_headers = authentication_token_from_key(
+        client=client, key=other_api_key.key, db=db
     )
     task = _create_review_task(client, other_headers)
 
@@ -292,20 +287,17 @@ def test_admin_or_superuser_can_list_all_tasks(
     db: Session,
 ) -> None:
     user_task = _create_review_task(client, normal_user_token_headers, old_revision="3")
-    other_headers = authentication_token_from_email(
-        client=client, email=random_email(), db=db
+    _, other_api_key = create_key_user(db)
+    other_headers = authentication_token_from_key(
+        client=client, key=other_api_key.key, db=db
     )
     other_task = _create_review_task(client, other_headers, old_revision="5")
-    admin_password = random_lower_string()
-    admin = crud.create_user(
-        session=db,
-        user_create=UserCreate(email=random_email(), password=admin_password),
-    )
+    admin, admin_api_key = create_key_user(db)
     admin.role = UserRole.admin
     db.add(admin)
     db.commit()
-    admin_headers = user_authentication_headers(
-        client=client, email=admin.email, password=admin_password
+    admin_headers = authentication_token_from_key(
+        client=client, key=admin_api_key.key, db=db
     )
 
     response = client.get(
@@ -336,21 +328,15 @@ def test_admin_task_list_includes_user_identity_fields(
     superuser_token_headers: dict[str, str],
     db: Session,
 ) -> None:
-    password = random_lower_string()
-    user = crud.create_user(
-        session=db,
-        user_create=UserCreate(
-            email=random_email(),
-            password=password,
-            full_name="张三",
-        ),
-    )
+    user, api_key = create_key_user(db)
+    user.full_name = "张三"
     svn_username = f"zhangsan-{random_lower_string()}"
     user.svn_username = svn_username
     db.add(user)
     db.commit()
-    user_headers = user_authentication_headers(
-        client=client, email=user.email, password=password
+    db.refresh(user)
+    user_headers = authentication_token_from_key(
+        client=client, key=api_key.key, db=db
     )
     task = _create_review_task(client, user_headers, old_revision="9")
 
@@ -511,16 +497,12 @@ def test_role_admin_can_read_other_user_task_detail(
     db: Session,
 ) -> None:
     user_task = _create_review_task(client, normal_user_token_headers, old_revision="7")
-    admin_password = random_lower_string()
-    admin = crud.create_user(
-        session=db,
-        user_create=UserCreate(email=random_email(), password=admin_password),
-    )
+    admin, admin_api_key = create_key_user(db)
     admin.role = UserRole.admin
     db.add(admin)
     db.commit()
-    admin_headers = user_authentication_headers(
-        client=client, email=admin.email, password=admin_password
+    admin_headers = authentication_token_from_key(
+        client=client, key=admin_api_key.key, db=db
     )
 
     response = client.get(

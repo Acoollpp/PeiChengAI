@@ -3,7 +3,54 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { CchSyncSyncCchUsersResponse, CredentialsReadMySvnCredentialResponse, CredentialsUpdateMySvnCredentialData, CredentialsUpdateMySvnCredentialResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginSvnAccountData, LoginLoginSvnAccountResponse, LoginLoginWithKeyData, LoginLoginWithKeyResponse, LoginTestTokenResponse, PrivateCreateUserData, PrivateCreateUserResponse, ReviewTasksCreateReviewTaskData, ReviewTasksCreateReviewTaskResponse, ReviewTasksReadReviewTasksData, ReviewTasksReadReviewTasksResponse, ReviewTasksReadReviewTaskData, ReviewTasksReadReviewTaskResponse, ReviewTasksDeleteReviewTaskData, ReviewTasksDeleteReviewTaskResponse, ReviewTasksUpdateReviewTaskStatusData, ReviewTasksUpdateReviewTaskStatusResponse, ReviewTasksUploadReviewTaskReportData, ReviewTasksUploadReviewTaskReportResponse, ReviewTasksReadReviewTaskReportData, ReviewTasksReadReviewTaskReportResponse, ReviewTasksDownloadReviewTaskReportData, ReviewTasksDownloadReviewTaskReportResponse, SkillsReadSkillsData, SkillsReadSkillsResponse, SkillsUploadSkillData, SkillsUploadSkillResponse, SkillsActivateSkillData, SkillsActivateSkillResponse, SkillsReadActiveSkillResponse, SkillsDownloadActiveSkillResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+
+export class CchSyncService {
+    /**
+     * Sync Cch Users
+     * @returns CchSyncResultPublic Successful Response
+     * @throws ApiError
+     */
+    public static syncCchUsers(): CancelablePromise<CchSyncSyncCchUsersResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/admin/cch-sync/users'
+        });
+    }
+}
+
+export class CredentialsService {
+    /**
+     * Read My Svn Credential
+     * @returns SvnCredentialPublic Successful Response
+     * @throws ApiError
+     */
+    public static readMySvnCredential(): CancelablePromise<CredentialsReadMySvnCredentialResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/me/svn-credential'
+        });
+    }
+
+    /**
+     * Update My Svn Credential
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns SvnCredentialPublic Successful Response
+     * @throws ApiError
+     */
+    public static updateMySvnCredential(data: CredentialsUpdateMySvnCredentialData): CancelablePromise<CredentialsUpdateMySvnCredentialResponse> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/me/svn-credential',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+}
 
 export class ItemsService {
     /**
@@ -28,7 +75,7 @@ export class ItemsService {
             }
         });
     }
-    
+
     /**
      * Create Item
      * Create new item.
@@ -48,7 +95,7 @@ export class ItemsService {
             }
         });
     }
-    
+
     /**
      * Read Item
      * Get item by ID.
@@ -69,7 +116,7 @@ export class ItemsService {
             }
         });
     }
-    
+
     /**
      * Update Item
      * Update an item.
@@ -93,7 +140,7 @@ export class ItemsService {
             }
         });
     }
-    
+
     /**
      * Delete Item
      * Delete an item.
@@ -118,71 +165,17 @@ export class ItemsService {
 
 export class LoginService {
     /**
-     * Login Access Token
-     * OAuth2 compatible token login, get an access token for future requests
-     * @param data The data for the request.
-     * @param data.formData
-     * @returns Token Successful Response
-     * @throws ApiError
-     */
-    public static loginAccessToken(data: LoginLoginAccessTokenData): CancelablePromise<LoginLoginAccessTokenResponse> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/v1/login/access-token',
-            formData: data.formData,
-            mediaType: 'application/x-www-form-urlencoded',
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Test Token
-     * Test access token
-     * @returns UserPublic Successful Response
-     * @throws ApiError
-     */
-    public static testToken(): CancelablePromise<LoginTestTokenResponse> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/v1/login/test-token'
-        });
-    }
-    
-    /**
-     * Recover Password
-     * Password Recovery
-     * @param data The data for the request.
-     * @param data.email
-     * @returns Message Successful Response
-     * @throws ApiError
-     */
-    public static recoverPassword(data: LoginRecoverPasswordData): CancelablePromise<LoginRecoverPasswordResponse> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/v1/password-recovery/{email}',
-            path: {
-                email: data.email
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Reset Password
-     * Reset password
+     * Login Svn Account
+     * Authenticate with stored SVN credentials.
      * @param data The data for the request.
      * @param data.requestBody
-     * @returns Message Successful Response
+     * @returns AuthToken Successful Response
      * @throws ApiError
      */
-    public static resetPassword(data: LoginResetPasswordData): CancelablePromise<LoginResetPasswordResponse> {
+    public static loginSvnAccount(data: LoginLoginSvnAccountData): CancelablePromise<LoginLoginSvnAccountResponse> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/v1/reset-password/',
+            url: '/api/v1/auth/login',
             body: data.requestBody,
             mediaType: 'application/json',
             errors: {
@@ -190,25 +183,37 @@ export class LoginService {
             }
         });
     }
-    
+
     /**
-     * Recover Password Html Content
-     * HTML Content for Password Recovery
+     * Login With Key
+     * Authenticate with a locally stored API key.
      * @param data The data for the request.
-     * @param data.email
-     * @returns string Successful Response
+     * @param data.requestBody
+     * @returns AuthToken Successful Response
      * @throws ApiError
      */
-    public static recoverPasswordHtmlContent(data: LoginRecoverPasswordHtmlContentData): CancelablePromise<LoginRecoverPasswordHtmlContentResponse> {
+    public static loginWithKey(data: LoginLoginWithKeyData): CancelablePromise<LoginLoginWithKeyResponse> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/v1/password-recovery-html-content/{email}',
-            path: {
-                email: data.email
-            },
+            url: '/api/v1/auth/key-login',
+            body: data.requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: 'Validation Error'
             }
+        });
+    }
+
+    /**
+     * Test Token
+     * Test access token.
+     * @returns UserPublic Successful Response
+     * @throws ApiError
+     */
+    public static testToken(): CancelablePromise<LoginTestTokenResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/login/test-token'
         });
     }
 }
@@ -231,6 +236,266 @@ export class PrivateService {
             errors: {
                 422: 'Validation Error'
             }
+        });
+    }
+}
+
+export class ReviewTasksService {
+    /**
+     * Create Review Task
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns ReviewTaskPublic Successful Response
+     * @throws ApiError
+     */
+    public static createReviewTask(data: ReviewTasksCreateReviewTaskData): CancelablePromise<ReviewTasksCreateReviewTaskResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/review-tasks',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Read Review Tasks
+     * @param data The data for the request.
+     * @param data.skip
+     * @param data.limit
+     * @param data.userName
+     * @param data.svnUsername
+     * @returns ReviewTasksPublic Successful Response
+     * @throws ApiError
+     */
+    public static readReviewTasks(data: ReviewTasksReadReviewTasksData = {}): CancelablePromise<ReviewTasksReadReviewTasksResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/review-tasks',
+            query: {
+                skip: data.skip,
+                limit: data.limit,
+                user_name: data.userName,
+                svn_username: data.svnUsername
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Read Review Task
+     * @param data The data for the request.
+     * @param data.taskId
+     * @returns ReviewTaskPublic Successful Response
+     * @throws ApiError
+     */
+    public static readReviewTask(data: ReviewTasksReadReviewTaskData): CancelablePromise<ReviewTasksReadReviewTaskResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/review-tasks/{task_id}',
+            path: {
+                task_id: data.taskId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Delete Review Task
+     * @param data The data for the request.
+     * @param data.taskId
+     * @returns string Successful Response
+     * @throws ApiError
+     */
+    public static deleteReviewTask(data: ReviewTasksDeleteReviewTaskData): CancelablePromise<ReviewTasksDeleteReviewTaskResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/review-tasks/{task_id}',
+            path: {
+                task_id: data.taskId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Update Review Task Status
+     * @param data The data for the request.
+     * @param data.taskId
+     * @param data.requestBody
+     * @returns ReviewTaskPublic Successful Response
+     * @throws ApiError
+     */
+    public static updateReviewTaskStatus(data: ReviewTasksUpdateReviewTaskStatusData): CancelablePromise<ReviewTasksUpdateReviewTaskStatusResponse> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/api/v1/review-tasks/{task_id}/status',
+            path: {
+                task_id: data.taskId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Upload Review Task Report
+     * @param data The data for the request.
+     * @param data.taskId
+     * @param data.formData
+     * @returns ReviewTaskPublic Successful Response
+     * @throws ApiError
+     */
+    public static uploadReviewTaskReport(data: ReviewTasksUploadReviewTaskReportData): CancelablePromise<ReviewTasksUploadReviewTaskReportResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/review-tasks/{task_id}/report',
+            path: {
+                task_id: data.taskId
+            },
+            formData: data.formData,
+            mediaType: 'multipart/form-data',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Read Review Task Report
+     * @param data The data for the request.
+     * @param data.taskId
+     * @returns string Successful Response
+     * @throws ApiError
+     */
+    public static readReviewTaskReport(data: ReviewTasksReadReviewTaskReportData): CancelablePromise<ReviewTasksReadReviewTaskReportResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/review-tasks/{task_id}/report',
+            path: {
+                task_id: data.taskId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Download Review Task Report
+     * @param data The data for the request.
+     * @param data.taskId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static downloadReviewTaskReport(data: ReviewTasksDownloadReviewTaskReportData): CancelablePromise<ReviewTasksDownloadReviewTaskReportResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/review-tasks/{task_id}/download',
+            path: {
+                task_id: data.taskId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+}
+
+export class SkillsService {
+    /**
+     * Read Skills
+     * @param data The data for the request.
+     * @param data.skip
+     * @param data.limit
+     * @returns SkillPackagesPublic Successful Response
+     * @throws ApiError
+     */
+    public static readSkills(data: SkillsReadSkillsData = {}): CancelablePromise<SkillsReadSkillsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/skills',
+            query: {
+                skip: data.skip,
+                limit: data.limit
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Upload Skill
+     * @param data The data for the request.
+     * @param data.formData
+     * @returns SkillPackagePublic Successful Response
+     * @throws ApiError
+     */
+    public static uploadSkill(data: SkillsUploadSkillData): CancelablePromise<SkillsUploadSkillResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/skills',
+            formData: data.formData,
+            mediaType: 'multipart/form-data',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Activate Skill
+     * @param data The data for the request.
+     * @param data.skillId
+     * @returns SkillPackagePublic Successful Response
+     * @throws ApiError
+     */
+    public static activateSkill(data: SkillsActivateSkillData): CancelablePromise<SkillsActivateSkillResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/skills/{skill_id}/activate',
+            path: {
+                skill_id: data.skillId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Read Active Skill
+     * @returns SkillPackagePublic Successful Response
+     * @throws ApiError
+     */
+    public static readActiveSkill(): CancelablePromise<SkillsReadActiveSkillResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/skills/active'
+        });
+    }
+
+    /**
+     * Download Active Skill
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static downloadActiveSkill(): CancelablePromise<SkillsDownloadActiveSkillResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/skills/active/download'
         });
     }
 }
@@ -258,7 +523,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Create User
      * Create new user.
@@ -278,7 +543,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Read User Me
      * Get current user.
@@ -291,7 +556,7 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-    
+
     /**
      * Delete User Me
      * Delete own user.
@@ -304,7 +569,7 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-    
+
     /**
      * Update User Me
      * Update own user.
@@ -324,47 +589,7 @@ export class UsersService {
             }
         });
     }
-    
-    /**
-     * Update Password Me
-     * Update own password.
-     * @param data The data for the request.
-     * @param data.requestBody
-     * @returns Message Successful Response
-     * @throws ApiError
-     */
-    public static updatePasswordMe(data: UsersUpdatePasswordMeData): CancelablePromise<UsersUpdatePasswordMeResponse> {
-        return __request(OpenAPI, {
-            method: 'PATCH',
-            url: '/api/v1/users/me/password',
-            body: data.requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Register User
-     * Create new user without the need to be logged in.
-     * @param data The data for the request.
-     * @param data.requestBody
-     * @returns UserPublic Successful Response
-     * @throws ApiError
-     */
-    public static registerUser(data: UsersRegisterUserData): CancelablePromise<UsersRegisterUserResponse> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/v1/users/signup',
-            body: data.requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
+
     /**
      * Read User By Id
      * Get a specific user by id.
@@ -385,7 +610,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Update User
      * Update a user.
@@ -409,7 +634,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Delete User
      * Delete a user.
@@ -453,7 +678,7 @@ export class UtilsService {
             }
         });
     }
-    
+
     /**
      * Health Check
      * @returns boolean Successful Response

@@ -4,18 +4,19 @@ import type {
   EnvironmentCheckResult,
   ExecuteTaskRequest,
   ExecuteTaskResult,
+  KeyLoginRequest,
   DownloadCurrentReportResult,
-  LoginRequest,
   RememberedCredentials,
-  RegisterRequest,
+  SvnLoginRequest,
   ReviewTasksResponse,
   TaskProgressEvent
 } from '../renderer/src/code-review-api'
 
 contextBridge.exposeInMainWorld('codeReview', {
-  register: (payload: RegisterRequest): Promise<unknown> =>
-    ipcRenderer.invoke('auth:register', payload),
-  login: (payload: LoginRequest): Promise<unknown> => ipcRenderer.invoke('auth:login', payload),
+  keyLogin: (payload: KeyLoginRequest): Promise<unknown> =>
+    ipcRenderer.invoke('auth:key-login', payload),
+  svnLogin: (payload: SvnLoginRequest): Promise<unknown> =>
+    ipcRenderer.invoke('auth:svn-login', payload),
   saveCredentials: (payload: RememberedCredentials): Promise<unknown> =>
     ipcRenderer.invoke('credentials:save', payload),
   loadCredentials: (): Promise<RememberedCredentials | null> =>

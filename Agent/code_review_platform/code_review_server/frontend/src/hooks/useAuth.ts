@@ -2,10 +2,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 
 import {
-  type Body_login_login_access_token as AccessToken,
+  type KeyLogin,
   LoginService,
+  type SvnLogin,
   type UserPublic,
-  type UserRegister,
   UsersService,
 } from "@/client"
 import { handleError } from "@/utils"
@@ -26,30 +26,23 @@ const useAuth = () => {
     enabled: isLoggedIn(),
   })
 
-  const signUpMutation = useMutation({
-    mutationFn: (data: UserRegister) =>
-      UsersService.registerUser({ requestBody: data }),
-    onSuccess: () => {
-      navigate({ to: "/login" })
-    },
-    onError: handleError.bind(showErrorToast),
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["users"] })
-    },
-  })
-
-  const login = async (data: AccessToken) => {
-    const response = await LoginService.loginAccessToken({
-      formData: data,
-    })
-    localStorage.setItem("access_token", response.access_token)
+  const onLoginSuccess = async (token: string) => {
+    localStorage.setItem("access_token", token)
+    await queryClient.invalidateQueries({ queryKey: ["currentUser"] })
+    navigate({ to: "/" })
   }
 
-  const loginMutation = useMutation({
-    mutationFn: login,
-    onSuccess: () => {
-      navigate({ to: "/" })
-    },
+  const keyLoginMutation = useMutation({
+    mutationFn: (data: KeyLogin) =>
+      LoginService.loginWithKey({ requestBody: data }),
+    onSuccess: (response) => onLoginSuccess(response.access_token),
+    onError: handleError.bind(showErrorToast),
+  })
+
+  const svnLoginMutation = useMutation({
+    mutationFn: (data: SvnLogin) =>
+      LoginService.loginSvnAccount({ requestBody: data }),
+    onSuccess: (response) => onLoginSuccess(response.access_token),
     onError: handleError.bind(showErrorToast),
   })
 
@@ -59,8 +52,8 @@ const useAuth = () => {
   }
 
   return {
-    signUpMutation,
-    loginMutation,
+    keyLoginMutation,
+    svnLoginMutation,
     logout,
     user,
   }

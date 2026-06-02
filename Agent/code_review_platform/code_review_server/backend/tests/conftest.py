@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import inspect
 from sqlmodel import Session, delete
 
-from app.core.config import settings
 from app.core.db import engine, init_db
 from app.main import app
 from app.models import (
@@ -14,10 +13,11 @@ from app.models import (
     ReviewTask,
     SkillPackage,
     User,
+    UserApiKey,
     UserSvnCredential,
 )
-from tests.utils.user import authentication_token_from_email
-from tests.utils.utils import get_superuser_token_headers
+from tests.utils.user import create_random_user
+from tests.utils.utils import auth_headers_for_user_id, get_superuser_token_headers
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -25,6 +25,8 @@ def db() -> Generator[Session, None, None]:
     with Session(engine) as session:
         init_db(session)
         yield session
+        statement = delete(UserApiKey)
+        session.execute(statement)
         statement = delete(UserSvnCredential)
         session.execute(statement)
         statement = delete(Item)
@@ -54,6 +56,6 @@ def superuser_token_headers(client: TestClient) -> dict[str, str]:
 
 @pytest.fixture(scope="module")
 def normal_user_token_headers(client: TestClient, db: Session) -> dict[str, str]:
-    return authentication_token_from_email(
-        client=client, email=settings.EMAIL_TEST_USER, db=db
-    )
+    _ = client
+    user = create_random_user(db)
+    return auth_headers_for_user_id(user.id)

@@ -21,10 +21,11 @@ import { getInitials } from "@/utils"
 
 interface UserInfoProps {
   fullName?: string
-  email?: string
+  svnUsername?: string
+  role?: string
 }
 
-function UserInfo({ fullName, email }: UserInfoProps) {
+function UserInfo({ fullName, svnUsername, role }: UserInfoProps) {
   return (
     <div className="flex items-center gap-2.5 w-full min-w-0">
       <Avatar className="size-8">
@@ -33,8 +34,8 @@ function UserInfo({ fullName, email }: UserInfoProps) {
         </AvatarFallback>
       </Avatar>
       <div className="flex flex-col items-start min-w-0">
-        <p className="text-sm font-medium truncate w-full">{fullName}</p>
-        <p className="text-xs text-muted-foreground truncate w-full">{email}</p>
+        <p className="text-sm font-medium truncate w-full">{fullName || svnUsername}</p>
+        <p className="text-xs text-muted-foreground truncate w-full">{svnUsername || role}</p>
       </div>
     </div>
   )
@@ -65,7 +66,11 @@ export function User({ user }: { user: any }) {
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
               data-testid="user-menu"
             >
-              <UserInfo fullName={user?.full_name} email={user?.email} />
+              <UserInfo
+                fullName={user?.full_name}
+                svnUsername={user?.svn_username}
+                role={user?.role}
+              />
               <ChevronsUpDown className="ml-auto size-4 text-muted-foreground" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
@@ -76,7 +81,11 @@ export function User({ user }: { user: any }) {
             sideOffset={4}
           >
             <DropdownMenuLabel className="p-0 font-normal">
-              <UserInfo fullName={user?.full_name} email={user?.email} />
+              <UserInfo
+                fullName={user?.full_name}
+                svnUsername={user?.svn_username}
+                role={user?.role}
+              />
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <RouterLink to="/settings" onClick={handleMenuClick}>

@@ -2,6 +2,12 @@
 
 Code Review Electron 是代码审查平台的本地客户端。它登录 Code Review Server、领取或创建审查任务、检查本机环境、调起 Codex 执行审查，并在报告生成后上传到服务端。
 
+## 登录与用户同步
+
+管理员在 Web 管理后台点击“同步 CCH 用户”，服务端会从 Claude Code Hub PostgreSQL 同步 CCH 用户名、角色和 Key 到本地库；服务端部署时必须配置 `CCH_DATABASE_URL` 为 Claude Code Hub PostgreSQL 连接串。
+
+Web 管理后台和 Electron 客户端支持 Key 登录和 SVN 账号密码登录。邮箱注册、邮箱登录、找回密码和修改密码已移除；Electron 不再提供注册或邮箱找回密码入口。
+
 ## 本地执行流程
 
 客户端要求审查在用户本机执行，避免服务端直接访问本地工作副本或保存明文运行环境。启动客户端前请确认：

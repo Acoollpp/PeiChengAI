@@ -101,13 +101,13 @@ def activate_skill(session: SessionDep, skill_id: uuid.UUID) -> Any:
 
 
 @router.get("/active", response_model=SkillPackagePublic)
-def read_active_skill(session: SessionDep, current_user: CurrentUser) -> Any:
+def read_active_skill(session: SessionDep, _current_user: CurrentUser) -> Any:
     return _get_active_skill_or_404(session)
 
 
 @router.get("/active/download")
 def download_active_skill(
-    session: SessionDep, current_user: CurrentUser
+    session: SessionDep, _current_user: CurrentUser
 ) -> Response:
     skill = _get_active_skill_or_404(session)
     return Response(

@@ -9,6 +9,9 @@ export type UserTableData = UserPublic & {
   isCurrentUser: boolean
   svn_username?: string | null
   role?: string | null
+  auth_source?: string | null
+  cch_user_id?: number | null
+  last_synced_at?: string | null
 }
 
 export const columns: ColumnDef<UserTableData>[] = [
@@ -43,10 +46,32 @@ export const columns: ColumnDef<UserTableData>[] = [
     ),
   },
   {
-    accessorKey: "email",
-    header: "邮箱",
+    accessorKey: "auth_source",
+    header: "来源",
     cell: ({ row }) => (
-      <span className="text-muted-foreground">{row.original.email}</span>
+      <span className="text-muted-foreground">
+        {row.original.auth_source === "cch" ? "CCH" : "本地"}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "cch_user_id",
+    header: "CCH用户ID",
+    cell: ({ row }) => (
+      <span className="text-muted-foreground">
+        {row.original.cch_user_id ?? "-"}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "last_synced_at",
+    header: "最近同步",
+    cell: ({ row }) => (
+      <span className="text-muted-foreground">
+        {row.original.last_synced_at
+          ? new Date(row.original.last_synced_at).toLocaleString()
+          : "-"}
+      </span>
     ),
   },
   {

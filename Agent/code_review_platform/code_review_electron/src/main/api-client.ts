@@ -5,22 +5,20 @@ export interface TokenPair {
   refresh_token: string
 }
 
-export interface RegisterRequest {
+export interface KeyLoginRequest {
   server_url: string
-  full_name: string
-  svn_username: string
-  svn_password: string
+  key: string
 }
 
-export interface LoginRequest {
+export interface SvnLoginRequest {
   server_url: string
   svn_username: string
   svn_password: string
 }
 
-export type AuthRegisterRequest = Omit<RegisterRequest, 'server_url'>
+export type AuthKeyLoginRequest = Omit<KeyLoginRequest, 'server_url'>
 
-export type AuthLoginRequest = Omit<LoginRequest, 'server_url'>
+export type AuthSvnLoginRequest = Omit<SvnLoginRequest, 'server_url'>
 
 export interface CreateTaskRequest {
   svn_url: string
@@ -73,14 +71,14 @@ export class ApiClient {
     this.fetchImpl = fetchImpl
   }
 
-  register(payload: AuthRegisterRequest): Promise<TokenPair> {
-    return this.request<TokenPair>('/api/v1/auth/register', {
+  keyLogin(payload: AuthKeyLoginRequest): Promise<TokenPair> {
+    return this.request<TokenPair>('/api/v1/auth/key-login', {
       method: 'POST',
       body: JSON.stringify(payload)
     })
   }
 
-  login(payload: AuthLoginRequest): Promise<TokenPair> {
+  svnLogin(payload: AuthSvnLoginRequest): Promise<TokenPair> {
     return this.request<TokenPair>('/api/v1/auth/login', {
       method: 'POST',
       body: JSON.stringify(payload)

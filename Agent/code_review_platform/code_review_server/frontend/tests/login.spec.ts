@@ -1,107 +1,40 @@
 import { expect, type Page, test } from "@playwright/test"
-import { firstSuperuser, firstSuperuserPassword } from "./config.ts"
-import { randomPassword } from "./utils/random.ts"
 
 test.use({ storageState: { cookies: [], origins: [] } })
 
-const fillForm = async (page: Page, email: string, password: string) => {
-  await page.getByTestId("email-input").fill(email)
-  await page.getByTestId("password-input").fill(password)
+const expectLegacyLoginEntrypointsRemoved = async (page: Page) => {
+  await expect(page.locator('a[href="/recover-password"]')).toHaveCount(0)
+  await expect(page.locator('a[href="/signup"]')).toHaveCount(0)
+  await expect(page.locator('input[name="username"]')).toHaveCount(0)
+  await expect(page.getByTestId("email-input")).toHaveCount(0)
 }
 
-const verifyInput = async (page: Page, testId: string) => {
-  const input = page.getByTestId(testId)
-  await expect(input).toBeVisible()
-  await expect(input).toHaveText("")
-  await expect(input).toBeEditable()
-}
-
-test("Inputs are visible, empty and editable", async ({ page }) => {
+test("Login page shows key and SVN login tabs", async ({ page }) => {
   await page.goto("/login")
 
-  await verifyInput(page, "email-input")
-  await verifyInput(page, "password-input")
+  await expect(page.getByRole("tab", { name: "Key 登录" })).toBeVisible()
+  await expect(page.getByRole("tab", { name: "SVN 登录" })).toBeVisible()
 })
 
-test("Log In button is visible", async ({ page }) => {
+test("Key login form uses key input only", async ({ page }) => {
   await page.goto("/login")
 
-  await expect(page.getByRole("button", { name: "Log In" })).toBeVisible()
+  await expect(page.getByLabel("Key")).toBeVisible()
+  await expect(page.getByRole("button", { name: "登录" })).toBeVisible()
+  await expectLegacyLoginEntrypointsRemoved(page)
 })
 
-test("Forgot Password link is visible", async ({ page }) => {
+test("SVN login form asks for SVN credentials", async ({ page }) => {
   await page.goto("/login")
+  await page.getByRole("tab", { name: "SVN 登录" }).click()
 
-  await expect(
-    page.getByRole("link", { name: "Forgot your password?" }),
-  ).toBeVisible()
-})
-
-test("Log in with valid email and password ", async ({ page }) => {
-  await page.goto("/login")
-
-  await fillForm(page, firstSuperuser, firstSuperuserPassword)
-  await page.getByRole("button", { name: "Log In" }).click()
-
-  await page.waitForURL("/")
-
-  await expect(
-    page.getByText("Welcome back, nice to see you again!"),
-  ).toBeVisible()
-})
-
-test("Log in with invalid email", async ({ page }) => {
-  await page.goto("/login")
-
-  await fillForm(page, "invalidemail", firstSuperuserPassword)
-  await page.getByRole("button", { name: "Log In" }).click()
-
-  await expect(page.getByText("Invalid email address")).toBeVisible()
-})
-
-test("Log in with invalid password", async ({ page }) => {
-  const password = randomPassword()
-
-  await page.goto("/login")
-  await fillForm(page, firstSuperuser, password)
-  await page.getByRole("button", { name: "Log In" }).click()
-
-  await expect(page.getByText("Incorrect email or password")).toBeVisible()
-})
-
-test("Successful log out", async ({ page }) => {
-  await page.goto("/login")
-
-  await fillForm(page, firstSuperuser, firstSuperuserPassword)
-  await page.getByRole("button", { name: "Log In" }).click()
-
-  await page.waitForURL("/")
-
-  await expect(
-    page.getByText("Welcome back, nice to see you again!"),
-  ).toBeVisible()
-
-  await page.getByTestId("user-menu").click()
-  await page.getByRole("menuitem", { name: "Log out" }).click()
-  await page.waitForURL("/login")
+  await expect(page.getByLabel("SVN账号")).toBeVisible()
+  await expect(page.getByLabel("SVN密码")).toBeVisible()
+  await expect(page.getByRole("button", { name: "登录" })).toBeVisible()
+  await expectLegacyLoginEntrypointsRemoved(page)
 })
 
 test("Logged-out user cannot access protected routes", async ({ page }) => {
-  await page.goto("/login")
-
-  await fillForm(page, firstSuperuser, firstSuperuserPassword)
-  await page.getByRole("button", { name: "Log In" }).click()
-
-  await page.waitForURL("/")
-
-  await expect(
-    page.getByText("Welcome back, nice to see you again!"),
-  ).toBeVisible()
-
-  await page.getByTestId("user-menu").click()
-  await page.getByRole("menuitem", { name: "Log out" }).click()
-  await page.waitForURL("/login")
-
   await page.goto("/settings")
   await page.waitForURL("/login")
 })

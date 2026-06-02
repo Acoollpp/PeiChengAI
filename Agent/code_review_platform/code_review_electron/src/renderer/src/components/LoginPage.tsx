@@ -1,19 +1,19 @@
 import { FormEvent, useEffect, useState } from 'react'
 
 import paceLogo from '../assets/pace-logo.png'
-import type { LoginRequest, RegisterRequest } from '../code-review-api'
+import type { KeyLoginRequest, SvnLoginRequest } from '../code-review-api'
 
 type LoginPageProps = {
-  onLogin: (payload: LoginRequest) => Promise<void>
-  onRegister: (payload: RegisterRequest) => Promise<void>
+  onKeyLogin: (payload: KeyLoginRequest) => Promise<void>
+  onSvnLogin: (payload: SvnLoginRequest) => Promise<void>
 }
 
-type AuthMode = 'login' | 'register'
+type AuthMode = 'key' | 'svn'
 
-export function LoginPage({ onLogin, onRegister }: LoginPageProps): React.JSX.Element {
-  const [mode, setMode] = useState<AuthMode>('login')
+export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX.Element {
+  const [mode, setMode] = useState<AuthMode>('key')
   const [serverUrl, setServerUrl] = useState('')
-  const [fullName, setFullName] = useState('')
+  const [accessKey, setAccessKey] = useState('')
   const [svnUsername, setSvnUsername] = useState('')
   const [svnPassword, setSvnPassword] = useState('')
   const [rememberPassword, setRememberPassword] = useState(false)
@@ -23,8 +23,8 @@ export function LoginPage({ onLogin, onRegister }: LoginPageProps): React.JSX.El
   useEffect(() => {
     let isMounted = true
 
-    Promise.all([window.codeReview.loadServerConfig(), window.codeReview.loadCredentials()]).then(
-      ([serverConfig, credentials]) => {
+    Promise.all([window.codeReview.loadServerConfig(), window.codeReview.loadCredentials()])
+      .then(([serverConfig, credentials]) => {
         if (!isMounted) {
           return
         }
@@ -38,14 +38,14 @@ export function LoginPage({ onLogin, onRegister }: LoginPageProps): React.JSX.El
         setSvnUsername(credentials.svn_username)
         setSvnPassword(credentials.svn_password)
         setRememberPassword(true)
-      }
-    ).catch(() => {
-      if (!isMounted) {
-        return
-      }
+      })
+      .catch(() => {
+        if (!isMounted) {
+          return
+        }
 
-      setServerUrl('http://172.23.17.190:8000')
-    })
+        setServerUrl('http://172.23.17.190:8000')
+      })
 
     return () => {
       isMounted = false
@@ -57,28 +57,27 @@ export function LoginPage({ onLogin, onRegister }: LoginPageProps): React.JSX.El
     setError('')
     setIsSubmitting(true)
 
+    const normalizedServerUrl = serverUrl.trim()
+
     try {
-      if (mode === 'register') {
-        await onRegister({
-          server_url: serverUrl.trim(),
-          full_name: fullName.trim(),
-          svn_username: svnUsername.trim(),
-          svn_password: svnPassword
+      if (mode === 'key') {
+        await onKeyLogin({
+          server_url: normalizedServerUrl,
+          key: accessKey.trim()
         })
-      } else {
-        await onLogin({
-          server_url: serverUrl.trim(),
-          svn_username: svnUsername.trim(),
-          svn_password: svnPassword
-        })
+        return
       }
 
+      const svnPayload = {
+        server_url: normalizedServerUrl,
+        svn_username: svnUsername.trim(),
+        svn_password: svnPassword
+      }
+
+      await onSvnLogin(svnPayload)
+
       if (rememberPassword) {
-        await window.codeReview.saveCredentials({
-          server_url: serverUrl.trim(),
-          svn_username: svnUsername.trim(),
-          svn_password: svnPassword
-        })
+        await window.codeReview.saveCredentials(svnPayload)
       } else {
         await window.codeReview.clearCredentials()
       }
@@ -103,22 +102,22 @@ export function LoginPage({ onLogin, onRegister }: LoginPageProps): React.JSX.El
 
       <div className="tabs" role="tablist" aria-label="认证方式">
         <button
-          className={mode === 'login' ? 'tab is-active' : 'tab'}
+          className={mode === 'key' ? 'tab is-active' : 'tab'}
           type="button"
           role="tab"
-          aria-selected={mode === 'login'}
-          onClick={() => setMode('login')}
+          aria-selected={mode === 'key'}
+          onClick={() => setMode('key')}
         >
-          登录
+          Key 登录
         </button>
         <button
-          className={mode === 'register' ? 'tab is-active' : 'tab'}
+          className={mode === 'svn' ? 'tab is-active' : 'tab'}
           type="button"
           role="tab"
-          aria-selected={mode === 'register'}
-          onClick={() => setMode('register')}
+          aria-selected={mode === 'svn'}
+          onClick={() => setMode('svn')}
         >
-          注册
+          SVN 登录
         </button>
       </div>
 
@@ -135,61 +134,57 @@ export function LoginPage({ onLogin, onRegister }: LoginPageProps): React.JSX.El
           />
         </label>
 
-        {mode === 'register' && (
+        {mode === 'key' ? (
           <label className="field auth-field">
-            <span>姓名</span>
+            <span>Key</span>
             <input
               required
-              value={fullName}
-              autoComplete="name"
-              onChange={(event) => setFullName(event.target.value)}
+              type="password"
+              value={accessKey}
+              autoComplete="off"
+              onChange={(event) => setAccessKey(event.target.value)}
             />
           </label>
+        ) : (
+          <>
+            <label className="field auth-field">
+              <span>SVN账号</span>
+              <input
+                required
+                value={svnUsername}
+                autoComplete="username"
+                onChange={(event) => setSvnUsername(event.target.value)}
+              />
+            </label>
+
+            <label className="field auth-field">
+              <span>SVN密码</span>
+              <input
+                required
+                type="password"
+                value={svnPassword}
+                autoComplete="current-password"
+                onChange={(event) => setSvnPassword(event.target.value)}
+              />
+            </label>
+
+            <div className="auth-options">
+              <label className="remember-field">
+                <input
+                  type="checkbox"
+                  checked={rememberPassword}
+                  onChange={(event) => setRememberPassword(event.target.checked)}
+                />
+                <span>记住密码</span>
+              </label>
+            </div>
+          </>
         )}
-
-        <label className="field auth-field">
-          <span>SVN账号</span>
-          <input
-            required
-            value={svnUsername}
-            autoComplete="username"
-            onChange={(event) => setSvnUsername(event.target.value)}
-          />
-        </label>
-
-        <label className="field auth-field">
-          <span>SVN密码</span>
-          <input
-            required
-            type="password"
-            value={svnPassword}
-            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-            onChange={(event) => setSvnPassword(event.target.value)}
-          />
-        </label>
-
-        <div className="auth-options">
-          <label className="remember-field">
-            <input
-              type="checkbox"
-              checked={rememberPassword}
-              onChange={(event) => setRememberPassword(event.target.checked)}
-            />
-            <span>记住密码</span>
-          </label>
-          <button
-            className="link-button"
-            type="button"
-            onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-          >
-            {mode === 'login' ? '注册账户' : '返回登录'}
-          </button>
-        </div>
 
         {error && <p className="form-error">{error}</p>}
 
         <button className="primary-button" type="submit" disabled={isSubmitting}>
-          {isSubmitting ? '处理中...' : mode === 'login' ? '登录' : '注册并登录'}
+          {isSubmitting ? '处理中...' : mode === 'key' ? 'Key 登录' : 'SVN 登录'}
         </button>
       </form>
     </section>

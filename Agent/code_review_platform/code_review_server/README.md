@@ -4,8 +4,9 @@ Code Review Server 是代码审查平台的后端服务，基于 FastAPI、SQLMo
 
 ## 核心能力
 
-- 用户与角色：支持平台用户注册、登录、管理和角色控制。管理员可管理用户与审查任务，普通用户使用自己的登录身份提交任务和上传结果。
-- 加密 SVN 凭据：用户登录或绑定 SVN 信息时，服务端使用 `SVN_CREDENTIAL_MASTER_KEY` 加密保存 SVN 用户名和密码，避免明文落库。
+- 用户与角色：管理员在 Web 管理后台点击“同步 CCH 用户”，从 Claude Code Hub 同步 CCH 用户名、角色和 Key 到本地库；管理员可管理用户与审查任务，普通用户使用自己的登录身份提交任务和上传结果。
+- 登录方式：Web 管理后台和 Electron 客户端支持 Key 登录和 SVN 账号密码登录；邮箱注册、邮箱登录、找回密码和修改密码已移除。
+- 加密 SVN 凭据：用户通过 SVN 账号密码登录或绑定 SVN 信息时，服务端使用 `SVN_CREDENTIAL_MASTER_KEY` 加密保存 SVN 用户名和密码，避免明文落库。
 - 审查任务：服务端保存待审查的 SVN 地址、任务状态、执行结果摘要和报告路径，供客户端拉取、更新和回传。
 - 审查报告：客户端完成本地审查后上传 Markdown 报告，服务端将报告写入 `REPORT_STORAGE_DIR`，并在任务记录中保存报告位置。
 - Skill 存储：服务端可通过 `SKILL_STORAGE_DIR` 管理下发或挂载的审查 Skill 文件，便于客户端按约定使用通用代码变更审查流程。
@@ -14,7 +15,8 @@ Code Review Server 是代码审查平台的后端服务，基于 FastAPI、SQLMo
 
 生产部署必须显式设置以下变量，不要使用示例值或默认弱密钥：
 
-- `SECRET_KEY`：JWT、密码重置等安全签名使用的服务端密钥。
+- `SECRET_KEY`：JWT 等安全签名使用的服务端密钥。
+- `CCH_DATABASE_URL`：Claude Code Hub PostgreSQL 连接串，用于管理员同步 CCH 用户名、角色和 Key。
 - `SVN_CREDENTIAL_MASTER_KEY`：SVN 凭据加密主密钥；上线后应稳定保存，丢失或更换会导致既有凭据无法解密。
 - `POSTGRES_PASSWORD`：PostgreSQL 数据库密码。
 - `REPORT_STORAGE_DIR`：审查报告持久化目录，建议挂载到持久化卷。
@@ -49,10 +51,8 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
   - 🧪 [Playwright](https://playwright.dev) for End-to-End testing.
   - 🦇 Dark mode support.
 - 🐋 [Docker Compose](https://www.docker.com) for development and production.
-- 🔒 Secure password hashing by default.
 - 🔑 JWT (JSON Web Token) authentication.
-- 📫 Email based password recovery.
-- 📬 [Mailcatcher](https://mailcatcher.me) for local email testing during development.
+- 🔐 Key 登录和 SVN 账号密码登录；邮箱注册、邮箱登录、找回密码和修改密码已移除。
 - ✅ Tests with [Pytest](https://pytest.org).
 - 📞 [Traefik](https://traefik.io) as a reverse proxy / load balancer.
 - 🚢 Deployment instructions using Docker Compose, including how to set up a frontend Traefik proxy to handle automatic HTTPS certificates.
@@ -159,7 +159,8 @@ You can then update configs in the `.env` files to customize your configurations
 Before deploying it, make sure you change at least the values for:
 
 - `SECRET_KEY`
-- `FIRST_SUPERUSER_PASSWORD`
+- `CCH_DATABASE_URL`
+- `SVN_CREDENTIAL_MASTER_KEY`
 - `POSTGRES_PASSWORD`
 
 You can (and should) pass these as environment variables from secrets.
@@ -229,12 +230,8 @@ The input variables, with their default values (some auto generated) are:
 - `project_name`: (default: `"FastAPI Project"`) The name of the project, shown to API users (in .env).
 - `stack_name`: (default: `"fastapi-project"`) The name of the stack used for Docker Compose labels and project name (no spaces, no periods) (in .env).
 - `secret_key`: (default: `"changethis"`) The secret key for the project, used for security, stored in .env, you can generate one with the method above.
-- `first_superuser`: (default: `"admin@example.com"`) The email of the first superuser (in .env).
-- `first_superuser_password`: (default: `"changethis"`) The password of the first superuser (in .env).
-- `smtp_host`: (default: "") The SMTP server host to send emails, you can set it later in .env.
-- `smtp_user`: (default: "") The SMTP server user to send emails, you can set it later in .env.
-- `smtp_password`: (default: "") The SMTP server password to send emails, you can set it later in .env.
-- `emails_from_email`: (default: `"info@example.com"`) The email account to send emails from, you can set it later in .env.
+- `cch_database_url`: Claude Code Hub PostgreSQL 连接串，用于同步 CCH 用户名、角色和 Key。
+- `svn_credential_master_key`: SVN 凭据加密主密钥。
 - `postgres_password`: (default: `"changethis"`) The password for the PostgreSQL database, stored in .env, you can generate one with the method above.
 - `sentry_dsn`: (default: "") The DSN for Sentry, if you are using it, you can set it later in .env.
 

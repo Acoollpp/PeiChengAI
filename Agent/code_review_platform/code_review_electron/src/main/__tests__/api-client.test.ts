@@ -1,3 +1,5 @@
+import { File } from 'node:buffer'
+
 import { describe, expect, it, vi } from 'vitest'
 
 import { ApiClient, ApiError } from '../api-client'
@@ -10,7 +12,7 @@ const jsonResponse = (body: unknown, init: ResponseInit = {}): Response =>
   })
 
 describe('ApiClient', () => {
-  it('posts registration payload to the auth register endpoint', async () => {
+  it('posts key login payload to the auth key login endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
         access_token: 'access-token',
@@ -19,30 +21,26 @@ describe('ApiClient', () => {
     )
     const client = new ApiClient('https://server.example/', fetchMock)
 
-    const result = await client.register({
-      full_name: 'Ada Lovelace',
-      svn_username: 'ada',
-      svn_password: 'secret'
+    const result = await client.keyLogin({
+      key: 'sk-cch-test'
     })
 
     expect(result).toEqual({
       access_token: 'access-token',
       refresh_token: 'refresh-token'
     })
-    expect(fetchMock).toHaveBeenCalledWith('https://server.example/api/v1/auth/register', {
+    expect(fetchMock).toHaveBeenCalledWith('https://server.example/api/v1/auth/key-login', {
       method: 'POST',
       headers: {
         'content-type': 'application/json'
       },
       body: JSON.stringify({
-        full_name: 'Ada Lovelace',
-        svn_username: 'ada',
-        svn_password: 'secret'
+        key: 'sk-cch-test'
       })
     })
   })
 
-  it('posts login payload to the auth login endpoint', async () => {
+  it('posts svn login payload to the auth login endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
         access_token: 'access-token',
@@ -51,7 +49,7 @@ describe('ApiClient', () => {
     )
     const client = new ApiClient('https://server.example', fetchMock)
 
-    await client.login({
+    await client.svnLogin({
       svn_username: 'ada',
       svn_password: 'secret'
     })
@@ -241,6 +239,7 @@ describe('ApiClient', () => {
   })
 
   it('uploads review report as multipart form data with authorization header', async () => {
+    vi.stubGlobal('File', File)
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'task-1' }))
     const client = new ApiClient('https://server.example', fetchMock)
 
@@ -284,7 +283,7 @@ describe('ApiClient', () => {
     const client = new ApiClient('https://server.example', fetchMock)
 
     await expect(
-      client.login({
+      client.svnLogin({
         svn_username: 'ada',
         svn_password: 'wrong'
       })

@@ -32,8 +32,8 @@ describe('registerIpcHandlers', () => {
     registerIpcHandlers()
 
     expect(handleMock.mock.calls.map(([channel]) => channel)).toEqual([
-      'auth:register',
-      'auth:login',
+      'auth:key-login',
+      'auth:svn-login',
       'credentials:save',
       'credentials:load',
       'credentials:clear',
@@ -67,7 +67,7 @@ describe('registerIpcHandlers', () => {
     })
   })
 
-  it('uses the submitted server URL when logging in', async () => {
+  it('uses the submitted server URL when logging in with an access key', async () => {
     const fetchMock = vi.fn(async () =>
       new Response(
         JSON.stringify({
@@ -96,7 +96,63 @@ describe('registerIpcHandlers', () => {
       serverConfigStore: serverConfigStore as never
     })
 
-    const loginHandler = handleMock.mock.calls.find(([channel]) => channel === 'auth:login')?.[1]
+    const loginHandler = handleMock.mock.calls.find(([channel]) => channel === 'auth:key-login')?.[1]
+
+    await expect(
+      loginHandler({}, {
+        server_url: 'http://172.23.17.190:8000/',
+        key: 'sk-cch-test'
+      })
+    ).resolves.toBe(true)
+
+    expect(fetchMock).toHaveBeenCalledWith('http://172.23.17.190:8000/api/v1/auth/key-login', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        key: 'sk-cch-test'
+      })
+    })
+    expect(serverConfigStore.save).toHaveBeenCalledWith({
+      server_url: 'http://172.23.17.190:8000'
+    })
+    expect(authStore.save).toHaveBeenCalledWith({
+      access_token: 'token-123',
+      refresh_token: 'refresh-token'
+    })
+  })
+
+  it('uses the submitted server URL when logging in with SVN credentials', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          access_token: 'token-123',
+          refresh_token: 'refresh-token'
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        }
+      )
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const authStore = {
+      load: vi.fn(),
+      save: vi.fn()
+    }
+    const serverConfigStore = {
+      load: vi.fn(async () => ({ server_url: 'http://127.0.0.1:8000' })),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      authStore: authStore as never,
+      serverConfigStore: serverConfigStore as never
+    })
+
+    const loginHandler = handleMock.mock.calls.find(([channel]) => channel === 'auth:svn-login')?.[1]
 
     await expect(
       loginHandler({}, {

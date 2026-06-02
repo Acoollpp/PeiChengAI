@@ -234,9 +234,8 @@ h2 {
 
 .auth-options {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  min-height: 20px;
 }
 
 .auth-card .remember-field {
@@ -728,7 +727,7 @@ h2 {
     padding: 14px;
   }
 
-  .auth-panel,
+  .auth-card,
   .panel {
     padding: 16px;
   }
