@@ -1,46 +1,37 @@
 import { expect, test } from "@playwright/test"
-import { firstSuperuser, firstSuperuserPassword } from "./config.ts"
-import { createUser } from "./utils/privateApi.ts"
-import { randomEmail, randomPassword } from "./utils/random"
-import { logInUser, logOutUser } from "./utils/user"
 
-const tabs = ["My profile", "Password", "Danger zone"]
+const tabs = ["个人信息", "SVN凭据", "危险操作"]
 
-test("My profile tab is active by default", async ({ page }) => {
+test("个人信息 tab 默认激活", async ({ page }) => {
   await page.goto("/settings")
-  await expect(page.getByRole("tab", { name: "My profile" })).toHaveAttribute(
+  await expect(page.getByRole("tab", { name: "个人信息" })).toHaveAttribute(
     "aria-selected",
     "true",
   )
 })
 
-test("All tabs are visible", async ({ page }) => {
+test("设置页显示新的 tabs 并移除旧密码 tab", async ({ page }) => {
   await page.goto("/settings")
   for (const tab of tabs) {
     await expect(page.getByRole("tab", { name: tab })).toBeVisible()
   }
+  await expect(page.getByRole("tab", { name: "Password" })).not.toBeVisible()
+})
+
+test("个人信息不再显示 Email 字段", async ({ page }) => {
+  await page.goto("/settings")
+  await page.getByRole("tab", { name: "个人信息" }).click()
+
+  await expect(page.getByLabel("Email")).not.toBeVisible()
+  await expect(page.getByText("Email", { exact: true })).not.toBeVisible()
 })
 
 test.describe("Edit user profile", () => {
-  test.use({ storageState: { cookies: [], origins: [] } })
-  let email: string
-  let password: string
-
-  test.beforeAll(async () => {
-    email = randomEmail()
-    password = randomPassword()
-    await createUser({ email, password })
-  })
-
-  test.beforeEach(async ({ page }) => {
-    await logInUser(page, email, password)
-    await page.goto("/settings")
-    await page.getByRole("tab", { name: "My profile" }).click()
-  })
-
   test("Edit user name with a valid name", async ({ page }) => {
-    const updatedName = "Test User 2"
+    const updatedName = `Test User ${Date.now()}`
 
+    await page.goto("/settings")
+    await page.getByRole("tab", { name: "个人信息" }).click()
     await page.getByRole("button", { name: "Edit" }).click()
     await page.getByLabel("Full name").fill(updatedName)
     await page.getByRole("button", { name: "Save" }).click()
@@ -50,155 +41,33 @@ test.describe("Edit user profile", () => {
       page.locator("form").getByText(updatedName, { exact: true }),
     ).toBeVisible()
   })
-
-  test("Edit user email with an invalid email shows error", async ({
-    page,
-  }) => {
-    await page.getByRole("button", { name: "Edit" }).click()
-    await page.getByLabel("Email").fill("")
-    await page.locator("body").click()
-
-    await expect(page.getByText("Invalid email address")).toBeVisible()
-  })
-})
-
-test.describe("Edit user email", () => {
-  test.use({ storageState: { cookies: [], origins: [] } })
-
-  test("Edit user email with a valid email", async ({ page }) => {
-    const email = randomEmail()
-    const password = randomPassword()
-    const updatedEmail = randomEmail()
-
-    await createUser({ email, password })
-    await logInUser(page, email, password)
-    await page.goto("/settings")
-    await page.getByRole("tab", { name: "My profile" }).click()
-
-    await page.getByRole("button", { name: "Edit" }).click()
-    await page.getByLabel("Email").fill(updatedEmail)
-    await page.getByRole("button", { name: "Save" }).click()
-
-    await expect(page.getByText("User updated successfully")).toBeVisible()
-    await expect(
-      page.locator("form").getByText(updatedEmail, { exact: true }),
-    ).toBeVisible()
-  })
 })
 
 test.describe("Cancel edit actions", () => {
-  test.use({ storageState: { cookies: [], origins: [] } })
-
   test("Cancel edit action restores original name", async ({ page }) => {
-    const email = randomEmail()
-    const password = randomPassword()
-    const user = await createUser({ email, password })
-
-    await logInUser(page, email, password)
     await page.goto("/settings")
-    await page.getByRole("tab", { name: "My profile" }).click()
+    await page.getByRole("tab", { name: "个人信息" }).click()
+
+    const originalName = await page.locator("form p").first().innerText()
+
     await page.getByRole("button", { name: "Edit" }).click()
     await page.getByLabel("Full name").fill("Test User")
     await page.getByRole("button", { name: "Cancel" }).first().click()
 
     await expect(
-      page.locator("form").getByText(user.full_name as string, { exact: true }),
-    ).toBeVisible()
-  })
-
-  test("Cancel edit action restores original email", async ({ page }) => {
-    const email = randomEmail()
-    const password = randomPassword()
-    await createUser({ email, password })
-
-    await logInUser(page, email, password)
-    await page.goto("/settings")
-    await page.getByRole("tab", { name: "My profile" }).click()
-    await page.getByRole("button", { name: "Edit" }).click()
-    await page.getByLabel("Email").fill(randomEmail())
-    await page.getByRole("button", { name: "Cancel" }).first().click()
-
-    await expect(
-      page.locator("form").getByText(email, { exact: true }),
+      page.locator("form").getByText(originalName, { exact: true }),
     ).toBeVisible()
   })
 })
 
-test.describe("Change password", () => {
-  test.use({ storageState: { cookies: [], origins: [] } })
-
-  test("Update password successfully", async ({ page }) => {
-    const email = randomEmail()
-    const password = randomPassword()
-    const newPassword = randomPassword()
-
-    await createUser({ email, password })
-    await logInUser(page, email, password)
-
+test.describe("SVN credentials", () => {
+  test("SVN credential form is available", async ({ page }) => {
     await page.goto("/settings")
-    await page.getByRole("tab", { name: "Password" }).click()
-    await page.getByTestId("current-password-input").fill(password)
-    await page.getByTestId("new-password-input").fill(newPassword)
-    await page.getByTestId("confirm-password-input").fill(newPassword)
-    await page.getByRole("button", { name: "Update Password" }).click()
+    await page.getByRole("tab", { name: "SVN凭据" }).click()
 
-    await expect(page.getByText("Password updated successfully")).toBeVisible()
-
-    await logOutUser(page)
-    await logInUser(page, email, newPassword)
-  })
-})
-
-test.describe("Change password validation", () => {
-  test.use({ storageState: { cookies: [], origins: [] } })
-  let email: string
-  let password: string
-
-  test.beforeAll(async () => {
-    email = randomEmail()
-    password = randomPassword()
-    await createUser({ email, password })
-  })
-
-  test.beforeEach(async ({ page }) => {
-    await logInUser(page, email, password)
-    await page.goto("/settings")
-    await page.getByRole("tab", { name: "Password" }).click()
-  })
-
-  test("Update password with weak passwords", async ({ page }) => {
-    const weakPassword = "weak"
-
-    await page.getByTestId("current-password-input").fill(password)
-    await page.getByTestId("new-password-input").fill(weakPassword)
-    await page.getByTestId("confirm-password-input").fill(weakPassword)
-    await page.getByRole("button", { name: "Update Password" }).click()
-
-    await expect(
-      page.getByText("Password must be at least 8 characters"),
-    ).toBeVisible()
-  })
-
-  test("New password and confirmation password do not match", async ({
-    page,
-  }) => {
-    await page.getByTestId("current-password-input").fill(password)
-    await page.getByTestId("new-password-input").fill(randomPassword())
-    await page.getByTestId("confirm-password-input").fill(randomPassword())
-    await page.getByRole("button", { name: "Update Password" }).click()
-
-    await expect(page.getByText("The passwords don't match")).toBeVisible()
-  })
-
-  test("Current password and new password are the same", async ({ page }) => {
-    await page.getByTestId("current-password-input").fill(password)
-    await page.getByTestId("new-password-input").fill(password)
-    await page.getByTestId("confirm-password-input").fill(password)
-    await page.getByRole("button", { name: "Update Password" }).click()
-
-    await expect(
-      page.getByText("New password cannot be the same as the current one"),
-    ).toBeVisible()
+    await expect(page.getByLabel("SVN账号")).toBeVisible()
+    await expect(page.getByLabel("SVN密码")).toBeVisible()
+    await expect(page.getByRole("button", { name: "保存" })).toBeVisible()
   })
 })
 
@@ -221,7 +90,7 @@ test("User can switch between theme modes", async ({ page }) => {
   await expect(page.locator("html")).toHaveClass(/light/)
 })
 
-test("Selected mode is preserved across sessions", async ({ page }) => {
+test("Selected mode is preserved after reload", async ({ page }) => {
   await page.goto("/settings")
 
   await page.getByTestId("theme-button").click()
@@ -241,15 +110,9 @@ test("Selected mode is preserved across sessions", async ({ page }) => {
 
   await page.getByTestId("theme-button").click()
   await page.getByTestId("dark-mode").click()
-  let isDarkMode = await page.evaluate(() =>
-    document.documentElement.classList.contains("dark"),
-  )
-  expect(isDarkMode).toBe(true)
+  await page.reload()
 
-  await logOutUser(page)
-  await logInUser(page, firstSuperuser, firstSuperuserPassword)
-
-  isDarkMode = await page.evaluate(() =>
+  const isDarkMode = await page.evaluate(() =>
     document.documentElement.classList.contains("dark"),
   )
   expect(isDarkMode).toBe(true)

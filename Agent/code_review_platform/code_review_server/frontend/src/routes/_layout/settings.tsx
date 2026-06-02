@@ -1,16 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router"
 
-import ChangePassword from "@/components/UserSettings/ChangePassword"
 import DeleteAccount from "@/components/UserSettings/DeleteAccount"
+import SvnCredentialForm from "@/components/UserSettings/SvnCredentialForm"
 import UserInformation from "@/components/UserSettings/UserInformation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useAuth from "@/hooks/useAuth"
-import { hasAdminPrivileges } from "@/lib/authz"
 
 const tabsConfig = [
-  { value: "my-profile", title: "My profile", component: UserInformation },
-  { value: "password", title: "Password", component: ChangePassword },
-  { value: "danger-zone", title: "Danger zone", component: DeleteAccount },
+  { value: "profile", title: "个人信息", component: UserInformation },
+  { value: "svn", title: "SVN凭据", component: SvnCredentialForm },
+  { value: "danger", title: "危险操作", component: DeleteAccount },
 ]
 
 export const Route = createFileRoute("/_layout/settings")({
@@ -26,9 +25,6 @@ export const Route = createFileRoute("/_layout/settings")({
 
 function UserSettings() {
   const { user: currentUser } = useAuth()
-  const finalTabs = hasAdminPrivileges(currentUser)
-    ? tabsConfig.slice(0, 3)
-    : tabsConfig
 
   if (!currentUser) {
     return null
@@ -43,15 +39,15 @@ function UserSettings() {
         </p>
       </div>
 
-      <Tabs defaultValue="my-profile">
+      <Tabs defaultValue="profile">
         <TabsList>
-          {finalTabs.map((tab) => (
+          {tabsConfig.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value}>
               {tab.title}
             </TabsTrigger>
           ))}
         </TabsList>
-        {finalTabs.map((tab) => (
+        {tabsConfig.map((tab) => (
           <TabsContent key={tab.value} value={tab.value}>
             <tab.component />
           </TabsContent>
