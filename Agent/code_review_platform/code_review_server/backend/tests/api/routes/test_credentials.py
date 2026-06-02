@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from app.core.config import settings
-from app.models import AuditLog, ReviewTask, User, UserRole
+from app.models import AuditLog, AuthSource, ReviewTask, User, UserRole
 from app.services.credential_service import CredentialService
 from tests.utils.user import (
     authentication_token_from_key,
@@ -92,6 +92,9 @@ def test_current_user_binding_legacy_svn_username_merges_old_user(
 ) -> None:
     legacy_user = create_random_user(db)
     current_user, api_key = create_key_user(db)
+    CredentialService(settings.SVN_CREDENTIAL_MASTER_KEY).save_svn_password(
+        db, legacy_user.id, "legacy-password"
+    )
     task = ReviewTask(
         user_id=legacy_user.id,
         svn_url=f"https://svn.example.com/{random_lower_string()}",
@@ -103,7 +106,7 @@ def test_current_user_binding_legacy_svn_username_merges_old_user(
     db.refresh(task)
     svn_username = legacy_user.svn_username
     headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
-    payload = {"svn_username": svn_username, "svn_password": "bound-password"}
+    payload = {"svn_username": svn_username, "svn_password": "legacy-password"}
 
     r = client.put(f"{settings.API_V1_STR}/me/svn-credential", headers=headers, json=payload)
 
@@ -131,3 +134,79 @@ def test_current_user_binding_legacy_svn_username_merges_old_user(
         )
     ).one()
     assert audit_log.metadata_json == {"svn_username": svn_username}
+
+
+def test_binding_legacy_svn_username_with_wrong_password_does_not_merge(
+    client: TestClient, db: Session
+) -> None:
+    legacy_user = create_random_user(db)
+    current_user, api_key = create_key_user(db)
+    task = ReviewTask(
+        user_id=legacy_user.id,
+        svn_url=f"https://svn.example.com/{random_lower_string()}",
+        old_revision="1",
+        new_revision="2",
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    svn_username = legacy_user.svn_username
+    CredentialService(settings.SVN_CREDENTIAL_MASTER_KEY).save_svn_password(
+        db, legacy_user.id, "legacy-password"
+    )
+    headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
+    payload = {"svn_username": svn_username, "svn_password": "wrong-password"}
+
+    r = client.put(f"{settings.API_V1_STR}/me/svn-credential", headers=headers, json=payload)
+
+    assert r.status_code in {401, 403}
+    db.refresh(current_user)
+    db.refresh(legacy_user)
+    db.refresh(task)
+    assert current_user.svn_username is None
+    assert legacy_user.svn_username == svn_username
+    assert legacy_user.is_active is True
+    assert legacy_user.disabled_reason is None
+    assert task.user_id == legacy_user.id
+    assert (
+        CredentialService(settings.SVN_CREDENTIAL_MASTER_KEY).get_svn_password(
+            db, current_user.id
+        )
+        is None
+    )
+
+
+def test_binding_cch_svn_username_does_not_merge_other_cch_user(
+    client: TestClient, db: Session
+) -> None:
+    existing_user, _ = create_key_user(db)
+    current_user, api_key = create_key_user(db)
+    svn_username = f"svn-{random_lower_string()}"
+    existing_user.svn_username = svn_username
+    existing_user.auth_source = AuthSource.cch
+    existing_user.is_active = True
+    db.add(existing_user)
+    db.commit()
+    db.refresh(existing_user)
+    CredentialService(settings.SVN_CREDENTIAL_MASTER_KEY).save_svn_password(
+        db, existing_user.id, "matching-password"
+    )
+    headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
+    payload = {"svn_username": svn_username, "svn_password": "matching-password"}
+
+    r = client.put(f"{settings.API_V1_STR}/me/svn-credential", headers=headers, json=payload)
+
+    assert r.status_code in {403, 409}
+    db.refresh(current_user)
+    db.refresh(existing_user)
+    assert current_user.svn_username is None
+    assert existing_user.svn_username == svn_username
+    assert existing_user.is_active is True
+    assert existing_user.auth_source == AuthSource.cch
+    assert existing_user.disabled_reason is None
+    assert (
+        CredentialService(settings.SVN_CREDENTIAL_MASTER_KEY).get_svn_password(
+            db, current_user.id
+        )
+        is None
+    )

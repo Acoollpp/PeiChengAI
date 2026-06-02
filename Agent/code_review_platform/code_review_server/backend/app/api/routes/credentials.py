@@ -5,7 +5,7 @@ from sqlmodel import SQLModel, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
-from app.models import AuditLog, User
+from app.models import AuditLog, AuthSource, User
 from app.services.credential_service import CredentialService
 from app.services.user_merge_service import UserMergeService
 
@@ -58,7 +58,22 @@ def update_my_svn_credential(
         select(User).where(User.svn_username == body.svn_username)
     ).first()
 
+    credential_service = CredentialService(settings.SVN_CREDENTIAL_MASTER_KEY)
+
     if existing_user is not None and existing_user.id != current_user.id:
+        if existing_user.auth_source != AuthSource.local:
+            raise HTTPException(
+                status_code=409, detail="SVN username is already bound"
+            )
+
+        existing_password = credential_service.get_svn_password(
+            session, existing_user.id
+        )
+        if existing_password is None or existing_password != body.svn_password:
+            raise HTTPException(
+                status_code=403, detail="SVN credential verification failed"
+            )
+
         UserMergeService.merge_svn_user_into_current_user(
             session,
             old_user=existing_user,
@@ -70,7 +85,6 @@ def update_my_svn_credential(
         session.add(current_user)
         session.commit()
 
-    credential_service = CredentialService(settings.SVN_CREDENTIAL_MASTER_KEY)
     credential_service.save_svn_password(
         session, current_user.id, body.svn_password
     )
