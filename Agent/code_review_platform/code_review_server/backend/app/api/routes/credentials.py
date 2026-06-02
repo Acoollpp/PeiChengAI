@@ -1,14 +1,20 @@
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
-from app.models import AuditLog
+from app.models import AuditLog, User
 from app.services.credential_service import CredentialService
+from app.services.user_merge_service import UserMergeService
 
 router = APIRouter(prefix="/me", tags=["credentials"])
+
+
+class SvnCredential(SQLModel):
+    svn_username: str
+    svn_password: str
 
 
 class SvnCredentialPublic(SQLModel):
@@ -41,4 +47,35 @@ def read_my_svn_credential(
     return SvnCredentialPublic(
         svn_username=current_user.svn_username,
         svn_password=svn_password,
+    )
+
+
+@router.put("/svn-credential", response_model=SvnCredentialPublic)
+def update_my_svn_credential(
+    session: SessionDep, current_user: CurrentUser, body: SvnCredential
+) -> Any:
+    existing_user = session.exec(
+        select(User).where(User.svn_username == body.svn_username)
+    ).first()
+
+    if existing_user is not None and existing_user.id != current_user.id:
+        UserMergeService.merge_svn_user_into_current_user(
+            session,
+            old_user=existing_user,
+            current_user=current_user,
+            svn_username=body.svn_username,
+        )
+    else:
+        current_user.svn_username = body.svn_username
+        session.add(current_user)
+        session.commit()
+
+    credential_service = CredentialService(settings.SVN_CREDENTIAL_MASTER_KEY)
+    credential_service.save_svn_password(
+        session, current_user.id, body.svn_password
+    )
+
+    return SvnCredentialPublic(
+        svn_username=body.svn_username,
+        svn_password=body.svn_password,
     )
