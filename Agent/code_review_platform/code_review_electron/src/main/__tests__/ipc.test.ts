@@ -362,19 +362,26 @@ describe('registerIpcHandlers', () => {
       codexVersion: 'codex-cli 0.130.0',
       codexPath: 'codex'
     })
-    expect(installCodexCli).toHaveBeenCalled()
+    expect(installCodexCli).toHaveBeenCalledTimes(1)
   })
 
   it('syncs the active skill before checking the environment when authenticated', async () => {
+    const calls: string[] = []
     const authStore = {
       load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
       save: vi.fn()
     }
-    const syncSkill = vi.fn(async () => ({
-      status: 'synced' as const,
-      packagePath: '/tmp/code-review-runtime/skill-packages/skill.zip'
-    }))
-    const checkEnvironment = vi.fn(async () => ({ status: 'ready' as const }))
+    const syncSkill = vi.fn(async () => {
+      calls.push('syncSkill')
+      return {
+        status: 'synced' as const,
+        packagePath: '/tmp/code-review-runtime/skill-packages/skill.zip'
+      }
+    })
+    const checkEnvironment = vi.fn(async () => {
+      calls.push(`checkEnvironment:${calls.includes('syncSkill') ? 'second' : 'first'}`)
+      return { status: 'ready' as const }
+    })
     const { registerIpcHandlers } = await import('../ipc')
 
     registerIpcHandlers({
@@ -389,7 +396,9 @@ describe('registerIpcHandlers', () => {
 
     await expect(environmentHandler()).resolves.toEqual({ status: 'ready' })
     expect(syncSkill).toHaveBeenCalledWith('token-123')
-    expect(checkEnvironment).toHaveBeenCalled()
+    expect(syncSkill).toHaveBeenCalledTimes(1)
+    expect(checkEnvironment).toHaveBeenCalledTimes(2)
+    expect(calls).toEqual(['checkEnvironment:first', 'syncSkill', 'checkEnvironment:second'])
   })
 
   it('skips skill sync while Codex CLI is missing', async () => {
@@ -412,6 +421,34 @@ describe('registerIpcHandlers', () => {
     )?.[1]
 
     await expect(environmentHandler()).resolves.toEqual({ status: 'missing_codex' })
+    expect(checkEnvironment).toHaveBeenCalledTimes(1)
+    expect(syncSkill).not.toHaveBeenCalled()
+  })
+
+  it('skips skill sync when the environment check fails locally', async () => {
+    const failedResult = {
+      status: 'failed' as const,
+      skillError: '客户端运行目录不可写：/tmp/code-review-runtime'
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const syncSkill = vi.fn()
+    const checkEnvironment = vi.fn(async () => failedResult)
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      authStore: authStore as never,
+      syncSkill,
+      checkEnvironment
+    })
+
+    const environmentHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'environment:check'
+    )?.[1]
+
+    await expect(environmentHandler()).resolves.toEqual(failedResult)
     expect(checkEnvironment).toHaveBeenCalledTimes(1)
     expect(syncSkill).not.toHaveBeenCalled()
   })
