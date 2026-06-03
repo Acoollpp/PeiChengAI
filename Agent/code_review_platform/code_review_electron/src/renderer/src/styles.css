@@ -401,6 +401,7 @@ h2 {
   display: block;
   color: #f5f7fb;
   font-size: 14px;
+  overflow-wrap: anywhere;
 }
 
 .dependency-card p,
@@ -443,6 +444,11 @@ h2 {
 .task-status-success {
   color: #bff8d8;
   background: rgb(20 109 68 / 72%);
+}
+
+.status-checking {
+  color: #d6e2f0;
+  background: rgb(67 84 105 / 72%);
 }
 
 .status-missing_codex,

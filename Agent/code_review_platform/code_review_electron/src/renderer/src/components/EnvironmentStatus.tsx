@@ -40,21 +40,26 @@ export function EnvironmentStatus({
   const [isOpen, setIsOpen] = useState(false)
   const [installingSkill, setInstallingSkill] = useState(false)
   const status = result?.status ?? 'failed'
-  const hasIssue = status !== 'ready'
+  const hasKnownResult = result !== null
+  const hasIssue = hasKnownResult && status !== 'ready'
   const hasSkillSyncIssue = Boolean(result?.skillError)
-  const codexMissing = status === 'missing_codex'
-  const showDownstreamDependencies = result !== null && !codexMissing
-  const items: DependencyItem[] = [
-    {
-      key: 'codex',
-      name: 'Codex CLI',
-      ok: Boolean(result?.codexVersion),
-      version: result?.codexVersion,
-      path: result?.codexPath,
-      missingText: result?.codexError ?? 'Codex 缺失，请点击安装',
-      actionText: isInstallingCodex ? '安装中...' : '安装 Codex'
-    }
-  ]
+  const codexMissing = hasKnownResult && status === 'missing_codex'
+  const statusClass = hasKnownResult ? status : 'checking'
+  const showDependencyPanel = hasKnownResult && (isOpen || hasIssue || hasSkillSyncIssue)
+  const showDownstreamDependencies = hasKnownResult && !codexMissing
+  const items: DependencyItem[] = hasKnownResult
+    ? [
+        {
+          key: 'codex',
+          name: 'Codex CLI',
+          ok: Boolean(result.codexVersion),
+          version: result.codexVersion,
+          path: result.codexPath,
+          missingText: result.codexError ?? 'Codex 缺失，请点击安装',
+          actionText: isInstallingCodex ? '安装中...' : '安装 Codex'
+        }
+      ]
+    : []
   const busy = isChecking || isInstallingCodex || installingSkill
 
   if (showDownstreamDependencies) {
@@ -102,7 +107,7 @@ export function EnvironmentStatus({
           {hasIssue ? '△' : '✓'}
         </button>
         <div>
-          <span className={`status-pill status-${status}`}>{result ? statusLabels[status] : '检查中'}</span>
+          <span className={`status-pill status-${statusClass}`}>{result ? statusLabels[status] : '检查中'}</span>
           <p className="environment-detail">
             {codexMissing
               ? `Codex ${result?.codexVersion ?? '-'}`
@@ -115,7 +120,7 @@ export function EnvironmentStatus({
         </button>
       </div>
 
-      {(isOpen || hasIssue || hasSkillSyncIssue) && (
+      {showDependencyPanel && (
         <div className="dependency-panel">
           {items.map((item) => (
             <div
