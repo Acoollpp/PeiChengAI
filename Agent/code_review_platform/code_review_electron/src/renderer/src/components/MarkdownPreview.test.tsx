@@ -64,6 +64,7 @@ describe('MarkdownPreview', () => {
 
     const wrapper = container.querySelector('.markdown-table-wrapper')
     expect(wrapper).toBeInTheDocument()
+    expect(wrapper).toHaveStyle({ overflowX: 'auto' })
     expect(within(wrapper as HTMLElement).getByRole('table')).toBeInTheDocument()
   })
 

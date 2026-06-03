@@ -92,7 +92,7 @@ export function MarkdownPreview({ markdown }: MarkdownPreviewProps): React.JSX.E
                 )
               },
               table: ({ children }) => (
-                <div className="markdown-table-wrapper">
+                <div className="markdown-table-wrapper" style={{ overflowX: 'auto' }}>
                   <table>{children}</table>
                 </div>
               )
