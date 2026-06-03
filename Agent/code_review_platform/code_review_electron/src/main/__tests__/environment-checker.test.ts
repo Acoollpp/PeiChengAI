@@ -2,7 +2,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   buildVersionCommandOptions,
@@ -10,7 +10,7 @@ import {
   checkSkillPackageReady,
   classifyEnvironment
 } from '../environment-checker'
-import type { EnvironmentCheckResult } from '../environment-checker'
+import type { CommandResult, EnvironmentCheckResult } from '../environment-checker'
 
 describe('classifyEnvironment', () => {
   it('returns ready when Codex, SVN, and the review skill are available', () => {
@@ -50,6 +50,83 @@ describe('buildVersionCommandOptions', () => {
     const options = buildVersionCommandOptions('win32')
 
     expect(options.shell).toBe(true)
+  })
+})
+
+describe('checkEnvironment', () => {
+  it('returns missing_codex without checking SVN or Skill when Codex is unavailable', async () => {
+    const findVersionCommand = vi.fn(
+      async (command: string): Promise<CommandResult> =>
+        command === 'codex' ? { ok: false } : { ok: true, output: '1.14.0', path: 'svn' }
+    )
+    const checkRuntimeWritable = vi.fn(async () => true)
+    const checkSkillPackageReady = vi.fn(async () => true)
+    const getRuntimePaths = vi.fn(async () => ({
+      runtimeRoot: '/tmp/code-review-runtime',
+      skillPackagesDir: '/tmp/code-review-runtime/skill-packages',
+      skillManifestPath: '/tmp/code-review-runtime/skill-packages/manifest.json',
+      workspacesDir: '/tmp/code-review-runtime/workspaces',
+      workspaceForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}`,
+      reportPathForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}/report.md`
+    }))
+    const { checkEnvironment } = await import('../environment-checker')
+
+    await expect(
+      checkEnvironment({
+        findVersionCommand,
+        checkRuntimeWritable,
+        checkSkillPackageReady,
+        getRuntimePaths
+      })
+    ).resolves.toEqual({
+      status: 'missing_codex'
+    })
+
+    expect(findVersionCommand).toHaveBeenCalledTimes(1)
+    expect(findVersionCommand).toHaveBeenCalledWith('codex', ['--version'])
+    expect(checkRuntimeWritable).toHaveBeenCalledWith('/tmp/code-review-runtime')
+    expect(checkSkillPackageReady).not.toHaveBeenCalled()
+  })
+
+  it('checks SVN and Skill after Codex is available', async () => {
+    const findVersionCommand = vi.fn(
+      async (command: string): Promise<CommandResult> =>
+        command === 'codex'
+          ? { ok: true, output: 'codex-cli 0.130.0', path: 'codex' }
+          : { ok: false }
+    )
+    const checkRuntimeWritable = vi.fn(async () => true)
+    const checkSkillPackageReady = vi.fn(async () => true)
+    const getRuntimePaths = vi.fn(async () => ({
+      runtimeRoot: '/tmp/code-review-runtime',
+      skillPackagesDir: '/tmp/code-review-runtime/skill-packages',
+      skillManifestPath: '/tmp/code-review-runtime/skill-packages/manifest.json',
+      workspacesDir: '/tmp/code-review-runtime/workspaces',
+      workspaceForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}`,
+      reportPathForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}/report.md`
+    }))
+    const { checkEnvironment } = await import('../environment-checker')
+
+    await expect(
+      checkEnvironment({
+        findVersionCommand,
+        checkRuntimeWritable,
+        checkSkillPackageReady,
+        getRuntimePaths
+      })
+    ).resolves.toEqual({
+      status: 'missing_svn',
+      codexVersion: 'codex-cli 0.130.0',
+      codexPath: 'codex',
+      svnVersion: undefined,
+      svnPath: undefined
+    })
+
+    expect(findVersionCommand).toHaveBeenCalledWith('codex', ['--version'])
+    expect(findVersionCommand).toHaveBeenCalledWith('svn', ['--version', '--quiet'])
+    expect(checkSkillPackageReady).toHaveBeenCalledWith(
+      '/tmp/code-review-runtime/skill-packages/manifest.json'
+    )
   })
 })
 

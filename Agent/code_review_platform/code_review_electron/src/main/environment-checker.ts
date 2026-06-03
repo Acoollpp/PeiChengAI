@@ -12,10 +12,17 @@ interface EnvironmentChecks {
   skillOk: boolean
 }
 
-interface CommandResult {
+export interface CommandResult {
   ok: boolean
   output?: string
   path?: string
+}
+
+export interface EnvironmentCheckDependencies {
+  getRuntimePaths?: typeof getRuntimePaths
+  findVersionCommand?: typeof findVersionCommand
+  checkRuntimeWritable?: typeof checkRuntimeWritable
+  checkSkillPackageReady?: typeof checkSkillPackageReady
 }
 
 export interface EnvironmentCheckResult {
@@ -121,7 +128,10 @@ const runVersionCommand = (command: string, args: string[]): Promise<CommandResu
     })
   })
 
-const findVersionCommand = async (command: string, args: string[]): Promise<CommandResult> => {
+export const findVersionCommand = async (
+  command: string,
+  args: string[]
+): Promise<CommandResult> => {
   for (const candidate of commandCandidates[command] ?? [command]) {
     const result = await runVersionCommand(candidate, args)
     if (result.ok) {
@@ -164,29 +174,51 @@ export const checkSkillPackageReady = async (manifestPath: string): Promise<bool
   }
 }
 
-export const checkEnvironment = async (): Promise<EnvironmentCheckResult> => {
+export const checkEnvironment = async (
+  dependencies: EnvironmentCheckDependencies = {}
+): Promise<EnvironmentCheckResult> => {
+  const loadRuntimePaths = dependencies.getRuntimePaths ?? getRuntimePaths
+  const findCommand = dependencies.findVersionCommand ?? findVersionCommand
+  const runtimeWritableCheck = dependencies.checkRuntimeWritable ?? checkRuntimeWritable
+  const skillPackageReadyCheck = dependencies.checkSkillPackageReady ?? checkSkillPackageReady
+
   try {
-    const runtimePaths = await getRuntimePaths()
-    const [codexResult, svnResult, runtimeWritable, skillOk] = await Promise.all([
-      findVersionCommand('codex', ['--version']),
-      findVersionCommand('svn', ['--version', '--quiet']),
-      checkRuntimeWritable(runtimePaths.runtimeRoot),
-      checkSkillPackageReady(runtimePaths.skillManifestPath)
+    const runtimePaths = await loadRuntimePaths()
+    const [codexResult, runtimeWritable] = await Promise.all([
+      findCommand('codex', ['--version']),
+      runtimeWritableCheck(runtimePaths.runtimeRoot)
+    ])
+
+    if (!runtimeWritable) {
+      return {
+        status: 'failed',
+        codexVersion: codexResult.output,
+        codexPath: codexResult.path,
+        skillError: `客户端运行目录不可写：${runtimePaths.runtimeRoot}`
+      }
+    }
+
+    if (!codexResult.ok) {
+      return {
+        status: 'missing_codex'
+      }
+    }
+
+    const [svnResult, skillOk] = await Promise.all([
+      findCommand('svn', ['--version', '--quiet']),
+      skillPackageReadyCheck(runtimePaths.skillManifestPath)
     ])
 
     return {
-      status: runtimeWritable
-        ? classifyEnvironment({
-            codexOk: codexResult.ok,
-            svnOk: svnResult.ok,
-            skillOk
-          })
-        : 'failed',
+      status: classifyEnvironment({
+        codexOk: codexResult.ok,
+        svnOk: svnResult.ok,
+        skillOk
+      }),
       codexVersion: codexResult.output,
       svnVersion: svnResult.output,
       codexPath: codexResult.path,
-      svnPath: svnResult.path,
-      ...(runtimeWritable ? {} : { skillError: `客户端运行目录不可写：${runtimePaths.runtimeRoot}` })
+      svnPath: svnResult.path
     }
   } catch (error) {
     return {
