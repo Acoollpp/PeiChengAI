@@ -67,12 +67,47 @@ export const summarizeInstallError = ({ stdout, stderr }: InstallCommandResult):
   const output = `${stderr}\n${stdout}`
     .split('\n')
     .map((line) => line.trim())
-    .filter(Boolean)
+    .filter(isActionableInstallErrorLine)
+    .map(redactSensitiveInstallOutput)
     .slice(-8)
     .join('\n')
 
   return output || 'npm 未返回错误详情'
 }
+
+const actionableInstallErrorPatterns = [
+  /\bnpm ERR!/i,
+  /\bcode\s+[A-Z][A-Z0-9_-]+\b/i,
+  /\bEACCES\b/i,
+  /\bEPERM\b/i,
+  /\bENOENT\b/i,
+  /\bpermission\b/i,
+  /\bdenied\b/i,
+  /\bnetwork\b/i,
+  /\bregistry\b/i,
+  /\bcertificate\b/i,
+  /\bcert\b/i,
+  /\bproxy\b/i,
+  /\btimeout\b/i,
+  /\bfetch\b/i,
+  /\bconnect\b/i,
+  /\bECONNRESET\b/i,
+  /\bENOTFOUND\b/i,
+  /\bSELF_SIGNED_CERT\b/i,
+  /\bUNABLE_TO_VERIFY_LEAF_SIGNATURE\b/i,
+  /\b401\b/,
+  /\b403\b/,
+  /\b404\b/
+]
+
+const isActionableInstallErrorLine = (line: string): boolean =>
+  line.length > 0 && actionableInstallErrorPatterns.some((pattern) => pattern.test(line))
+
+const redactSensitiveInstallOutput = (line: string): string =>
+  line
+    .replace(/(https?:\/\/)[^/@\s]+@/gi, '$1***@')
+    .replace(/(^|\s)(\/(?!\/)\S+)/g, '$1[路径]')
+    .replace(/\b[A-Za-z]:\\Users\\[^\\\s]+(?:\\\S*)?/g, '[路径]')
 
 export const runInstallCommand = (
   command: string,
@@ -94,10 +129,11 @@ export const runInstallCommand = (
     child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk))
     child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk))
     child.on('error', (error) => {
+      const stderr = Buffer.concat(stderrChunks).toString('utf8')
       settle({
         ok: false,
         stdout: Buffer.concat(stdoutChunks).toString('utf8'),
-        stderr: error.message
+        stderr: [stderr, error.message].filter(Boolean).join('\n')
       })
     })
     child.on('close', (code) => {

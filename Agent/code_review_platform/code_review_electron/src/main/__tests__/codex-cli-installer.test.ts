@@ -1,6 +1,31 @@
-import { describe, expect, it, vi } from 'vitest'
+import { EventEmitter } from 'node:events'
+
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { CommandResult } from '../environment-checker'
+import type { InstallCommandResult } from '../codex-cli-installer'
+
+const spawnMock = vi.hoisted(() => vi.fn())
+
+vi.mock('node:child_process', () => ({
+  spawn: spawnMock
+}))
+
+interface MockSpawnChild extends EventEmitter {
+  stdout: EventEmitter
+  stderr: EventEmitter
+}
+
+const createMockSpawnChild = (): MockSpawnChild => {
+  const child = new EventEmitter() as MockSpawnChild
+  child.stdout = new EventEmitter()
+  child.stderr = new EventEmitter()
+  return child
+}
+
+beforeEach(() => {
+  spawnMock.mockReset()
+})
 
 describe('installCodexCli', () => {
   it('returns a Codex error when npm is unavailable', async () => {
@@ -112,5 +137,113 @@ describe('installCodexCli', () => {
     })
 
     expect(checkEnvironment).toHaveBeenCalled()
+  })
+})
+
+describe('summarizeInstallError', () => {
+  it('redacts paths and URL credentials while keeping actionable npm errors', async () => {
+    const { summarizeInstallError } = await import('../codex-cli-installer')
+
+    const summary = summarizeInstallError({
+      ok: false,
+      stdout: 'npm ERR! registry https://user:secret@registry.example.com/',
+      stderr:
+        'npm ERR! code EACCES\n' +
+        'npm ERR! permission denied while opening /Users/alice/.npm/_logs/install.log'
+    })
+
+    expect(summary).toContain('npm ERR! code EACCES')
+    expect(summary).toContain('npm ERR! permission denied')
+    expect(summary).toContain('https://***@registry.example.com/')
+    expect(summary).not.toContain('alice')
+    expect(summary).not.toContain('secret')
+    expect(summary).not.toContain('/Users/alice')
+  })
+
+  it('returns a fallback when npm output has no actionable error details', async () => {
+    const { summarizeInstallError } = await import('../codex-cli-installer')
+
+    expect(
+      summarizeInstallError({
+        ok: false,
+        stdout: 'running package script\n/Users/alice/project/build.js',
+        stderr: ''
+      })
+    ).toBe('npm 未返回错误详情')
+  })
+})
+
+describe('runInstallCommand', () => {
+  it('returns ok true and captures stdout and stderr when close code is 0', async () => {
+    const child = createMockSpawnChild()
+    spawnMock.mockReturnValue(child)
+    const { runInstallCommand } = await import('../codex-cli-installer')
+
+    const resultPromise = runInstallCommand('npm', ['install'])
+    child.stdout.emit('data', Buffer.from('added 1 package'))
+    child.stderr.emit('data', Buffer.from('npm notice'))
+    child.emit('close', 0)
+
+    await expect(resultPromise).resolves.toEqual({
+      ok: true,
+      stdout: 'added 1 package',
+      stderr: 'npm notice'
+    })
+  })
+
+  it('returns ok false when close code is non-zero', async () => {
+    const child = createMockSpawnChild()
+    spawnMock.mockReturnValue(child)
+    const { runInstallCommand } = await import('../codex-cli-installer')
+
+    const resultPromise = runInstallCommand('npm', ['install'])
+    child.stderr.emit('data', Buffer.from('npm ERR! code EACCES'))
+    child.emit('close', 1)
+
+    await expect(resultPromise).resolves.toEqual({
+      ok: false,
+      stdout: '',
+      stderr: 'npm ERR! code EACCES'
+    })
+  })
+
+  it('returns ok false and keeps stderr when spawn emits an error', async () => {
+    const child = createMockSpawnChild()
+    spawnMock.mockReturnValue(child)
+    const { runInstallCommand } = await import('../codex-cli-installer')
+
+    const resultPromise = runInstallCommand('npm', ['install'])
+    child.stdout.emit('data', Buffer.from('partial stdout'))
+    child.stderr.emit('data', Buffer.from('partial stderr'))
+    child.emit('error', new Error('spawn failed'))
+
+    await expect(resultPromise).resolves.toEqual({
+      ok: false,
+      stdout: 'partial stdout',
+      stderr: 'partial stderr\nspawn failed'
+    })
+  })
+
+  it('resolves once when error and close both fire', async () => {
+    const child = createMockSpawnChild()
+    spawnMock.mockReturnValue(child)
+    const { runInstallCommand } = await import('../codex-cli-installer')
+
+    const results: InstallCommandResult[] = []
+    const resultPromise = runInstallCommand('npm', ['install'])
+    resultPromise.then((result) => results.push(result))
+    child.stderr.emit('data', Buffer.from('partial stderr'))
+    child.emit('error', new Error('spawn failed'))
+    child.emit('close', 0)
+    await resultPromise
+    await Promise.resolve()
+
+    expect(results).toEqual([
+      {
+        ok: false,
+        stdout: '',
+        stderr: 'partial stderr\nspawn failed'
+      }
+    ])
   })
 })
