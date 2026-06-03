@@ -288,6 +288,37 @@ h2 {
   background: rgb(255 255 255 / 8%);
 }
 
+.ghost-button:disabled,
+.install-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.button-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 7px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  vertical-align: -2px;
+  animation: button-spinner-spin 0.75s linear infinite;
+}
+
+@keyframes button-spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ghost-button,
+.install-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .form-error {
   margin: 0;
   overflow-wrap: anywhere;

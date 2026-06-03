@@ -4,7 +4,10 @@ import type { EnvironmentCheckResult } from '../code-review-api'
 
 type EnvironmentStatusProps = {
   result: EnvironmentCheckResult | null
+  isChecking: boolean
+  isInstallingCodex: boolean
   onRefresh: () => Promise<void>
+  onInstallCodex: () => Promise<void>
   onInstallSkill: () => Promise<void>
 }
 
@@ -28,7 +31,10 @@ type DependencyItem = {
 
 export function EnvironmentStatus({
   result,
+  isChecking,
+  isInstallingCodex,
   onRefresh,
+  onInstallCodex,
   onInstallSkill
 }: EnvironmentStatusProps): React.JSX.Element {
   const [isOpen, setIsOpen] = useState(false)
@@ -36,6 +42,8 @@ export function EnvironmentStatus({
   const status = result?.status ?? 'failed'
   const hasIssue = status !== 'ready'
   const hasSkillSyncIssue = Boolean(result?.skillError)
+  const codexMissing = status === 'missing_codex'
+  const showDownstreamDependencies = result !== null && !codexMissing
   const items: DependencyItem[] = [
     {
       key: 'codex',
@@ -43,29 +51,35 @@ export function EnvironmentStatus({
       ok: Boolean(result?.codexVersion),
       version: result?.codexVersion,
       path: result?.codexPath,
-      missingText: 'Codex 缺失，请安装后继续',
-      actionText: '重新检查'
-    },
-    {
-      key: 'svn',
-      name: 'SVN CLI',
-      ok: Boolean(result?.svnVersion),
-      version: result?.svnVersion,
-      path: result?.svnPath,
-      missingText: 'SVN 缺失，请联系管理员安装',
-      actionText: '联系管理员'
-    },
-    {
-      key: 'skill',
-      name: '代码审查 Skill',
-      ok: result ? result.status !== 'missing_skill' && !result.skillError : false,
-      path: '通用-代码变更审查/SKILL.md',
-      missingText: result?.skillError
-        ? `Skill 同步失败：${result.skillError}`
-        : 'Skill 缺失，请点击安装',
-      actionText: installingSkill ? '安装中...' : '安装'
+      missingText: result?.codexError ?? 'Codex 缺失，请点击安装',
+      actionText: isInstallingCodex ? '安装中...' : '安装 Codex'
     }
   ]
+  const busy = isChecking || isInstallingCodex || installingSkill
+
+  if (showDownstreamDependencies) {
+    items.push(
+      {
+        key: 'svn',
+        name: 'SVN CLI',
+        ok: Boolean(result?.svnVersion),
+        version: result?.svnVersion,
+        path: result?.svnPath,
+        missingText: 'SVN 缺失，请联系管理员安装',
+        actionText: '联系管理员'
+      },
+      {
+        key: 'skill',
+        name: '代码审查 Skill',
+        ok: result ? result.status !== 'missing_skill' && !result.skillError : false,
+        path: '通用-代码变更审查/SKILL.md',
+        missingText: result?.skillError
+          ? `Skill 同步失败：${result.skillError}`
+          : 'Skill 缺失，请点击安装',
+        actionText: installingSkill ? '安装中...' : '安装'
+      }
+    )
+  }
 
   const handleInstallSkill = async (): Promise<void> => {
     setInstallingSkill(true)
@@ -90,11 +104,14 @@ export function EnvironmentStatus({
         <div>
           <span className={`status-pill status-${status}`}>{result ? statusLabels[status] : '检查中'}</span>
           <p className="environment-detail">
-            Codex {result?.codexVersion ?? '-'} · SVN {result?.svnVersion ?? '-'}
+            {codexMissing
+              ? `Codex ${result?.codexVersion ?? '-'}`
+              : `Codex ${result?.codexVersion ?? '-'} · SVN ${result?.svnVersion ?? '-'}`}
           </p>
         </div>
-        <button className="ghost-button" type="button" onClick={() => void onRefresh()}>
-          重新检查
+        <button className="ghost-button" type="button" disabled={busy} onClick={() => void onRefresh()}>
+          {isChecking && <span className="button-spinner" aria-hidden="true" />}
+          {isChecking ? '检查中...' : '重新检查'}
         </button>
       </div>
 
@@ -113,9 +130,21 @@ export function EnvironmentStatus({
                 <button
                   className="install-button"
                   type="button"
-                  disabled={item.key === 'skill' && installingSkill}
-                  onClick={() => void (item.key === 'skill' ? handleInstallSkill() : onRefresh())}
+                  disabled={busy || item.key === 'svn'}
+                  onClick={() => {
+                    if (item.key === 'codex') {
+                      void onInstallCodex()
+                      return
+                    }
+                    if (item.key === 'skill') {
+                      void handleInstallSkill()
+                    }
+                  }}
                 >
+                  {((item.key === 'codex' && isInstallingCodex) ||
+                    (item.key === 'skill' && installingSkill)) && (
+                    <span className="button-spinner" aria-hidden="true" />
+                  )}
                   {item.actionText}
                 </button>
               )}

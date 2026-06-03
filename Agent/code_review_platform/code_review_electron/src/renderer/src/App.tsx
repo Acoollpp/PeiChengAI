@@ -15,12 +15,31 @@ const fallbackEnvironment: EnvironmentCheckResult = {
 export function App(): React.JSX.Element {
   const [session, setSession] = useState<AuthSession | null>(null)
   const [environment, setEnvironment] = useState<EnvironmentCheckResult | null>(null)
+  const [isCheckingEnvironment, setIsCheckingEnvironment] = useState(false)
+  const [isInstallingCodex, setIsInstallingCodex] = useState(false)
 
   const checkEnvironment = useCallback(async (): Promise<void> => {
+    setIsCheckingEnvironment(true)
     try {
       setEnvironment(await window.codeReview.checkEnvironment())
     } catch {
       setEnvironment(fallbackEnvironment)
+    } finally {
+      setIsCheckingEnvironment(false)
+    }
+  }, [])
+
+  const installCodex = useCallback(async (): Promise<void> => {
+    setIsInstallingCodex(true)
+    try {
+      setEnvironment(await window.codeReview.installCodex())
+    } catch {
+      setEnvironment({
+        status: 'missing_codex',
+        codexError: 'Codex 安装失败'
+      })
+    } finally {
+      setIsInstallingCodex(false)
     }
   }, [])
 
@@ -63,8 +82,11 @@ export function App(): React.JSX.Element {
     <main className="app-shell">
       <TaskPage
         environment={environment}
+        isCheckingEnvironment={isCheckingEnvironment}
+        isInstallingCodex={isInstallingCodex}
         svnUsername={session.displayName}
         onRefreshEnvironment={checkEnvironment}
+        onInstallCodex={installCodex}
         onInstallSkill={installSkill}
       />
     </main>

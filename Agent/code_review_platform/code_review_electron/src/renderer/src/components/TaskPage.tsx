@@ -10,15 +10,21 @@ import { TaskForm } from './TaskForm'
 
 type TaskPageProps = {
   environment: EnvironmentCheckResult | null
+  isCheckingEnvironment: boolean
+  isInstallingCodex: boolean
   svnUsername: string
   onRefreshEnvironment: () => Promise<void>
+  onInstallCodex: () => Promise<void>
   onInstallSkill: () => Promise<void>
 }
 
 export function TaskPage({
   environment,
+  isCheckingEnvironment,
+  isInstallingCodex,
   svnUsername,
   onRefreshEnvironment,
+  onInstallCodex,
   onInstallSkill
 }: TaskPageProps): React.JSX.Element {
   const [tasks, setTasks] = useState<ReviewTask[]>([])
@@ -161,7 +167,10 @@ export function TaskPage({
 
         <EnvironmentStatus
           result={environment}
+          isChecking={isCheckingEnvironment}
+          isInstallingCodex={isInstallingCodex}
           onRefresh={onRefreshEnvironment}
+          onInstallCodex={onInstallCodex}
           onInstallSkill={onInstallSkill}
         />
 
