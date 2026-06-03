@@ -44,6 +44,7 @@ export function EnvironmentStatus({
   const hasIssue = hasKnownResult && status !== 'ready'
   const hasSkillSyncIssue = Boolean(result?.skillError)
   const codexMissing = hasKnownResult && status === 'missing_codex'
+  const isUnknownChecking = !hasKnownResult
   const statusClass = hasKnownResult ? status : 'checking'
   const showDependencyPanel = hasKnownResult && (isOpen || hasIssue || hasSkillSyncIssue)
   const showDownstreamDependencies = hasKnownResult && !codexMissing
@@ -99,12 +100,21 @@ export function EnvironmentStatus({
     <section className="environment-box" aria-label="本地环境状态">
       <div className="environment-summary">
         <button
-          className={`dependency-alert-button ${hasIssue ? 'is-warning' : 'is-ready'}`}
+          className={`dependency-alert-button ${
+            isUnknownChecking ? 'is-checking' : hasIssue ? 'is-warning' : 'is-ready'
+          }`}
           type="button"
           aria-label="查看本地依赖状态"
+          aria-expanded={showDependencyPanel}
           onClick={() => setIsOpen((current) => !current)}
         >
-          {hasIssue ? '△' : '✓'}
+          {isUnknownChecking ? (
+            <span className="button-spinner alert-spinner" aria-hidden="true" />
+          ) : hasIssue ? (
+            '△'
+          ) : (
+            '✓'
+          )}
         </button>
         <div>
           <span className={`status-pill status-${statusClass}`}>{result ? statusLabels[status] : '检查中'}</span>

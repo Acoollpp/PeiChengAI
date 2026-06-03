@@ -363,6 +363,16 @@ h2 {
   background: #e8f7ee;
 }
 
+.dependency-alert-button.is-checking {
+  color: #3867a8;
+  border-color: #b7c9e9;
+  background: #eef4ff;
+}
+
+.dependency-alert-button .alert-spinner {
+  margin-right: 0;
+}
+
 .environment-detail {
   margin: 7px 0 0;
   color: rgb(245 247 251 / 50%);
