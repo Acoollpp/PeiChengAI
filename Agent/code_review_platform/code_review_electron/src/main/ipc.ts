@@ -7,6 +7,7 @@ import {
   type SvnLoginRequest
 } from './api-client'
 import { AuthStore } from './auth-store'
+import { installCodexCli } from './codex-cli-installer'
 import { CredentialStore, type RememberedCredentials } from './credential-store'
 import { checkEnvironment } from './environment-checker'
 import {
@@ -27,6 +28,7 @@ export interface IpcHandlerDependencies {
   credentialStore?: CredentialStore
   serverConfigStore?: ServerConfigStore
   checkEnvironment?: () => Promise<EnvironmentCheckResult>
+  installCodexCli?: () => Promise<EnvironmentCheckResult>
   syncSkill?: (token: string) => Promise<SkillSyncResult>
   prepareWorkspace?: typeof defaultPrepareWorkspace
   runCodex?: typeof defaultRunCodex
@@ -45,6 +47,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   const credentialStore = dependencies.credentialStore ?? new CredentialStore()
   const serverConfigStore = dependencies.serverConfigStore ?? new ServerConfigStore()
   const checkLocalEnvironment = dependencies.checkEnvironment ?? checkEnvironment
+  const installLocalCodexCli = dependencies.installCodexCli ?? installCodexCli
   const createApiClient = async (): Promise<ApiClient> => {
     if (apiOverride) {
       return apiOverride
@@ -125,6 +128,8 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     return taskApi.readTaskReport(tokens.access_token, taskId)
   })
 
+  ipcMain.handle('codex:install', (): Promise<EnvironmentCheckResult> => installLocalCodexCli())
+
   ipcMain.handle('skill:install', async (): Promise<EnvironmentCheckResult> => {
     const skillError = await syncSkillForCurrentUser(authStore, syncSkill, {
       loginRequiredMessage: '请先登录后安装 Skill'
@@ -142,6 +147,12 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   })
 
   ipcMain.handle('environment:check', async (): Promise<EnvironmentCheckResult> => {
+    const firstPass = await checkLocalEnvironment()
+
+    if (firstPass.status === 'missing_codex' || firstPass.status === 'failed') {
+      return firstPass
+    }
+
     const skillError = await syncSkillForCurrentUser(authStore, syncSkill)
     const result = await checkLocalEnvironment()
 

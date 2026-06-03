@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('codeReview', {
   },
   downloadCurrentReport: (): Promise<DownloadCurrentReportResult> =>
     ipcRenderer.invoke('report:download-current'),
+  installCodex: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('codex:install'),
   installSkill: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('skill:install'),
   checkEnvironment: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('environment:check')
 })

@@ -40,6 +40,7 @@ describe('registerIpcHandlers', () => {
       'server-config:load',
       'task:list',
       'task:report',
+      'codex:install',
       'skill:install',
       'environment:check',
       'task:execute',
@@ -340,6 +341,30 @@ describe('registerIpcHandlers', () => {
     expect(api.readTaskReport).not.toHaveBeenCalled()
   })
 
+  it('installs Codex CLI on demand', async () => {
+    const installCodexCli = vi.fn(async () => ({
+      status: 'missing_svn' as const,
+      codexVersion: 'codex-cli 0.130.0',
+      codexPath: 'codex'
+    }))
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      installCodexCli
+    })
+
+    const installHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'codex:install'
+    )?.[1]
+
+    await expect(installHandler()).resolves.toEqual({
+      status: 'missing_svn',
+      codexVersion: 'codex-cli 0.130.0',
+      codexPath: 'codex'
+    })
+    expect(installCodexCli).toHaveBeenCalled()
+  })
+
   it('syncs the active skill before checking the environment when authenticated', async () => {
     const authStore = {
       load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
@@ -365,6 +390,30 @@ describe('registerIpcHandlers', () => {
     await expect(environmentHandler()).resolves.toEqual({ status: 'ready' })
     expect(syncSkill).toHaveBeenCalledWith('token-123')
     expect(checkEnvironment).toHaveBeenCalled()
+  })
+
+  it('skips skill sync while Codex CLI is missing', async () => {
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const syncSkill = vi.fn()
+    const checkEnvironment = vi.fn(async () => ({ status: 'missing_codex' as const }))
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      authStore: authStore as never,
+      syncSkill,
+      checkEnvironment
+    })
+
+    const environmentHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'environment:check'
+    )?.[1]
+
+    await expect(environmentHandler()).resolves.toEqual({ status: 'missing_codex' })
+    expect(checkEnvironment).toHaveBeenCalledTimes(1)
+    expect(syncSkill).not.toHaveBeenCalled()
   })
 
   it('installs the active skill on demand and then checks the environment', async () => {

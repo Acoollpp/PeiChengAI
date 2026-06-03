@@ -43,6 +43,7 @@ export interface EnvironmentCheckResult {
   svnVersion?: string
   codexPath?: string
   svnPath?: string
+  codexError?: string
   skillError?: string
 }
 
@@ -76,6 +77,7 @@ export interface CodeReviewApi {
   executeTask(payload: ExecuteTaskRequest): Promise<ExecuteTaskResult>
   onTaskProgress(callback: (event: TaskProgressEvent) => void): () => void
   downloadCurrentReport(): Promise<DownloadCurrentReportResult>
+  installCodex(): Promise<EnvironmentCheckResult>
   installSkill(): Promise<EnvironmentCheckResult>
   checkEnvironment(): Promise<EnvironmentCheckResult>
 }
