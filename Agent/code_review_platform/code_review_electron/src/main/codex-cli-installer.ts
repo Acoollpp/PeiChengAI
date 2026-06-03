@@ -103,8 +103,12 @@ const actionableInstallErrorPatterns = [
 const isActionableInstallErrorLine = (line: string): boolean =>
   line.length > 0 && actionableInstallErrorPatterns.some((pattern) => pattern.test(line))
 
+const sensitiveInstallParameterPattern =
+  /([?&#:;]?(?:_authToken|authToken|access_token|refresh_token|id_token|token|password|passwd|pwd|secret|api_key|apikey|key)=)[^&#\s'")]+/gi
+
 const redactSensitiveInstallOutput = (line: string): string =>
   line
+    .replace(sensitiveInstallParameterPattern, '$1***')
     .replace(/(https?:\/\/)[^/@\s]+@/gi, '$1***@')
     .replace(/(^|[\s'"(:=])((?:\/(?!\/)[^\s'")]+)+)/g, '$1[路径]')
     .replace(/\b[A-Za-z]:\\Users\\[^\\\s]+(?:\\\S*)?/g, '[路径]')

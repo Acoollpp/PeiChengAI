@@ -181,6 +181,28 @@ describe('summarizeInstallError', () => {
     expect(summary).not.toContain('alice')
   })
 
+  it('redacts URL token parameters and npm auth token fragments', async () => {
+    const { summarizeInstallError } = await import('../codex-cli-installer')
+
+    const summary = summarizeInstallError({
+      ok: false,
+      stdout: '',
+      stderr:
+        'npm ERR! registry https://registry.example.com/pkg?token=secret\n' +
+        'npm ERR! fetch https://registry.example.com/pkg?access_token=secret#token=abc\n' +
+        'npm ERR! registry //registry.npmjs.org/:_authToken=npm_xxx\n' +
+        'npm ERR! _authToken=npm_xxx'
+    })
+
+    expect(summary).toContain('registry.example.com')
+    expect(summary).toContain('registry.npmjs.org')
+    expect(summary).toContain('token=***')
+    expect(summary).toContain('_authToken=***')
+    expect(summary).not.toContain('secret')
+    expect(summary).not.toContain('abc')
+    expect(summary).not.toContain('npm_xxx')
+  })
+
   it('returns a fallback when npm output has no actionable error details', async () => {
     const { summarizeInstallError } = await import('../codex-cli-installer')
 
