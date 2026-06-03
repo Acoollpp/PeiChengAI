@@ -133,6 +133,17 @@ export class ApiClient {
     })
   }
 
+  updateSvnCredential(
+    token: string,
+    body: { svn_username: string; svn_password: string }
+  ): Promise<{ svn_username: string; svn_password: string }> {
+    return this.request('/api/v1/me/svn-credential', {
+      method: 'PUT',
+      headers: this.authHeaders(token),
+      body: JSON.stringify(body)
+    })
+  }
+
   getActiveSkill(token: string): Promise<ActiveSkill> {
     return this.request<ActiveSkill>('/api/v1/skills/active', {
       method: 'GET',

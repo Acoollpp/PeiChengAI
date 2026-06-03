@@ -294,6 +294,40 @@ describe('ApiClient', () => {
     } satisfies Partial<ApiError>)
   })
 
+  it('updates svn credentials via PUT with authorization header', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        svn_username: 'ada',
+        svn_password: 'secret'
+      })
+    )
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    const result = await client.updateSvnCredential('token-123', {
+      svn_username: 'ada',
+      svn_password: 'secret'
+    })
+
+    expect(result).toEqual({
+      svn_username: 'ada',
+      svn_password: 'secret'
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://server.example/api/v1/me/svn-credential',
+      {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer token-123'
+        },
+        body: JSON.stringify({
+          svn_username: 'ada',
+          svn_password: 'secret'
+        })
+      }
+    )
+  })
+
   it('adds the request URL and network cause to failed fetch errors', async () => {
     const fetchMock = vi.fn().mockRejectedValue(
       new TypeError('fetch failed', {
