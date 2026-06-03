@@ -17,7 +17,7 @@ export const Route = createFileRoute("/_layout/settings")({
   head: () => ({
     meta: [
       {
-        title: "Settings - 沛城科技代码审查平台",
+        title: "个人设置 - 沛城科技代码审查平台",
       },
     ],
   }),
@@ -33,10 +33,8 @@ function UserSettings() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">User Settings</h1>
-        <p className="text-muted-foreground">
-          Manage your account settings and preferences
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight">个人设置</h1>
+        <p className="text-muted-foreground">管理账号信息和偏好设置</p>
       </div>
 
       <Tabs defaultValue="profile">

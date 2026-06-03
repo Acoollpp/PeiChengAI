@@ -32,11 +32,11 @@ test.describe("Edit user profile", () => {
 
     await page.goto("/settings")
     await page.getByRole("tab", { name: "个人信息" }).click()
-    await page.getByRole("button", { name: "Edit" }).click()
-    await page.getByLabel("Full name").fill(updatedName)
-    await page.getByRole("button", { name: "Save" }).click()
+    await page.getByRole("button", { name: "编辑" }).click()
+    await page.getByLabel("姓名").fill(updatedName)
+    await page.getByRole("button", { name: "保存" }).click()
 
-    await expect(page.getByText("User updated successfully")).toBeVisible()
+    await expect(page.getByText("用户更新成功")).toBeVisible()
     await expect(
       page.locator("form").getByText(updatedName, { exact: true }),
     ).toBeVisible()
@@ -50,9 +50,9 @@ test.describe("Cancel edit actions", () => {
 
     const originalName = await page.locator("form p").first().innerText()
 
-    await page.getByRole("button", { name: "Edit" }).click()
-    await page.getByLabel("Full name").fill("Test User")
-    await page.getByRole("button", { name: "Cancel" }).first().click()
+    await page.getByRole("button", { name: "编辑" }).click()
+    await page.getByLabel("姓名").fill("Test User")
+    await page.getByRole("button", { name: "取消" }).first().click()
 
     await expect(
       page.locator("form").getByText(originalName, { exact: true }),

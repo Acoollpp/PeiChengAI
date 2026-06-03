@@ -14,8 +14,8 @@ import { type Item, Main } from "./Main"
 import { User } from "./User"
 
 const baseItems: Item[] = [
-  { icon: Home, title: "Dashboard", path: "/" },
-  { icon: Briefcase, title: "Items", path: "/items" },
+  { icon: Home, title: "仪表盘", path: "/" },
+  { icon: Briefcase, title: "部门管理", path: "/items" },
 ]
 
 export function AppSidebar() {

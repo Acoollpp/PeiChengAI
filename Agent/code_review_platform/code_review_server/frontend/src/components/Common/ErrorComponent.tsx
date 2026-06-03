@@ -14,17 +14,17 @@ const ErrorComponent = () => {
       <div className="flex items-center z-10">
         <div className="flex flex-col ml-4 items-center justify-center p-4">
           <span className="text-6xl md:text-8xl font-bold leading-none mb-4">
-            Error
+            出错了
           </span>
-          <span className="text-2xl font-bold mb-2">Oops!</span>
+          <span className="text-2xl font-bold mb-2">请稍后重试</span>
         </div>
       </div>
 
       <p className="text-lg text-muted-foreground mb-4 text-center z-10">
-        Something went wrong. Please try again.
+        系统发生异常，请重新登录后再试。
       </p>
       <Link to="/login" onClick={resetSession}>
-        <Button>Go Home</Button>
+        <Button>返回登录</Button>
       </Link>
     </div>
   )

@@ -108,7 +108,7 @@ test("Admin sidebar entry is visible", async ({ page }) => {
 
 test("Add User button is visible", async ({ page }) => {
   await page.goto("/admin")
-  await expect(page.getByRole("button", { name: "Add User" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "新增用户" })).toBeVisible()
 })
 
 test.describe("Admin user management", () => {
@@ -118,14 +118,14 @@ test.describe("Admin user management", () => {
     const svnUsername = randomSvnUsername()
     const fullName = `Test User ${svnUsername}`
 
-    await page.getByRole("button", { name: "Add User" }).click()
+    await page.getByRole("button", { name: "新增用户" }).click()
 
-    await page.getByPlaceholder("Full name").fill(fullName)
-    await page.getByPlaceholder("SVN username").fill(svnUsername)
+    await page.getByPlaceholder("姓名").fill(fullName)
+    await page.getByPlaceholder("SVN 账号").fill(svnUsername)
 
-    await page.getByRole("button", { name: "Save" }).click()
+    await page.getByRole("button", { name: "保存" }).click()
 
-    await expect(page.getByText("User created successfully")).toBeVisible()
+    await expect(page.getByText("用户创建成功")).toBeVisible()
 
     await expect(page.getByRole("dialog")).not.toBeVisible()
 
@@ -139,15 +139,15 @@ test.describe("Admin user management", () => {
 
     const svnUsername = randomSvnUsername()
 
-    await page.getByRole("button", { name: "Add User" }).click()
+    await page.getByRole("button", { name: "新增用户" }).click()
 
-    await page.getByPlaceholder("SVN username").fill(svnUsername)
-    await page.getByLabel("Is superuser?").check()
-    await page.getByLabel("Is active?").check()
+    await page.getByPlaceholder("SVN 账号").fill(svnUsername)
+    await page.getByLabel("设为管理员").check()
+    await page.getByLabel("启用账号").check()
 
-    await page.getByRole("button", { name: "Save" }).click()
+    await page.getByRole("button", { name: "保存" }).click()
 
-    await expect(page.getByText("User created successfully")).toBeVisible()
+    await expect(page.getByText("用户创建成功")).toBeVisible()
 
     await expect(page.getByRole("dialog")).not.toBeVisible()
 
@@ -162,23 +162,23 @@ test.describe("Admin user management", () => {
     const originalName = `Original ${svnUsername}`
     const updatedName = `Updated ${svnUsername}`
 
-    await page.getByRole("button", { name: "Add User" }).click()
-    await page.getByPlaceholder("Full name").fill(originalName)
-    await page.getByPlaceholder("SVN username").fill(svnUsername)
-    await page.getByRole("button", { name: "Save" }).click()
+    await page.getByRole("button", { name: "新增用户" }).click()
+    await page.getByPlaceholder("姓名").fill(originalName)
+    await page.getByPlaceholder("SVN 账号").fill(svnUsername)
+    await page.getByRole("button", { name: "保存" }).click()
 
-    await expect(page.getByText("User created successfully")).toBeVisible()
+    await expect(page.getByText("用户创建成功")).toBeVisible()
     await expect(page.getByRole("dialog")).not.toBeVisible()
 
     const userRow = page.getByRole("row").filter({ hasText: svnUsername })
     await userRow.getByRole("button").click()
 
-    await page.getByRole("menuitem", { name: "Edit User" }).click()
+    await page.getByRole("menuitem", { name: "编辑用户" }).click()
 
-    await page.getByPlaceholder("Full name").fill(updatedName)
-    await page.getByRole("button", { name: "Save" }).click()
+    await page.getByPlaceholder("姓名").fill(updatedName)
+    await page.getByRole("button", { name: "保存" }).click()
 
-    await expect(page.getByText("User updated successfully")).toBeVisible()
+    await expect(page.getByText("用户更新成功")).toBeVisible()
     await expect(page.getByText(updatedName)).toBeVisible()
   })
 
@@ -187,23 +187,23 @@ test.describe("Admin user management", () => {
 
     const svnUsername = randomSvnUsername()
 
-    await page.getByRole("button", { name: "Add User" }).click()
-    await page.getByPlaceholder("SVN username").fill(svnUsername)
-    await page.getByRole("button", { name: "Save" }).click()
+    await page.getByRole("button", { name: "新增用户" }).click()
+    await page.getByPlaceholder("SVN 账号").fill(svnUsername)
+    await page.getByRole("button", { name: "保存" }).click()
 
-    await expect(page.getByText("User created successfully")).toBeVisible()
+    await expect(page.getByText("用户创建成功")).toBeVisible()
 
     await expect(page.getByRole("dialog")).not.toBeVisible()
 
     const userRow = page.getByRole("row").filter({ hasText: svnUsername })
     await userRow.getByRole("button").click()
 
-    await page.getByRole("menuitem", { name: "Delete User" }).click()
+    await page.getByRole("menuitem", { name: "删除用户" }).click()
 
-    await page.getByRole("button", { name: "Delete" }).click()
+    await page.getByRole("button", { name: "删除" }).click()
 
     await expect(
-      page.getByText("The user was deleted successfully"),
+      page.getByText("用户删除成功"),
     ).toBeVisible()
 
     await expect(
@@ -214,23 +214,23 @@ test.describe("Admin user management", () => {
   test("Cancel user creation", async ({ page }) => {
     await page.goto("/admin")
 
-    await page.getByRole("button", { name: "Add User" }).click()
-    await page.getByPlaceholder("SVN username").fill(randomSvnUsername())
+    await page.getByRole("button", { name: "新增用户" }).click()
+    await page.getByPlaceholder("SVN 账号").fill(randomSvnUsername())
 
-    await page.getByRole("button", { name: "Cancel" }).click()
+    await page.getByRole("button", { name: "取消" }).click()
 
     await expect(page.getByRole("dialog")).not.toBeVisible()
   })
 
-  test("SVN username is required", async ({ page }) => {
+  test("请填写 SVN 账号", async ({ page }) => {
     await page.goto("/admin")
 
-    await page.getByRole("button", { name: "Add User" }).click()
+    await page.getByRole("button", { name: "新增用户" }).click()
 
-    await page.getByPlaceholder("SVN username").fill(" ")
-    await page.getByRole("button", { name: "Save" }).click()
+    await page.getByPlaceholder("SVN 账号").fill(" ")
+    await page.getByRole("button", { name: "保存" }).click()
 
-    await expect(page.getByText("SVN username is required")).toBeVisible()
+    await expect(page.getByText("请填写 SVN 账号")).toBeVisible()
   })
 })
 

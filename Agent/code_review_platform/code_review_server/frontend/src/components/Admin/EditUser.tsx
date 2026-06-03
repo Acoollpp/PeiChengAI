@@ -70,7 +70,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
     mutationFn: (data: UserUpdate) =>
       UsersService.updateUser({ userId: user.id, requestBody: data }),
     onSuccess: () => {
-      showSuccessToast("User updated successfully")
+      showSuccessToast("用户更新成功")
       setIsOpen(false)
       onSuccess()
     },
@@ -95,15 +95,15 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
         onClick={() => setIsOpen(true)}
       >
         <Pencil />
-        Edit User
+        编辑用户
       </DropdownMenuItem>
       <DialogContent className="sm:max-w-md">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)}>
             <DialogHeader>
-              <DialogTitle>Edit User</DialogTitle>
+              <DialogTitle>编辑用户</DialogTitle>
               <DialogDescription>
-                Update the user details below.
+                修改该用户的基本信息。
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
@@ -112,9 +112,9 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
                 name="full_name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Full Name</FormLabel>
+                    <FormLabel>姓名</FormLabel>
                     <FormControl>
-                      <Input placeholder="Full name" type="text" {...field} />
+                      <Input placeholder="姓名" type="text" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -126,10 +126,10 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
                 name="svn_username"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>SVN Username</FormLabel>
+                    <FormLabel>SVN 账号</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="SVN username"
+                        placeholder="SVN 账号"
                         type="text"
                         {...field}
                       />
@@ -144,7 +144,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
                 name="role"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Role</FormLabel>
+                    <FormLabel>角色</FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger className="w-full">
@@ -165,11 +165,11 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
             <DialogFooter>
               <DialogClose asChild>
                 <Button variant="outline" disabled={mutation.isPending}>
-                  Cancel
+                  取消
                 </Button>
               </DialogClose>
               <LoadingButton type="submit" loading={mutation.isPending}>
-                Save
+                保存
               </LoadingButton>
             </DialogFooter>
           </form>

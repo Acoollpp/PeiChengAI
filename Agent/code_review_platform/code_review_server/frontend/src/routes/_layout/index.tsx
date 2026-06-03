@@ -7,7 +7,7 @@ export const Route = createFileRoute("/_layout/")({
   head: () => ({
     meta: [
       {
-        title: "Dashboard - 沛城科技代码审查平台",
+        title: "仪表盘 - 沛城科技代码审查平台",
       },
     ],
   }),
@@ -21,10 +21,8 @@ function Dashboard() {
   return (
     <div>
       <div>
-        <h1 className="text-2xl truncate max-w-sm">Hi, {displayName}</h1>
-        <p className="text-muted-foreground">
-          Welcome back, nice to see you again!!!
-        </p>
+        <h1 className="text-2xl truncate max-w-sm">你好，{displayName}</h1>
+        <p className="text-muted-foreground">欢迎回来，很高兴再次见到你。</p>
       </div>
     </div>
   )

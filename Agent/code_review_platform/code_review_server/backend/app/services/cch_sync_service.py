@@ -53,7 +53,7 @@ class CchSyncService:
                     table_names, ("cch_user", "cch_users", "users", "user")
                 )
                 key_table = self._first_existing_table(
-                    table_names, ("cch_key", "cch_keys", "user_api_key", "api_keys")
+                    table_names, ("cch_key", "cch_keys", "user_api_key", "api_keys", "keys")
                 )
                 user_rows = [
                     self._parse_user_row(dict(row._mapping))
@@ -186,8 +186,11 @@ class CchSyncService:
             full_name=self._value(row, "full_name", "name", "username", required=False),
             role=self._value(row, "role", required=False) or UserRole.user,
             is_superuser=self._bool(self._value(row, "is_superuser", "is_admin", required=False)),
-            is_active=self._bool(self._value(row, "is_active", "active", required=False), default=True),
-            is_deleted=self._bool(self._value(row, "is_deleted", "deleted", required=False)),
+            is_active=self._bool(self._value(row, "is_active", "active", "is_enabled", required=False), default=True),
+            is_deleted=self._bool(
+                self._value(row, "is_deleted", "deleted", required=False)
+            )
+            or self._value(row, "deleted_at", required=False) is not None,
             expires_at=self._datetime(self._value(row, "expires_at", "expired_at", required=False)),
         )
 
@@ -197,8 +200,11 @@ class CchSyncService:
             cch_user_id=int(self._value(row, "cch_user_id", "user_id")),
             key=str(self._value(row, "key", "api_key", "token")),
             name=self._value(row, "name", "key_name", required=False),
-            is_active=self._bool(self._value(row, "is_active", "active", required=False), default=True),
-            is_deleted=self._bool(self._value(row, "is_deleted", "deleted", required=False)),
+            is_active=self._bool(self._value(row, "is_active", "active", "is_enabled", required=False), default=True),
+            is_deleted=self._bool(
+                self._value(row, "is_deleted", "deleted", required=False)
+            )
+            or self._value(row, "deleted_at", required=False) is not None,
             expires_at=self._datetime(self._value(row, "expires_at", "expired_at", required=False)),
         )
 

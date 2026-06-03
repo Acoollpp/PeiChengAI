@@ -57,6 +57,10 @@ services:
 
   backend:
     restart: "no"
+    networks:
+      - default
+      - traefik-public
+      - cch-network
     ports:
       - "8000:8000"
     build:
@@ -132,6 +136,9 @@ services:
       - 9323:9323
 
 networks:
+  cch-network:
+    external: true
+    name: claude-code-hub-net-uyeu
   traefik-public:
     # For local dev, don't expect an external Traefik network
     external: false

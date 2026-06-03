@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import create_engine, text
 from sqlmodel import Session, select
 
 from app.models import AuthSource, User, UserApiKey, UserRole
@@ -167,3 +168,71 @@ def test_sync_rows_updates_existing_cch_user_and_disables_keys_for_disabled_user
     assert user.disabled_reason == "cch_user_disabled"
     assert api_key.is_active is False
     assert api_key.disabled_reason == "user_disabled"
+
+
+def test_fetch_rows_supports_cch_users_keys_schema(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'cch.db'}"
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE users (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    role TEXT,
+                    is_enabled BOOLEAN NOT NULL,
+                    deleted_at TEXT,
+                    expires_at TEXT
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE TABLE keys (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    key TEXT NOT NULL,
+                    name TEXT,
+                    is_enabled BOOLEAN NOT NULL,
+                    deleted_at TEXT,
+                    expires_at TEXT
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO users (id, name, role, is_enabled, deleted_at, expires_at)
+                VALUES (1, 'CCH User', 'admin', 0, '2026-06-01T00:00:00+00:00', NULL)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO keys (id, user_id, key, name, is_enabled, deleted_at, expires_at)
+                VALUES (10, 1, 'sk-real-cch', 'Default', 0, '2026-06-01T00:00:00+00:00', NULL)
+                """
+            )
+        )
+
+    try:
+        users, keys = CchSyncService().fetch_rows(database_url)
+    finally:
+        engine.dispose()
+
+    assert users[0].cch_user_id == 1
+    assert users[0].full_name == "CCH User"
+    assert users[0].role == "admin"
+    assert users[0].is_active is False
+    assert users[0].is_deleted is True
+    assert keys[0].cch_key_id == 10
+    assert keys[0].cch_user_id == 1
+    assert keys[0].key == "sk-real-cch"
+    assert keys[0].name == "Default"
+    assert keys[0].is_active is False
+    assert keys[0].is_deleted is True
