@@ -34,6 +34,7 @@ describe('registerIpcHandlers', () => {
     expect(handleMock.mock.calls.map(([channel]) => channel)).toEqual([
       'auth:key-login',
       'auth:svn-login',
+      'svn:bind-credential',
       'credentials:save',
       'credentials:load',
       'credentials:clear',
@@ -69,18 +70,24 @@ describe('registerIpcHandlers', () => {
   })
 
   it('uses the submitted server URL when logging in with an access key', async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          access_token: 'token-123',
-          refresh_token: 'refresh-token'
-        }),
-        {
-          status: 200,
-          headers: { 'content-type': 'application/json' }
-        }
-      )
-    )
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes('/auth/key-login')) {
+        return new Response(
+          JSON.stringify({
+            access_token: 'token-123',
+            refresh_token: 'refresh-token'
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      }
+      if (url.includes('/me/svn-credential')) {
+        return new Response(
+          JSON.stringify({ detail: 'SVN credential not found' }),
+          { status: 404, headers: { 'content-type': 'application/json' } }
+        )
+      }
+      return new Response(JSON.stringify({}), { status: 200 })
+    })
     vi.stubGlobal('fetch', fetchMock)
     const authStore = {
       load: vi.fn(),
@@ -104,16 +111,12 @@ describe('registerIpcHandlers', () => {
         server_url: 'http://172.23.17.242:8000/',
         key: 'sk-cch-test'
       })
-    ).resolves.toBe(true)
+    ).resolves.toEqual({ needSvnBinding: true })
 
     expect(fetchMock).toHaveBeenCalledWith('http://172.23.17.242:8000/api/v1/auth/key-login', {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json'
-      },
-      body: JSON.stringify({
-        key: 'sk-cch-test'
-      })
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: 'sk-cch-test' })
     })
     expect(serverConfigStore.save).toHaveBeenCalledWith({
       server_url: 'http://172.23.17.242:8000'
@@ -556,5 +559,91 @@ describe('registerIpcHandlers', () => {
       status: 'ready',
       skillError: 'No active skill'
     })
+  })
+
+  it('returns needSvnBinding false when key login user already has svn credential', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes('/auth/key-login')) {
+        return new Response(
+          JSON.stringify({ access_token: 'token-123', refresh_token: 'refresh-token' }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      }
+      if (url.includes('/me/svn-credential')) {
+        return new Response(
+          JSON.stringify({ svn_username: 'ada', svn_password: 'secret' }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      }
+      return new Response(JSON.stringify({}), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const authStore = { load: vi.fn(), save: vi.fn() }
+    const serverConfigStore = {
+      load: vi.fn(async () => ({ server_url: 'http://127.0.0.1:8000' })),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      authStore: authStore as never,
+      serverConfigStore: serverConfigStore as never
+    })
+
+    const loginHandler = handleMock.mock.calls.find(([channel]) => channel === 'auth:key-login')?.[1]
+
+    await expect(
+      loginHandler({}, { server_url: 'http://127.0.0.1:8000', key: 'sk-cch-test' })
+    ).resolves.toEqual({ needSvnBinding: false })
+  })
+
+  it('binds svn credential for the authenticated user', async () => {
+    const api = {
+      updateSvnCredential: vi.fn(async () => ({
+        svn_username: 'ada',
+        svn_password: 'secret'
+      }))
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never
+    })
+
+    const bindHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'svn:bind-credential'
+    )?.[1]
+
+    await expect(
+      bindHandler({}, { svn_username: 'ada', svn_password: 'secret' })
+    ).resolves.toBe(true)
+
+    expect(api.updateSvnCredential).toHaveBeenCalledWith('token-123', {
+      svn_username: 'ada',
+      svn_password: 'secret'
+    })
+  })
+
+  it('rejects svn binding when unauthenticated', async () => {
+    const authStore = {
+      load: vi.fn(async () => null),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({ authStore: authStore as never })
+
+    const bindHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'svn:bind-credential'
+    )?.[1]
+
+    await expect(
+      bindHandler({}, { svn_username: 'ada', svn_password: 'secret' })
+    ).rejects.toThrow('Not authenticated')
   })
 })

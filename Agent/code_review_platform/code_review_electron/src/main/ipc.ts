@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 
 import {
   ApiClient,
+  ApiError,
   type CreateTaskRequest,
   type KeyLoginRequest,
   type SvnLoginRequest
@@ -65,7 +66,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     })
   let latestSuccessfulReport: DownloadCurrentReportResult | null = null
 
-  ipcMain.handle('auth:key-login', async (_event, payload: KeyLoginRequest): Promise<true> => {
+  ipcMain.handle('auth:key-login', async (_event, payload: KeyLoginRequest): Promise<{ needSvnBinding: boolean }> => {
     const serverUrl = normalizeServerUrl(payload.server_url)
     const api = apiOverride ?? new ApiClient(serverUrl)
     const tokens = await api.keyLogin({
@@ -73,7 +74,16 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     })
     await serverConfigStore.save({ server_url: serverUrl })
     await authStore.save(tokens)
-    return true
+
+    try {
+      await api.getSvnCredential(tokens.access_token)
+      return { needSvnBinding: false }
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        return { needSvnBinding: true }
+      }
+      return { needSvnBinding: true }
+    }
   })
 
   ipcMain.handle('auth:svn-login', async (_event, payload: SvnLoginRequest): Promise<true> => {
@@ -85,6 +95,18 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     })
     await serverConfigStore.save({ server_url: serverUrl })
     await authStore.save(tokens)
+    return true
+  })
+
+  ipcMain.handle('svn:bind-credential', async (_event, body: { svn_username: string; svn_password: string }): Promise<true> => {
+    const tokens = await authStore.load()
+
+    if (!tokens) {
+      throw new Error('Not authenticated')
+    }
+
+    const api = await createApiClient()
+    await api.updateSvnCredential(tokens.access_token, body)
     return true
   })
 
