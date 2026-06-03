@@ -57,6 +57,19 @@ describe('MarkdownPreview', () => {
     expect(screen.queryByRole('link', { name: '危险链接' })).not.toBeInTheDocument()
   })
 
+  it('相对链接和 hash anchor 渲染为普通文本', () => {
+    render(
+      <MarkdownPreview markdown="[相对链接](/local)\n\n[路径链接](relative/path)\n\n[锚点](#anchor)" />
+    )
+
+    expect(screen.getByText('相对链接')).toBeInTheDocument()
+    expect(screen.getByText('路径链接')).toBeInTheDocument()
+    expect(screen.getByText('锚点')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '相对链接' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '路径链接' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '锚点' })).not.toBeInTheDocument()
+  })
+
   it('表格被横向滚动容器包裹', () => {
     const { container } = render(
       <MarkdownPreview markdown={'| A | B |\n| --- | --- |\n| 1 | 2 |'} />
@@ -79,5 +92,23 @@ describe('MarkdownPreview', () => {
     render(<MarkdownPreview markdown={throwingMarkdown} />)
 
     expect(screen.getByText('报告渲染失败，请下载报告查看原始 Markdown。')).toBeInTheDocument()
+  })
+
+  it('渲染异常后传入新 Markdown 时恢复预览', () => {
+    const throwingMarkdown = {
+      trim: () => 'not-empty',
+      toString: () => {
+        throw new Error('render failed')
+      }
+    } as unknown as string
+
+    const { rerender } = render(<MarkdownPreview markdown={throwingMarkdown} />)
+
+    expect(screen.getByText('报告渲染失败，请下载报告查看原始 Markdown。')).toBeInTheDocument()
+
+    rerender(<MarkdownPreview markdown="# 新报告" />)
+
+    expect(screen.queryByText('报告渲染失败，请下载报告查看原始 Markdown。')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '新报告', level: 1 })).toBeInTheDocument()
   })
 })

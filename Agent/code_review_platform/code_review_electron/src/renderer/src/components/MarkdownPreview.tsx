@@ -11,13 +11,8 @@ const safeUrl = (href?: string): string | undefined => {
     return undefined
   }
 
-  try {
-    const parsed = new URL(href, 'https://code-review.local')
-    if (['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
-      return href
-    }
-  } catch {
-    return undefined
+  if (/^(https?|mailto):/i.test(href)) {
+    return href
   }
 
   return undefined
@@ -32,11 +27,35 @@ const getCodeLanguage = (children: ReactNode): string | undefined => {
   return /language-(\w+)/.exec(child.props.className ?? '')?.[1]
 }
 
-class MarkdownErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
-  state = { hasError: false }
+type MarkdownErrorBoundaryProps = {
+  children: ReactNode
+  resetKey: unknown
+}
 
-  static getDerivedStateFromError(): { hasError: boolean } {
+type MarkdownErrorBoundaryState = {
+  hasError: boolean
+  resetKey: unknown
+}
+
+class MarkdownErrorBoundary extends Component<
+  MarkdownErrorBoundaryProps,
+  MarkdownErrorBoundaryState
+> {
+  state: MarkdownErrorBoundaryState = { hasError: false, resetKey: this.props.resetKey }
+
+  static getDerivedStateFromError(): Partial<MarkdownErrorBoundaryState> {
     return { hasError: true }
+  }
+
+  static getDerivedStateFromProps(
+    props: MarkdownErrorBoundaryProps,
+    state: MarkdownErrorBoundaryState
+  ): Partial<MarkdownErrorBoundaryState> | null {
+    if (props.resetKey !== state.resetKey) {
+      return { hasError: false, resetKey: props.resetKey }
+    }
+
+    return null
   }
 
   render(): ReactNode {
@@ -59,7 +78,7 @@ export function MarkdownPreview({ markdown }: MarkdownPreviewProps): React.JSX.E
 
   return (
     <div className="preview-scroll">
-      <MarkdownErrorBoundary>
+      <MarkdownErrorBoundary resetKey={markdown}>
         <article className="markdown-preview">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
