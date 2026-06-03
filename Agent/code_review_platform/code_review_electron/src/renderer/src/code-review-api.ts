@@ -65,8 +65,17 @@ export interface DownloadCurrentReportResult {
   reportPath?: string
 }
 
+export interface KeyLoginResult {
+  needSvnBinding: boolean
+}
+
+export interface SvnCredentialPayload {
+  svn_username: string
+  svn_password: string
+}
+
 export interface CodeReviewApi {
-  keyLogin(payload: KeyLoginRequest): Promise<unknown>
+  keyLogin(payload: KeyLoginRequest): Promise<KeyLoginResult>
   svnLogin(payload: SvnLoginRequest): Promise<unknown>
   saveCredentials(payload: RememberedCredentials): Promise<unknown>
   loadCredentials(): Promise<RememberedCredentials | null>
@@ -80,4 +89,5 @@ export interface CodeReviewApi {
   installCodex(): Promise<EnvironmentCheckResult>
   installSkill(): Promise<EnvironmentCheckResult>
   checkEnvironment(): Promise<EnvironmentCheckResult>
+  bindSvnCredential(payload: SvnCredentialPayload): Promise<true>
 }
