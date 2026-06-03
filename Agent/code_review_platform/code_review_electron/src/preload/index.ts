@@ -5,15 +5,17 @@ import type {
   ExecuteTaskRequest,
   ExecuteTaskResult,
   KeyLoginRequest,
+  KeyLoginResult,
   DownloadCurrentReportResult,
   RememberedCredentials,
+  SvnCredentialPayload,
   SvnLoginRequest,
   ReviewTasksResponse,
   TaskProgressEvent
 } from '../renderer/src/code-review-api'
 
 contextBridge.exposeInMainWorld('codeReview', {
-  keyLogin: (payload: KeyLoginRequest): Promise<unknown> =>
+  keyLogin: (payload: KeyLoginRequest): Promise<KeyLoginResult> =>
     ipcRenderer.invoke('auth:key-login', payload),
   svnLogin: (payload: SvnLoginRequest): Promise<unknown> =>
     ipcRenderer.invoke('auth:svn-login', payload),
@@ -39,6 +41,8 @@ contextBridge.exposeInMainWorld('codeReview', {
   },
   downloadCurrentReport: (): Promise<DownloadCurrentReportResult> =>
     ipcRenderer.invoke('report:download-current'),
+  bindSvnCredential: (payload: SvnCredentialPayload): Promise<true> =>
+    ipcRenderer.invoke('svn:bind-credential', payload),
   installCodex: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('codex:install'),
   installSkill: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('skill:install'),
   checkEnvironment: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('environment:check')
