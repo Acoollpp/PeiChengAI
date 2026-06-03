@@ -293,4 +293,21 @@ describe('ApiClient', () => {
       message: 'HTTP 401: Invalid credentials'
     } satisfies Partial<ApiError>)
   })
+
+  it('adds the request URL and network cause to failed fetch errors', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(
+      new TypeError('fetch failed', {
+        cause: new Error('socket closed')
+      })
+    )
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    await expect(
+      client.keyLogin({
+        key: 'sk-cch-test'
+      })
+    ).rejects.toThrow(
+      '无法连接服务端 https://server.example/api/v1/auth/key-login：fetch failed (socket closed)'
+    )
+  })
 })

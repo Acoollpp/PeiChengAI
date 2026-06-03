@@ -73,13 +73,6 @@ button:disabled {
   backdrop-filter: blur(18px);
 }
 
-.auth-topbar {
-  display: flex;
-  justify-content: space-between;
-  color: rgb(245 247 251 / 66%);
-  font-size: 14px;
-}
-
 .auth-brand {
   display: grid;
   justify-items: center;

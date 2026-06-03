@@ -18,11 +18,18 @@ export interface SvnLoginRequest {
   svn_password: string
 }
 
-export interface RememberedCredentials {
-  server_url?: string
-  svn_username: string
-  svn_password: string
-}
+export type RememberedCredentials =
+  | {
+      mode: 'key'
+      server_url?: string
+      key: string
+    }
+  | {
+      mode?: 'svn'
+      server_url?: string
+      svn_username: string
+      svn_password: string
+    }
 
 export interface ExecuteTaskRequest {
   svn_url: string

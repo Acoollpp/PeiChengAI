@@ -35,8 +35,13 @@ export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX
           return
         }
 
-        setSvnUsername(credentials.svn_username)
-        setSvnPassword(credentials.svn_password)
+        setMode(credentials.mode === 'key' ? 'key' : 'svn')
+        if (credentials.mode === 'key') {
+          setAccessKey(credentials.key)
+        } else {
+          setSvnUsername(credentials.svn_username)
+          setSvnPassword(credentials.svn_password)
+        }
         setRememberPassword(true)
       })
       .catch(() => {
@@ -61,10 +66,20 @@ export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX
 
     try {
       if (mode === 'key') {
-        await onKeyLogin({
+        const keyPayload = {
           server_url: normalizedServerUrl,
           key: accessKey.trim()
-        })
+        }
+
+        await onKeyLogin(keyPayload)
+        if (rememberPassword) {
+          await window.codeReview.saveCredentials({
+            mode: 'key',
+            ...keyPayload
+          })
+        } else {
+          await window.codeReview.clearCredentials()
+        }
         return
       }
 
@@ -77,7 +92,10 @@ export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX
       await onSvnLogin(svnPayload)
 
       if (rememberPassword) {
-        await window.codeReview.saveCredentials(svnPayload)
+        await window.codeReview.saveCredentials({
+          mode: 'svn',
+          ...svnPayload
+        })
       } else {
         await window.codeReview.clearCredentials()
       }
@@ -90,11 +108,6 @@ export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX
 
   return (
     <section className="auth-card" aria-labelledby="auth-title">
-      <div className="auth-topbar">
-        <span>← 选择账户</span>
-        <span>中文⌄</span>
-      </div>
-
       <div className="auth-brand">
         <img className="auth-logo" src={paceLogo} alt="沛城科技" />
         <h1 id="auth-title">代码审查平台</h1>
@@ -141,7 +154,7 @@ export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX
               required
               type="password"
               value={accessKey}
-              autoComplete="off"
+              autoComplete="current-password"
               onChange={(event) => setAccessKey(event.target.value)}
             />
           </label>
@@ -167,19 +180,19 @@ export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX
                 onChange={(event) => setSvnPassword(event.target.value)}
               />
             </label>
-
-            <div className="auth-options">
-              <label className="remember-field">
-                <input
-                  type="checkbox"
-                  checked={rememberPassword}
-                  onChange={(event) => setRememberPassword(event.target.checked)}
-                />
-                <span>记住密码</span>
-              </label>
-            </div>
           </>
         )}
+
+        <div className="auth-options">
+          <label className="remember-field">
+            <input
+              type="checkbox"
+              checked={rememberPassword}
+              onChange={(event) => setRememberPassword(event.target.checked)}
+            />
+            <span>记住密码</span>
+          </label>
+        </div>
 
         {error && <p className="form-error">{error}</p>}
 

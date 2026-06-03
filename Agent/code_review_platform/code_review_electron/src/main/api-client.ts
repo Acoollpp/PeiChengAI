@@ -62,6 +62,16 @@ export class ApiError extends Error {
   }
 }
 
+export class ApiConnectionError extends Error {
+  readonly url: string
+
+  constructor(url: string, error: unknown) {
+    super(`无法连接服务端 ${url}：${formatConnectionError(error)}`)
+    this.name = 'ApiConnectionError'
+    this.url = url
+  }
+}
+
 export class ApiClient {
   private readonly baseUrl: string
   private readonly fetchImpl: FetchLike
@@ -181,7 +191,8 @@ export class ApiClient {
     options: { json?: boolean } = {}
   ): Promise<T> {
     const json = options.json ?? true
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+    const url = `${this.baseUrl}${path}`
+    const response = await this.fetchWithConnectionError(url, {
       ...init,
       headers: {
         ...(json ? { 'content-type': 'application/json' } : {}),
@@ -220,6 +231,14 @@ export class ApiClient {
     return response.statusText || 'Request failed'
   }
 
+  private async fetchWithConnectionError(url: string, init: RequestInit): Promise<Response> {
+    try {
+      return await this.fetchImpl(url, init)
+    } catch (error) {
+      throw new ApiConnectionError(url, error)
+    }
+  }
+
   private isErrorBody(body: unknown): body is { detail: string } {
     return (
       typeof body === 'object' &&
@@ -228,4 +247,25 @@ export class ApiClient {
       typeof body.detail === 'string'
     )
   }
+}
+
+function formatConnectionError(error: unknown): string {
+  if (error instanceof Error) {
+    const cause = getErrorCauseMessage(error)
+    return cause ? `${error.message} (${cause})` : error.message
+  }
+
+  return String(error)
+}
+
+function getErrorCauseMessage(error: Error): string | null {
+  const cause = error.cause
+  if (cause instanceof Error) {
+    return cause.message
+  }
+  if (typeof cause === 'string') {
+    return cause
+  }
+
+  return null
 }

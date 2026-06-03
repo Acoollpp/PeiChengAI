@@ -2,11 +2,18 @@ import { app, safeStorage } from 'electron'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-export interface RememberedCredentials {
-  server_url?: string
-  svn_username: string
-  svn_password: string
-}
+export type RememberedCredentials =
+  | {
+      mode: 'key'
+      server_url?: string
+      key: string
+    }
+  | {
+      mode?: 'svn'
+      server_url?: string
+      svn_username: string
+      svn_password: string
+    }
 
 const CREDENTIAL_FILE_NAME = 'remembered-credentials.bin'
 
@@ -44,6 +51,19 @@ export class CredentialStore {
   }
 
   private isRememberedCredentials(value: unknown): value is RememberedCredentials {
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      'mode' in value &&
+      value.mode === 'key'
+    ) {
+      return (
+        'key' in value &&
+        typeof value.key === 'string' &&
+        (!('server_url' in value) || typeof value.server_url === 'string')
+      )
+    }
+
     return (
       typeof value === 'object' &&
       value !== null &&

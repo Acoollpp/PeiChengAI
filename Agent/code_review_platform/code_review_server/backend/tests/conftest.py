@@ -1,9 +1,54 @@
 from collections.abc import Generator
+import os
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import inspect
+from sqlalchemy import create_engine, inspect, text
 from sqlmodel import Session, delete
+
+os.environ.setdefault("POSTGRES_DB", os.getenv("CODE_REVIEW_TEST_POSTGRES_DB", "app_test"))
+
+from app.core.config import settings
+
+
+def _ensure_test_database_exists() -> None:
+    database_name = settings.POSTGRES_DB
+    if not database_name.endswith("_test"):
+        raise RuntimeError(
+            "Refusing to initialize tests against non-test database "
+            f"{database_name!r}. Set CODE_REVIEW_TEST_POSTGRES_DB to a database "
+            "name ending in '_test'."
+        )
+
+    maintenance_url = str(settings.SQLALCHEMY_DATABASE_URI).replace(
+        f"/{database_name}",
+        "/postgres",
+        1,
+    )
+    maintenance_engine = create_engine(maintenance_url, isolation_level="AUTOCOMMIT")
+    with maintenance_engine.connect() as connection:
+        exists = connection.execute(
+            text("select 1 from pg_database where datname = :database_name"),
+            {"database_name": database_name},
+        ).first()
+        if not exists:
+            connection.execute(text(f'create database "{database_name}"'))
+    maintenance_engine.dispose()
+
+
+_ensure_test_database_exists()
+
+
+def _run_test_migrations() -> None:
+    backend_dir = Path(__file__).resolve().parents[1]
+    alembic_cfg = Config(str(backend_dir / "alembic.ini"))
+    command.upgrade(alembic_cfg, "head")
+
+
+_run_test_migrations()
 
 from app.core.db import engine, init_db
 from app.main import app
@@ -20,11 +65,23 @@ from tests.utils.user import create_random_user
 from tests.utils.utils import auth_headers_for_user_id, get_superuser_token_headers
 
 
+def _assert_test_database(session: Session) -> None:
+    database_name = session.exec(text("select current_database()")).one()
+    if not database_name.endswith("_test"):
+        raise RuntimeError(
+            "Refusing to run destructive test cleanup against non-test database "
+            f"{database_name!r}. Set CODE_REVIEW_TEST_POSTGRES_DB to a database "
+            "name ending in '_test'."
+        )
+
+
 @pytest.fixture(scope="session", autouse=True)
 def db() -> Generator[Session, None, None]:
     with Session(engine) as session:
+        _assert_test_database(session)
         init_db(session)
         yield session
+        _assert_test_database(session)
         statement = delete(UserApiKey)
         session.execute(statement)
         statement = delete(UserSvnCredential)
