@@ -545,6 +545,37 @@ h2 {
   min-height: 220px;
 }
 
+.task-board {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.task-board-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 8%);
+}
+
+.task-board-tab {
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  color: rgb(245 247 251 / 60%);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.task-board-tab.is-active {
+  color: #ffffff;
+  background: rgb(18 185 120 / 24%);
+  box-shadow: inset 0 0 0 1px rgb(18 185 120 / 24%);
+}
+
 .empty-state,
 .preview-empty {
   margin: 0;
@@ -552,22 +583,30 @@ h2 {
   line-height: 1.6;
 }
 
-.task-list {
+.history-task-list {
   display: grid;
   gap: 12px;
   max-height: 460px;
+  min-width: 0;
   overflow: auto;
 }
 
 .task-card {
   display: grid;
-  grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
-  min-height: 250px;
-  max-height: 320px;
+  gap: 10px;
+  min-width: 0;
   border: 1px solid rgb(255 255 255 / 12%);
   border-radius: 8px;
   padding: 13px;
   background: #0b0f13;
+}
+
+.current-task-card {
+  min-height: 250px;
+}
+
+.history-task-card {
+  min-height: 0;
 }
 
 .task-card.is-selected {
@@ -698,53 +737,120 @@ h2 {
 }
 
 .markdown-preview {
-  max-width: 1040px;
+  max-width: 980px;
   min-width: 0;
   color: rgb(245 247 251 / 86%);
-  line-height: 1.7;
+  font-size: 15px;
+  line-height: 1.75;
 }
 
 .markdown-preview h1,
 .markdown-preview h2,
 .markdown-preview h3 {
-  margin: 0 0 14px;
-  font-size: 22px;
-  line-height: 1.35;
+  margin: 28px 0 12px;
+  color: #ffffff;
+  line-height: 1.28;
+}
+
+.markdown-preview h1:first-child,
+.markdown-preview h2:first-child,
+.markdown-preview h3:first-child {
+  margin-top: 0;
 }
 
 .markdown-preview p,
-.markdown-preview ul {
-  margin: 0 0 14px;
+.markdown-preview ul,
+.markdown-preview ol,
+.markdown-preview blockquote {
+  margin: 0 0 16px;
 }
 
-.markdown-preview code {
+.markdown-preview ul,
+.markdown-preview ol {
+  padding-left: 22px;
+}
+
+.markdown-preview blockquote {
+  border-left: 3px solid rgb(18 185 120 / 64%);
+  padding: 8px 0 8px 14px;
+  color: rgb(245 247 251 / 68%);
+  background: rgb(255 255 255 / 5%);
+}
+
+.markdown-preview a {
+  color: #64d8ff;
+  text-decoration: none;
+}
+
+.markdown-preview a:hover {
+  text-decoration: underline;
+}
+
+.markdown-preview :not(pre) > code {
+  border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 5px;
   padding: 2px 5px;
-  color: #d9f7ff;
-  background: rgb(255 255 255 / 10%);
+  color: #bff8d8;
+  background: rgb(255 255 255 / 8%);
+  font-size: 0.9em;
+}
+
+.markdown-code-block {
+  overflow: hidden;
+  margin: 0 0 18px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 8px;
+  background: #070a0d;
+}
+
+.markdown-code-language {
+  min-height: 30px;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+  padding: 6px 12px;
+  color: rgb(245 247 251 / 56%);
+  background: rgb(255 255 255 / 5%);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.markdown-code-block pre {
+  margin: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+.markdown-code-block code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  color: #e8edf2;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.markdown-table-wrapper {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0 0 18px;
 }
 
 .markdown-preview table {
-  display: block;
   width: max-content;
-  max-width: 100%;
-  overflow: auto;
+  min-width: 100%;
   border-collapse: collapse;
-  margin: 0 0 18px;
   font-size: 14px;
 }
 
 .markdown-preview th,
 .markdown-preview td {
-  border: 1px solid rgb(255 255 255 / 14%);
-  padding: 8px 10px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  padding: 9px 11px;
   text-align: left;
   vertical-align: top;
 }
 
 .markdown-preview th {
-  color: #ffffff;
-  background: rgb(255 255 255 / 10%);
+  color: #f5f7fb;
+  background: rgb(255 255 255 / 9%);
 }
 
 .markdown-preview tr:nth-child(even) td {
