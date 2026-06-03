@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { registerIpcHandlers } from './ipc'
+import { configureExternalLinkHandling } from './window-security'
 
 const resolvePreloadPath = (): string => {
   const mjsPath = join(__dirname, '../preload/index.mjs')
@@ -26,6 +27,8 @@ const createWindow = (): void => {
       contextIsolation: true
     }
   })
+
+  configureExternalLinkHandling(mainWindow)
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
