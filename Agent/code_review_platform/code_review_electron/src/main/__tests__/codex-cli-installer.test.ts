@@ -160,6 +160,27 @@ describe('summarizeInstallError', () => {
     expect(summary).not.toContain('/Users/alice')
   })
 
+  it('redacts POSIX user paths in quoted, colon, and parenthesized npm errors', async () => {
+    const { summarizeInstallError } = await import('../codex-cli-installer')
+
+    const summary = summarizeInstallError({
+      ok: false,
+      stdout: '',
+      stderr:
+        "npm ERR! mkdir '/Users/alice/.npm-global'\n" +
+        'npm ERR! cache path: /Users/alice/.npm/_cacache\n' +
+        'npm ERR! while loading config ("/Users/alice/.npmrc")\n' +
+        'npm ERR! permission denied in "/Users/alice/project"'
+    })
+
+    expect(summary).toContain('npm ERR! mkdir')
+    expect(summary).toContain('npm ERR! cache path:')
+    expect(summary).toContain('npm ERR! while loading config')
+    expect(summary).toContain('npm ERR! permission denied')
+    expect(summary).not.toContain('/Users/alice')
+    expect(summary).not.toContain('alice')
+  })
+
   it('returns a fallback when npm output has no actionable error details', async () => {
     const { summarizeInstallError } = await import('../codex-cli-installer')
 

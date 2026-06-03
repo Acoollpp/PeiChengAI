@@ -106,7 +106,7 @@ const isActionableInstallErrorLine = (line: string): boolean =>
 const redactSensitiveInstallOutput = (line: string): string =>
   line
     .replace(/(https?:\/\/)[^/@\s]+@/gi, '$1***@')
-    .replace(/(^|\s)(\/(?!\/)\S+)/g, '$1[路径]')
+    .replace(/(^|[\s'"(:=])((?:\/(?!\/)[^\s'")]+)+)/g, '$1[路径]')
     .replace(/\b[A-Za-z]:\\Users\\[^\\\s]+(?:\\\S*)?/g, '[路径]')
 
 export const runInstallCommand = (
