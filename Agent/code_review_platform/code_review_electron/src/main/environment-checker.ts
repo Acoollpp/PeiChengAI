@@ -31,6 +31,7 @@ export interface EnvironmentCheckResult {
   svnVersion?: string
   codexPath?: string
   svnPath?: string
+  codexError?: string
   skillError?: string
 }
 
@@ -73,6 +74,7 @@ const commandCandidates: Record<string, string[]> = {
     join(process.env.HOME ?? '', '.local/bin/codex'),
     '/Applications/Codex.app/Contents/Resources/codex'
   ],
+  npm: ['npm', 'npm.cmd'],
   svn: ['svn', '/opt/homebrew/bin/svn', '/usr/local/bin/svn', '/usr/bin/svn']
 }
 
