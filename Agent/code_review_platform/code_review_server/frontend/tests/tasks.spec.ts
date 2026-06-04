@@ -27,6 +27,8 @@ test.describe("Normal user task navigation", () => {
     await expect(
       page.getByRole("heading", { name: "代码审查任务管理" }),
     ).toBeVisible()
+    await expect(page.getByPlaceholder("用户姓名")).not.toBeVisible()
+    await expect(page.getByPlaceholder("SVN账号")).not.toBeVisible()
   })
 })
 
@@ -43,5 +45,7 @@ test.describe("Admin task navigation", () => {
     await expect(
       page.getByRole("heading", { name: "代码审查任务管理" }),
     ).toBeVisible()
+    await expect(page.getByPlaceholder("用户姓名")).toBeVisible()
+    await expect(page.getByPlaceholder("SVN账号")).toBeVisible()
   })
 })
