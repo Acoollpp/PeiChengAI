@@ -8,6 +8,7 @@ import { DataTable } from "@/components/Common/DataTable"
 import AddItem from "@/components/Items/AddItem"
 import { columns } from "@/components/Items/columns"
 import PendingItems from "@/components/Pending/PendingItems"
+import { requireAdminUser } from "@/lib/admin-route"
 
 function getItemsQueryOptions() {
   return {
@@ -18,6 +19,9 @@ function getItemsQueryOptions() {
 
 export const Route = createFileRoute("/_layout/items")({
   component: Items,
+  beforeLoad: async () => {
+    await requireAdminUser()
+  },
   head: () => ({
     meta: [
       {

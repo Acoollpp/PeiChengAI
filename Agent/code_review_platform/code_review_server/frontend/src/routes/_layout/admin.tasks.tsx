@@ -4,7 +4,7 @@ import { UsersService } from "@/client"
 import { hasAdminPrivileges } from "@/lib/authz"
 
 export const Route = createFileRoute("/_layout/admin/tasks")({
-  beforeLoad: async ({ location }) => {
+  beforeLoad: async () => {
     const user = await UsersService.readUserMe()
     if (!hasAdminPrivileges(user)) {
       throw redirect({
@@ -12,10 +12,8 @@ export const Route = createFileRoute("/_layout/admin/tasks")({
       })
     }
 
-    if (location.pathname === "/admin/tasks") {
-      throw redirect({
-        to: "/admin/tasks/review",
-      })
-    }
+    throw redirect({
+      to: "/tasks/review",
+    })
   },
 })

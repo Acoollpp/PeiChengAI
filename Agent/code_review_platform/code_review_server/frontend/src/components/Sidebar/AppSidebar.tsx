@@ -13,32 +13,42 @@ import { hasAdminPrivileges } from "@/lib/authz"
 import { type Item, Main } from "./Main"
 import { User } from "./User"
 
-const baseItems: Item[] = [
-  { icon: Home, title: "仪表盘", path: "/" },
+const userItems: Item[] = [
+  { icon: Home, title: "主页", path: "/" },
+  {
+    icon: ListChecks,
+    title: "任务管理",
+    children: [
+      {
+        icon: ListChecks,
+        title: "代码审查任务管理",
+        path: "/tasks/review",
+      },
+    ],
+  },
+]
+
+const adminItems: Item[] = [
+  { icon: Home, title: "主页", path: "/" },
   { icon: Briefcase, title: "部门管理", path: "/items" },
+  { icon: Users, title: "用户管理", path: "/admin/users" },
+  {
+    icon: ListChecks,
+    title: "任务管理",
+    children: [
+      {
+        icon: ListChecks,
+        title: "代码审查任务管理",
+        path: "/tasks/review",
+      },
+    ],
+  },
+  { icon: Library, title: "Skill库", path: "/admin/skills" },
 ]
 
 export function AppSidebar() {
   const { user: currentUser } = useAuth()
-
-  const items = hasAdminPrivileges(currentUser)
-    ? [
-        ...baseItems,
-        { icon: Users, title: "用户管理", path: "/admin" },
-        {
-          icon: ListChecks,
-          title: "任务管理",
-          children: [
-            {
-              icon: ListChecks,
-              title: "代码审查任务管理",
-              path: "/admin/tasks/review",
-            },
-          ],
-        },
-        { icon: Library, title: "Skill库", path: "/admin/skills" },
-      ]
-    : baseItems
+  const items = hasAdminPrivileges(currentUser) ? adminItems : userItems
 
   return (
     <Sidebar collapsible="icon">
