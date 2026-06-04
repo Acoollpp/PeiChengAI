@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('codeReview', {
   bindSvnCredential: (payload: SvnCredentialPayload): Promise<true> =>
     ipcRenderer.invoke('svn:bind-credential', payload),
   installCodex: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('codex:install'),
+  installSvn: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('svn:install'),
   installSkill: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('skill:install'),
   checkEnvironment: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('environment:check')
 })

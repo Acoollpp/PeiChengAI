@@ -12,9 +12,11 @@ type TaskPageProps = {
   environment: EnvironmentCheckResult | null
   isCheckingEnvironment: boolean
   isInstallingCodex: boolean
+  isInstallingSvn: boolean
   svnUsername: string
   onRefreshEnvironment: () => Promise<void>
   onInstallCodex: () => Promise<void>
+  onInstallSvn: () => Promise<void>
   onInstallSkill: () => Promise<void>
 }
 
@@ -22,9 +24,11 @@ export function TaskPage({
   environment,
   isCheckingEnvironment,
   isInstallingCodex,
+  isInstallingSvn,
   svnUsername,
   onRefreshEnvironment,
   onInstallCodex,
+  onInstallSvn,
   onInstallSkill
 }: TaskPageProps): React.JSX.Element {
   const [tasks, setTasks] = useState<ReviewTask[]>([])
@@ -169,8 +173,10 @@ export function TaskPage({
           result={environment}
           isChecking={isCheckingEnvironment}
           isInstallingCodex={isInstallingCodex}
+          isInstallingSvn={isInstallingSvn}
           onRefresh={onRefreshEnvironment}
           onInstallCodex={onInstallCodex}
+          onInstallSvn={onInstallSvn}
           onInstallSkill={onInstallSkill}
         />
 

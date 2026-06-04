@@ -437,6 +437,19 @@ h2 {
   text-align: center;
 }
 
+.dependency-admin-link {
+  border: 0;
+  padding: 0 0 0 8px;
+  color: #8fe3bf;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dependency-admin-link:hover {
+  color: #ffffff;
+}
+
 .status-pill,
 .task-status,
 .user-badge {
@@ -966,4 +979,54 @@ h2 {
 .dialog-actions .primary-button,
 .dialog-actions .secondary-button {
   width: 100%;
+}
+
+.admin-contact-card {
+  position: relative;
+  width: min(360px, calc(100vw - 32px));
+  border-radius: 8px;
+  padding: 38px 28px 30px;
+  color: #202124;
+  background: #ffffff;
+  box-shadow: 0 24px 72px rgb(0 0 0 / 48%);
+}
+
+.admin-contact-card h2 {
+  margin: 0 0 8px;
+  color: #171a1f;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.admin-contact-card p {
+  margin: 0 0 32px;
+  color: #7d838c;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.admin-contact-card img {
+  display: block;
+  width: min(240px, 100%);
+  height: auto;
+  margin: 0 auto 24px;
+  border: 1px solid #e8eaee;
+  border-radius: 18px;
+}
+
+.admin-contact-card span {
+  display: block;
+  color: #a4a8ae;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.admin-contact-card .dialog-close {
+  color: #9aa0a6;
+}
+
+.admin-contact-card .dialog-close:hover {
+  color: #202124;
+  background: #f1f3f4;
 }

@@ -46,6 +46,7 @@ describe('registerIpcHandlers', () => {
       'task:list',
       'task:report',
       'codex:install',
+      'svn:install',
       'skill:install',
       'environment:check',
       'task:execute',
@@ -411,6 +412,30 @@ describe('registerIpcHandlers', () => {
       codexPath: 'codex'
     })
     expect(installCodexCli).toHaveBeenCalledTimes(1)
+  })
+
+  it('installs SVN CLI on demand', async () => {
+    const installSvnCli = vi.fn(async () => ({
+      status: 'ready' as const,
+      codexVersion: 'codex-cli 0.130.0',
+      svnVersion: '1.14.5'
+    }))
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      installSvnCli
+    })
+
+    const installHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'svn:install'
+    )?.[1]
+
+    await expect(installHandler()).resolves.toEqual({
+      status: 'ready',
+      codexVersion: 'codex-cli 0.130.0',
+      svnVersion: '1.14.5'
+    })
+    expect(installSvnCli).toHaveBeenCalledTimes(1)
   })
 
   it('syncs the active skill before checking the environment when authenticated', async () => {

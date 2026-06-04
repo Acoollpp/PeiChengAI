@@ -12,6 +12,7 @@ import {
 } from './api-client'
 import { AuthStore } from './auth-store'
 import { installCodexCli } from './codex-cli-installer'
+import { installSvnCli } from './svn-cli-installer'
 import { CredentialStore, type RememberedCredentials } from './credential-store'
 import { checkEnvironment } from './environment-checker'
 import {
@@ -34,6 +35,7 @@ export interface IpcHandlerDependencies {
   serverConfigStore?: ServerConfigStore
   checkEnvironment?: () => Promise<EnvironmentCheckResult>
   installCodexCli?: () => Promise<EnvironmentCheckResult>
+  installSvnCli?: () => Promise<EnvironmentCheckResult>
   syncSkill?: (token: string) => Promise<SkillSyncResult>
   prepareWorkspace?: typeof defaultPrepareWorkspace
   runCodex?: typeof defaultRunCodex
@@ -54,6 +56,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   const serverConfigStore = dependencies.serverConfigStore ?? new ServerConfigStore()
   const checkLocalEnvironment = dependencies.checkEnvironment ?? checkEnvironment
   const installLocalCodexCli = dependencies.installCodexCli ?? installCodexCli
+  const installLocalSvnCli = dependencies.installSvnCli ?? installSvnCli
   const loadRuntimePaths = async (): Promise<RuntimePaths> =>
     dependencies.runtimePaths ?? (await getRuntimePaths())
   const createApiClient = async (): Promise<ApiClient> => {
@@ -158,6 +161,8 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   })
 
   ipcMain.handle('codex:install', (): Promise<EnvironmentCheckResult> => installLocalCodexCli())
+
+  ipcMain.handle('svn:install', (): Promise<EnvironmentCheckResult> => installLocalSvnCli())
 
   ipcMain.handle('skill:install', async (): Promise<EnvironmentCheckResult> => {
     const skillError = await syncSkillForCurrentUser(authStore, syncSkill, {

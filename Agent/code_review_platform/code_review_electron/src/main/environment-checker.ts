@@ -32,6 +32,7 @@ export interface EnvironmentCheckResult {
   codexPath?: string
   svnPath?: string
   codexError?: string
+  svnError?: string
   skillError?: string
 }
 
@@ -75,6 +76,8 @@ const commandCandidates: Record<string, string[]> = {
     '/Applications/Codex.app/Contents/Resources/codex'
   ],
   npm: ['npm', 'npm.cmd'],
+  winget: ['winget', 'winget.exe'],
+  brew: ['brew', '/opt/homebrew/bin/brew', '/usr/local/bin/brew'],
   svn: ['svn', '/opt/homebrew/bin/svn', '/usr/local/bin/svn', '/usr/bin/svn']
 }
 

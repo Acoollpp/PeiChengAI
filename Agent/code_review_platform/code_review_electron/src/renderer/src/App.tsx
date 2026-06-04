@@ -18,6 +18,7 @@ export function App(): React.JSX.Element {
   const [environment, setEnvironment] = useState<EnvironmentCheckResult | null>(null)
   const [isCheckingEnvironment, setIsCheckingEnvironment] = useState(false)
   const [isInstallingCodex, setIsInstallingCodex] = useState(false)
+  const [isInstallingSvn, setIsInstallingSvn] = useState(false)
   const [needSvnBinding, setNeedSvnBinding] = useState(false)
   const [bindingError, setBindingError] = useState('')
   const [isBinding, setIsBinding] = useState(false)
@@ -44,6 +45,20 @@ export function App(): React.JSX.Element {
       })
     } finally {
       setIsInstallingCodex(false)
+    }
+  }, [])
+
+  const installSvn = useCallback(async (): Promise<void> => {
+    setIsInstallingSvn(true)
+    try {
+      setEnvironment(await window.codeReview.installSvn())
+    } catch {
+      setEnvironment({
+        status: 'missing_svn',
+        svnError: 'SVN CLI 安装失败'
+      })
+    } finally {
+      setIsInstallingSvn(false)
     }
   }, [])
 
@@ -107,9 +122,11 @@ export function App(): React.JSX.Element {
         environment={environment}
         isCheckingEnvironment={isCheckingEnvironment}
         isInstallingCodex={isInstallingCodex}
+        isInstallingSvn={isInstallingSvn}
         svnUsername={session.displayName}
         onRefreshEnvironment={checkEnvironment}
         onInstallCodex={installCodex}
+        onInstallSvn={installSvn}
         onInstallSkill={installSkill}
       />
       {needSvnBinding && (

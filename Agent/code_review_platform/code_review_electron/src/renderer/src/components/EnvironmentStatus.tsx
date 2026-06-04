@@ -1,20 +1,23 @@
 import { useState } from 'react'
 
+import adminContactCard from '../assets/admin-contact-card.jpg'
 import type { EnvironmentCheckResult } from '../code-review-api'
 
 type EnvironmentStatusProps = {
   result: EnvironmentCheckResult | null
   isChecking: boolean
   isInstallingCodex: boolean
+  isInstallingSvn: boolean
   onRefresh: () => Promise<void>
   onInstallCodex: () => Promise<void>
+  onInstallSvn: () => Promise<void>
   onInstallSkill: () => Promise<void>
 }
 
 const statusLabels: Record<NonNullable<EnvironmentCheckResult['status']>, string> = {
   ready: '环境就绪',
-  missing_codex: '缺少 Codex',
-  missing_svn: '缺少 SVN',
+  missing_codex: '缺少 Codex CLI',
+  missing_svn: '缺少 SVN CLI',
   missing_skill: '缺少 Skill',
   failed: '检查失败'
 }
@@ -33,12 +36,15 @@ export function EnvironmentStatus({
   result,
   isChecking,
   isInstallingCodex,
+  isInstallingSvn,
   onRefresh,
   onInstallCodex,
+  onInstallSvn,
   onInstallSkill
 }: EnvironmentStatusProps): React.JSX.Element {
   const [isOpen, setIsOpen] = useState(false)
   const [installingSkill, setInstallingSkill] = useState(false)
+  const [showAdminCard, setShowAdminCard] = useState(false)
   const status = result?.status ?? 'failed'
   const hasKnownResult = result !== null
   const hasIssue = hasKnownResult && status !== 'ready'
@@ -56,12 +62,12 @@ export function EnvironmentStatus({
           ok: Boolean(result.codexVersion),
           version: result.codexVersion,
           path: result.codexPath,
-          missingText: result.codexError ?? 'Codex 缺失，请点击安装',
-          actionText: isInstallingCodex ? '安装中...' : '安装 Codex'
+          missingText: result.codexError ?? 'Codex CLI 缺失，请点击安装',
+          actionText: isInstallingCodex ? '安装中...' : '安装 Codex CLI'
         }
       ]
     : []
-  const busy = isChecking || isInstallingCodex || installingSkill
+  const busy = isChecking || isInstallingCodex || isInstallingSvn || installingSkill
 
   if (showDownstreamDependencies) {
     items.push(
@@ -71,8 +77,8 @@ export function EnvironmentStatus({
         ok: Boolean(result?.svnVersion),
         version: result?.svnVersion,
         path: result?.svnPath,
-        missingText: 'SVN 缺失，请联系管理员安装',
-        actionText: '联系管理员'
+        missingText: result?.svnError ?? 'SVN CLI 缺失，请点击安装',
+        actionText: isInstallingSvn ? '安装中...' : '安装 SVN CLI'
       },
       {
         key: 'skill',
@@ -121,7 +127,7 @@ export function EnvironmentStatus({
           <p className="environment-detail">
             {codexMissing
               ? `Codex ${result?.codexVersion ?? '-'}`
-              : `Codex ${result?.codexVersion ?? '-'} · SVN ${result?.svnVersion ?? '-'}`}
+              : `Codex CLI ${result?.codexVersion ?? '-'} · SVN CLI ${result?.svnVersion ?? '-'}`}
           </p>
         </div>
         <button className="ghost-button" type="button" disabled={busy} onClick={() => void onRefresh()}>
@@ -145,10 +151,14 @@ export function EnvironmentStatus({
                 <button
                   className="install-button"
                   type="button"
-                  disabled={busy || item.key === 'svn'}
+                  disabled={busy}
                   onClick={() => {
                     if (item.key === 'codex') {
                       void onInstallCodex()
+                      return
+                    }
+                    if (item.key === 'svn') {
+                      void onInstallSvn()
                       return
                     }
                     if (item.key === 'skill') {
@@ -157,6 +167,7 @@ export function EnvironmentStatus({
                   }}
                 >
                   {((item.key === 'codex' && isInstallingCodex) ||
+                    (item.key === 'svn' && isInstallingSvn) ||
                     (item.key === 'skill' && installingSkill)) && (
                     <span className="button-spinner" aria-hidden="true" />
                   )}
@@ -167,11 +178,31 @@ export function EnvironmentStatus({
           ))}
           {hasIssue && (
             <p className="dependency-help">
-              如本机已安装但仍显示缺失，请点击重新检查；SVN/Codex 会自动搜索 Homebrew 和系统常见路径。
+              如本机已安装但仍显示缺失，请点击重新检查；SVN CLI/Codex CLI 会自动搜索 Homebrew 和系统常见路径。
+              <button className="dependency-admin-link" type="button" onClick={() => setShowAdminCard(true)}>
+                联系管理员
+              </button>
             </p>
           )}
         </div>
       )}
+      {showAdminCard && <AdminContactDialog onClose={() => setShowAdminCard(false)} />}
     </section>
+  )
+}
+
+function AdminContactDialog({ onClose }: { onClose: () => void }): React.JSX.Element {
+  return (
+    <div className="dialog-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-contact-title">
+      <div className="admin-contact-card">
+        <button className="dialog-close" type="button" aria-label="关闭" onClick={onClose}>
+          ×
+        </button>
+        <h2 id="admin-contact-title">杨慧城</h2>
+        <p>深圳市沛城电子科技股份有限公司</p>
+        <img src={adminContactCard} alt="钉钉扫码添加管理员好友" />
+        <span>用钉钉「扫一扫」二维码，添加我为好友</span>
+      </div>
+    </div>
   )
 }
