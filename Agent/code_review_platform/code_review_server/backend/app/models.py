@@ -194,12 +194,19 @@ class ReviewTasksPublic(SQLModel):
     count: int
 
 
+class ReviewTaskReportUserStatsPublic(SQLModel):
+    user_name: str | None = None
+    svn_username: str | None = None
+    report_count: int
+
+
 class ReviewTaskStatsPublic(SQLModel):
     total: int
     success: int
     running: int
     failed_or_error: int
     by_status: dict[ReviewTaskStatus, int]
+    reports_by_user: list[ReviewTaskReportUserStatsPublic] = Field(default_factory=list)
 
 
 class SkillPackage(SQLModel, table=True):

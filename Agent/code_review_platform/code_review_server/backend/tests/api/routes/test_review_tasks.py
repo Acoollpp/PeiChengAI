@@ -594,6 +594,89 @@ def test_admin_task_stats_count_all_tasks(
     )
 
 
+def test_admin_task_stats_include_top_20_report_counts_by_user(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+
+    for index in range(21):
+        user, api_key = create_key_user(db)
+        user.full_name = f"报告用户 {index:02d}"
+        db.add(user)
+        db.commit()
+        headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
+
+        for report_index in range(index + 1):
+            task = _create_review_task(
+                client,
+                headers,
+                old_revision=f"{index + 1000}{report_index}",
+            )
+            upload_response = client.post(
+                f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+                headers=headers,
+                files={
+                    "upload": (
+                        "report.md",
+                        b"# Review\n",
+                        "text/markdown",
+                    )
+                },
+            )
+            assert upload_response.status_code == 200
+
+    no_report_user, no_report_api_key = create_key_user(db)
+    no_report_user.full_name = "没有报告用户"
+    db.add(no_report_user)
+    db.commit()
+    no_report_headers = authentication_token_from_key(
+        client=client, key=no_report_api_key.key, db=db
+    )
+    _create_review_task(client, no_report_headers, old_revision="9999")
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    reports_by_user = response.json()["reports_by_user"]
+    assert len(reports_by_user) == 20
+    assert reports_by_user[0] == {
+        "user_name": "报告用户 20",
+        "svn_username": None,
+        "report_count": 21,
+    }
+    assert reports_by_user[-1]["user_name"] == "报告用户 01"
+    assert reports_by_user[-1]["report_count"] == 2
+    assert "报告用户 00" not in {
+        user_stat["user_name"] for user_stat in reports_by_user
+    }
+    assert "没有报告用户" not in {
+        user_stat["user_name"] for user_stat in reports_by_user
+    }
+
+
+def test_normal_user_task_stats_do_not_include_report_counts_by_user(
+    client: TestClient,
+    db: Session,
+) -> None:
+    _, api_key = create_key_user(db)
+    headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reports_by_user"] == []
+
+
 def test_task_stats_include_all_status_keys_with_zero_counts(
     client: TestClient, db: Session
 ) -> None:

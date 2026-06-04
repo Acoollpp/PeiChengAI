@@ -66,7 +66,7 @@ from tests.utils.utils import auth_headers_for_user_id, get_superuser_token_head
 
 
 def _assert_test_database(session: Session) -> None:
-    database_name = session.exec(text("select current_database()")).one()
+    database_name = session.exec(text("select current_database()")).one()[0]
     if not database_name.endswith("_test"):
         raise RuntimeError(
             "Refusing to run destructive test cleanup against non-test database "

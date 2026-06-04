@@ -13,6 +13,7 @@ from app.models import (
     ReviewTask,
     ReviewTaskCreate,
     ReviewTaskPublic,
+    ReviewTaskReportUserStatsPublic,
     ReviewTasksPublic,
     ReviewTaskStatsPublic,
     ReviewTaskStatus,
@@ -160,6 +161,26 @@ def read_review_task_stats(
     for status, count in rows:
         by_status[status] = count
 
+    reports_by_user: list[ReviewTaskReportUserStatsPublic] = []
+    if has_admin_privileges(current_user):
+        report_count = func.count(ReviewTask.id)
+        report_rows = session.exec(
+            select(User.full_name, User.svn_username, report_count)
+            .join(User, ReviewTask.user_id == User.id)
+            .where(ReviewTask.report_path.is_not(None))
+            .group_by(User.id, User.full_name, User.svn_username)
+            .order_by(report_count.desc(), User.full_name)
+            .limit(20)
+        ).all()
+        reports_by_user = [
+            ReviewTaskReportUserStatsPublic(
+                user_name=user_name,
+                svn_username=svn_username,
+                report_count=count,
+            )
+            for user_name, svn_username, count in report_rows
+        ]
+
     return ReviewTaskStatsPublic(
         total=sum(by_status.values()),
         success=by_status[ReviewTaskStatus.success],
@@ -168,6 +189,7 @@ def read_review_task_stats(
             by_status[status] for status in _FAILED_OR_ERROR_STATUSES
         ),
         by_status=by_status,
+        reports_by_user=reports_by_user,
     )
 
 

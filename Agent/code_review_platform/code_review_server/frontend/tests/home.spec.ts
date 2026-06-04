@@ -13,6 +13,7 @@ test("Home page is renamed and shows task statistics", async ({ page }) => {
   await expect(page.getByText("成功数")).toBeVisible()
   await expect(page.getByText("失败/异常数")).toBeVisible()
   await expect(page.getByText("运行中数")).toBeVisible()
+  await expect(page.getByText("报告生成数")).toBeVisible()
   await expect(page.getByText("状态分布")).toBeVisible()
 
   const taskStats = page
@@ -47,5 +48,6 @@ test.describe("Normal user home navigation", () => {
       page.getByRole("link", { name: "部门管理" }),
     ).not.toBeVisible()
     await expect(page.getByText("任务统计")).toBeVisible()
+    await expect(page.getByText("报告生成数")).not.toBeVisible()
   })
 })

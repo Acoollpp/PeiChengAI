@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import useAuth from "@/hooks/useAuth"
+import { hasAdminPrivileges } from "@/lib/authz"
 import { cn } from "@/lib/utils"
 
 type ReviewTaskStatus =
@@ -33,6 +34,11 @@ type ReviewTaskStats = {
   running: number
   failed_or_error: number
   by_status: Record<ReviewTaskStatus, number>
+  reports_by_user: Array<{
+    user_name: string | null
+    svn_username: string | null
+    report_count: number
+  }>
 }
 
 const statusLabels: Array<{ key: ReviewTaskStatus; label: string }> = [
@@ -75,6 +81,7 @@ async function readReviewTaskStats(): Promise<ReviewTaskStats> {
       ...emptyStatusCounts,
       ...stats.by_status,
     },
+    reports_by_user: stats.reports_by_user ?? [],
   }
 }
 
@@ -145,6 +152,12 @@ export function TaskStatsPanel() {
     1,
     ...statusLabels.map(({ key }) => stats.by_status[key] ?? 0),
   )
+  const canViewUserReportStats = hasAdminPrivileges(currentUser)
+  const reportsByUser = stats.reports_by_user.slice(0, 20)
+  const maxReportCount = Math.max(
+    1,
+    ...reportsByUser.map((item) => item.report_count),
+  )
 
   return (
     <section className="space-y-4">
@@ -176,6 +189,57 @@ export function TaskStatsPanel() {
           </Card>
         ))}
       </div>
+
+      {canViewUserReportStats ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>报告生成数</CardTitle>
+            <CardDescription>按用户统计已生成报告的任务数。</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {reportsByUser.length > 0 ? (
+              <div className="space-y-3">
+                {reportsByUser.map((item, index) => {
+                  const displayName =
+                    item.user_name || item.svn_username || "未命名用户"
+                  const width = `${(item.report_count / maxReportCount) * 100}%`
+
+                  return (
+                    <div
+                      key={`${item.user_name ?? ""}-${item.svn_username ?? ""}-${index}`}
+                      className="grid grid-cols-[minmax(7rem,12rem)_minmax(0,1fr)_3rem] items-center gap-3 text-sm"
+                    >
+                      <span
+                        className="truncate text-muted-foreground"
+                        title={
+                          item.svn_username
+                            ? `${displayName} (${item.svn_username})`
+                            : displayName
+                        }
+                      >
+                        {displayName}
+                      </span>
+                      <div className="h-7 overflow-hidden rounded-md bg-muted">
+                        <div
+                          className="h-full rounded-md bg-primary/80"
+                          style={{ width }}
+                        />
+                      </div>
+                      <span className="text-right font-medium tabular-nums">
+                        {item.report_count}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                暂无已生成的报告。
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
