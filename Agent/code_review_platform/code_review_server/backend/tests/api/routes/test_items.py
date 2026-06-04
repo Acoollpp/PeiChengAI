@@ -4,7 +4,9 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from app.core.config import settings
+from app.models import UserRole
 from tests.utils.item import create_random_item
+from tests.utils.user import authentication_token_from_key, create_key_user
 
 
 def test_create_item(
@@ -77,6 +79,73 @@ def test_read_items(
     assert response.status_code == 200
     content = response.json()
     assert len(content["data"]) >= 2
+
+
+def test_role_admin_can_read_all_items(
+    client: TestClient, db: Session
+) -> None:
+    first_item = create_random_item(db)
+    second_item = create_random_item(db)
+    admin, api_key = create_key_user(db)
+    admin.role = UserRole.admin
+    db.add(admin)
+    db.commit()
+
+    headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
+    response = client.get(
+        f"{settings.API_V1_STR}/items/",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    item_ids = {item["id"] for item in content["data"]}
+    assert str(first_item.id) in item_ids
+    assert str(second_item.id) in item_ids
+
+
+def test_role_admin_can_manage_other_users_item(
+    client: TestClient, db: Session
+) -> None:
+    item = create_random_item(db)
+    admin, api_key = create_key_user(db)
+    admin.role = UserRole.admin
+    db.add(admin)
+    db.commit()
+    headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
+
+    response = client.get(
+        f"{settings.API_V1_STR}/items/{item.id}",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["id"] == str(item.id)
+    assert content["owner_id"] == str(item.owner_id)
+
+    data = {"title": "Role admin title", "description": "Role admin description"}
+    response = client.put(
+        f"{settings.API_V1_STR}/items/{item.id}",
+        headers=headers,
+        json=data,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["title"] == data["title"]
+    assert content["description"] == data["description"]
+    assert content["id"] == str(item.id)
+    assert content["owner_id"] == str(item.owner_id)
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/items/{item.id}",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["message"] == "Item deleted successfully"
 
 
 def test_update_item(
