@@ -594,7 +594,7 @@ def test_admin_task_stats_count_all_tasks(
     )
 
 
-def test_admin_task_stats_include_top_20_report_counts_by_user(
+def test_admin_task_stats_include_all_nonzero_report_counts_by_user(
     client: TestClient,
     superuser_token_headers: dict[str, str],
     db: Session,
@@ -645,17 +645,14 @@ def test_admin_task_stats_include_top_20_report_counts_by_user(
 
     assert response.status_code == 200
     reports_by_user = response.json()["reports_by_user"]
-    assert len(reports_by_user) == 20
+    assert len(reports_by_user) == 21
     assert reports_by_user[0] == {
         "user_name": "报告用户 20",
         "svn_username": None,
         "report_count": 21,
     }
-    assert reports_by_user[-1]["user_name"] == "报告用户 01"
-    assert reports_by_user[-1]["report_count"] == 2
-    assert "报告用户 00" not in {
-        user_stat["user_name"] for user_stat in reports_by_user
-    }
+    assert reports_by_user[-1]["user_name"] == "报告用户 00"
+    assert reports_by_user[-1]["report_count"] == 1
     assert "没有报告用户" not in {
         user_stat["user_name"] for user_stat in reports_by_user
     }

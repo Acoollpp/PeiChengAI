@@ -63,6 +63,17 @@ const emptyStatusCounts: Record<ReviewTaskStatus, number> = {
   cancelled: 0,
 }
 
+const reportBarClasses = [
+  "bg-blue-500",
+  "bg-cyan-500",
+  "bg-violet-500",
+  "bg-amber-500",
+  "bg-rose-500",
+  "bg-lime-500",
+  "bg-sky-500",
+  "bg-fuchsia-500",
+]
+
 async function readReviewTaskStats(): Promise<ReviewTaskStats> {
   const token = localStorage.getItem("access_token")
   const response = await fetch(`${OpenAPI.BASE}/api/v1/review-tasks/stats`, {
@@ -153,7 +164,9 @@ export function TaskStatsPanel() {
     ...statusLabels.map(({ key }) => stats.by_status[key] ?? 0),
   )
   const canViewUserReportStats = hasAdminPrivileges(currentUser)
-  const reportsByUser = stats.reports_by_user.slice(0, 20)
+  const reportsByUser = stats.reports_by_user.filter(
+    (item) => item.report_count > 0,
+  )
   const maxReportCount = Math.max(
     1,
     ...reportsByUser.map((item) => item.report_count),
@@ -198,39 +211,46 @@ export function TaskStatsPanel() {
           </CardHeader>
           <CardContent>
             {reportsByUser.length > 0 ? (
-              <div className="space-y-3">
-                {reportsByUser.map((item, index) => {
-                  const displayName =
-                    item.user_name || item.svn_username || "未命名用户"
-                  const width = `${(item.report_count / maxReportCount) * 100}%`
+              <div className="overflow-x-auto pb-2">
+                <div className="flex h-72 min-w-max items-end gap-4">
+                  {reportsByUser.map((item, index) => {
+                    const displayName =
+                      item.user_name || item.svn_username || "未命名用户"
+                    const height = `${(item.report_count / maxReportCount) * 100}%`
+                    const colorClass =
+                      reportBarClasses[index % reportBarClasses.length]
 
-                  return (
-                    <div
-                      key={`${item.user_name ?? ""}-${item.svn_username ?? ""}-${index}`}
-                      className="grid grid-cols-[minmax(7rem,12rem)_minmax(0,1fr)_3rem] items-center gap-3 text-sm"
-                    >
-                      <span
-                        className="truncate text-muted-foreground"
-                        title={
-                          item.svn_username
-                            ? `${displayName} (${item.svn_username})`
-                            : displayName
-                        }
+                    return (
+                      <div
+                        key={`${item.user_name ?? ""}-${item.svn_username ?? ""}-${index}`}
+                        className="flex h-full w-20 shrink-0 flex-col items-center justify-end gap-2 text-sm"
                       >
-                        {displayName}
-                      </span>
-                      <div className="h-7 overflow-hidden rounded-md bg-muted">
-                        <div
-                          className="h-full rounded-md bg-primary/80"
-                          style={{ width }}
-                        />
+                        <span className="font-medium tabular-nums">
+                          {item.report_count}
+                        </span>
+                        <div className="flex h-48 w-full items-end justify-center rounded-md bg-muted/60 px-3 py-2">
+                          <div
+                            className={cn(
+                              "w-full rounded-t-md transition-all",
+                              colorClass,
+                            )}
+                            style={{ height }}
+                          />
+                        </div>
+                        <span
+                          className="w-full truncate text-center text-muted-foreground"
+                          title={
+                            item.svn_username
+                              ? `${displayName} (${item.svn_username})`
+                              : displayName
+                          }
+                        >
+                          {displayName}
+                        </span>
                       </div>
-                      <span className="text-right font-medium tabular-nums">
-                        {item.report_count}
-                      </span>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                </div>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">

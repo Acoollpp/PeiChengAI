@@ -170,7 +170,6 @@ def read_review_task_stats(
             .where(ReviewTask.report_path.is_not(None))
             .group_by(User.id, User.full_name, User.svn_username)
             .order_by(report_count.desc(), User.full_name)
-            .limit(20)
         ).all()
         reports_by_user = [
             ReviewTaskReportUserStatsPublic(
