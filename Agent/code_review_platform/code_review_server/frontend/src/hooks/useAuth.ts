@@ -26,7 +26,15 @@ const useAuth = () => {
     enabled: isLoggedIn(),
   })
 
+  const clearSessionQueries = () => {
+    queryClient.setQueryData(["currentUser"], null)
+    queryClient.removeQueries({ queryKey: ["currentUser"] })
+    queryClient.removeQueries({ queryKey: ["review-task-stats"] })
+    queryClient.removeQueries({ queryKey: ["review-tasks"] })
+  }
+
   const onLoginSuccess = async (token: string) => {
+    clearSessionQueries()
     localStorage.setItem("access_token", token)
     await queryClient.invalidateQueries({ queryKey: ["currentUser"] })
     navigate({ to: "/" })
@@ -48,6 +56,7 @@ const useAuth = () => {
 
   const logout = () => {
     localStorage.removeItem("access_token")
+    clearSessionQueries()
     navigate({ to: "/login" })
   }
 
