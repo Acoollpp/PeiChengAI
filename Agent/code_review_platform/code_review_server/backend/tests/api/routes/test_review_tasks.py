@@ -493,13 +493,16 @@ def test_normal_user_filters_only_search_own_review_tasks(
 
 def test_normal_user_task_stats_only_count_own_tasks(
     client: TestClient,
-    normal_user_token_headers: dict[str, str],
     db: Session,
 ) -> None:
-    own_task = _create_review_task(client, normal_user_token_headers, old_revision="31")
+    _, own_api_key = create_key_user(db)
+    own_headers = authentication_token_from_key(
+        client=client, key=own_api_key.key, db=db
+    )
+    own_task = _create_review_task(client, own_headers, old_revision="31")
     client.patch(
         f"{settings.API_V1_STR}/review-tasks/{own_task['id']}/status",
-        headers=normal_user_token_headers,
+        headers=own_headers,
         json={"status": "success"},
     )
     _, other_api_key = create_key_user(db)
@@ -515,7 +518,7 @@ def test_normal_user_task_stats_only_count_own_tasks(
 
     response = client.get(
         f"{settings.API_V1_STR}/review-tasks/stats",
-        headers=normal_user_token_headers,
+        headers=own_headers,
     )
 
     assert response.status_code == 200
@@ -531,15 +534,23 @@ def test_normal_user_task_stats_only_count_own_tasks(
 def test_admin_task_stats_count_all_tasks(
     client: TestClient,
     superuser_token_headers: dict[str, str],
-    normal_user_token_headers: dict[str, str],
     db: Session,
 ) -> None:
-    success_task = _create_review_task(
-        client, normal_user_token_headers, old_revision="33"
+    baseline_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=superuser_token_headers,
     )
+    assert baseline_response.status_code == 200
+    baseline = baseline_response.json()
+
+    _, success_api_key = create_key_user(db)
+    success_headers = authentication_token_from_key(
+        client=client, key=success_api_key.key, db=db
+    )
+    success_task = _create_review_task(client, success_headers, old_revision="33")
     client.patch(
         f"{settings.API_V1_STR}/review-tasks/{success_task['id']}/status",
-        headers=normal_user_token_headers,
+        headers=success_headers,
         json={"status": "success"},
     )
     _, other_api_key = create_key_user(db)
@@ -566,21 +577,32 @@ def test_admin_task_stats_count_all_tasks(
 
     assert response.status_code == 200
     content = response.json()
-    assert content["total"] >= 3
-    assert content["success"] >= 1
-    assert content["running"] >= 1
-    assert content["failed_or_error"] >= 1
-    assert content["by_status"]["success"] >= 1
-    assert content["by_status"]["running_codex"] >= 1
-    assert content["by_status"]["environment_error"] >= 1
+    assert content["total"] - baseline["total"] == 3
+    assert content["success"] - baseline["success"] == 1
+    assert content["running"] - baseline["running"] == 1
+    assert content["failed_or_error"] - baseline["failed_or_error"] == 1
+    assert content["by_status"]["success"] - baseline["by_status"]["success"] == 1
+    assert (
+        content["by_status"]["running_codex"]
+        - baseline["by_status"]["running_codex"]
+        == 1
+    )
+    assert (
+        content["by_status"]["environment_error"]
+        - baseline["by_status"]["environment_error"]
+        == 1
+    )
 
 
 def test_task_stats_include_all_status_keys_with_zero_counts(
-    client: TestClient, normal_user_token_headers: dict[str, str]
+    client: TestClient, db: Session
 ) -> None:
+    _, api_key = create_key_user(db)
+    headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
+
     response = client.get(
         f"{settings.API_V1_STR}/review-tasks/stats",
-        headers=normal_user_token_headers,
+        headers=headers,
     )
 
     assert response.status_code == 200
@@ -597,7 +619,8 @@ def test_task_stats_include_all_status_keys_with_zero_counts(
     }
     for count in content["by_status"].values():
         assert isinstance(count, int)
-        assert count >= 0
+        assert count == 0
+    assert content["total"] == 0
 
 
 def test_role_admin_can_read_other_user_task_detail(

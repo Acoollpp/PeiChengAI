@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import JSON, DateTime
+from sqlalchemy import JSON, DateTime, Index
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -125,6 +125,9 @@ class UserApiKey(SQLModel, table=True):
 
 class ReviewTask(SQLModel, table=True):
     __tablename__ = "review_task"
+    __table_args__ = (
+        Index("ix_review_task_user_id_status", "user_id", "status"),
+    )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     user_id: uuid.UUID = Field(foreign_key="user.id", nullable=False)
