@@ -1,5 +1,7 @@
 import { FormEvent, useState } from 'react'
 
+import { PasswordField } from './PasswordField'
+
 interface SvnBindingDialogProps {
   onSubmit: (credentials: { svn_username: string; svn_password: string }) => Promise<void>
   onSkip: () => void
@@ -52,18 +54,14 @@ export function SvnBindingDialog({
             />
           </label>
 
-          <label className="field auth-field">
-            <span>SVN 密码</span>
-            <input
-              required
-              type="password"
-              value={svnPassword}
-              autoComplete="current-password"
-              placeholder="请输入 SVN 密码"
-              disabled={isSubmitting}
-              onChange={(event) => setSvnPassword(event.target.value)}
-            />
-          </label>
+          <PasswordField
+            label="SVN 密码"
+            value={svnPassword}
+            autoComplete="current-password"
+            placeholder="请输入 SVN 密码"
+            disabled={isSubmitting}
+            onChange={setSvnPassword}
+          />
 
           {error && <p className="form-error">{error}</p>}
 

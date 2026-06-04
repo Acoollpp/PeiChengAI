@@ -231,6 +231,38 @@ h2 {
   min-height: 20px;
 }
 
+.password-input-wrap {
+  position: relative;
+  display: block;
+}
+
+.password-input-wrap input {
+  padding-right: 46px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  color: rgb(245 247 251 / 58%);
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  transform: translateY(-50%);
+}
+
+.password-toggle:hover {
+  color: #f5f7fb;
+  background: rgb(255 255 255 / 8%);
+}
+
 .auth-card .remember-field {
   color: rgb(245 247 251 / 48%);
 }
@@ -251,6 +283,22 @@ h2 {
 }
 
 .link-button:hover {
+  color: #f5f7fb;
+}
+
+.auth-admin-link {
+  display: block;
+  width: fit-content;
+  border: 0;
+  padding: 0;
+  margin: 18px auto 0;
+  color: rgb(245 247 251 / 50%);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.auth-admin-link:hover {
   color: #f5f7fb;
 }
 
@@ -437,19 +485,6 @@ h2 {
   text-align: center;
 }
 
-.dependency-admin-link {
-  border: 0;
-  padding: 0 0 0 8px;
-  color: #8fe3bf;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.dependency-admin-link:hover {
-  color: #ffffff;
-}
-
 .status-pill,
 .task-status,
 .user-badge {
@@ -516,6 +551,29 @@ h2 {
   justify-content: space-between;
   align-items: start;
   gap: 14px;
+}
+
+.workspace-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-contact-button {
+  min-height: 26px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 999px;
+  padding: 0 10px;
+  color: rgb(245 247 251 / 74%);
+  background: rgb(255 255 255 / 8%);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.admin-contact-button:hover {
+  color: #ffffff;
+  background: rgb(255 255 255 / 14%);
 }
 
 .workspace-logo {
@@ -993,6 +1051,15 @@ h2 {
 
 .admin-contact-card h2 {
   margin: 0 0 8px;
+  color: #7d838c;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.admin-contact-card strong {
+  display: block;
+  margin-bottom: 8px;
   color: #171a1f;
   font-size: 22px;
   line-height: 1.25;

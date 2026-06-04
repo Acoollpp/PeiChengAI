@@ -7,6 +7,7 @@ import { EnvironmentStatus } from './EnvironmentStatus'
 import { MarkdownPreview } from './MarkdownPreview'
 import { TaskBoard } from './TaskBoard'
 import { TaskForm } from './TaskForm'
+import { AdminContactDialog } from './AdminContactDialog'
 
 type TaskPageProps = {
   environment: EnvironmentCheckResult | null
@@ -38,6 +39,7 @@ export function TaskPage({
   const [isLoadingTasks, setIsLoadingTasks] = useState(true)
   const [selectedTaskId, setSelectedTaskId] = useState<string>()
   const [loadingReportTaskId, setLoadingReportTaskId] = useState<string>()
+  const [showAdminContact, setShowAdminContact] = useState(false)
 
   const canRunTask = environment?.status === 'ready'
 
@@ -166,7 +168,16 @@ export function TaskPage({
             <p className="eyebrow">SVN审查</p>
             <h1>任务工作台</h1>
           </div>
-          <span className="user-badge">{svnUsername}</span>
+          <div className="workspace-actions">
+            <span className="user-badge">{svnUsername}</span>
+            <button
+              className="admin-contact-button"
+              type="button"
+              onClick={() => setShowAdminContact(true)}
+            >
+              联系管理员
+            </button>
+          </div>
         </div>
 
         <EnvironmentStatus
@@ -212,6 +223,7 @@ export function TaskPage({
         </div>
         <MarkdownPreview markdown={markdown} />
       </section>
+      {showAdminContact && <AdminContactDialog onClose={() => setShowAdminContact(false)} />}
     </section>
   )
 }

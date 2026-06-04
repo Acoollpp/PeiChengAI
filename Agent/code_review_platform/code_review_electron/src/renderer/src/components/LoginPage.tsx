@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useState } from 'react'
 
 import paceLogo from '../assets/pace-logo.png'
 import type { KeyLoginRequest, SvnLoginRequest } from '../code-review-api'
+import { AdminContactDialog } from './AdminContactDialog'
+import { PasswordField } from './PasswordField'
 
 type LoginPageProps = {
   onKeyLogin: (payload: KeyLoginRequest) => Promise<void>
@@ -19,6 +21,7 @@ export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX
   const [rememberPassword, setRememberPassword] = useState(false)
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showAdminContact, setShowAdminContact] = useState(false)
 
   useEffect(() => {
     let isMounted = true
@@ -148,16 +151,12 @@ export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX
         </label>
 
         {mode === 'key' ? (
-          <label className="field auth-field">
-            <span>Key</span>
-            <input
-              required
-              type="password"
-              value={accessKey}
-              autoComplete="current-password"
-              onChange={(event) => setAccessKey(event.target.value)}
-            />
-          </label>
+          <PasswordField
+            label="Key"
+            value={accessKey}
+            autoComplete="current-password"
+            onChange={setAccessKey}
+          />
         ) : (
           <>
             <label className="field auth-field">
@@ -170,16 +169,12 @@ export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX
               />
             </label>
 
-            <label className="field auth-field">
-              <span>SVN密码</span>
-              <input
-                required
-                type="password"
-                value={svnPassword}
-                autoComplete="current-password"
-                onChange={(event) => setSvnPassword(event.target.value)}
-              />
-            </label>
+            <PasswordField
+              label="SVN 密码"
+              value={svnPassword}
+              autoComplete="current-password"
+              onChange={setSvnPassword}
+            />
           </>
         )}
 
@@ -200,6 +195,12 @@ export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX
           {isSubmitting ? '处理中...' : mode === 'key' ? 'Key 登录' : 'SVN 登录'}
         </button>
       </form>
+
+      <button className="auth-admin-link" type="button" onClick={() => setShowAdminContact(true)}>
+        联系管理员
+      </button>
+
+      {showAdminContact && <AdminContactDialog onClose={() => setShowAdminContact(false)} />}
     </section>
   )
 }

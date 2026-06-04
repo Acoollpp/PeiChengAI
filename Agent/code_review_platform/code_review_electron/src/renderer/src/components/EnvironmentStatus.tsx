@@ -1,6 +1,5 @@
 import { useState } from 'react'
 
-import adminContactCard from '../assets/admin-contact-card.jpg'
 import type { EnvironmentCheckResult } from '../code-review-api'
 
 type EnvironmentStatusProps = {
@@ -44,7 +43,6 @@ export function EnvironmentStatus({
 }: EnvironmentStatusProps): React.JSX.Element {
   const [isOpen, setIsOpen] = useState(false)
   const [installingSkill, setInstallingSkill] = useState(false)
-  const [showAdminCard, setShowAdminCard] = useState(false)
   const status = result?.status ?? 'failed'
   const hasKnownResult = result !== null
   const hasIssue = hasKnownResult && status !== 'ready'
@@ -179,30 +177,10 @@ export function EnvironmentStatus({
           {hasIssue && (
             <p className="dependency-help">
               如本机已安装但仍显示缺失，请点击重新检查；SVN CLI/Codex CLI 会自动搜索 Homebrew 和系统常见路径。
-              <button className="dependency-admin-link" type="button" onClick={() => setShowAdminCard(true)}>
-                联系管理员
-              </button>
             </p>
           )}
         </div>
       )}
-      {showAdminCard && <AdminContactDialog onClose={() => setShowAdminCard(false)} />}
     </section>
-  )
-}
-
-function AdminContactDialog({ onClose }: { onClose: () => void }): React.JSX.Element {
-  return (
-    <div className="dialog-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-contact-title">
-      <div className="admin-contact-card">
-        <button className="dialog-close" type="button" aria-label="关闭" onClick={onClose}>
-          ×
-        </button>
-        <h2 id="admin-contact-title">杨慧城</h2>
-        <p>深圳市沛城电子科技股份有限公司</p>
-        <img src={adminContactCard} alt="钉钉扫码添加管理员好友" />
-        <span>用钉钉「扫一扫」二维码，添加我为好友</span>
-      </div>
-    </div>
   )
 }
