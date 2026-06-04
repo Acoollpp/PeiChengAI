@@ -14,6 +14,7 @@ from app.models import (
     ReviewTaskCreate,
     ReviewTaskPublic,
     ReviewTasksPublic,
+    ReviewTaskStatsPublic,
     ReviewTaskStatus,
     ReviewTaskStatusUpdate,
     User,
@@ -23,6 +24,18 @@ from app.services import report_service
 router = APIRouter(prefix="/review-tasks", tags=["review-tasks"])
 
 _REVISION_RE = re.compile(r"^r?(\d+)$")
+
+_RUNNING_STATUSES = {
+    ReviewTaskStatus.checking_environment,
+    ReviewTaskStatus.running_codex,
+    ReviewTaskStatus.uploading_report,
+}
+
+_FAILED_OR_ERROR_STATUSES = {
+    ReviewTaskStatus.failed,
+    ReviewTaskStatus.environment_error,
+    ReviewTaskStatus.cancelled,
+}
 
 
 def _utcnow() -> datetime:
@@ -127,6 +140,34 @@ def read_review_tasks(
     return ReviewTasksPublic(
         data=[_task_public(task, user) for task, user in rows],
         count=count,
+    )
+
+
+@router.get("/stats", response_model=ReviewTaskStatsPublic)
+def read_review_task_stats(
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    filters = []
+    if not has_admin_privileges(current_user):
+        filters.append(ReviewTask.user_id == current_user.id)
+
+    statement = select(ReviewTask.status, func.count()).where(*filters).group_by(
+        ReviewTask.status
+    )
+    rows = session.exec(statement).all()
+    by_status = dict.fromkeys(ReviewTaskStatus, 0)
+    for status, count in rows:
+        by_status[status] = count
+
+    return ReviewTaskStatsPublic(
+        total=sum(by_status.values()),
+        success=by_status[ReviewTaskStatus.success],
+        running=sum(by_status[status] for status in _RUNNING_STATUSES),
+        failed_or_error=sum(
+            by_status[status] for status in _FAILED_OR_ERROR_STATUSES
+        ),
+        by_status=by_status,
     )
 
 

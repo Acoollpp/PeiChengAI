@@ -491,6 +491,115 @@ def test_normal_user_filters_only_search_own_review_tasks(
     assert other["task"]["id"] not in listed_ids
 
 
+def test_normal_user_task_stats_only_count_own_tasks(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    own_task = _create_review_task(client, normal_user_token_headers, old_revision="31")
+    client.patch(
+        f"{settings.API_V1_STR}/review-tasks/{own_task['id']}/status",
+        headers=normal_user_token_headers,
+        json={"status": "success"},
+    )
+    _, other_api_key = create_key_user(db)
+    other_headers = authentication_token_from_key(
+        client=client, key=other_api_key.key, db=db
+    )
+    other_task = _create_review_task(client, other_headers, old_revision="32")
+    client.patch(
+        f"{settings.API_V1_STR}/review-tasks/{other_task['id']}/status",
+        headers=other_headers,
+        json={"status": "failed"},
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["total"] == 1
+    assert content["success"] == 1
+    assert content["running"] == 0
+    assert content["failed_or_error"] == 0
+    assert content["by_status"]["success"] == 1
+    assert content["by_status"]["failed"] == 0
+
+
+def test_admin_task_stats_count_all_tasks(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    success_task = _create_review_task(
+        client, normal_user_token_headers, old_revision="33"
+    )
+    client.patch(
+        f"{settings.API_V1_STR}/review-tasks/{success_task['id']}/status",
+        headers=normal_user_token_headers,
+        json={"status": "success"},
+    )
+    _, other_api_key = create_key_user(db)
+    other_headers = authentication_token_from_key(
+        client=client, key=other_api_key.key, db=db
+    )
+    running_task = _create_review_task(client, other_headers, old_revision="34")
+    client.patch(
+        f"{settings.API_V1_STR}/review-tasks/{running_task['id']}/status",
+        headers=other_headers,
+        json={"status": "running_codex"},
+    )
+    failed_task = _create_review_task(client, other_headers, old_revision="35")
+    client.patch(
+        f"{settings.API_V1_STR}/review-tasks/{failed_task['id']}/status",
+        headers=other_headers,
+        json={"status": "environment_error"},
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["total"] >= 3
+    assert content["success"] >= 1
+    assert content["running"] >= 1
+    assert content["failed_or_error"] >= 1
+    assert content["by_status"]["success"] >= 1
+    assert content["by_status"]["running_codex"] >= 1
+    assert content["by_status"]["environment_error"] >= 1
+
+
+def test_task_stats_include_all_status_keys_with_zero_counts(
+    client: TestClient, normal_user_token_headers: dict[str, str]
+) -> None:
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert set(content["by_status"]) == {
+        "created",
+        "checking_environment",
+        "running_codex",
+        "uploading_report",
+        "success",
+        "failed",
+        "environment_error",
+        "cancelled",
+    }
+    for count in content["by_status"].values():
+        assert isinstance(count, int)
+        assert count >= 0
+
+
 def test_role_admin_can_read_other_user_task_detail(
     client: TestClient,
     normal_user_token_headers: dict[str, str],

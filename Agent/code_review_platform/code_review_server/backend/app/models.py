@@ -191,6 +191,14 @@ class ReviewTasksPublic(SQLModel):
     count: int
 
 
+class ReviewTaskStatsPublic(SQLModel):
+    total: int
+    success: int
+    running: int
+    failed_or_error: int
+    by_status: dict[ReviewTaskStatus, int]
+
+
 class SkillPackage(SQLModel, table=True):
     __tablename__ = "skill_package"
 
