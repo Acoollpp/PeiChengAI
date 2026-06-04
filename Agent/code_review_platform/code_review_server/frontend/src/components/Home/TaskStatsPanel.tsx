@@ -14,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import useAuth from "@/hooks/useAuth"
 import { cn } from "@/lib/utils"
 
 type ReviewTaskStatus =
@@ -78,16 +79,18 @@ async function readReviewTaskStats(): Promise<ReviewTaskStats> {
 }
 
 export function TaskStatsPanel() {
+  const { user: currentUser } = useAuth()
   const {
     data: stats,
     isError,
     isLoading,
   } = useQuery({
+    enabled: Boolean(currentUser),
     queryFn: readReviewTaskStats,
-    queryKey: ["review-task-stats"],
+    queryKey: ["review-task-stats", currentUser?.id, currentUser?.role],
   })
 
-  if (isLoading) {
+  if (!currentUser || isLoading) {
     return (
       <section className="space-y-4">
         <h2 className="text-lg font-semibold tracking-tight">任务统计</h2>
@@ -187,7 +190,7 @@ export function TaskStatsPanel() {
             return (
               <div
                 key={key}
-                className="grid grid-cols-[6rem_minmax(0,1fr)_3rem] items-center gap-3 text-sm"
+                className="grid grid-cols-[minmax(6rem,max-content)_minmax(0,1fr)_3rem] items-center gap-3 text-sm"
               >
                 <span className="text-muted-foreground">{label}</span>
                 <div className="h-2 overflow-hidden rounded-full bg-muted">

@@ -14,14 +14,22 @@ test("Home page is renamed and shows task statistics", async ({ page }) => {
   await expect(page.getByText("失败/异常数")).toBeVisible()
   await expect(page.getByText("运行中数")).toBeVisible()
   await expect(page.getByText("状态分布")).toBeVisible()
-  await expect(page.getByText("待处理")).toBeVisible()
-  await expect(page.getByText("环境检查中")).toBeVisible()
-  await expect(page.getByText("运行中")).toBeVisible()
-  await expect(page.getByText("上传报告中")).toBeVisible()
-  await expect(page.getByText("成功")).toBeVisible()
-  await expect(page.getByText("失败")).toBeVisible()
-  await expect(page.getByText("环境异常")).toBeVisible()
-  await expect(page.getByText("已取消")).toBeVisible()
+
+  const taskStats = page
+    .getByText("状态分布")
+    .locator("xpath=ancestor::div[@data-slot='card']")
+  await expect(taskStats.getByText("待处理", { exact: true })).toBeVisible()
+  await expect(
+    taskStats.getByText("环境检查中", { exact: true }),
+  ).toBeVisible()
+  await expect(taskStats.getByText("运行中", { exact: true })).toBeVisible()
+  await expect(
+    taskStats.getByText("上传报告中", { exact: true }),
+  ).toBeVisible()
+  await expect(taskStats.getByText("成功", { exact: true })).toBeVisible()
+  await expect(taskStats.getByText("失败", { exact: true })).toBeVisible()
+  await expect(taskStats.getByText("环境异常", { exact: true })).toBeVisible()
+  await expect(taskStats.getByText("已取消", { exact: true })).toBeVisible()
 })
 
 test.describe("Normal user home navigation", () => {
