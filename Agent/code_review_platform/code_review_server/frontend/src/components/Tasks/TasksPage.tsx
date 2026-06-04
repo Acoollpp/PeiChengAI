@@ -314,10 +314,15 @@ function ReviewTasksSection({
 export function TasksPage() {
   const { user: currentUser } = useAuth()
   const queryClient = useQueryClient()
-  const canFilterUsers = hasAdminPrivileges(currentUser)
   const [draftFilters, setDraftFilters] =
     useState<ReviewTaskFilters>(emptyFilters)
   const [filters, setFilters] = useState<ReviewTaskFilters>(emptyFilters)
+
+  if (!currentUser) {
+    return <div className="text-muted-foreground">加载中...</div>
+  }
+
+  const canFilterUsers = hasAdminPrivileges(currentUser)
 
   const handleSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
