@@ -1,10 +1,11 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const handleMock = vi.fn()
+const showItemInFolderMock = vi.fn()
 
 vi.mock('electron', () => ({
   app: {
@@ -12,6 +13,9 @@ vi.mock('electron', () => ({
   },
   ipcMain: {
     handle: handleMock
+  },
+  shell: {
+    showItemInFolder: showItemInFolderMock
   }
 }))
 
@@ -185,7 +189,7 @@ describe('registerIpcHandlers', () => {
     })
   })
 
-  it('returns the latest successful report path from download IPC', async () => {
+  it('opens the latest successful report location from download IPC', async () => {
     const api = {
       createTask: vi.fn(async () => ({
         id: 'task-1',
@@ -236,6 +240,47 @@ describe('registerIpcHandlers', () => {
       status: 'ready',
       reportPath: expect.stringContaining('report.md')
     })
+    expect(showItemInFolderMock).toHaveBeenCalledWith(reportPath)
+  })
+
+  it('downloads a historical task report into the local runtime workspace before opening it', async () => {
+    const api = {
+      readTaskReport: vi.fn(async () => '# historical report\n')
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-runtime-report-'))
+    tempDirs.push(runtimeRoot)
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      runtimePaths: {
+        runtimeRoot,
+        skillPackagesDir: join(runtimeRoot, 'skill-packages'),
+        skillManifestPath: join(runtimeRoot, 'skill-packages', 'manifest.json'),
+        workspacesDir: join(runtimeRoot, 'workspaces'),
+        workspaceForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId),
+        reportPathForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'report.md')
+      }
+    })
+
+    const downloadHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report:download-current'
+    )?.[1]
+
+    const reportPath = join(runtimeRoot, 'workspaces', 'task-remote', 'report.md')
+    await expect(downloadHandler({}, 'task-remote')).resolves.toEqual({
+      status: 'ready',
+      taskId: 'task-remote',
+      reportPath
+    })
+    await expect(readFile(reportPath, 'utf8')).resolves.toBe('# historical report\n')
+    expect(api.readTaskReport).toHaveBeenCalledWith('token-123', 'task-remote')
+    expect(showItemInFolderMock).toHaveBeenCalledWith(reportPath)
   })
 
   it('lists tasks for the authenticated user', async () => {

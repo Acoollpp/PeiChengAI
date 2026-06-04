@@ -141,15 +141,15 @@ export function TaskPage({
     setReportMessage('')
 
     try {
-      const result = await window.codeReview.downloadCurrentReport()
+      const result = await window.codeReview.downloadCurrentReport(selectedTaskId)
       if (result.status !== 'ready' || !result.reportPath) {
-        setError('暂无可下载的成功审查报告。')
+        setError('暂无可查看位置的成功审查报告。')
         return
       }
 
-      setReportMessage(`报告路径：${result.reportPath}`)
+      setReportMessage(`报告位置：${result.reportPath}`)
     } catch (downloadError) {
-      setError(downloadError instanceof Error ? downloadError.message : '报告下载失败。')
+      setError(downloadError instanceof Error ? downloadError.message : '报告位置打开失败。')
     }
   }
 
@@ -201,7 +201,7 @@ export function TaskPage({
             <h2>审查报告</h2>
           </div>
           <button className="secondary-button" type="button" onClick={() => void handleDownload()}>
-            下载报告
+            查看报告位置
           </button>
         </div>
         <MarkdownPreview markdown={markdown} />

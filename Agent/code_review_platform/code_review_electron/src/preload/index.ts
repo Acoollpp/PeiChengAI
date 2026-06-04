@@ -39,8 +39,8 @@ contextBridge.exposeInMainWorld('codeReview', {
       ipcRenderer.removeListener('task:progress', listener)
     }
   },
-  downloadCurrentReport: (): Promise<DownloadCurrentReportResult> =>
-    ipcRenderer.invoke('report:download-current'),
+  downloadCurrentReport: (taskId?: string): Promise<DownloadCurrentReportResult> =>
+    ipcRenderer.invoke('report:download-current', taskId),
   bindSvnCredential: (payload: SvnCredentialPayload): Promise<true> =>
     ipcRenderer.invoke('svn:bind-credential', payload),
   installCodex: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('codex:install'),

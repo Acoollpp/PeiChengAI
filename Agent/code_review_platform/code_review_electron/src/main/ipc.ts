@@ -1,4 +1,7 @@
-import { ipcMain } from 'electron'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
+
+import { ipcMain, shell } from 'electron'
 
 import {
   ApiClient,
@@ -20,6 +23,7 @@ import {
 } from './task-agent'
 import type { EnvironmentCheckResult } from './environment-checker'
 import { uploadReportFile } from './report-uploader'
+import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
 import { ServerConfigStore, normalizeServerUrl } from './server-config-store'
 import { createSkillSyncService, type SkillSyncResult } from './skill-sync'
 
@@ -34,6 +38,7 @@ export interface IpcHandlerDependencies {
   prepareWorkspace?: typeof defaultPrepareWorkspace
   runCodex?: typeof defaultRunCodex
   uploadReport?: TaskAgentDependencies['uploadReport']
+  runtimePaths?: RuntimePaths
 }
 
 export interface DownloadCurrentReportResult {
@@ -49,6 +54,8 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   const serverConfigStore = dependencies.serverConfigStore ?? new ServerConfigStore()
   const checkLocalEnvironment = dependencies.checkEnvironment ?? checkEnvironment
   const installLocalCodexCli = dependencies.installCodexCli ?? installCodexCli
+  const loadRuntimePaths = async (): Promise<RuntimePaths> =>
+    dependencies.runtimePaths ?? (await getRuntimePaths())
   const createApiClient = async (): Promise<ApiClient> => {
     if (apiOverride) {
       return apiOverride
@@ -229,12 +236,47 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     }
   )
 
-  ipcMain.handle('report:download-current', async (): Promise<DownloadCurrentReportResult> => {
-    if (!latestSuccessfulReport) {
+  ipcMain.handle('report:download-current', async (_event, taskId?: string): Promise<DownloadCurrentReportResult> => {
+    if (!latestSuccessfulReport && !taskId) {
       return { status: 'missing' }
     }
 
-    return latestSuccessfulReport
+    if (
+      latestSuccessfulReport?.reportPath &&
+      (!taskId || latestSuccessfulReport.taskId === taskId)
+    ) {
+      shell.showItemInFolder(latestSuccessfulReport.reportPath)
+      return latestSuccessfulReport
+    }
+
+    const tokens = await authStore.load()
+
+    if (!tokens) {
+      throw new Error('Not authenticated')
+    }
+
+    const reportTaskId = taskId ?? latestSuccessfulReport?.taskId
+
+    if (!reportTaskId) {
+      return { status: 'missing' }
+    }
+
+    const taskApi = await createApiClient()
+    const reportMarkdown = await taskApi.readTaskReport(tokens.access_token, reportTaskId)
+    const runtimePaths = await loadRuntimePaths()
+    const reportPath = runtimePaths.reportPathForTask(reportTaskId)
+    await mkdir(dirname(reportPath), { recursive: true })
+    await writeFile(reportPath, reportMarkdown, 'utf8')
+
+    const downloadedReport = {
+      status: 'ready',
+      taskId: reportTaskId,
+      reportPath
+    } satisfies DownloadCurrentReportResult
+    latestSuccessfulReport = downloadedReport
+    shell.showItemInFolder(reportPath)
+
+    return downloadedReport
   })
 }
 

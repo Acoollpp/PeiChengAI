@@ -85,7 +85,7 @@ export interface CodeReviewApi {
   readTaskReport(taskId: string): Promise<string>
   executeTask(payload: ExecuteTaskRequest): Promise<ExecuteTaskResult>
   onTaskProgress(callback: (event: TaskProgressEvent) => void): () => void
-  downloadCurrentReport(): Promise<DownloadCurrentReportResult>
+  downloadCurrentReport(taskId?: string): Promise<DownloadCurrentReportResult>
   installCodex(): Promise<EnvironmentCheckResult>
   installSkill(): Promise<EnvironmentCheckResult>
   checkEnvironment(): Promise<EnvironmentCheckResult>
