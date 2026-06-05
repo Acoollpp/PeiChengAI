@@ -507,6 +507,7 @@ export class UsersService {
      * @param data The data for the request.
      * @param data.skip
      * @param data.limit
+     * @param data.search
      * @returns UsersPublic Successful Response
      * @throws ApiError
      */
@@ -516,7 +517,8 @@ export class UsersService {
             url: '/api/v1/users/',
             query: {
                 skip: data.skip,
-                limit: data.limit
+                limit: data.limit,
+                search: data.search
             },
             errors: {
                 422: 'Validation Error'

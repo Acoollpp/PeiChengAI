@@ -2,7 +2,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import col, delete, func, select
+from sqlmodel import col, delete, func, or_, select
 
 from app import crud
 from app.api.deps import (
@@ -44,16 +44,34 @@ def _ensure_svn_username_available(
     dependencies=[Depends(get_current_active_admin)],
     response_model=UsersPublic,
 )
-def read_users(session: SessionDep, skip: int = 0, limit: int = 100) -> Any:
+def read_users(
+    session: SessionDep, skip: int = 0, limit: int = 100, search: str | None = None
+) -> Any:
     """
     Retrieve users.
     """
 
-    count_statement = select(func.count()).select_from(User)
+    search_term = search.strip() if search else ""
+    filters = []
+    if search_term:
+        search_pattern = f"%{search_term}%"
+        search_filters = [
+            col(User.full_name).ilike(search_pattern),
+            col(User.svn_username).ilike(search_pattern),
+        ]
+        if search_term.isdigit():
+            search_filters.append(User.cch_user_id == int(search_term))
+        filters.append(or_(*search_filters))
+
+    count_statement = select(func.count()).select_from(User).where(*filters)
     count = session.exec(count_statement).one()
 
     statement = (
-        select(User).order_by(col(User.created_at).desc()).offset(skip).limit(limit)
+        select(User)
+        .where(*filters)
+        .order_by(col(User.created_at).desc())
+        .offset(skip)
+        .limit(limit)
     )
     users = session.exec(statement).all()
 

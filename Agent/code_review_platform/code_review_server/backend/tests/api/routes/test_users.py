@@ -217,6 +217,53 @@ def test_retrieve_users_as_role_admin(client: TestClient, db: Session) -> None:
     assert any(user["id"] == str(admin.id) for user in all_users["data"])
 
 
+def test_retrieve_users_searches_full_dataset(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    for index in range(105):
+        crud.create_user(
+            session=db,
+            user_create=UserCreate(
+                full_name=f"Paged User {index:03d}",
+                svn_username=f"paged-{index:03d}-{random_lower_string()}",
+            ),
+        )
+    target = User(
+        full_name="张胜科",
+        svn_username="svn-zhang-shengke",
+        auth_source=AuthSource.cch,
+        cch_user_id=10,
+        role=UserRole.user,
+        is_active=True,
+    )
+    db.add(target)
+    db.commit()
+
+    name_response = client.get(
+        f"{settings.API_V1_STR}/users/",
+        headers=superuser_token_headers,
+        params={"skip": 0, "limit": 10, "search": "胜科"},
+    )
+    cch_response = client.get(
+        f"{settings.API_V1_STR}/users/",
+        headers=superuser_token_headers,
+        params={"skip": 0, "limit": 10, "search": "10"},
+    )
+    svn_response = client.get(
+        f"{settings.API_V1_STR}/users/",
+        headers=superuser_token_headers,
+        params={"skip": 0, "limit": 10, "search": "zhang-sheng"},
+    )
+
+    assert name_response.status_code == 200
+    assert cch_response.status_code == 200
+    assert svn_response.status_code == 200
+    assert name_response.json()["count"] == 1
+    assert any(user["id"] == str(target.id) for user in name_response.json()["data"])
+    assert any(user["id"] == str(target.id) for user in cch_response.json()["data"])
+    assert any(user["id"] == str(target.id) for user in svn_response.json()["data"])
+
+
 def test_update_user_me(
     client: TestClient, normal_user_token_headers: dict[str, str], db: Session
 ) -> None:

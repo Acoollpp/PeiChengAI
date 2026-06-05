@@ -334,6 +334,7 @@ export type SkillsDownloadActiveSkillResponse = (unknown);
 
 export type UsersReadUsersData = {
     limit?: number;
+    search?: (string | null);
     skip?: number;
 };
 

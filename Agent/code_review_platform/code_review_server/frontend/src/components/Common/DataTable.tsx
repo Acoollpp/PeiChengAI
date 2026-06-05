@@ -3,6 +3,7 @@ import {
   flexRender,
   getCoreRowModel,
   getPaginationRowModel,
+  type PaginationState,
   useReactTable,
 } from "@tanstack/react-table"
 import {
@@ -32,18 +33,52 @@ import {
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
+  manualPagination?: boolean
+  onPaginationChange?: (pagination: PaginationState) => void
+  pageCount?: number
+  pagination?: PaginationState
+  totalCount?: number
 }
 
 export function DataTable<TData, TValue>({
   columns,
   data,
+  manualPagination = false,
+  onPaginationChange,
+  pageCount,
+  pagination,
+  totalCount = data.length,
 }: DataTableProps<TData, TValue>) {
   const table = useReactTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
+    getPaginationRowModel: manualPagination
+      ? undefined
+      : getPaginationRowModel(),
+    manualPagination,
+    onPaginationChange: (updater) => {
+      if (!pagination || !onPaginationChange) {
+        return
+      }
+      onPaginationChange(
+        typeof updater === "function" ? updater(pagination) : updater,
+      )
+    },
+    pageCount,
+    state: pagination ? { pagination } : undefined,
   })
+  const currentPageStart =
+    totalCount === 0
+      ? 0
+      : table.getState().pagination.pageIndex *
+          table.getState().pagination.pageSize +
+        1
+  const currentPageEnd = Math.min(
+    (table.getState().pagination.pageIndex + 1) *
+      table.getState().pagination.pageSize,
+    totalCount,
+  )
 
   return (
     <div className="flex flex-col gap-4">
@@ -90,22 +125,12 @@ export function DataTable<TData, TValue>({
         </TableBody>
       </Table>
 
-      {table.getPageCount() > 1 && (
+      {(manualPagination || table.getPageCount() > 1) && (
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 border-t bg-muted/20">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
             <div className="text-sm text-muted-foreground">
-              显示第{" "}
-              {table.getState().pagination.pageIndex *
-                table.getState().pagination.pageSize +
-                1}{" "}
-              至{" "}
-              {Math.min(
-                (table.getState().pagination.pageIndex + 1) *
-                  table.getState().pagination.pageSize,
-                data.length,
-              )}{" "}
-              条，共{" "}
-              <span className="font-medium text-foreground">{data.length}</span>{" "}
+              显示第 {currentPageStart} 至 {currentPageEnd} 条，共{" "}
+              <span className="font-medium text-foreground">{totalCount}</span>{" "}
               条
             </div>
             <div className="flex items-center gap-x-2">
