@@ -75,6 +75,50 @@ describe('installSvnCli', () => {
     expect(checkEnvironment).toHaveBeenCalled()
   })
 
+  it('refreshes the process PATH before detecting SVN after Windows install', async () => {
+    let pathRefreshed = false
+    const findVersionCommand = vi.fn(async (command: string): Promise<CommandResult> => {
+      if (command === 'winget') {
+        return { ok: true, output: 'v1.9.0', path: 'winget' }
+      }
+      if (command === 'svn' && pathRefreshed) {
+        return { ok: true, output: '1.14.5', path: 'svn' }
+      }
+      return { ok: false }
+    })
+    const runInstallCommand = vi.fn(async () => ({
+      ok: true,
+      stdout: 'Successfully installed',
+      stderr: ''
+    }))
+    const refreshProcessPath = vi.fn(async () => {
+      pathRefreshed = true
+    })
+    const checkEnvironment = vi.fn(async () => ({
+      status: 'ready' as const,
+      codexVersion: 'codex-cli 0.130.0',
+      svnVersion: '1.14.5'
+    }))
+    const { installSvnCli } = await import('../svn-cli-installer')
+
+    await expect(
+      installSvnCli({
+        platform: 'win32',
+        findVersionCommand,
+        runInstallCommand,
+        refreshProcessPath,
+        checkEnvironment
+      })
+    ).resolves.toEqual({
+      status: 'ready',
+      codexVersion: 'codex-cli 0.130.0',
+      svnVersion: '1.14.5'
+    })
+
+    expect(refreshProcessPath).toHaveBeenCalled()
+    expect(findVersionCommand).toHaveBeenCalledWith('svn', ['--version', '--quiet'])
+  })
+
   it('returns winget output when installing SVN CLI fails on Windows', async () => {
     const findVersionCommand = vi.fn(async (command: string): Promise<CommandResult> =>
       command === 'winget' ? { ok: true, output: 'v1.9.0', path: 'winget' } : { ok: false }

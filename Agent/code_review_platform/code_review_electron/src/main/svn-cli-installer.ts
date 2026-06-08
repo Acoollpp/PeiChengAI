@@ -1,6 +1,7 @@
 import {
   checkEnvironment,
   findVersionCommand,
+  refreshProcessPath,
   type CommandResult,
   type EnvironmentCheckResult
 } from './environment-checker'
@@ -14,6 +15,7 @@ export interface InstallSvnCliDependencies {
   platform?: NodeJS.Platform
   findVersionCommand?: (command: string, args: string[]) => Promise<CommandResult>
   runInstallCommand?: (command: string, args: string[]) => Promise<InstallCommandResult>
+  refreshProcessPath?: typeof refreshProcessPath
   checkEnvironment?: typeof checkEnvironment
 }
 
@@ -45,6 +47,7 @@ export const installSvnCli = async (
   const platform = dependencies.platform ?? process.platform
   const findCommand = dependencies.findVersionCommand ?? findVersionCommand
   const runInstall = dependencies.runInstallCommand ?? runInstallCommand
+  const refreshPath = dependencies.refreshProcessPath ?? refreshProcessPath
   const refreshEnvironment = dependencies.checkEnvironment ?? checkEnvironment
   const installTool = getInstallTool(platform)
 
@@ -71,6 +74,8 @@ export const installSvnCli = async (
       `通过 ${installTool} 安装 SVN CLI 失败：${summarizeSvnInstallError(installResult)}`
     )
   }
+
+  await refreshPath(platform)
 
   const svnResult = await findCommand('svn', ['--version', '--quiet'])
   if (!svnResult.ok) {
