@@ -596,6 +596,13 @@ docker volume rm code_review_server_test_client-release-data
 | 更新逻辑影响旧版本用户 | 更新失败不阻断使用；第一版可选更新 |
 | 测试污染现有服务 | 使用 `Test` 分支、独立端口、独立数据库和独立 Docker volume |
 
+## 实现与验收备注
+
+- Electron 主进程使用 `electron-updater` 的 `NsisUpdater` 和 generic provider；打包配置中保留 generic `publish`，运行时仍会根据当前登录服务端地址覆盖更新 feed。
+- Renderer 将更新流程状态和弹窗可见状态分开处理；用户选择“后台下载”后，后续下载进度不会反复弹出窗口，下载完成或更新失败仍会重新提示。
+- 当前开发环境默认 Node 为 `18.19.1`，Electron renderer 测试使用 `jsdom 24.1.3`，避免 `jsdom 29` 依赖链在 Node 18 下触发 ESM/CJS 兼容错误。
+- 在 Linux 测试环境执行 `npm run dist:win` 时，已完成 Electron Windows 运行时下载并生成 `release/win-unpacked/代码审查.exe`；进入 NSIS 安装包阶段时因当前环境缺少 `wine` 失败。需要在 Windows 构建机或安装 `wine` 的 Linux 构建机上生成最终 `.exe` 安装包、`.blockmap` 和 `latest.yml` 后上传到测试服务。
+
 ## 验收标准
 
 功能完成后必须满足：
