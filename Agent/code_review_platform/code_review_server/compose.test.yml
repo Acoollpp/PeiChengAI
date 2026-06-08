@@ -1,0 +1,52 @@
+services:
+  db:
+    restart: "no"
+    env_file:
+      - .env.test
+    ports:
+      - "15543:5432"
+
+  adminer:
+    restart: "no"
+    ports:
+      - "18083:8080"
+
+  prestart:
+    env_file:
+      - .env.test
+
+  backend:
+    restart: "no"
+    env_file:
+      - .env.test
+    ports:
+      - "18000:8000"
+    volumes:
+      - app-skill-data:/app/skills
+      - app-report-data:/app/reports
+      - app-client-release-data:/app/client-releases
+
+  frontend:
+    restart: "no"
+    ports:
+      - "15174:80"
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        - VITE_API_URL=http://172.23.17.242:18000
+        - NODE_ENV=development
+
+volumes:
+  app-db-data:
+    name: code_review_server_test_app-db-data
+  app-skill-data:
+    name: code_review_server_test_app-skill-data
+  app-report-data:
+    name: code_review_server_test_app-report-data
+  app-client-release-data:
+    name: code_review_server_test_client-release-data
+
+networks:
+  traefik-public:
+    external: false
