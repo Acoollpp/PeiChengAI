@@ -14,9 +14,7 @@ test.describe("Normal user task navigation", () => {
     await logInWithSvn(page, svnUsername, testSvnPassword)
 
     await expect(page.getByRole("link", { name: "主页" })).toBeVisible()
-    await expect(
-      page.getByRole("link", { name: "部门管理" }),
-    ).not.toBeVisible()
+    await expect(page.getByRole("link", { name: "部门管理" })).not.toBeVisible()
 
     const taskMenu = page.getByRole("button", { name: "任务管理" })
     await expect(taskMenu).toBeVisible()
@@ -47,5 +45,49 @@ test.describe("Admin task navigation", () => {
     ).toBeVisible()
     await expect(page.getByPlaceholder("用户姓名")).toBeVisible()
     await expect(page.getByPlaceholder("SVN账号")).toBeVisible()
+  })
+
+  test("Admin task table shows error message instead of client details", async ({
+    page,
+  }) => {
+    await logInWithKey(page, testApiKey)
+
+    await page.route("**/api/v1/review-tasks?**", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: {
+          data: [
+            {
+              id: "11111111-1111-1111-1111-111111111111",
+              user_id: "22222222-2222-2222-2222-222222222222",
+              user_name: "测试用户",
+              svn_username: "test_svn",
+              svn_url: "https://example.test/svn/project",
+              old_revision: "r1",
+              new_revision: "r2",
+              status: "failed",
+              report_path: null,
+              error_message: "客户端本地已生成报告，但未上传成功",
+              client_hostname: "worker-01",
+              client_version: "1.0.0",
+            },
+          ],
+          count: 1,
+        },
+      })
+    })
+
+    await page.goto("/tasks/review")
+
+    await expect(
+      page.getByRole("columnheader", { name: "错误信息" }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole("columnheader", { name: "执行客户端" }),
+    ).not.toBeVisible()
+    await expect(
+      page.getByText("客户端本地已生成报告，但未上传成功"),
+    ).toBeVisible()
+    await expect(page.getByText("worker-01 / 1.0.0")).not.toBeVisible()
   })
 })
