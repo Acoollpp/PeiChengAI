@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 import type {
+  AppUpdateError,
+  AppUpdateInfo,
+  AppUpdateProgress,
   EnvironmentCheckResult,
   ExecuteTaskRequest,
   ExecuteTaskResult,
@@ -13,6 +16,16 @@ import type {
   ReviewTasksResponse,
   TaskProgressEvent
 } from '../renderer/src/code-review-api'
+
+const listen = <T>(channel: string, callback: (event: T) => void): (() => void) => {
+  const listener = (_event: Electron.IpcRendererEvent, payload: T): void => {
+    callback(payload)
+  }
+  ipcRenderer.on(channel, listener)
+  return () => {
+    ipcRenderer.removeListener(channel, listener)
+  }
+}
 
 contextBridge.exposeInMainWorld('codeReview', {
   keyLogin: (payload: KeyLoginRequest): Promise<KeyLoginResult> =>
@@ -46,5 +59,18 @@ contextBridge.exposeInMainWorld('codeReview', {
   installCodex: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('codex:install'),
   installSvn: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('svn:install'),
   installSkill: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('skill:install'),
-  checkEnvironment: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('environment:check')
+  checkEnvironment: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('environment:check'),
+  checkForAppUpdate: (): Promise<boolean> => ipcRenderer.invoke('app-update:check'),
+  downloadAppUpdate: (): Promise<true> => ipcRenderer.invoke('app-update:download'),
+  installAppUpdate: (): Promise<true> => ipcRenderer.invoke('app-update:install'),
+  onAppUpdateAvailable: (callback: (info: AppUpdateInfo) => void): (() => void) =>
+    listen('app-update:available', callback),
+  onAppUpdateNotAvailable: (callback: (info: AppUpdateInfo) => void): (() => void) =>
+    listen('app-update:not-available', callback),
+  onAppUpdateDownloadProgress: (callback: (progress: AppUpdateProgress) => void): (() => void) =>
+    listen('app-update:download-progress', callback),
+  onAppUpdateDownloaded: (callback: (info: AppUpdateInfo) => void): (() => void) =>
+    listen('app-update:downloaded', callback),
+  onAppUpdateError: (callback: (error: AppUpdateError) => void): (() => void) =>
+    listen('app-update:error', callback)
 })

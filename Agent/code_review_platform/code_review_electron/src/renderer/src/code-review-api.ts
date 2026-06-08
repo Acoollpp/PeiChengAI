@@ -75,6 +75,28 @@ export interface SvnCredentialPayload {
   svn_password: string
 }
 
+export type AppUpdateStatus = 'available' | 'not-available' | 'download-progress' | 'downloaded' | 'error'
+
+export interface AppUpdateInfo {
+  version: string
+  releaseName?: string
+  releaseNotes?: string | Array<{ version?: string; note?: string }>
+  releaseDate?: string
+}
+
+export interface AppUpdateProgress {
+  total?: number
+  delta?: number
+  transferred?: number
+  percent?: number
+  bytesPerSecond?: number
+}
+
+export interface AppUpdateError {
+  message: string
+  stack?: string
+}
+
 export interface CodeReviewApi {
   keyLogin(payload: KeyLoginRequest): Promise<KeyLoginResult>
   svnLogin(payload: SvnLoginRequest): Promise<unknown>
@@ -92,4 +114,12 @@ export interface CodeReviewApi {
   installSkill(): Promise<EnvironmentCheckResult>
   checkEnvironment(): Promise<EnvironmentCheckResult>
   bindSvnCredential(payload: SvnCredentialPayload): Promise<true>
+  checkForAppUpdate(): Promise<boolean>
+  downloadAppUpdate(): Promise<true>
+  installAppUpdate(): Promise<true>
+  onAppUpdateAvailable(callback: (info: AppUpdateInfo) => void): () => void
+  onAppUpdateNotAvailable(callback: (info: AppUpdateInfo) => void): () => void
+  onAppUpdateDownloadProgress(callback: (progress: AppUpdateProgress) => void): () => void
+  onAppUpdateDownloaded(callback: (info: AppUpdateInfo) => void): () => void
+  onAppUpdateError(callback: (error: AppUpdateError) => void): () => void
 }

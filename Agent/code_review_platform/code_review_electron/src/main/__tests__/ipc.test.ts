@@ -43,6 +43,9 @@ describe('registerIpcHandlers', () => {
       'credentials:load',
       'credentials:clear',
       'server-config:load',
+      'app-update:check',
+      'app-update:download',
+      'app-update:install',
       'task:list',
       'task:report',
       'codex:install',
@@ -52,6 +55,34 @@ describe('registerIpcHandlers', () => {
       'task:execute',
       'report:download-current'
     ])
+  })
+
+  it('passes app update IPC calls through to the update service', async () => {
+    const appUpdateService = {
+      check: vi.fn(async () => false),
+      download: vi.fn(async () => true),
+      install: vi.fn(() => true)
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      appUpdateService: appUpdateService as never
+    })
+
+    const checkHandler = handleMock.mock.calls.find(([channel]) => channel === 'app-update:check')?.[1]
+    const downloadHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'app-update:download'
+    )?.[1]
+    const installHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'app-update:install'
+    )?.[1]
+
+    await expect(checkHandler()).resolves.toBe(false)
+    await expect(downloadHandler()).resolves.toBe(true)
+    expect(installHandler()).toBe(true)
+    expect(appUpdateService.check).toHaveBeenCalledTimes(1)
+    expect(appUpdateService.download).toHaveBeenCalledTimes(1)
+    expect(appUpdateService.install).toHaveBeenCalledTimes(1)
   })
 
   it('loads the default server config for the login page', async () => {

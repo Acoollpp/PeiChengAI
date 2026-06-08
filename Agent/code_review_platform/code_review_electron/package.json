@@ -18,6 +18,12 @@
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "http://127.0.0.1:8000/api/v1/client-updates/win32/x64"
+      }
+    ],
     "files": [
       "out/**/*",
       "package.json"
@@ -41,6 +47,8 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.1",
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.8.9",
     "electron-vite": "^4.0.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
