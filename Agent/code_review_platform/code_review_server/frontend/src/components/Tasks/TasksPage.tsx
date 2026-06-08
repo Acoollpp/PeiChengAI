@@ -39,6 +39,7 @@ type ReviewTask = {
   new_revision: string
   status: string
   report_path?: string | null
+  error_message?: string | null
   client_hostname?: string | null
   client_version?: string | null
 }
@@ -183,7 +184,7 @@ function ReviewTasksTable({
             <TableHead>SVN地址</TableHead>
             <TableHead>版本</TableHead>
             <TableHead>状态</TableHead>
-            <TableHead>执行客户端</TableHead>
+            <TableHead>错误信息</TableHead>
             <TableHead>报告</TableHead>
             <TableHead>操作</TableHead>
           </TableRow>
@@ -210,10 +211,11 @@ function ReviewTasksTable({
                   {task.old_revision} → {task.new_revision}
                 </TableCell>
                 <TableCell>{task.status}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {[task.client_hostname, task.client_version]
-                    .filter(Boolean)
-                    .join(" / ") || "-"}
+                <TableCell
+                  className="max-w-xs truncate text-muted-foreground"
+                  title={task.error_message || undefined}
+                >
+                  {task.error_message || "-"}
                 </TableCell>
                 <TableCell>
                   {task.report_path ? (
