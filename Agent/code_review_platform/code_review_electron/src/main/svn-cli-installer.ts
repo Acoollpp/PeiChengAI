@@ -49,18 +49,15 @@ export const installSvnCli = async (
   const installTool = getInstallTool(platform)
 
   if (!installTool) {
-    return {
-      status: 'missing_svn',
-      svnError: UnsupportedSvnInstallPlatformMessage
-    }
+    return missingSvnResult(refreshEnvironment, UnsupportedSvnInstallPlatformMessage)
   }
 
   const packageManagerResult = await findCommand(installTool, ['--version'])
   if (!packageManagerResult.ok) {
-    return {
-      status: 'missing_svn',
-      svnError: installTool === 'winget' ? MissingWingetMessage : MissingBrewMessage
-    }
+    return missingSvnResult(
+      refreshEnvironment,
+      installTool === 'winget' ? MissingWingetMessage : MissingBrewMessage
+    )
   }
 
   const installResult = await runInstall(
@@ -69,18 +66,15 @@ export const installSvnCli = async (
   )
 
   if (!installResult.ok) {
-    return {
-      status: 'missing_svn',
-      svnError: `通过 ${installTool} 安装 SVN CLI 失败：${summarizeSvnInstallError(installResult)}`
-    }
+    return missingSvnResult(
+      refreshEnvironment,
+      `通过 ${installTool} 安装 SVN CLI 失败：${summarizeSvnInstallError(installResult)}`
+    )
   }
 
   const svnResult = await findCommand('svn', ['--version', '--quiet'])
   if (!svnResult.ok) {
-    return {
-      status: 'missing_svn',
-      svnError: SvnNotDetectedAfterInstallMessage
-    }
+    return missingSvnResult(refreshEnvironment, SvnNotDetectedAfterInstallMessage)
   }
 
   return refreshEnvironment()
@@ -96,6 +90,18 @@ const getInstallTool = (platform: NodeJS.Platform): InstallTool | null => {
   }
 
   return null
+}
+
+const missingSvnResult = async (
+  refreshEnvironment: typeof checkEnvironment,
+  svnError: string
+): Promise<EnvironmentCheckResult> => {
+  const environment = await refreshEnvironment()
+  return {
+    ...environment,
+    status: 'missing_svn',
+    svnError
+  }
 }
 
 const summarizeSvnInstallError = (result: InstallCommandResult): string => {
