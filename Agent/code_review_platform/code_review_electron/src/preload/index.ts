@@ -69,6 +69,8 @@ contextBridge.exposeInMainWorld('codeReview', {
     listen('app-update:not-available', callback),
   onAppUpdateDownloadProgress: (callback: (progress: AppUpdateProgress) => void): (() => void) =>
     listen('app-update:download-progress', callback),
+  onAppUpdateProgress: (callback: (progress: AppUpdateProgress) => void): (() => void) =>
+    listen('app-update:download-progress', callback),
   onAppUpdateDownloaded: (callback: (info: AppUpdateInfo) => void): (() => void) =>
     listen('app-update:downloaded', callback),
   onAppUpdateError: (callback: (error: AppUpdateError) => void): (() => void) =>

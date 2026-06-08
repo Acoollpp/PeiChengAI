@@ -75,7 +75,7 @@ export interface SvnCredentialPayload {
   svn_password: string
 }
 
-export type AppUpdateStatus = 'available' | 'not-available' | 'download-progress' | 'downloaded' | 'error'
+export type AppUpdateStatus = 'idle' | 'available' | 'downloading' | 'downloaded' | 'error'
 
 export interface AppUpdateInfo {
   version: string
@@ -120,6 +120,7 @@ export interface CodeReviewApi {
   onAppUpdateAvailable(callback: (info: AppUpdateInfo) => void): () => void
   onAppUpdateNotAvailable(callback: (info: AppUpdateInfo) => void): () => void
   onAppUpdateDownloadProgress(callback: (progress: AppUpdateProgress) => void): () => void
+  onAppUpdateProgress(callback: (progress: AppUpdateProgress) => void): () => void
   onAppUpdateDownloaded(callback: (info: AppUpdateInfo) => void): () => void
   onAppUpdateError(callback: (error: AppUpdateError) => void): () => void
 }
