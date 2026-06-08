@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import create_engine, text
-from sqlmodel import Session, select
+from sqlmodel import Session, col, delete, select
 
 from app.models import AuthSource, User, UserApiKey, UserRole
 from app.services.cch_sync_service import CchKeyRow, CchSyncService, CchUserRow
@@ -168,6 +168,32 @@ def test_sync_rows_updates_existing_cch_user_and_disables_keys_for_disabled_user
     assert user.disabled_reason == "cch_user_disabled"
     assert api_key.is_active is False
     assert api_key.disabled_reason == "user_disabled"
+
+
+def test_sync_rows_keeps_permanent_cch_admins_as_admin(db: Session) -> None:
+    synced_at = datetime.now(timezone.utc)
+    permanent_admin_user_ids = select(User.id).where(
+        col(User.cch_user_id).in_([10, 102])
+    )
+    db.exec(delete(UserApiKey).where(col(UserApiKey.user_id).in_(permanent_admin_user_ids)))
+    db.exec(delete(User).where(col(User.cch_user_id).in_([10, 102])))
+    db.commit()
+
+    CchSyncService().sync_rows(
+        db,
+        users=[
+            CchUserRow(cch_user_id=10, full_name="张胜科", role="user"),
+            CchUserRow(cch_user_id=102, full_name="杨慧城", role="user"),
+        ],
+        keys=[],
+        synced_at=synced_at,
+    )
+
+    zhang = db.exec(select(User).where(User.cch_user_id == 10)).one()
+    yang = db.exec(select(User).where(User.cch_user_id == 102)).one()
+
+    assert zhang.role == UserRole.admin
+    assert yang.role == UserRole.admin
 
 
 def test_fetch_rows_supports_cch_users_keys_schema(tmp_path) -> None:

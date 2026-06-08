@@ -148,6 +148,25 @@ def test_role_admin_can_manage_other_users_item(
     assert content["message"] == "Item deleted successfully"
 
 
+def test_superuser_flag_without_admin_role_cannot_read_all_items(
+    client: TestClient, db: Session
+) -> None:
+    item = create_random_item(db)
+    user, api_key = create_key_user(db)
+    user.is_superuser = True
+    user.role = UserRole.user
+    db.add(user)
+    db.commit()
+
+    headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
+    response = client.get(
+        f"{settings.API_V1_STR}/items/{item.id}",
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+
+
 def test_update_item(
     client: TestClient, superuser_token_headers: dict[str, str], db: Session
 ) -> None:

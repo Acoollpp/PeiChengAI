@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 
 from app import crud
 from app.core.config import settings
+from app.core.db import DEFAULT_LOCAL_ADMIN_NAME
 from app.models import AuthSource, User, UserCreate, UserRole
 from tests.utils.user import create_random_user
 from tests.utils.utils import auth_headers_for_user_id, random_lower_string
@@ -30,7 +31,7 @@ def test_get_users_superuser_me(
     assert r.status_code == 200
     assert current_user["is_active"] is True
     assert current_user["is_superuser"]
-    assert current_user["full_name"] == settings.FIRST_SUPERUSER
+    assert current_user["full_name"] == DEFAULT_LOCAL_ADMIN_NAME
     assert current_user["role"] == "admin"
     assert "email" not in current_user
 
@@ -229,10 +230,10 @@ def test_retrieve_users_searches_full_dataset(
             ),
         )
     target = User(
-        full_name="张胜科",
+        full_name="全量搜索目标用户",
         svn_username="svn-zhang-shengke",
         auth_source=AuthSource.cch,
-        cch_user_id=10,
+        cch_user_id=991010,
         role=UserRole.user,
         is_active=True,
     )
@@ -242,12 +243,12 @@ def test_retrieve_users_searches_full_dataset(
     name_response = client.get(
         f"{settings.API_V1_STR}/users/",
         headers=superuser_token_headers,
-        params={"skip": 0, "limit": 10, "search": "胜科"},
+        params={"skip": 0, "limit": 10, "search": "全量搜索目标"},
     )
     cch_response = client.get(
         f"{settings.API_V1_STR}/users/",
         headers=superuser_token_headers,
-        params={"skip": 0, "limit": 10, "search": "10"},
+        params={"skip": 0, "limit": 10, "search": "991010"},
     )
     svn_response = client.get(
         f"{settings.API_V1_STR}/users/",
@@ -396,7 +397,7 @@ def test_delete_user_me_as_superuser(
     )
     assert r.status_code == 403
     response = r.json()
-    assert response["detail"] == "Super users are not allowed to delete themselves"
+    assert response["detail"] == "Admins are not allowed to delete themselves"
 
 
 def test_delete_user_super_user(
@@ -429,7 +430,7 @@ def test_delete_user_not_found(
 def test_delete_user_current_super_user_error(
     client: TestClient, superuser_token_headers: dict[str, str], db: Session
 ) -> None:
-    super_user = db.exec(select(User).where(User.is_superuser)).first()
+    super_user = db.exec(select(User).where(User.role == UserRole.admin)).first()
     assert super_user
 
     r = client.delete(
@@ -437,7 +438,24 @@ def test_delete_user_current_super_user_error(
         headers=superuser_token_headers,
     )
     assert r.status_code == 403
-    assert r.json()["detail"] == "Super users are not allowed to delete themselves"
+    assert r.json()["detail"] == "Admins are not allowed to delete themselves"
+
+
+def test_delete_user_current_role_admin_error(client: TestClient, db: Session) -> None:
+    admin = create_random_user(db)
+    admin.role = UserRole.admin
+    admin.is_superuser = False
+    db.add(admin)
+    db.commit()
+    headers = auth_headers_for_user_id(admin.id)
+
+    r = client.delete(
+        f"{settings.API_V1_STR}/users/{admin.id}",
+        headers=headers,
+    )
+
+    assert r.status_code == 403
+    assert r.json()["detail"] == "Admins are not allowed to delete themselves"
 
 
 def test_delete_user_without_privileges(

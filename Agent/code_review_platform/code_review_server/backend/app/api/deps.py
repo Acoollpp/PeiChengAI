@@ -50,7 +50,7 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 def has_admin_privileges(user: User) -> bool:
-    return user.is_superuser or user.role == UserRole.admin
+    return user.role == UserRole.admin
 
 
 def get_current_active_admin(current_user: CurrentUser) -> User:

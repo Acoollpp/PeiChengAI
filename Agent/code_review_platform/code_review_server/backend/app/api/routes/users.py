@@ -17,6 +17,7 @@ from app.models import (
     User,
     UserCreate,
     UserPublic,
+    UserRole,
     UsersPublic,
     UserUpdate,
     UserUpdateMe,
@@ -89,6 +90,7 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
     _ensure_svn_username_available(
         session=session, svn_username=user_in.svn_username
     )
+    user_in.is_superuser = user_in.role == UserRole.admin
     return crud.create_user(session=session, user_create=user_in)
 
 
@@ -120,9 +122,9 @@ def delete_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
     """
     Delete own user.
     """
-    if current_user.is_superuser:
+    if has_admin_privileges(current_user):
         raise HTTPException(
-            status_code=403, detail="Super users are not allowed to delete themselves"
+            status_code=403, detail="Admins are not allowed to delete themselves"
         )
     session.delete(current_user)
     session.commit()
@@ -173,6 +175,8 @@ def update_user(
     _ensure_svn_username_available(
         session=session, svn_username=user_in.svn_username, user_id=user_id
     )
+    if user_in.role is not None:
+        db_user.is_superuser = user_in.role == UserRole.admin
 
     db_user = crud.update_user(session=session, db_user=db_user, user_in=user_in)
     return db_user
@@ -190,7 +194,7 @@ def delete_user(
         raise HTTPException(status_code=404, detail="User not found")
     if user == current_user:
         raise HTTPException(
-            status_code=403, detail="Super users are not allowed to delete themselves"
+            status_code=403, detail="Admins are not allowed to delete themselves"
         )
     statement = delete(Item).where(col(Item.owner_id) == user_id)
     session.exec(statement)

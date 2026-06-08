@@ -75,19 +75,11 @@ export const columns: ColumnDef<UserTableData>[] = [
     ),
   },
   {
-    accessorKey: "is_superuser",
+    accessorKey: "role",
     header: "角色",
     cell: ({ row }) => (
-      <Badge
-        variant={
-          row.original.is_superuser || row.original.role === "admin"
-            ? "default"
-            : "secondary"
-        }
-      >
-        {row.original.is_superuser || row.original.role === "admin"
-          ? "管理员"
-          : "用户"}
+      <Badge variant={row.original.role === "admin" ? "default" : "secondary"}>
+        {row.original.role === "admin" ? "管理员" : "用户"}
       </Badge>
     ),
   },

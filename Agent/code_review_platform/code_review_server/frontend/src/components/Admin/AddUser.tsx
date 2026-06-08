@@ -28,6 +28,13 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
@@ -36,7 +43,7 @@ const formSchema = z.object({
   svn_username: z.string().trim().min(1, {
     message: "请填写 SVN 账号",
   }),
-  is_superuser: z.boolean(),
+  role: z.enum(["admin", "user"]),
   is_active: z.boolean(),
 })
 
@@ -54,7 +61,7 @@ const AddUser = () => {
     defaultValues: {
       full_name: "",
       svn_username: "",
-      is_superuser: false,
+      role: "user",
       is_active: true,
     },
   })
@@ -132,16 +139,25 @@ const AddUser = () => {
 
               <FormField
                 control={form.control}
-                name="is_superuser"
+                name="role"
                 render={({ field }) => (
-                  <FormItem className="flex items-center gap-3 space-y-0">
+                  <FormItem>
+                    <FormLabel>角色</FormLabel>
                     <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="user">用户</SelectItem>
+                          <SelectItem value="admin">管理员</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </FormControl>
-                    <FormLabel className="font-normal">设为管理员</FormLabel>
+                    <FormMessage />
                   </FormItem>
                 )}
               />

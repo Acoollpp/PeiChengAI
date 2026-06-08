@@ -5,5 +5,5 @@ type UserWithRole = UserPublic & {
 }
 
 export function hasAdminPrivileges(user: UserWithRole | null | undefined) {
-  return Boolean(user?.is_superuser || user?.role === "admin")
+  return user?.role === "admin"
 }

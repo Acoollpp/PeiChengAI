@@ -62,7 +62,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
     defaultValues: {
       full_name: user.full_name ?? "",
       svn_username: user.svn_username ?? "",
-      role: user.role ?? (user.is_superuser ? "admin" : "user"),
+      role: user.role ?? "user",
     },
   })
 

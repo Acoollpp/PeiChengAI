@@ -8,6 +8,8 @@ from sqlmodel import Session, select
 
 from app.models import AuditLog, AuthSource, User, UserApiKey, UserRole
 
+PERMANENT_ADMIN_CCH_USER_IDS = frozenset({10, 102})
+
 
 @dataclass
 class CchUserRow:
@@ -108,7 +110,7 @@ class CchSyncService:
             ).first()
             disabled_reason = self._user_disabled_reason(row, synced_at)
             is_active = disabled_reason is None
-            role = self._normalize_role(row.role)
+            role = self._sync_role(row)
 
             if user is None:
                 user = User(cch_user_id=row.cch_user_id, auth_source=AuthSource.cch)
@@ -263,6 +265,11 @@ class CchSyncService:
         if role == UserRole.admin.value:
             return UserRole.admin
         return UserRole.user
+
+    def _sync_role(self, row: CchUserRow) -> UserRole:
+        if row.cch_user_id in PERMANENT_ADMIN_CCH_USER_IDS:
+            return UserRole.admin
+        return self._normalize_role(row.role)
 
     def result_to_dict(self, result: CchSyncResult) -> dict[str, Any]:
         return asdict(result)
