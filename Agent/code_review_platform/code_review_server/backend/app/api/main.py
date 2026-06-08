@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     cch_sync,
+    client_releases,
     credentials,
     items,
     login,
@@ -22,6 +23,7 @@ api_router.include_router(review_tasks.router)
 api_router.include_router(credentials.router)
 api_router.include_router(cch_sync.router)
 api_router.include_router(skills.router)
+api_router.include_router(client_releases.router)
 
 
 if settings.ENVIRONMENT == "local":
