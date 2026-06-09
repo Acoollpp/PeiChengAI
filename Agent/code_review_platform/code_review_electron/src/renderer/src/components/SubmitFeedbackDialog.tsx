@@ -20,6 +20,16 @@ export function SubmitFeedbackDialog({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    if (!open) {
+      setDescription('')
+      setScreenshot(null)
+      setError('')
+      setIsSubmitting(false)
+      resetFileInput()
+    }
+  }, [open])
+
+  useEffect(() => {
     if (!screenshot) {
       setPreviewUrl(null)
       return
@@ -38,14 +48,23 @@ export function SubmitFeedbackDialog({
     }
   }, [screenshot])
 
-  if (!open) {
-    return null
-  }
-
-  const resetFileInput = (): void => {
+  function resetFileInput(): void {
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
+  }
+
+  const handleClose = (): void => {
+    setDescription('')
+    setScreenshot(null)
+    setError('')
+    setIsSubmitting(false)
+    resetFileInput()
+    onClose()
+  }
+
+  if (!open) {
+    return null
   }
 
   const validateScreenshot = (file: File): string => {
@@ -113,7 +132,7 @@ export function SubmitFeedbackDialog({
         description: normalizedDescription,
         screenshot
       })
-      onClose()
+      handleClose()
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : '意见提交失败，请稍后重试')
     } finally {
@@ -124,7 +143,7 @@ export function SubmitFeedbackDialog({
   return (
     <div className="dialog-overlay" role="dialog" aria-modal="true" aria-labelledby="submit-feedback-title">
       <form className="dialog-card submit-feedback-dialog" onSubmit={(event) => void handleSubmit(event)}>
-        <button className="dialog-close" type="button" aria-label="关闭" onClick={onClose}>
+        <button className="dialog-close" type="button" aria-label="关闭" onClick={handleClose}>
           ×
         </button>
         <h2 id="submit-feedback-title">提交意见</h2>
@@ -171,7 +190,7 @@ export function SubmitFeedbackDialog({
         {error && <p className="form-error feedback-error">{error}</p>}
 
         <div className="dialog-actions">
-          <button className="secondary-button" type="button" onClick={onClose} disabled={isSubmitting}>
+          <button className="secondary-button" type="button" onClick={handleClose} disabled={isSubmitting}>
             取消
           </button>
           <button className="primary-button" type="submit" disabled={isSubmitting}>
