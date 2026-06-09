@@ -212,7 +212,11 @@ export class ApiClient {
     body.set('description', payload.description)
 
     if (payload.screenshot) {
-      body.set('screenshot', payload.screenshot, payload.screenshotName ?? 'screenshot')
+      if (payload.screenshotName) {
+        body.set('screenshot', payload.screenshot, payload.screenshotName)
+      } else {
+        body.set('screenshot', payload.screenshot)
+      }
     }
 
     return this.request(

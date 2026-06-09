@@ -271,34 +271,40 @@ describe('ApiClient', () => {
   it('submits feedback as multipart form data with authorization header', async () => {
     vi.stubGlobal('File', File)
     const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse({ id: 'feedback-1', status: 'pending' })
+      jsonResponse({
+        id: 'feedback-1',
+        status: 'pending'
+      })
     )
-    const client = new ApiClient('https://server.example/', fetchMock)
-    const screenshot = new File(['image-bytes'], 'feedback.png', {
+    const client = new ApiClient('https://server.example', fetchMock)
+    const screenshot = new File(['png-bytes'], 'screen.png', {
       type: 'image/png'
-    })
+    }) as unknown as globalThis.File
 
     const result = await client.submitFeedback('token-123', {
-      description: '按钮点击后没有反应',
-      screenshot: screenshot as unknown as globalThis.File,
-      screenshotName: 'feedback.png'
+      description: '按钮点击后没有响应',
+      screenshot
     })
 
-    expect(result).toEqual({ id: 'feedback-1', status: 'pending' })
-    const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('https://server.example/api/v1/feedback')
+    const [, init] = fetchMock.mock.calls[0]
+
+    expect(result).toEqual({
+      id: 'feedback-1',
+      status: 'pending'
+    })
+    expect(fetchMock.mock.calls[0][0]).toBe('https://server.example/api/v1/feedback')
     expect(init.method).toBe('POST')
     expect(init.headers).toEqual({
       authorization: 'Bearer token-123'
     })
     expect(init.body).toBeInstanceOf(FormData)
-    expect(init.body.get('description')).toBe('按钮点击后没有反应')
+    expect(init.body.get('description')).toBe('按钮点击后没有响应')
 
     const uploadedScreenshot = init.body.get('screenshot')
     expect(uploadedScreenshot).toBeInstanceOf(File)
-    expect((uploadedScreenshot as File).name).toBe('feedback.png')
+    expect((uploadedScreenshot as File).name).toBe('screen.png')
     expect((uploadedScreenshot as File).type).toBe('image/png')
-    await expect((uploadedScreenshot as File).text()).resolves.toBe('image-bytes')
+    await expect((uploadedScreenshot as File).text()).resolves.toBe('png-bytes')
   })
 
   it('throws an ApiError containing http status for failed responses', async () => {

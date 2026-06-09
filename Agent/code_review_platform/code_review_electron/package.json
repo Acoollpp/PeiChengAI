@@ -1,6 +1,6 @@
 {
   "name": "code-review-electron",
-  "version": "1.0.0-beta1",
+  "version": "1.2.0",
   "description": "Electron client for the code review platform.",
   "main": "./out/main/index.js",
   "type": "module",
@@ -14,7 +14,7 @@
   },
   "build": {
     "appId": "com.peicheng.code-review",
-    "productName": "代码审查",
+    "productName": "AI代码审查客户端",
     "directories": {
       "output": "release"
     },
@@ -37,7 +37,7 @@
           ]
         }
       ],
-      "artifactName": "代码审查-v${version}.${ext}"
+      "artifactName": "AI代码审查客户端-v${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
