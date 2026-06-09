@@ -368,9 +368,26 @@ describe('ApiClient', () => {
 
     const upload = init.body.get('upload')
     expect(upload).toBeInstanceOf(File)
-    expect((upload as File).name).toBe('report.md')
+    expect((upload as File).name).toBe('代码审查报告.md')
     expect((upload as File).type).toBe('text/markdown')
     await expect((upload as File).text()).resolves.toBe('# report\n')
+  })
+
+  it('uses custom upload report filename when report_name is provided', async () => {
+    vi.stubGlobal('File', File)
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'task-1' }))
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    await client.uploadReport('token-123', 'task-1', {
+      report_content: '# report\n',
+      report_name: '自定义报告.md'
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+    const upload = init.body.get('upload')
+
+    expect(upload).toBeInstanceOf(File)
+    expect((upload as File).name).toBe('自定义报告.md')
   })
 
   it('submits feedback as multipart form data with authorization header', async () => {

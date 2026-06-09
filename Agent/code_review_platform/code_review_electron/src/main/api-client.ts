@@ -38,6 +38,7 @@ export interface UpdateTaskStatusRequest {
 export interface UploadReportRequest {
   report_content: string
   report_path?: string
+  report_name?: string
 }
 
 export interface SubmitFeedbackRequest {
@@ -231,7 +232,7 @@ export class ApiClient {
     const body = new FormData()
     body.set(
       'upload',
-      new File([payload.report_content], 'report.md', {
+      new File([payload.report_content], payload.report_name ?? '代码审查报告.md', {
         type: 'text/markdown'
       })
     )
