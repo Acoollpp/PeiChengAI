@@ -23,6 +23,7 @@ from app.models import (
     UserUpdate,
     UserUpdateMe,
 )
+from app.services import feedback_service
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -197,10 +198,15 @@ def delete_user(
         raise HTTPException(
             status_code=403, detail="Admins are not allowed to delete themselves"
         )
+    feedback_ids = session.exec(
+        select(Feedback.id).where(col(Feedback.user_id) == user_id)
+    ).all()
     feedback_statement = delete(Feedback).where(col(Feedback.user_id) == user_id)
     session.exec(feedback_statement)
     statement = delete(Item).where(col(Item.owner_id) == user_id)
     session.exec(statement)
     session.delete(user)
     session.commit()
+    for feedback_id in feedback_ids:
+        feedback_service.remove_feedback_files(feedback_id)
     return Message(message="User deleted successfully")

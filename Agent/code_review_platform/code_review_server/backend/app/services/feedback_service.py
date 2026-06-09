@@ -26,8 +26,13 @@ def path_for_feedback(
 
 
 def remove_feedback_files(feedback_id: uuid.UUID) -> None:
-    feedback_dir = Path(settings.FEEDBACK_STORAGE_DIR) / str(feedback_id)
+    storage_dir = Path(settings.FEEDBACK_STORAGE_DIR).resolve()
+    feedback_dir = (storage_dir / str(feedback_id)).resolve()
+    if feedback_dir.name != str(feedback_id) or feedback_dir.parent != storage_dir:
+        raise RuntimeError("Invalid feedback storage path")
     if feedback_dir.exists():
+        if not feedback_dir.is_dir():
+            raise RuntimeError("Feedback storage path is not a directory")
         shutil.rmtree(feedback_dir)
 
 

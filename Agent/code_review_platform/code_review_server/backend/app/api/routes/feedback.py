@@ -193,6 +193,18 @@ def read_feedback_screenshot(
     feedback = _get_feedback_for_user(
         session=session, current_user=current_user, feedback_id=feedback_id
     )
+    screenshots = sorted(feedback.screenshots, key=lambda item: item.sort_order)
+    if screenshots:
+        first = screenshots[0]
+        screenshot_path = Path(first.file_path)
+        if not screenshot_path.is_file():
+            raise HTTPException(status_code=404, detail="Screenshot not found")
+        return FileResponse(
+            screenshot_path,
+            media_type=first.content_type,
+            filename=first.file_name,
+        )
+
     screenshot_path = Path(feedback.screenshot_path) if feedback.screenshot_path else None
     if not screenshot_path or not screenshot_path.is_file():
         raise HTTPException(status_code=404, detail="Screenshot not found")

@@ -6,7 +6,7 @@ from sqlmodel import Session
 from sqlmodel import select
 
 from app.core.config import settings
-from app.models import Feedback, FeedbackScreenshot, UserRole
+from app.models import Feedback, User, UserRole
 from app.services import feedback_service
 from tests.utils.user import authentication_token_from_key, create_key_user
 
@@ -42,13 +42,6 @@ def _assert_no_feedback_saved(db: Session, description: str) -> None:
         select(Feedback).where(Feedback.description == description)
     ).all()
     assert feedbacks == []
-    feedback_ids = [feedback.id for feedback in feedbacks]
-    screenshots = db.exec(
-        select(FeedbackScreenshot).where(
-            FeedbackScreenshot.feedback_id.in_(feedback_ids)
-        )
-    ).all()
-    assert screenshots == []
 
 
 def _assert_single_screenshot_public(content: dict) -> None:
@@ -366,7 +359,7 @@ def test_normal_user_cannot_read_other_user_feedback(
     assert response.json()["detail"] == "Not enough permissions"
 
 
-def test_normal_user_cannot_read_other_user_screenshot(
+def test_feedback_screenshot_permissions_for_multiple_screenshots(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
     db: Session,
@@ -385,13 +378,96 @@ def test_normal_user_cannot_read_other_user_screenshot(
     other_feedback = upload_response.json()
     screenshot_id = other_feedback["screenshots"][0]["id"]
 
-    response = client.get(
+    forbidden_response = client.get(
         f"{settings.API_V1_STR}/feedback/{other_feedback['id']}/screenshots/{screenshot_id}",
         headers=normal_user_token_headers,
     )
 
-    assert response.status_code == 403
-    assert response.json()["detail"] == "Not enough permissions"
+    assert forbidden_response.status_code == 403
+    assert forbidden_response.json()["detail"] == "Not enough permissions"
+
+    admin, admin_api_key = create_key_user(db)
+    admin.role = UserRole.admin
+    db.add(admin)
+    db.commit()
+    admin_headers = authentication_token_from_key(
+        client=client, key=admin_api_key.key, db=db
+    )
+
+    admin_response = client.get(
+        f"{settings.API_V1_STR}/feedback/{other_feedback['id']}/screenshots/{screenshot_id}",
+        headers=admin_headers,
+    )
+    assert admin_response.status_code == 200
+    assert admin_response.content == b"png-bytes"
+
+
+def test_legacy_feedback_screenshot_endpoint_returns_first_screenshot(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEEDBACK_STORAGE_DIR", str(tmp_path))
+    response = client.post(
+        f"{settings.API_V1_STR}/feedback",
+        headers=normal_user_token_headers,
+        data={"description": "兼容旧接口"},
+        files=[
+            ("screenshots", ("first.png", b"first-image", "image/png")),
+            ("screenshots", ("second.png", b"second-image", "image/png")),
+        ],
+    )
+    assert response.status_code == 200
+    feedback = response.json()
+
+    legacy_response = client.get(
+        f"{settings.API_V1_STR}/feedback/{feedback['id']}/screenshot",
+        headers=normal_user_token_headers,
+    )
+
+    assert legacy_response.status_code == 200
+    assert legacy_response.content == b"first-image"
+
+
+def test_delete_user_removes_feedback_screenshot_files(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEEDBACK_STORAGE_DIR", str(tmp_path))
+    user, api_key = create_key_user(db)
+    user_id = user.id
+    user_headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/feedback",
+        headers=user_headers,
+        data={"description": "删除用户时清理截图"},
+        files={"screenshots": ("screen.png", b"png-bytes", "image/png")},
+    )
+    assert upload_response.status_code == 200
+    feedback_id = upload_response.json()["id"]
+    assert (tmp_path / feedback_id).is_dir()
+
+    admin, admin_api_key = create_key_user(db)
+    admin.role = UserRole.admin
+    db.add(admin)
+    db.commit()
+    admin_headers = authentication_token_from_key(
+        client=client, key=admin_api_key.key, db=db
+    )
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/users/{user_id}",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    assert not (tmp_path / feedback_id).exists()
+    db.expire_all()
+    assert db.get(User, user_id) is None
+    assert db.get(Feedback, feedback_id) is None
 
 
 def test_read_feedback_screenshot_returns_404_when_screenshot_belongs_to_other_feedback(
