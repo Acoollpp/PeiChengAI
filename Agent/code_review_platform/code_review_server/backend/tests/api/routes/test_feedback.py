@@ -39,10 +39,10 @@ def test_create_feedback_text_only(
     content = response.json()
     assert content["description"] == description
     assert content["status"] == "pending"
-    assert content["has_screenshot"] is False
-    assert content["screenshot_name"] is None
-    assert content["user_id"]
+    assert content["screenshot_count"] == 0
+    assert content["screenshots"] == []
     assert "screenshot_path" not in content
+    assert "file_path" not in str(content)
 
 
 def test_create_feedback_with_screenshot_and_read_it(

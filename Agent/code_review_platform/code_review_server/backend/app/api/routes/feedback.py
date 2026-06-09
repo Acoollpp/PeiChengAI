@@ -11,6 +11,8 @@ from app.api.deps import CurrentUser, SessionDep, has_admin_privileges
 from app.models import (
     Feedback,
     FeedbackPublic,
+    FeedbackScreenshot,
+    FeedbackScreenshotPublic,
     FeedbacksPublic,
     FeedbackStatus,
     FeedbackStatusUpdate,
@@ -26,12 +28,26 @@ def _utcnow() -> datetime:
 
 
 def _feedback_public(feedback: Feedback, user: User | None = None) -> FeedbackPublic:
+    screenshots: list[FeedbackScreenshot] = sorted(
+        feedback.screenshots, key=lambda item: item.sort_order
+    )
+    first_screenshot = screenshots[0] if screenshots else None
     return FeedbackPublic.model_validate(
         feedback,
         update={
             "user_name": user.full_name if user else None,
             "svn_username": user.svn_username if user else None,
-            "has_screenshot": bool(feedback.screenshot_path),
+            "has_screenshot": bool(screenshots),
+            "screenshot_count": len(screenshots),
+            "screenshots": [
+                FeedbackScreenshotPublic.model_validate(screenshot)
+                for screenshot in screenshots
+            ],
+            "screenshot_name": first_screenshot.file_name if first_screenshot else None,
+            "screenshot_content_type": first_screenshot.content_type
+            if first_screenshot
+            else None,
+            "screenshot_size": first_screenshot.file_size if first_screenshot else None,
         },
     )
 
