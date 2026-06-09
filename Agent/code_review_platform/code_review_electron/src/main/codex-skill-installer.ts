@@ -15,11 +15,13 @@ export interface InstallCodexSkillResult {
 
 export const buildInstallSkillPrompt = (packagePath: string): string =>
   [
-    '请将下面这个本地 Skill zip 包安装到 Codex 自己的 Skill 目录中。',
+    '请将下面这个本地 Skill zip 包作为最新版本安装到 Codex 自己的 Skill 目录中。',
     '要求：',
     '1. 直接读取这个 zip 文件路径，不要修改 zip 内容。',
-    '2. 如果 Codex 已经安装了同名 Skill，请用这个 zip 包中的版本覆盖更新。',
-    '3. 安装完成后只输出简短成功信息。',
+    '2. 先定位 Codex 当前已安装的同名 Skill，并删除旧的同名 Skill，包括 Codex 自己机制中记录的旧版本目录或注册信息。',
+    '3. 再安装这个 zip 包中的最新 Skill，确保后续 Codex 调用同名 Skill 时只会使用这次安装的新版本。',
+    '4. 如果无法确认旧 Skill 已删除或新 Skill 已安装成功，请明确输出失败原因并以失败状态结束。',
+    '5. 安装成功后只输出简短成功信息。',
     '',
     `Skill zip 路径：${packagePath}`
   ].join('\n')

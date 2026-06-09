@@ -78,6 +78,11 @@ describe('installCodexSkillFromZip', () => {
         shell: false
       })
     )
+    const prompt = spawnMock.mock.calls[0]?.[1]?.[2]
+    expect(prompt).toContain('先定位 Codex 当前已安装的同名 Skill')
+    expect(prompt).toContain('删除旧的同名 Skill')
+    expect(prompt).toContain('再安装这个 zip 包中的最新 Skill')
+    expect(prompt).toContain('如果无法确认旧 Skill 已删除或新 Skill 已安装成功，请明确输出失败原因并以失败状态结束')
     expect(child.stdin.end).toHaveBeenCalledWith()
   })
 
