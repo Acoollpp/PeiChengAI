@@ -6,7 +6,7 @@ from sqlmodel import Session, select
 from app import crud
 from app.core.config import settings
 from app.core.db import DEFAULT_LOCAL_ADMIN_NAME
-from app.models import AuthSource, User, UserCreate, UserRole
+from app.models import AuthSource, Feedback, User, UserCreate, UserRole
 from tests.utils.user import create_random_user
 from tests.utils.utils import auth_headers_for_user_id, random_lower_string
 
@@ -414,6 +414,26 @@ def test_delete_user_super_user(
     assert deleted_user["message"] == "User deleted successfully"
     result = db.exec(select(User).where(User.id == user_id)).first()
     assert result is None
+
+
+def test_delete_user_with_feedback(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    user = create_random_user(db)
+    user_id = user.id
+    feedback = Feedback(user_id=user_id, description="删除用户前提交的意见")
+    db.add(feedback)
+    db.commit()
+
+    r = client.delete(
+        f"{settings.API_V1_STR}/users/{user_id}",
+        headers=superuser_token_headers,
+    )
+
+    assert r.status_code == 200
+    assert r.json()["message"] == "User deleted successfully"
+    assert db.exec(select(User).where(User.id == user_id)).first() is None
+    assert db.exec(select(Feedback).where(Feedback.user_id == user_id)).first() is None
 
 
 def test_delete_user_not_found(
