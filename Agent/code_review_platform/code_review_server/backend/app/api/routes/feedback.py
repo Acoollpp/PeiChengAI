@@ -97,35 +97,35 @@ async def create_feedback(
             saved_screenshots = await feedback_service.save_screenshots(
                 feedback.id, uploads
             )
+            for screenshot_path, upload, content, sort_order in saved_screenshots:
+                if sort_order == 0:
+                    feedback.screenshot_path = str(screenshot_path)
+                    feedback.screenshot_name = upload.filename
+                    feedback.screenshot_content_type = upload.content_type
+                    feedback.screenshot_size = len(content)
+                session.add(
+                    FeedbackScreenshot(
+                        feedback_id=feedback.id,
+                        file_path=str(screenshot_path),
+                        file_name=upload.filename or f"screenshot-{sort_order}.png",
+                        content_type=upload.content_type or "application/octet-stream",
+                        file_size=len(content),
+                        sort_order=sort_order,
+                    )
+                )
+            session.add(feedback)
+            session.commit()
         except HTTPException:
             feedback_service.remove_feedback_files(feedback.id)
-            session.delete(feedback)
             session.rollback()
             raise
         except Exception as exc:
             feedback_service.remove_feedback_files(feedback.id)
-            session.delete(feedback)
             session.rollback()
             raise HTTPException(status_code=500, detail="保存截图失败") from exc
-        for screenshot_path, upload, content, sort_order in saved_screenshots:
-            if sort_order == 0:
-                feedback.screenshot_path = str(screenshot_path)
-                feedback.screenshot_name = upload.filename
-                feedback.screenshot_content_type = upload.content_type
-                feedback.screenshot_size = len(content)
-            session.add(
-                FeedbackScreenshot(
-                    feedback_id=feedback.id,
-                    file_path=str(screenshot_path),
-                    file_name=upload.filename or f"screenshot-{sort_order}.png",
-                    content_type=upload.content_type or "application/octet-stream",
-                    file_size=len(content),
-                    sort_order=sort_order,
-                )
-            )
-
-    session.add(feedback)
-    session.commit()
+    else:
+        session.add(feedback)
+        session.commit()
     session.refresh(feedback)
     return _feedback_public(feedback, current_user)
 

@@ -216,6 +216,47 @@ def test_create_feedback_rolls_back_db_and_files_when_screenshot_save_crashes(
     _assert_no_feedback_saved(db, description)
 
 
+def test_create_feedback_cleans_files_and_db_when_commit_fails(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEEDBACK_STORAGE_DIR", str(tmp_path))
+    description = "提交截图记录失败"
+    original_commit = Session.commit
+    commit_calls = 0
+
+    def fail_feedback_commit(self: Session) -> None:
+        nonlocal commit_calls
+        pending_feedback = [
+            item
+            for item in self
+            if isinstance(item, Feedback) and item.description == description
+        ]
+        if pending_feedback:
+            commit_calls += 1
+            raise RuntimeError("database path leaked")
+        original_commit(self)
+
+    monkeypatch.setattr(Session, "commit", fail_feedback_commit)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/feedback",
+        headers=normal_user_token_headers,
+        data={"description": description},
+        files={"screenshots": ("screen.png", b"png-bytes", "image/png")},
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "保存截图失败"
+    assert "database path leaked" not in response.text
+    assert commit_calls == 1
+    assert not any(tmp_path.iterdir())
+    _assert_no_feedback_saved(db, description)
+
+
 def test_create_feedback_rejects_blank_description(
     client: TestClient, normal_user_token_headers: dict[str, str]
 ) -> None:
