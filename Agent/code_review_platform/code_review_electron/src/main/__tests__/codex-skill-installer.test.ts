@@ -159,6 +159,27 @@ describe('installCodexSkillFromZip', () => {
     ).rejects.toThrow('Skill package name mismatch')
     expect(spawnMock).not.toHaveBeenCalled()
   })
+
+  it('uses USERPROFILE as the default Codex home when CODEX_HOME and HOME are unavailable', async () => {
+    const userProfile = await createTempRoot()
+    delete process.env.CODEX_HOME
+    delete process.env.HOME
+    process.env.USERPROFILE = userProfile
+    const { zipPath, hash } = await createSkillZip({ skillName: '通用-代码审查-模版二' })
+
+    await installCodexSkillFromZip({
+      packagePath: zipPath,
+      skillId: 'skill-1',
+      skillName: '通用-代码审查-模版二',
+      version: 'v1.0.0',
+      contentHash: hash,
+      timeoutMs: 1000
+    })
+
+    await expect(
+      readFile(join(userProfile, '.codex', 'skills', '通用-代码审查-模版二', 'SKILL.md'), 'utf8')
+    ).resolves.toContain('name: 通用-代码审查-模版二')
+  })
 })
 
 describe('deleteCodexSkill', () => {

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
-import { access, mkdir, readFile, rename, rm, stat } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rename, rm, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 
@@ -121,7 +121,7 @@ const readZipEntries = (zipPath: string): Promise<Array<{ entry: Entry; fileName
     const entries: Array<{ entry: Entry; fileName: string }> = []
     open(
       zipPath,
-      { lazyEntries: true, validateEntrySizes: true },
+      { lazyEntries: true, validateEntrySizes: true, decodeStrings: false },
       (openError: Error | null, zipfile: ZipFile) => {
         if (openError) {
           reject(openError)
@@ -129,7 +129,7 @@ const readZipEntries = (zipPath: string): Promise<Array<{ entry: Entry; fileName
         }
 
         zipfile.on('entry', (entry: Entry) => {
-          const fileName = normalizeZipEntryName(entry.fileName)
+          const fileName = decodeZipEntryName(entry)
           const validationError = validateZipEntryPath(fileName)
           if (validationError) {
             zipfile.close()
@@ -154,7 +154,7 @@ const openZipFile = (zipPath: string): Promise<ZipFile> =>
   new Promise((resolvePromise, reject) => {
     open(
       zipPath,
-      { lazyEntries: true, validateEntrySizes: true },
+      { lazyEntries: true, validateEntrySizes: true, decodeStrings: false },
       (error: Error | null, zipfile: ZipFile) => {
         if (error) {
           reject(error)
@@ -208,7 +208,20 @@ const extractEntry = (zipfile: ZipFile, entry: Entry, outputPath: string): Promi
         return
       }
 
-      pipeline(readStream, createWriteStream(outputPath)).then(resolvePromise, reject)
+      pipeline(readStream, createWriteStream(outputPath)).then(resolvePromise, async (error) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          try {
+            await mkdir(dirname(outputPath), { recursive: true })
+            await pipeline(readStream, createWriteStream(outputPath))
+            resolvePromise()
+            return
+          } catch (retryError) {
+            reject(retryError)
+            return
+          }
+        }
+        reject(error)
+      })
     })
   })
 
@@ -258,7 +271,23 @@ const readEntryText = (zipfile: ZipFile, entry: Entry): Promise<string> =>
     })
   })
 
-const codexSkillsDir = (): string => join(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex'), 'skills')
+const codexHomeDir = (): string => {
+  if (process.env.CODEX_HOME) {
+    return process.env.CODEX_HOME
+  }
+  if (process.env.HOME) {
+    return join(process.env.HOME, '.codex')
+  }
+  if (process.env.USERPROFILE) {
+    return join(process.env.USERPROFILE, '.codex')
+  }
+  if (process.env.HOMEDRIVE && process.env.HOMEPATH) {
+    return join(`${process.env.HOMEDRIVE}${process.env.HOMEPATH}`, '.codex')
+  }
+  throw new Error('Cannot resolve Codex home directory')
+}
+
+const codexSkillsDir = (): string => join(codexHomeDir(), 'skills')
 
 const skillDir = (skillName: string): string => join(codexSkillsDir(), sanitizeSkillDirectoryName(skillName))
 
@@ -269,15 +298,10 @@ const sanitizeSkillDirectoryName = (skillName: string): string => {
   return skillName
 }
 
-const normalizeZipEntryName = (fileName: string): string => {
-  const normalized = fileName.replace(/\\/g, '/')
-  try {
-    return Buffer.from(normalized, 'utf8').toString('latin1').includes('Ã')
-      ? Buffer.from(normalized, 'latin1').toString('utf8').replace(/\\/g, '/')
-      : normalized
-  } catch {
-    return normalized
-  }
+const decodeZipEntryName = (entry: Entry): string => {
+  const rawFileName = (entry as Entry & { fileName: string | Buffer }).fileName
+  const decoded = Buffer.isBuffer(rawFileName) ? rawFileName.toString('utf8') : rawFileName
+  return decoded.replace(/\\/g, '/')
 }
 
 const validateZipEntryPath = (fileName: string): string | null => {
@@ -325,10 +349,8 @@ const installSkillLocally = async (input: InstallCodexSkillInput): Promise<Insta
 
   const targetDir = skillDir(input.skillName)
   const parentDir = dirname(targetDir)
-  const tempDir = join(parentDir, `.installing-${basename(targetDir)}-${Date.now()}`)
   await mkdir(parentDir, { recursive: true })
-  await rm(tempDir, { recursive: true, force: true })
-  await mkdir(tempDir, { recursive: true })
+  const tempDir = await mkdtemp(join(parentDir, `.installing-${basename(targetDir)}-`))
 
   try {
     await extractZip(input.packagePath, tempDir, entries, rootPrefix)
