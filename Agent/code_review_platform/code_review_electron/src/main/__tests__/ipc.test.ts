@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -241,14 +241,28 @@ describe('registerIpcHandlers', () => {
     }
     const cwd = await mkdtemp(join(tmpdir(), 'ipc-report-'))
     tempDirs.push(cwd)
-    const reportPath = join(cwd, 'report.md')
+    const reportPath = join(cwd, '代码审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    const syncSkill = vi.fn(async () => ({
+      status: 'current' as const,
+      skills: [
+        {
+          id: 'skill-1',
+          name: '通用-代码变更审查-模板一',
+          version: '2026.05.29',
+          package_path: '/tmp/code-review-runtime/skill-packages/skill.zip',
+          installed_at: '2026-05-29T10:00:00.000Z'
+        }
+      ]
+    }))
     const { registerIpcHandlers } = await import('../ipc')
 
     registerIpcHandlers({
       api: api as never,
       authStore: authStore as never,
+      syncSkill,
       checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
-      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
       runCodex: vi.fn(async () => {
         await writeFile(reportPath, '# latest report\n')
       })
@@ -263,18 +277,63 @@ describe('registerIpcHandlers', () => {
       executeHandler({}, {
         svn_url: 'svn://repo/project',
         old_revision: '1',
-        new_revision: '2'
+        new_revision: '2',
+        template_key: 'template_1',
+        skill_name: '通用-代码变更审查-模板一'
       })
     ).resolves.toMatchObject({
       status: 'success',
-      reportPath: expect.stringContaining('report.md')
+      reportPath: expect.stringContaining('代码审查报告.md')
     })
+    expect(syncSkill).toHaveBeenCalledWith('token-123')
 
     await expect(downloadHandler()).resolves.toMatchObject({
       status: 'ready',
-      reportPath: expect.stringContaining('report.md')
+      reportPath: expect.stringContaining('代码审查报告.md')
     })
     expect(showItemInFolderMock).toHaveBeenCalledWith(reportPath)
+  })
+
+  it('syncs active Skills before executing a task and blocks stale local Skill execution on sync failure', async () => {
+    const api = {
+      createTask: vi.fn(),
+      updateTaskStatus: vi.fn(),
+      uploadReport: vi.fn()
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123' })),
+      save: vi.fn()
+    }
+    const syncSkill = vi.fn(async () => {
+      throw new Error('No active skill is configured')
+    })
+    const checkEnvironment = vi.fn(async () => ({ status: 'ready' as const }))
+    const runCodex = vi.fn()
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      syncSkill,
+      checkEnvironment,
+      runCodex
+    })
+
+    const executeHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:execute')?.[1]
+
+    await expect(
+      executeHandler({}, {
+        svn_url: 'svn://repo/project',
+        old_revision: '1',
+        new_revision: '2',
+        template_key: 'template_1',
+        skill_name: '通用-代码变更审查-模板一'
+      })
+    ).rejects.toThrow('No active skill is configured')
+    expect(syncSkill).toHaveBeenCalledWith('token-123')
+    expect(api.createTask).not.toHaveBeenCalled()
+    expect(checkEnvironment).not.toHaveBeenCalled()
+    expect(runCodex).not.toHaveBeenCalled()
   })
 
   it('downloads a historical task report into the local runtime workspace before opening it', async () => {
@@ -298,7 +357,9 @@ describe('registerIpcHandlers', () => {
         skillManifestPath: join(runtimeRoot, 'skill-packages', 'manifest.json'),
         workspacesDir: join(runtimeRoot, 'workspaces'),
         workspaceForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId),
-        reportPathForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'report.md')
+        reportPathForTask: (taskId: string) =>
+          join(runtimeRoot, 'workspaces', taskId, '代码审查报告.md'),
+        imagesDirForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'images')
       }
     })
 
@@ -306,7 +367,7 @@ describe('registerIpcHandlers', () => {
       ([channel]) => channel === 'report:download-current'
     )?.[1]
 
-    const reportPath = join(runtimeRoot, 'workspaces', 'task-remote', 'report.md')
+    const reportPath = join(runtimeRoot, 'workspaces', 'task-remote', '代码审查报告.md')
     await expect(downloadHandler({}, 'task-remote')).resolves.toEqual({
       status: 'ready',
       taskId: 'task-remote',
@@ -315,6 +376,32 @@ describe('registerIpcHandlers', () => {
     await expect(readFile(reportPath, 'utf8')).resolves.toBe('# historical report\n')
     expect(api.readTaskReport).toHaveBeenCalledWith('token-123', 'task-remote')
     expect(showItemInFolderMock).toHaveBeenCalledWith(reportPath)
+  })
+
+  it('reads report image assets relative to a Chinese-named report file', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'ipc-report-asset-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '代码审查报告.md')
+    const imagePath = join(cwd, 'images', 'diagram.png')
+    await mkdir(join(cwd, 'images'), { recursive: true })
+    await writeFile(reportPath, '![流程图](images/diagram.png)\n')
+    await writeFile(imagePath, Buffer.from('png-bytes'))
+
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers()
+
+    const assetHandler = handleMock.mock.calls.find(([channel]) => channel === 'report:asset')?.[1]
+
+    await expect(
+      assetHandler({}, {
+        reportPath,
+        assetPath: 'images/diagram.png'
+      })
+    ).resolves.toEqual({
+      dataUrl: `data:image/png;base64,${Buffer.from('png-bytes').toString('base64')}`,
+      contentType: 'image/png'
+    })
   })
 
   it('lists tasks for the authenticated user', async () => {
@@ -542,7 +629,18 @@ describe('registerIpcHandlers', () => {
       calls.push('syncSkill')
       return {
         status: 'synced' as const,
-        packagePath: '/tmp/code-review-runtime/skill-packages/skill.zip'
+        skills: [
+          {
+            id: 'skill-1',
+            name: '通用-代码变更审查-模板一',
+            version: '2026.05.29',
+            content_hash: 'hash',
+            hash: 'hash',
+            file_size: 9,
+            package_path: '/tmp/code-review-runtime/skill-packages/skill.zip',
+            installed_at: '2026-05-29T10:00:00.000Z'
+          }
+        ]
       }
     })
     const checkEnvironment = vi.fn(async () => {
@@ -561,11 +659,42 @@ describe('registerIpcHandlers', () => {
       ([channel]) => channel === 'environment:check'
     )?.[1]
 
-    await expect(environmentHandler()).resolves.toEqual({ status: 'ready' })
+    await expect(environmentHandler()).resolves.toMatchObject({
+      status: 'ready',
+      skills: [expect.objectContaining({ id: 'skill-1' })]
+    })
     expect(syncSkill).toHaveBeenCalledWith('token-123')
     expect(syncSkill).toHaveBeenCalledTimes(1)
     expect(checkEnvironment).toHaveBeenCalledTimes(2)
     expect(calls).toEqual(['checkEnvironment:first', 'syncSkill', 'checkEnvironment:second'])
+  })
+
+  it('reports missing Skill when syncing active Skills fails even if stale local Skill exists', async () => {
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const syncSkill = vi.fn(async () => {
+      throw new Error('No active skill is configured')
+    })
+    const checkEnvironment = vi.fn(async () => ({ status: 'ready' as const }))
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      authStore: authStore as never,
+      syncSkill,
+      checkEnvironment
+    })
+
+    const environmentHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'environment:check'
+    )?.[1]
+
+    await expect(environmentHandler()).resolves.toEqual({
+      status: 'missing_skill',
+      skillError: 'No active skill is configured',
+      skills: []
+    })
   })
 
   it('notifies the renderer when environment check starts installing the active skill', async () => {
@@ -580,7 +709,18 @@ describe('registerIpcHandlers', () => {
     }
     const syncSkill = vi.fn(async () => ({
       status: 'synced' as const,
-      packagePath: '/tmp/code-review-runtime/skill-packages/skill.zip'
+      skills: [
+        {
+          id: 'skill-1',
+          name: '通用-代码变更审查-模板一',
+          version: '2026.05.29',
+          content_hash: 'hash',
+          hash: 'hash',
+          file_size: 9,
+          package_path: '/tmp/code-review-runtime/skill-packages/skill.zip',
+          installed_at: '2026-05-29T10:00:00.000Z'
+        }
+      ]
     }))
     const checkEnvironment = vi.fn(async () => ({ status: 'ready' as const }))
     const { registerIpcHandlers } = await import('../ipc')
@@ -661,7 +801,18 @@ describe('registerIpcHandlers', () => {
     }
     const syncSkill = vi.fn(async () => ({
       status: 'synced' as const,
-      packagePath: '/tmp/code-review-runtime/skill-packages/skill.zip'
+      skills: [
+        {
+          id: 'skill-1',
+          name: '通用-代码变更审查-模板一',
+          version: '2026.05.29',
+          content_hash: 'hash',
+          hash: 'hash',
+          file_size: 9,
+          package_path: '/tmp/code-review-runtime/skill-packages/skill.zip',
+          installed_at: '2026-05-29T10:00:00.000Z'
+        }
+      ]
     }))
     const checkEnvironment = vi.fn(async () => ({ status: 'ready' as const }))
     const { registerIpcHandlers } = await import('../ipc')
@@ -674,7 +825,10 @@ describe('registerIpcHandlers', () => {
 
     const installHandler = handleMock.mock.calls.find(([channel]) => channel === 'skill:install')?.[1]
 
-    await expect(installHandler()).resolves.toEqual({ status: 'ready' })
+    await expect(installHandler()).resolves.toMatchObject({
+      status: 'ready',
+      skills: [expect.objectContaining({ id: 'skill-1' })]
+    })
     expect(syncSkill).toHaveBeenCalledWith('token-123')
     expect(checkEnvironment).toHaveBeenCalled()
   })
@@ -698,7 +852,8 @@ describe('registerIpcHandlers', () => {
 
     await expect(installHandler()).resolves.toEqual({
       status: 'missing_skill',
-      skillError: '请先登录后安装 Skill'
+      skillError: '请先登录后安装 Skill',
+      skills: []
     })
     expect(syncSkill).not.toHaveBeenCalled()
     expect(checkEnvironment).toHaveBeenCalled()
@@ -727,7 +882,8 @@ describe('registerIpcHandlers', () => {
 
     await expect(environmentHandler()).resolves.toEqual({
       status: 'missing_skill',
-      skillError: 'No active skill'
+      skillError: 'No active skill',
+      skills: []
     })
     expect(checkEnvironment).toHaveBeenCalled()
   })
@@ -754,8 +910,9 @@ describe('registerIpcHandlers', () => {
     )?.[1]
 
     await expect(environmentHandler()).resolves.toEqual({
-      status: 'ready',
-      skillError: 'No active skill'
+      status: 'missing_skill',
+      skillError: 'No active skill',
+      skills: []
     })
   })
 

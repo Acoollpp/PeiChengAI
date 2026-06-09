@@ -1,3 +1,5 @@
+import type { ReviewTemplateKey } from './review-templates'
+
 export type EnvironmentStatus =
   | 'ready'
   | 'missing_codex'
@@ -9,6 +11,14 @@ export type EnvironmentProgressStage = 'installing_skill'
 
 export interface EnvironmentProgressEvent {
   stage: EnvironmentProgressStage
+}
+
+export interface SyncedSkill {
+  id: string
+  name: string
+  version: string
+  package_path: string
+  installed_at: string
 }
 
 export type ReviewTaskStatus =
@@ -26,6 +36,8 @@ export interface ReviewTask {
   svn_url: string
   old_revision: string
   new_revision: string
+  template_key?: ReviewTemplateKey
+  skill_name?: string
   status: ReviewTaskStatus
   report_path?: string
   error_message?: string

@@ -140,6 +140,8 @@ class ReviewTask(SQLModel, table=True):
     svn_url: str = Field(max_length=2048)
     old_revision: str = Field(max_length=255)
     new_revision: str = Field(max_length=255)
+    template_key: str | None = Field(default=None, max_length=64)
+    skill_name: str | None = Field(default=None, max_length=255)
     status: ReviewTaskStatus = Field(default=ReviewTaskStatus.created)
     report_path: str | None = Field(default=None, max_length=2048)
     error_message: str | None = None
@@ -193,6 +195,8 @@ class ReviewTaskCreate(SQLModel):
     svn_url: str = Field(min_length=1, max_length=2048)
     old_revision: str = Field(min_length=1, max_length=255)
     new_revision: str = Field(min_length=1, max_length=255)
+    template_key: str | None = Field(default=None, max_length=64)
+    skill_name: str | None = Field(default=None, max_length=255)
 
 
 class ReviewTaskStatusUpdate(SQLModel):
@@ -210,6 +214,8 @@ class ReviewTaskPublic(SQLModel):
     svn_url: str
     old_revision: str
     new_revision: str
+    template_key: str | None = Field(default=None, max_length=64)
+    skill_name: str | None = Field(default=None, max_length=255)
     status: ReviewTaskStatus
     report_path: str | None = None
     error_message: str | None = None

@@ -61,13 +61,15 @@ describe('checkEnvironment', () => {
     )
     const checkRuntimeWritable = vi.fn(async () => true)
     const checkSkillPackageReady = vi.fn(async () => true)
+    const readSyncedSkills = vi.fn(async () => [])
     const getRuntimePaths = vi.fn(async () => ({
       runtimeRoot: '/tmp/code-review-runtime',
       skillPackagesDir: '/tmp/code-review-runtime/skill-packages',
       skillManifestPath: '/tmp/code-review-runtime/skill-packages/manifest.json',
       workspacesDir: '/tmp/code-review-runtime/workspaces',
       workspaceForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}`,
-      reportPathForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}/report.md`
+      reportPathForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}/report.md`,
+      imagesDirForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}/images`
     }))
     const { checkEnvironment } = await import('../environment-checker')
 
@@ -76,6 +78,7 @@ describe('checkEnvironment', () => {
         findVersionCommand,
         checkRuntimeWritable,
         checkSkillPackageReady,
+        readSyncedSkills,
         getRuntimePaths
       })
     ).resolves.toEqual({
@@ -97,13 +100,15 @@ describe('checkEnvironment', () => {
     )
     const checkRuntimeWritable = vi.fn(async () => true)
     const checkSkillPackageReady = vi.fn(async () => true)
+    const readSyncedSkills = vi.fn(async () => [])
     const getRuntimePaths = vi.fn(async () => ({
       runtimeRoot: '/tmp/code-review-runtime',
       skillPackagesDir: '/tmp/code-review-runtime/skill-packages',
       skillManifestPath: '/tmp/code-review-runtime/skill-packages/manifest.json',
       workspacesDir: '/tmp/code-review-runtime/workspaces',
       workspaceForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}`,
-      reportPathForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}/report.md`
+      reportPathForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}/report.md`,
+      imagesDirForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}/images`
     }))
     const { checkEnvironment } = await import('../environment-checker')
 
@@ -112,6 +117,7 @@ describe('checkEnvironment', () => {
         findVersionCommand,
         checkRuntimeWritable,
         checkSkillPackageReady,
+        readSyncedSkills,
         getRuntimePaths
       })
     ).resolves.toEqual({
@@ -119,7 +125,8 @@ describe('checkEnvironment', () => {
       codexVersion: 'codex-cli 0.130.0',
       codexPath: 'codex',
       svnVersion: undefined,
-      svnPath: undefined
+      svnPath: undefined,
+      skills: []
     })
 
     expect(findVersionCommand).toHaveBeenCalledWith('codex', ['--version'])
@@ -138,25 +145,47 @@ describe('runtime environment helpers', () => {
     await rm(runtimeRoot, { recursive: true, force: true })
   })
 
-  it('returns true when the Skill package manifest points at an existing package', async () => {
+  it('returns true when the Skill package manifest includes synced active review Skills with existing packages', async () => {
     const runtimeRoot = join(tmpdir(), `runtime-skill-${Date.now()}`)
     const skillPackagesDir = join(runtimeRoot, 'skill-packages')
-    const packagePath = join(skillPackagesDir, 'skill.zip')
+    const templateOnePackagePath = join(skillPackagesDir, 'template-one.zip')
     await mkdir(skillPackagesDir, { recursive: true })
-    await writeFile(packagePath, 'zip bytes')
+    await writeFile(templateOnePackagePath, 'template one zip bytes')
     await writeFile(
       join(skillPackagesDir, 'manifest.json'),
       JSON.stringify({
-        id: 'skill-1',
-        version: '2026.05.29',
-        content_hash: 'hash',
-        package_path: packagePath,
-        installed_at: '2026-05-29T10:00:00.000Z'
+        skills: [
+          {
+            id: 'skill-1',
+            name: '通用-代码变更审查-模板一',
+            version: '2026.05.29',
+            content_hash: 'hash-1',
+            package_path: templateOnePackagePath,
+            installed_at: '2026-05-29T10:00:00.000Z'
+          }
+        ]
       })
     )
 
     await expect(checkSkillPackageReady(join(skillPackagesDir, 'manifest.json'))).resolves.toBe(
       true
+    )
+    await rm(runtimeRoot, { recursive: true, force: true })
+  })
+
+  it('returns false when the Skill package manifest has no synced active Skills', async () => {
+    const runtimeRoot = join(tmpdir(), `runtime-skill-${Date.now()}`)
+    const skillPackagesDir = join(runtimeRoot, 'skill-packages')
+    await mkdir(skillPackagesDir, { recursive: true })
+    await writeFile(
+      join(skillPackagesDir, 'manifest.json'),
+      JSON.stringify({
+        skills: []
+      })
+    )
+
+    await expect(checkSkillPackageReady(join(skillPackagesDir, 'manifest.json'))).resolves.toBe(
+      false
     )
     await rm(runtimeRoot, { recursive: true, force: true })
   })
@@ -168,11 +197,24 @@ describe('runtime environment helpers', () => {
     await writeFile(
       join(skillPackagesDir, 'manifest.json'),
       JSON.stringify({
-        id: 'skill-1',
-        version: '2026.05.29',
-        content_hash: 'hash',
-        package_path: join(skillPackagesDir, 'missing.zip'),
-        installed_at: '2026-05-29T10:00:00.000Z'
+        skills: [
+          {
+            id: 'skill-1',
+            name: '通用-代码变更审查-模板一',
+            version: '2026.05.29',
+            content_hash: 'hash-1',
+            package_path: join(skillPackagesDir, 'missing-one.zip'),
+            installed_at: '2026-05-29T10:00:00.000Z'
+          },
+          {
+            id: 'skill-2',
+            name: '通用-代码变更审查-模板二',
+            version: '2026.05.30',
+            content_hash: 'hash-2',
+            package_path: join(skillPackagesDir, 'missing-two.zip'),
+            installed_at: '2026-05-30T10:00:00.000Z'
+          }
+        ]
       })
     )
 

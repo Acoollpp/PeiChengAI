@@ -44,7 +44,8 @@ export function TaskPage({
   const [loadingReportTaskId, setLoadingReportTaskId] = useState<string>()
   const [showSubmitFeedback, setShowSubmitFeedback] = useState(false)
 
-  const canRunTask = environment?.status === 'ready'
+  const canRunTask = environment?.status === 'ready' && !environment.skillError
+  const activeSkillNames = environment?.skills?.map((skill) => skill.name)
 
   useEffect(() => {
     let isMounted = true
@@ -91,6 +92,8 @@ export function TaskPage({
       svn_url: payload.svn_url,
       old_revision: payload.old_revision,
       new_revision: payload.new_revision,
+      template_key: payload.template_key,
+      skill_name: payload.skill_name,
       status: 'created'
     }
 
@@ -113,6 +116,8 @@ export function TaskPage({
                 ...task,
                 id: result.taskId,
                 status: result.status,
+                template_key: payload.template_key,
+                skill_name: payload.skill_name,
                 report_path: result.reportPath,
                 progress_message: result.status === 'success' ? '审查完成' : task.progress_message
               }
@@ -139,7 +144,7 @@ export function TaskPage({
     try {
       const reportMarkdown = await window.codeReview.readTaskReport(task.id)
       setMarkdown(reportMarkdown)
-      setCurrentReportPath(task.report_path)
+      setCurrentReportPath(undefined)
     } catch (reportError) {
       setError(reportError instanceof Error ? reportError.message : '历史报告加载失败。')
     } finally {
@@ -200,7 +205,11 @@ export function TaskPage({
 
         <section className="panel">
           <h2>新建任务</h2>
-          <TaskForm disabled={!canRunTask} onSubmit={handleTaskSubmit} />
+          <TaskForm
+            disabled={!canRunTask}
+            activeSkillNames={activeSkillNames}
+            onSubmit={handleTaskSubmit}
+          />
           {!canRunTask && <p className="hint">本地环境就绪后才可发起审查。</p>}
           {error && <p className="form-error">{error}</p>}
           {reportMessage && <p className="hint">{reportMessage}</p>}

@@ -1,8 +1,10 @@
+import type { ReviewTemplateKey } from '../../shared/review-templates'
 import type {
   EnvironmentProgressEvent,
   EnvironmentStatus,
   ReviewTask,
   ReviewTaskStatus,
+  SyncedSkill,
   TaskProgressEvent
 } from '../../shared/types'
 
@@ -36,6 +38,8 @@ export interface ExecuteTaskRequest {
   svn_url: string
   old_revision: string
   new_revision: string
+  template_key?: ReviewTemplateKey
+  skill_name?: string
 }
 
 export interface EnvironmentCheckResult {
@@ -47,6 +51,7 @@ export interface EnvironmentCheckResult {
   codexError?: string
   svnError?: string
   skillError?: string
+  skills?: SyncedSkill[]
 }
 
 export interface ExecuteTaskResult {

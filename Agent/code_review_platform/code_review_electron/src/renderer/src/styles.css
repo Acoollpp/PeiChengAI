@@ -203,6 +203,53 @@ h2 {
   box-shadow: 0 0 0 3px rgb(18 185 120 / 18%);
 }
 
+.template-choice {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.template-choice legend {
+  flex: 0 0 auto;
+  float: left;
+  margin: 0;
+  color: rgb(245 247 251 / 56%);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.template-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  min-height: 32px;
+  min-width: 0;
+}
+
+.template-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #f5f7fb;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.template-option input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #12b978;
+}
+
 .auth-field input::placeholder {
   color: rgb(245 247 251 / 34%);
 }

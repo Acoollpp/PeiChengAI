@@ -3,12 +3,15 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { buildVersionCommandOptions } from './environment-checker'
+import { REVIEW_REPORT_IMAGES_DIR_NAME } from '../shared/report-artifacts'
 
 export interface ReviewPromptInput {
   svnUrl: string
   oldRevision: string
   newRevision: string
   reportPath: string
+  imagesDir: string
+  skillName: string
 }
 
 export interface RunCodexReviewOptions {
@@ -96,17 +99,22 @@ export const buildReviewPrompt = ({
   svnUrl,
   oldRevision,
   newRevision,
-  reportPath
-}: ReviewPromptInput): string => `请使用本机 Codex 已安装的 skill：通用-代码变更审查
+  reportPath,
+  imagesDir,
+  skillName
+}: ReviewPromptInput): string => `请强制使用本机 Codex 已安装的 Skill：${skillName}
 
 审查输入：
 - 项目路径：${svnUrl}
 - 旧版本号：${oldRevision}
 - 新版本号：${newRevision}
 - 报告输出路径：${reportPath}
+- 图片保存目录：${imagesDir}
 
 请严格按该 Skill 的输入模块、SVN 获取策略、规则模块、输出模块执行代码变更审查。
 最终生成 Markdown 审查报告到报告输出路径：${reportPath}
+如需生成或保存审查相关图片，必须保存到图片保存目录：${imagesDir}
+Markdown 报告中引用图片时必须使用相对路径：${REVIEW_REPORT_IMAGES_DIR_NAME}/<文件名>
 
 ---
 

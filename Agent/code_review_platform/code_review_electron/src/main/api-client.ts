@@ -1,3 +1,5 @@
+import type { ReviewTemplateKey } from '../shared/review-templates'
+import { REVIEW_REPORT_FILE_NAME } from '../shared/report-artifacts'
 import type { ReviewTask } from '../shared/types'
 
 export interface TokenPair {
@@ -24,6 +26,8 @@ export interface CreateTaskRequest {
   svn_url: string
   old_revision: string
   new_revision: string
+  template_key?: ReviewTemplateKey
+  skill_name?: string
 }
 
 export interface UpdateTaskStatusRequest {
@@ -35,6 +39,7 @@ export interface UpdateTaskStatusRequest {
 export interface UploadReportRequest {
   report_content: string
   report_path?: string
+  report_name?: string
 }
 
 export interface SubmitFeedbackRequest {
@@ -55,10 +60,17 @@ export interface ReviewTasksResponse {
 
 export interface ActiveSkill {
   id: string
+  name: string
   version: string
   content_hash?: string
   file_size?: number
   hash?: string
+  is_active?: boolean
+}
+
+export interface ActiveSkillsResponse {
+  data: ActiveSkill[]
+  count: number
 }
 
 type FetchLike = typeof fetch
@@ -155,18 +167,48 @@ export class ApiClient {
     })
   }
 
-  getActiveSkill(token: string): Promise<ActiveSkill> {
-    return this.request<ActiveSkill>('/api/v1/skills/active', {
+  async getActiveSkill(token: string): Promise<ActiveSkill> {
+    const response = await this.getActiveSkills(token)
+
+    if (response.count === 0 || response.data.length === 0) {
+      throw new Error('No active skill is configured')
+    }
+    if (response.count > 1 || response.data.length > 1) {
+      throw new Error('Multiple active skills are configured; use getActiveSkills instead')
+    }
+
+    return response.data[0]
+  }
+
+  getActiveSkills(token: string): Promise<ActiveSkillsResponse> {
+    return this.request<ActiveSkillsResponse>('/api/v1/skills/active', {
       method: 'GET',
       headers: this.authHeaders(token)
     })
   }
 
   async downloadActiveSkill(token: string): Promise<ArrayBuffer> {
+    // 兼容旧的单 active Skill 下载入口；Task 5 会迁移到 downloadSkill(id)。
     const response = await this.fetchImpl(`${this.baseUrl}/api/v1/skills/active/download`, {
       method: 'GET',
       headers: this.authHeaders(token)
     })
+
+    if (!response.ok) {
+      throw new ApiError(response.status, await this.readErrorMessage(response))
+    }
+
+    return response.arrayBuffer()
+  }
+
+  async downloadSkill(token: string, skillId: string): Promise<ArrayBuffer> {
+    const response = await this.fetchImpl(
+      `${this.baseUrl}/api/v1/skills/${encodeURIComponent(skillId)}/download`,
+      {
+        method: 'GET',
+        headers: this.authHeaders(token)
+      }
+    )
 
     if (!response.ok) {
       throw new ApiError(response.status, await this.readErrorMessage(response))
@@ -191,7 +233,7 @@ export class ApiClient {
     const body = new FormData()
     body.set(
       'upload',
-      new File([payload.report_content], 'report.md', {
+      new File([payload.report_content], payload.report_name ?? REVIEW_REPORT_FILE_NAME, {
         type: 'text/markdown'
       })
     )
