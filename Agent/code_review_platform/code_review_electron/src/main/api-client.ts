@@ -39,8 +39,8 @@ export interface UploadReportRequest {
 
 export interface SubmitFeedbackRequest {
   description: string
-  screenshot?: File | Blob | null
-  screenshotName?: string | null
+  screenshots?: Array<File | Blob>
+  screenshotNames?: string[]
 }
 
 export interface FeedbackResult {
@@ -211,13 +211,14 @@ export class ApiClient {
     const body = new FormData()
     body.set('description', payload.description)
 
-    if (payload.screenshot) {
-      if (payload.screenshotName) {
-        body.set('screenshot', payload.screenshot, payload.screenshotName)
+    payload.screenshots?.forEach((screenshot, index) => {
+      const screenshotName = payload.screenshotNames?.[index]
+      if (screenshotName) {
+        body.append('screenshots', screenshot, screenshotName)
       } else {
-        body.set('screenshot', payload.screenshot)
+        body.append('screenshots', screenshot)
       }
-    }
+    })
 
     return this.request(
       '/api/v1/feedback',

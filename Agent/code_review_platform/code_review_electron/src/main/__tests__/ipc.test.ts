@@ -4,6 +4,8 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { SubmitFeedbackRequest } from '../api-client'
+
 const handleMock = vi.fn()
 const showItemInFolderMock = vi.fn()
 
@@ -443,21 +445,35 @@ describe('registerIpcHandlers', () => {
     )?.[1]
 
     await expect(
-      feedbackHandler({}, { description: '按钮点击后没有响应', screenshot: null })
+      feedbackHandler({}, { description: '按钮点击后没有响应', screenshots: [] })
     ).rejects.toThrow('Not authenticated')
     expect(api.submitFeedback).not.toHaveBeenCalled()
   })
 
   it('submits feedback with the current access token', async () => {
+    const firstBytes = new TextEncoder().encode('png-bytes').buffer
+    const secondBytes = new TextEncoder().encode('jpeg-bytes').buffer
     const payload = {
       description: '按钮点击后没有响应',
-      screenshot: null
+      screenshots: [
+        {
+          name: 'screen.png',
+          type: 'image/png',
+          bytes: firstBytes
+        },
+        {
+          name: 'screen-2.jpg',
+          type: 'image/jpeg',
+          bytes: secondBytes
+        }
+      ]
     }
+    const submitFeedback = vi.fn(async (_token: string, _payload: SubmitFeedbackRequest) => ({
+      id: 'feedback-1',
+      status: 'pending' as const
+    }))
     const api = {
-      submitFeedback: vi.fn(async () => ({
-        id: 'feedback-1',
-        status: 'pending'
-      }))
+      submitFeedback
     }
     const authStore = {
       load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
@@ -478,10 +494,18 @@ describe('registerIpcHandlers', () => {
       id: 'feedback-1',
       status: 'pending'
     })
-    expect(api.submitFeedback).toHaveBeenCalledWith('token-123', {
-      ...payload,
-      screenshotName: null
-    })
+    expect(submitFeedback).toHaveBeenCalledOnce()
+    const [, submitPayload] = submitFeedback.mock.calls[0]
+    expect(submitPayload.description).toBe('按钮点击后没有响应')
+    expect(submitPayload.screenshotNames).toEqual(['screen.png', 'screen-2.jpg'])
+    const screenshots = submitPayload.screenshots
+    expect(screenshots).toHaveLength(2)
+    expect(screenshots?.[0]).toBeInstanceOf(Blob)
+    expect(screenshots?.[0].type).toBe('image/png')
+    await expect(screenshots?.[0].text()).resolves.toBe('png-bytes')
+    expect(screenshots?.[1]).toBeInstanceOf(Blob)
+    expect(screenshots?.[1].type).toBe('image/jpeg')
+    await expect(screenshots?.[1].text()).resolves.toBe('jpeg-bytes')
   })
 
   it('installs Codex CLI on demand', async () => {
