@@ -70,7 +70,7 @@ def test_create_feedback_text_only(
     _assert_private_paths_not_exposed(content)
 
 
-def test_create_feedback_with_screenshot_and_read_it(
+def test_create_feedback_with_multiple_screenshots_and_read_them(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
     tmp_path: Path,
@@ -82,38 +82,59 @@ def test_create_feedback_with_screenshot_and_read_it(
         f"{settings.API_V1_STR}/feedback",
         headers=normal_user_token_headers,
         data={"description": "截图里按钮遮挡了文字"},
-        files={"screenshot": ("screen.png", b"png-bytes", "image/png")},
+        files=[
+            ("screenshots", ("first.png", b"first-image", "image/png")),
+            ("screenshots", ("second.webp", b"second-image", "image/webp")),
+        ],
     )
 
     assert response.status_code == 200
     content = response.json()
-    _assert_single_screenshot_public(content)
+    assert content["has_screenshot"] is True
+    assert content["screenshot_count"] == 2
+    assert [item["file_name"] for item in content["screenshots"]] == [
+        "first.png",
+        "second.webp",
+    ]
+    assert [item["sort_order"] for item in content["screenshots"]] == [0, 1]
+    _assert_private_paths_not_exposed(content)
 
-    detail_response = client.get(
-        f"{settings.API_V1_STR}/feedback/{content['id']}",
-        headers=normal_user_token_headers,
-    )
-    assert detail_response.status_code == 200
-    _assert_single_screenshot_public(detail_response.json())
+    for screenshot, expected_body, expected_type in zip(
+        content["screenshots"],
+        [b"first-image", b"second-image"],
+        ["image/png", "image/webp"],
+    ):
+        screenshot_response = client.get(
+            f"{settings.API_V1_STR}/feedback/{content['id']}/screenshots/{screenshot['id']}",
+            headers=normal_user_token_headers,
+        )
+        assert screenshot_response.status_code == 200
+        assert screenshot_response.content == expected_body
+        assert screenshot_response.headers["content-type"] == expected_type
 
-    list_response = client.get(
+
+def test_create_feedback_rejects_more_than_five_screenshots(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEEDBACK_STORAGE_DIR", str(tmp_path))
+    files = [
+        ("screenshots", (f"screen-{index}.png", b"png-bytes", "image/png"))
+        for index in range(6)
+    ]
+
+    response = client.post(
         f"{settings.API_V1_STR}/feedback",
         headers=normal_user_token_headers,
+        data={"description": "截图太多"},
+        files=files,
     )
-    assert list_response.status_code == 200
-    list_content = list_response.json()
-    listed_feedback = next(
-        item for item in list_content["data"] if item["id"] == content["id"]
-    )
-    _assert_single_screenshot_public(listed_feedback)
 
-    screenshot_response = client.get(
-        f"{settings.API_V1_STR}/feedback/{content['id']}/screenshot",
-        headers=normal_user_token_headers,
-    )
-    assert screenshot_response.status_code == 200
-    assert screenshot_response.content == b"png-bytes"
-    assert screenshot_response.headers["content-type"] == "image/png"
+    assert response.status_code == 400
+    assert response.json()["detail"] == "最多只能上传 5 张截图"
+    assert not any(tmp_path.iterdir())
 
 
 def test_create_feedback_rejects_blank_description(
@@ -136,11 +157,11 @@ def test_create_feedback_rejects_non_image_screenshot(
         f"{settings.API_V1_STR}/feedback",
         headers=normal_user_token_headers,
         data={"description": "上传了错误格式"},
-        files={"screenshot": ("notes.txt", b"text", "text/plain")},
+        files={"screenshots": ("notes.txt", b"text", "text/plain")},
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Screenshot must be a PNG, JPG, or WEBP image"
+    assert response.json()["detail"] == "截图必须是 PNG、JPG 或 WEBP 图片"
 
 
 def test_create_feedback_rejects_oversized_screenshot(
@@ -150,11 +171,17 @@ def test_create_feedback_rejects_oversized_screenshot(
         f"{settings.API_V1_STR}/feedback",
         headers=normal_user_token_headers,
         data={"description": "截图太大"},
-        files={"screenshot": ("large.png", b"x" * (5 * 1024 * 1024 + 1), "image/png")},
+        files={
+            "screenshots": (
+                "large.png",
+                b"x" * (5 * 1024 * 1024 + 1),
+                "image/png",
+            )
+        },
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Screenshot must not exceed 5MB"
+    assert response.json()["detail"] == "单张截图不能超过 5MB"
 
 
 def test_normal_user_lists_only_own_feedback(

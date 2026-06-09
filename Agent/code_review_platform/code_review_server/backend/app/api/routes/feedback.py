@@ -75,7 +75,7 @@ async def create_feedback(
     session: SessionDep,
     current_user: CurrentUser,
     description: Annotated[str, Form(...)],
-    screenshot: Annotated[UploadFile | None, File()] = None,
+    screenshots: Annotated[list[UploadFile], File()] = [],
 ) -> Any:
     normalized_description = description.strip()
     if not normalized_description:
@@ -91,29 +91,32 @@ async def create_feedback(
     session.add(feedback)
     session.flush()
 
-    if screenshot:
+    if screenshots:
         try:
-            screenshot_path, content = await feedback_service.save_screenshot(
-                feedback.id, screenshot
+            saved_screenshots = await feedback_service.save_screenshots(
+                feedback.id, screenshots
             )
         except HTTPException:
+            feedback_service.remove_feedback_files(feedback.id)
             session.delete(feedback)
             session.commit()
             raise
-        feedback.screenshot_path = str(screenshot_path)
-        feedback.screenshot_name = screenshot.filename
-        feedback.screenshot_content_type = screenshot.content_type
-        feedback.screenshot_size = len(content)
-        session.add(
-            FeedbackScreenshot(
-                feedback_id=feedback.id,
-                file_path=str(screenshot_path),
-                file_name=screenshot.filename or "screenshot.png",
-                content_type=screenshot.content_type or "application/octet-stream",
-                file_size=len(content),
-                sort_order=0,
+        for screenshot_path, upload, content, sort_order in saved_screenshots:
+            if sort_order == 0:
+                feedback.screenshot_path = str(screenshot_path)
+                feedback.screenshot_name = upload.filename
+                feedback.screenshot_content_type = upload.content_type
+                feedback.screenshot_size = len(content)
+            session.add(
+                FeedbackScreenshot(
+                    feedback_id=feedback.id,
+                    file_path=str(screenshot_path),
+                    file_name=upload.filename or f"screenshot-{sort_order}.png",
+                    content_type=upload.content_type or "application/octet-stream",
+                    file_size=len(content),
+                    sort_order=sort_order,
+                )
             )
-        )
 
     session.add(feedback)
     session.commit()
@@ -192,6 +195,29 @@ def read_feedback_screenshot(
         screenshot_path,
         media_type=feedback.screenshot_content_type,
         filename=feedback.screenshot_name,
+    )
+
+
+@router.get("/{feedback_id}/screenshots/{screenshot_id}")
+def read_feedback_screenshot_by_id(
+    session: SessionDep,
+    current_user: CurrentUser,
+    feedback_id: uuid.UUID,
+    screenshot_id: uuid.UUID,
+) -> FileResponse:
+    feedback = _get_feedback_for_user(
+        session=session, current_user=current_user, feedback_id=feedback_id
+    )
+    screenshot = session.get(FeedbackScreenshot, screenshot_id)
+    if not screenshot or screenshot.feedback_id != feedback.id:
+        raise HTTPException(status_code=404, detail="Screenshot not found")
+    screenshot_path = Path(screenshot.file_path)
+    if not screenshot_path.is_file():
+        raise HTTPException(status_code=404, detail="Screenshot not found")
+    return FileResponse(
+        screenshot_path,
+        media_type=screenshot.content_type,
+        filename=screenshot.file_name,
     )
 
 
