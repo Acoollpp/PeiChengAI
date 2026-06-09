@@ -36,6 +36,7 @@ describe('SkillSyncService', () => {
     const api = {
       getActiveSkill: vi.fn(async () => ({
         id: 'skill-1',
+        name: '通用-代码变更审查-模板一',
         version: '2026.05.29',
         content_hash: contentHash,
         file_size: zipBytes.byteLength
@@ -98,6 +99,7 @@ describe('SkillSyncService', () => {
     const api = {
       getActiveSkill: vi.fn(async () => ({
         id: 'skill-1',
+        name: '通用-代码变更审查-模板一',
         version: '2026.05.29',
         content_hash: contentHash,
         file_size: zipBytes.byteLength
@@ -142,6 +144,7 @@ describe('SkillSyncService', () => {
     const api = {
       getActiveSkill: vi.fn(async () => ({
         id: 'skill-1',
+        name: '通用-代码变更审查-模板一',
         version: '2026.05.29',
         content_hash: contentHash
       })),
@@ -170,6 +173,7 @@ describe('SkillSyncService', () => {
     const api = {
       getActiveSkill: vi.fn(async () => ({
         id: 'skill-1',
+        name: '通用-代码变更审查-模板一',
         version: '2026.05.29',
         content_hash: 'expected-hash'
       })),
@@ -195,6 +199,7 @@ describe('SkillSyncService', () => {
     const api = {
       getActiveSkill: vi.fn(async () => ({
         id: 'skill-1',
+        name: '通用-代码变更审查-模板一',
         version: '2026.05.29',
         content_hash: contentHash,
         file_size: zipBytes.byteLength + 1

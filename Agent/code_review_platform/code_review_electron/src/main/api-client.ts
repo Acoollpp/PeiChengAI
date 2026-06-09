@@ -58,7 +58,7 @@ export interface ReviewTasksResponse {
 
 export interface ActiveSkill {
   id: string
-  name?: string
+  name: string
   version: string
   content_hash?: string
   file_size?: number
