@@ -193,7 +193,10 @@ def read_feedback_screenshot(
     feedback = _get_feedback_for_user(
         session=session, current_user=current_user, feedback_id=feedback_id
     )
-    screenshots = sorted(feedback.screenshots, key=lambda item: item.sort_order)
+    screenshots = sorted(
+        feedback.screenshots,
+        key=lambda item: (item.sort_order, item.created_at or datetime.min, item.id),
+    )
     if screenshots:
         first = screenshots[0]
         screenshot_path = Path(first.file_path)

@@ -6,7 +6,7 @@ from sqlmodel import Session
 from sqlmodel import select
 
 from app.core.config import settings
-from app.models import Feedback, User, UserRole
+from app.models import Feedback, FeedbackScreenshot, User, UserRole
 from app.services import feedback_service
 from tests.utils.user import authentication_token_from_key, create_key_user
 
@@ -428,6 +428,92 @@ def test_legacy_feedback_screenshot_endpoint_returns_first_screenshot(
 
     assert legacy_response.status_code == 200
     assert legacy_response.content == b"first-image"
+
+
+def test_legacy_feedback_screenshot_endpoint_returns_lowest_sort_order(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEEDBACK_STORAGE_DIR", str(tmp_path))
+    feedback_response = client.post(
+        f"{settings.API_V1_STR}/feedback",
+        headers=normal_user_token_headers,
+        data={"description": "旧接口按排序返回"},
+    )
+    assert feedback_response.status_code == 200
+    feedback_id = feedback_response.json()["id"]
+    screenshot_dir = tmp_path / feedback_id
+    screenshot_dir.mkdir(parents=True)
+    later_path = screenshot_dir / "later.png"
+    first_path = screenshot_dir / "first.png"
+    later_path.write_bytes(b"later-image")
+    first_path.write_bytes(b"first-by-sort")
+    db.add(
+        FeedbackScreenshot(
+            feedback_id=feedback_id,
+            file_path=str(later_path),
+            file_name="later.png",
+            content_type="image/png",
+            file_size=len(b"later-image"),
+            sort_order=10,
+        )
+    )
+    db.add(
+        FeedbackScreenshot(
+            feedback_id=feedback_id,
+            file_path=str(first_path),
+            file_name="first.png",
+            content_type="image/png",
+            file_size=len(b"first-by-sort"),
+            sort_order=1,
+        )
+    )
+    db.commit()
+
+    legacy_response = client.get(
+        f"{settings.API_V1_STR}/feedback/{feedback_id}/screenshot",
+        headers=normal_user_token_headers,
+    )
+
+    assert legacy_response.status_code == 200
+    assert legacy_response.content == b"first-by-sort"
+
+
+def test_legacy_feedback_screenshot_endpoint_falls_back_to_legacy_fields(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEEDBACK_STORAGE_DIR", str(tmp_path))
+    user, api_key = create_key_user(db)
+    headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
+    screenshot_path = tmp_path / "legacy.png"
+    screenshot_path.write_bytes(b"legacy-image")
+    feedback = Feedback(
+        user_id=user.id,
+        description="只有旧字段的截图",
+        screenshot_path=str(screenshot_path),
+        screenshot_name="legacy.png",
+        screenshot_content_type="image/png",
+        screenshot_size=len(b"legacy-image"),
+    )
+    db.add(feedback)
+    db.commit()
+    db.refresh(feedback)
+
+    legacy_response = client.get(
+        f"{settings.API_V1_STR}/feedback/{feedback.id}/screenshot",
+        headers=headers,
+    )
+
+    assert legacy_response.status_code == 200
+    assert legacy_response.content == b"legacy-image"
+    assert legacy_response.headers["content-type"] == "image/png"
 
 
 def test_delete_user_removes_feedback_screenshot_files(
