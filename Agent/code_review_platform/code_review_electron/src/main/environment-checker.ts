@@ -133,6 +133,59 @@ const runVersionCommand = (command: string, args: string[]): Promise<CommandResu
     })
   })
 
+const runCommandOutput = (command: string, args: string[]): Promise<string | null> =>
+  new Promise((resolve) => {
+    const child = spawn(command, args, buildVersionCommandOptions())
+    const stdoutChunks: Buffer[] = []
+    let settled = false
+
+    const settle = (output: string | null): void => {
+      if (!settled) {
+        settled = true
+        resolve(output)
+      }
+    }
+
+    child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk))
+    child.on('error', () => settle(null))
+    child.on('close', (code) => {
+      settle(code === 0 ? Buffer.concat(stdoutChunks).toString('utf8').trim() : null)
+    })
+  })
+
+export const refreshProcessPath = async (
+  platform: NodeJS.Platform = process.platform
+): Promise<void> => {
+  if (platform !== 'win32') {
+    return
+  }
+
+  const [machinePath, userPath] = await Promise.all([
+    queryWindowsPath('HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment'),
+    queryWindowsPath('HKCU\\Environment')
+  ])
+  const refreshedPath = [machinePath, userPath].filter(Boolean).join(delimiter)
+
+  if (refreshedPath) {
+    process.env.PATH = refreshedPath
+    process.env.Path = refreshedPath
+  }
+}
+
+const queryWindowsPath = async (key: string): Promise<string> => {
+  const output = await runCommandOutput('reg.exe', ['query', key, '/v', 'Path'])
+  if (!output) {
+    return ''
+  }
+
+  const line = output
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .find((value) => /^Path\s+REG_(?:EXPAND_)?SZ\s+/i.test(value))
+
+  return line?.replace(/^Path\s+REG_(?:EXPAND_)?SZ\s+/i, '').trim() ?? ''
+}
+
 export const findVersionCommand = async (
   command: string,
   args: string[]
