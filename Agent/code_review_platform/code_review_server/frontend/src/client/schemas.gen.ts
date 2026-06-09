@@ -46,17 +46,20 @@ export const Body_feedback_create_feedbackSchema = {
             type: 'string',
             title: 'Description'
         },
-        screenshot: {
+        screenshots: {
             anyOf: [
                 {
-                    type: 'string',
-                    format: 'binary'
+                    items: {
+                        type: 'string',
+                        format: 'binary'
+                    },
+                    type: 'array'
                 },
                 {
                     type: 'null'
                 }
             ],
-            title: 'Screenshot'
+            title: 'Screenshots'
         }
     },
     type: 'object',
@@ -168,6 +171,47 @@ export const HTTPValidationErrorSchema = {
     title: 'HTTPValidationError'
 } as const;
 
+export const FeedbackScreenshotPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        file_name: {
+            type: 'string',
+            title: 'File Name'
+        },
+        content_type: {
+            type: 'string',
+            title: 'Content Type'
+        },
+        file_size: {
+            type: 'integer',
+            title: 'File Size'
+        },
+        sort_order: {
+            type: 'integer',
+            title: 'Sort Order'
+        },
+        created_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'file_name', 'content_type', 'file_size', 'sort_order'],
+    title: 'FeedbackScreenshotPublic'
+} as const;
+
 export const FeedbackPublicSchema = {
     properties: {
         id: {
@@ -243,6 +287,19 @@ export const FeedbackPublicSchema = {
                 }
             ],
             title: 'Screenshot Size'
+        },
+        screenshot_count: {
+            type: 'integer',
+            title: 'Screenshot Count',
+            default: 0
+        },
+        screenshots: {
+            items: {
+                '$ref': '#/components/schemas/FeedbackScreenshotPublic'
+            },
+            type: 'array',
+            title: 'Screenshots',
+            default: []
         },
         status: {
             '$ref': '#/components/schemas/FeedbackStatus'
