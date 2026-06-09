@@ -55,6 +55,7 @@ from app.main import app
 from app.models import (
     AuditLog,
     ClientRelease,
+    Feedback,
     Item,
     ReviewTask,
     SkillPackage,
@@ -98,6 +99,9 @@ def db() -> Generator[Session, None, None]:
             session.execute(statement)
         if inspect(engine).has_table("skill_package"):
             statement = delete(SkillPackage)
+            session.execute(statement)
+        if inspect(engine).has_table("feedback"):
+            statement = delete(Feedback)
             session.execute(statement)
         statement = delete(User)
         session.execute(statement)

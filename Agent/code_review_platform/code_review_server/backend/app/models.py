@@ -32,6 +32,12 @@ class ReviewTaskStatus(str, Enum):
     cancelled = "cancelled"
 
 
+class FeedbackStatus(str, Enum):
+    pending = "pending"
+    processing = "processing"
+    resolved = "resolved"
+
+
 # Shared properties
 class UserBase(SQLModel):
     is_active: bool = True
@@ -157,6 +163,32 @@ class ReviewTask(SQLModel, table=True):
     )
 
 
+class Feedback(SQLModel, table=True):
+    __tablename__ = "feedback"
+    __table_args__ = (
+        Index("ix_feedback_user_id_status", "user_id", "status"),
+        Index("ix_feedback_status_created_at", "status", "created_at"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", nullable=False, index=True)
+    description: str = Field(min_length=1, max_length=4096)
+    screenshot_path: str | None = Field(default=None, max_length=2048)
+    screenshot_name: str | None = Field(default=None, max_length=255)
+    screenshot_content_type: str | None = Field(default=None, max_length=128)
+    screenshot_size: int | None = Field(default=None)
+    status: FeedbackStatus = Field(default=FeedbackStatus.pending, index=True)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        index=True,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
 class ReviewTaskCreate(SQLModel):
     svn_url: str = Field(min_length=1, max_length=2048)
     old_revision: str = Field(min_length=1, max_length=255)
@@ -207,6 +239,30 @@ class ReviewTaskStatsPublic(SQLModel):
     failed_or_error: int
     by_status: dict[ReviewTaskStatus, int]
     reports_by_user: list[ReviewTaskReportUserStatsPublic] = Field(default_factory=list)
+
+
+class FeedbackPublic(SQLModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    user_name: str | None = None
+    svn_username: str | None = None
+    description: str
+    has_screenshot: bool = False
+    screenshot_name: str | None = None
+    screenshot_content_type: str | None = None
+    screenshot_size: int | None = None
+    status: FeedbackStatus
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class FeedbacksPublic(SQLModel):
+    data: list[FeedbackPublic]
+    count: int
+
+
+class FeedbackStatusUpdate(SQLModel):
+    status: FeedbackStatus
 
 
 class SkillPackage(SQLModel, table=True):
@@ -326,6 +382,7 @@ class UserPublic(UserBase):
     disabled_reason: str | None = None
     last_synced_at: datetime | None = None
     created_at: datetime | None = None
+
 
 class UsersPublic(SQLModel):
     data: list[UserPublic]

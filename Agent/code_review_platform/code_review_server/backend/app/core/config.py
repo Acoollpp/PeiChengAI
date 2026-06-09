@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     REPORT_STORAGE_DIR: str = "/app/reports"
     SKILL_STORAGE_DIR: str = "/app/skills"
     CLIENT_RELEASE_STORAGE_DIR: str = "/app/client-releases"
+    FEEDBACK_STORAGE_DIR: str = "/app/feedback-screenshots"
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value == "changethis":
