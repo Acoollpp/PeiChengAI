@@ -79,7 +79,7 @@ describe('TaskPage', () => {
         old_revision: '12',
         new_revision: '14',
         template_key: 'template_1',
-        skill_name: '通用-代码变更审查-模板一'
+        skill_name: '通用-代码审查-模版一'
       })
     )
   })
@@ -102,7 +102,7 @@ describe('TaskPage', () => {
           skills: [
             {
               id: 'skill-1',
-              name: '通用-代码变更审查-模板一',
+              name: '通用-代码审查-模版一',
               version: '2026.05.29',
               package_path: '/tmp/skill.zip',
               installed_at: '2026-05-29T10:00:00.000Z'
@@ -132,7 +132,7 @@ describe('TaskPage', () => {
     expect(window.codeReview.executeTask).toHaveBeenCalledWith(
       expect.objectContaining({
         template_key: 'template_1',
-        skill_name: '通用-代码变更审查-模板一'
+        skill_name: '通用-代码审查-模版一'
       })
     )
   })

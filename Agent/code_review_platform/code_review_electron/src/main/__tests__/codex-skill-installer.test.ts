@@ -210,19 +210,19 @@ describe('deleteCodexSkill', () => {
 
   it('deletes only the target same-name skill directory locally', async () => {
     const codexHome = await setCodexHome()
-    const targetDir = join(codexHome, 'skills', '通用-代码变更审查-模板一')
+    const targetDir = join(codexHome, 'skills', '通用-代码审查-模版一')
     const otherDir = join(codexHome, 'skills', '其他Skill')
     await mkdir(targetDir, { recursive: true })
     await mkdir(otherDir, { recursive: true })
     await writeFile(
       join(targetDir, 'SKILL.md'),
-      '---\nname: 通用-代码变更审查-模板一\ndescription: target\n---\n'
+      '---\nname: 通用-代码审查-模版一\ndescription: target\n---\n'
     )
     await writeFile(join(otherDir, 'SKILL.md'), '---\nname: 其他Skill\ndescription: other\n---\n')
 
     const result = await deleteCodexSkill({
       skillId: 'skill-1',
-      skillName: '通用-代码变更审查-模板一',
+      skillName: '通用-代码审查-模版一',
       version: '1.0.0',
       timeoutMs: 1000
     })
@@ -230,7 +230,7 @@ describe('deleteCodexSkill', () => {
     await expect(readFile(join(targetDir, 'SKILL.md'), 'utf8')).rejects.toThrow()
     await expect(readFile(join(otherDir, 'SKILL.md'), 'utf8')).resolves.toContain('其他Skill')
     expect(spawnMock).not.toHaveBeenCalled()
-    expect(result.stdout).toContain('[SKILL_DELETE_OK] 通用-代码变更审查-模板一')
+    expect(result.stdout).toContain('[SKILL_DELETE_OK] 通用-代码审查-模版一')
   })
 })
 
@@ -239,30 +239,30 @@ describe('Codex Skill prompts', () => {
     const prompt = buildInstallSkillPrompt({
       packagePath: '/tmp/skill.zip',
       skillId: 'skill-1',
-      skillName: '通用-代码变更审查-模板一',
+      skillName: '通用-代码审查-模版一',
       version: '1.0.0',
       contentHash: 'hash-1'
     })
 
     expect(prompt).toContain('Skill ID：skill-1')
-    expect(prompt).toContain('Skill 名称：通用-代码变更审查-模板一')
+    expect(prompt).toContain('Skill 名称：通用-代码审查-模版一')
     expect(prompt).toContain('Skill 版本：1.0.0')
     expect(prompt).toContain('内容哈希：hash-1')
     expect(prompt).toContain('只能删除同名 Skill，不要删除其他名称的 Skill')
-    expect(prompt).toContain('[SKILL_INSTALL_OK] 通用-代码变更审查-模板一@1.0.0')
+    expect(prompt).toContain('[SKILL_INSTALL_OK] 通用-代码审查-模版一@1.0.0')
   })
 
   it('builds a delete prompt that only removes the target skill name', () => {
     const prompt = buildDeleteSkillPrompt({
       skillId: 'skill-1',
-      skillName: '通用-代码变更审查-模板一',
+      skillName: '通用-代码审查-模版一',
       version: '1.0.0'
     })
 
-    expect(prompt).toContain('Skill 名称：通用-代码变更审查-模板一')
-    expect(prompt).toContain('只删除名称为 通用-代码变更审查-模板一 的 Skill')
+    expect(prompt).toContain('Skill 名称：通用-代码审查-模版一')
+    expect(prompt).toContain('只删除名称为 通用-代码审查-模版一 的 Skill')
     expect(prompt).toContain('不要删除其他名称的 Skill')
-    expect(prompt).toContain('[SKILL_DELETE_OK] 通用-代码变更审查-模板一')
+    expect(prompt).toContain('[SKILL_DELETE_OK] 通用-代码审查-模版一')
   })
 })
 

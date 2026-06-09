@@ -91,11 +91,11 @@ describe('buildReviewPrompt', () => {
       newRevision: '130',
       reportPath: '/tmp/review/代码审查报告.md',
       imagesDir: '/tmp/review/images',
-      skillName: '通用-代码变更审查-模板二'
+      skillName: '通用-代码审查-模版二'
     })
 
     expect(prompt).toContain('Codex')
-    expect(prompt).toContain('请强制使用本机 Codex 已安装的 Skill：通用-代码变更审查-模板二')
+    expect(prompt).toContain('请强制使用本机 Codex 已安装的 Skill：通用-代码审查-模版二')
     expect(prompt).not.toContain('skills/')
     expect(prompt).toContain('项目路径：svn://example.com/repo/project')
     expect(prompt).toContain('旧版本号：123')
@@ -117,7 +117,7 @@ describe('buildReviewPrompt', () => {
       newRevision: '130',
       reportPath: '/tmp/review/代码审查报告.md',
       imagesDir: '/tmp/review/images',
-      skillName: '通用-代码变更审查-模板二'
+      skillName: '通用-代码审查-模版二'
     })
 
     expect(prompt).not.toContain('svn diff')

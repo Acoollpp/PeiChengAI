@@ -47,14 +47,14 @@ describe('SkillSyncService', () => {
         data: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.29',
             content_hash: templateOneHash,
             file_size: templateOneZip.byteLength
           },
           {
             id: 'skill-2',
-            name: '通用-代码变更审查-模板二',
+            name: '通用-代码审查-模版二',
             version: '2026.05.30',
             content_hash: templateTwoHash,
             file_size: templateTwoZip.byteLength
@@ -88,7 +88,7 @@ describe('SkillSyncService', () => {
       skills: [
         expect.objectContaining({
           id: 'skill-1',
-          name: '通用-代码变更审查-模板一',
+          name: '通用-代码审查-模版一',
           version: '2026.05.29',
           content_hash: templateOneHash,
           hash: templateOneHash,
@@ -97,7 +97,7 @@ describe('SkillSyncService', () => {
         }),
         expect.objectContaining({
           id: 'skill-2',
-          name: '通用-代码变更审查-模板二',
+          name: '通用-代码审查-模版二',
           version: '2026.05.30',
           content_hash: templateTwoHash,
           hash: templateTwoHash,
@@ -115,14 +115,14 @@ describe('SkillSyncService', () => {
     expect(installSkill).toHaveBeenCalledWith({
       packagePath: firstPackagePath,
       skillId: 'skill-1',
-      skillName: '通用-代码变更审查-模板一',
+      skillName: '通用-代码审查-模版一',
       version: '2026.05.29',
       contentHash: templateOneHash
     })
     expect(installSkill).toHaveBeenCalledWith({
       packagePath: secondPackagePath,
       skillId: 'skill-2',
-      skillName: '通用-代码变更审查-模板二',
+      skillName: '通用-代码审查-模版二',
       version: '2026.05.30',
       contentHash: templateTwoHash
     })
@@ -147,7 +147,7 @@ describe('SkillSyncService', () => {
           skills: [
             {
               id: 'skill-1',
-              name: '通用-代码变更审查-模板一',
+              name: '通用-代码审查-模版一',
               version: '2026.05.29',
               content_hash: contentHash,
               hash: contentHash,
@@ -168,7 +168,7 @@ describe('SkillSyncService', () => {
         data: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.29',
             content_hash: contentHash,
             file_size: zipBytes.byteLength
@@ -189,7 +189,7 @@ describe('SkillSyncService', () => {
       skills: [
         {
           id: 'skill-1',
-          name: '通用-代码变更审查-模板一',
+          name: '通用-代码审查-模版一',
           version: '2026.05.29',
           content_hash: contentHash,
           hash: contentHash,
@@ -223,7 +223,7 @@ describe('SkillSyncService', () => {
           skills: [
             {
               id: 'skill-1',
-              name: '通用-代码变更审查-模板一',
+              name: '通用-代码审查-模版一',
               version: '2026.05.29',
               content_hash: contentHash,
               hash: contentHash,
@@ -243,7 +243,7 @@ describe('SkillSyncService', () => {
         data: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.29',
             file_size: zipBytes.byteLength
           }
@@ -291,7 +291,7 @@ describe('SkillSyncService', () => {
           skills: [
             {
               id: 'skill-1',
-              name: '通用-代码变更审查-模板一',
+              name: '通用-代码审查-模版一',
               version: '2026.05.29',
               content_hash: activeHash,
               hash: activeHash,
@@ -321,7 +321,7 @@ describe('SkillSyncService', () => {
         data: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.29',
             content_hash: activeHash,
             file_size: activeZip.byteLength
@@ -365,7 +365,7 @@ describe('SkillSyncService', () => {
         skills: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.29',
             content_hash: 'hash-1',
             package_path: stalePackagePath,
@@ -391,7 +391,7 @@ describe('SkillSyncService', () => {
 
     expect(deleteSkill).toHaveBeenCalledWith({
       skillId: 'skill-1',
-      skillName: '通用-代码变更审查-模板一',
+      skillName: '通用-代码审查-模版一',
       version: '2026.05.29'
     })
     await expect(readFile(runtimePaths.skillManifestPath, 'utf8')).resolves.toBe(
@@ -429,7 +429,7 @@ describe('SkillSyncService', () => {
         data: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.29',
             content_hash: activeHash,
             file_size: activeZip.byteLength
@@ -447,7 +447,7 @@ describe('SkillSyncService', () => {
 
     await expect(service.sync('token-123')).resolves.toMatchObject({
       status: 'synced',
-      skills: [expect.objectContaining({ id: 'skill-1', name: '通用-代码变更审查-模板一' })]
+      skills: [expect.objectContaining({ id: 'skill-1', name: '通用-代码审查-模版一' })]
     })
     expect(deleteSkill).not.toHaveBeenCalled()
     const manifest = JSON.parse(await readFile(runtimePaths.skillManifestPath, 'utf8')) as {
@@ -477,7 +477,7 @@ describe('SkillSyncService', () => {
       skills: [
         {
           id: 'skill-1',
-          name: '通用-代码变更审查-模板一',
+          name: '通用-代码审查-模版一',
           version: '2026.05.29',
           content_hash: activeHash,
           hash: activeHash,
@@ -508,7 +508,7 @@ describe('SkillSyncService', () => {
         data: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.29',
             content_hash: activeHash,
             file_size: activeZip.byteLength
@@ -552,7 +552,7 @@ describe('SkillSyncService', () => {
           skills: [
             {
               id: 'skill-1',
-              name: '通用-代码变更审查-模板一',
+              name: '通用-代码审查-模版一',
               version: '2026.05.29',
               content_hash: freshHash,
               hash: freshHash,
@@ -572,7 +572,7 @@ describe('SkillSyncService', () => {
         data: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.29',
             content_hash: freshHash,
             file_size: freshZip.byteLength
@@ -628,7 +628,7 @@ describe('SkillSyncService', () => {
         data: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.29',
             content_hash: contentHash,
             file_size: zipBytes.byteLength
@@ -651,7 +651,7 @@ describe('SkillSyncService', () => {
       skills: Array<{ id: string }>
     }
     expect(manifest).toEqual({
-      skills: [expect.objectContaining({ id: 'skill-1', name: '通用-代码变更审查-模板一' })]
+      skills: [expect.objectContaining({ id: 'skill-1', name: '通用-代码审查-模版一' })]
     })
     expect(api.downloadSkill).not.toHaveBeenCalled()
   })
@@ -739,7 +739,7 @@ describe('SkillSyncService', () => {
         data: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.29',
             content_hash: 'expected-hash'
           }
@@ -768,7 +768,7 @@ describe('SkillSyncService', () => {
         data: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.29',
             content_hash: contentHash,
             file_size: zipBytes.byteLength + 1

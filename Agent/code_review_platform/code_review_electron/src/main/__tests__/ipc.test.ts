@@ -248,7 +248,7 @@ describe('registerIpcHandlers', () => {
       skills: [
         {
           id: 'skill-1',
-          name: '通用-代码变更审查-模板一',
+          name: '通用-代码审查-模版一',
           version: '2026.05.29',
           package_path: '/tmp/code-review-runtime/skill-packages/skill.zip',
           installed_at: '2026-05-29T10:00:00.000Z'
@@ -279,7 +279,7 @@ describe('registerIpcHandlers', () => {
         old_revision: '1',
         new_revision: '2',
         template_key: 'template_1',
-        skill_name: '通用-代码变更审查-模板一'
+        skill_name: '通用-代码审查-模版一'
       })
     ).resolves.toMatchObject({
       status: 'success',
@@ -327,7 +327,7 @@ describe('registerIpcHandlers', () => {
         old_revision: '1',
         new_revision: '2',
         template_key: 'template_1',
-        skill_name: '通用-代码变更审查-模板一'
+        skill_name: '通用-代码审查-模版一'
       })
     ).rejects.toThrow('No active skill is configured')
     expect(syncSkill).toHaveBeenCalledWith('token-123')
@@ -632,7 +632,7 @@ describe('registerIpcHandlers', () => {
         skills: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.29',
             content_hash: 'hash',
             hash: 'hash',
@@ -712,7 +712,7 @@ describe('registerIpcHandlers', () => {
       skills: [
         {
           id: 'skill-1',
-          name: '通用-代码变更审查-模板一',
+          name: '通用-代码审查-模版一',
           version: '2026.05.29',
           content_hash: 'hash',
           hash: 'hash',
@@ -804,7 +804,7 @@ describe('registerIpcHandlers', () => {
       skills: [
         {
           id: 'skill-1',
-          name: '通用-代码变更审查-模板一',
+          name: '通用-代码审查-模版一',
           version: '2026.05.29',
           content_hash: 'hash',
           hash: 'hash',

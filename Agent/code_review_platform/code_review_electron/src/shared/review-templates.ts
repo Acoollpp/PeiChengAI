@@ -2,12 +2,12 @@ export const REVIEW_TEMPLATES = [
   {
     key: 'template_1',
     label: '模板一',
-    skillName: '通用-代码变更审查-模板一'
+    skillName: '通用-代码审查-模版一'
   },
   {
     key: 'template_2',
     label: '模板二',
-    skillName: '通用-代码变更审查-模板二'
+    skillName: '通用-代码审查-模版二'
   }
 ] as const
 

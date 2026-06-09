@@ -16,7 +16,7 @@ const request = {
   old_revision: '12',
   new_revision: '14',
   template_key: 'template_2' as const,
-  skill_name: '通用-代码变更审查-模板二'
+  skill_name: '通用-代码审查-模版二'
 }
 
 const makeTask = (overrides: Partial<ReviewTask> = {}): ReviewTask => ({
@@ -122,7 +122,7 @@ describe('executeReviewTask', () => {
       cwd,
       reportPath,
       imagesDir,
-      skillName: '通用-代码变更审查-模板二',
+      skillName: '通用-代码审查-模版二',
       task: makeTask()
     })
     expect(dependencies.uploadReport).toHaveBeenCalledWith('token-123', 'task-1', reportPath)

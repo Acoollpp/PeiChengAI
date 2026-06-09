@@ -30,7 +30,7 @@ describe('TaskForm', () => {
       old_revision: '12',
       new_revision: '14',
       template_key: 'template_2',
-      skill_name: '通用-代码变更审查-模板二'
+      skill_name: '通用-代码审查-模版二'
     })
   })
 })

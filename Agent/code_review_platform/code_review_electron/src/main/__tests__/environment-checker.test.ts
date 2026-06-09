@@ -157,7 +157,7 @@ describe('runtime environment helpers', () => {
         skills: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.29',
             content_hash: 'hash-1',
             package_path: templateOnePackagePath,
@@ -200,7 +200,7 @@ describe('runtime environment helpers', () => {
         skills: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.29',
             content_hash: 'hash-1',
             package_path: join(skillPackagesDir, 'missing-one.zip'),
@@ -208,7 +208,7 @@ describe('runtime environment helpers', () => {
           },
           {
             id: 'skill-2',
-            name: '通用-代码变更审查-模板二',
+            name: '通用-代码审查-模版二',
             version: '2026.05.30',
             content_hash: 'hash-2',
             package_path: join(skillPackagesDir, 'missing-two.zip'),

@@ -99,7 +99,7 @@ describe('ApiClient', () => {
       old_revision: '12',
       new_revision: '14',
       template_key: 'template_1',
-      skill_name: '通用-代码变更审查-模板一'
+      skill_name: '通用-代码审查-模版一'
     })
 
     expect(fetchMock).toHaveBeenCalledWith('https://server.example/api/v1/review-tasks', {
@@ -113,7 +113,7 @@ describe('ApiClient', () => {
         old_revision: '12',
         new_revision: '14',
         template_key: 'template_1',
-        skill_name: '通用-代码变更审查-模板一'
+        skill_name: '通用-代码审查-模版一'
       })
     })
   })
@@ -199,7 +199,7 @@ describe('ApiClient', () => {
         data: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.28',
             content_hash: 'hash-123'
           }
@@ -213,7 +213,7 @@ describe('ApiClient', () => {
 
     expect(result).toEqual({
       id: 'skill-1',
-      name: '通用-代码变更审查-模板一',
+      name: '通用-代码审查-模版一',
       version: '2026.05.28',
       content_hash: 'hash-123'
     })
@@ -232,12 +232,12 @@ describe('ApiClient', () => {
         data: [
           {
             id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
+            name: '通用-代码审查-模版一',
             version: '2026.05.28'
           },
           {
             id: 'skill-2',
-            name: '通用-代码变更审查-模板二',
+            name: '通用-代码审查-模版二',
             version: '2026.05.28'
           }
         ],
@@ -280,7 +280,7 @@ describe('ApiClient', () => {
           data: [
             {
               id: 'skill-1',
-              name: '通用-代码变更审查-模板一',
+              name: '通用-代码审查-模版一',
               version: '1.0.0',
               content_hash: 'hash-1',
               file_size: 100,
@@ -294,7 +294,7 @@ describe('ApiClient', () => {
     const client = new ApiClient('https://server.example', fetchMock)
 
     await expect(client.getActiveSkills('token-123')).resolves.toMatchObject({
-      data: [expect.objectContaining({ id: 'skill-1', name: '通用-代码变更审查-模板一' })],
+      data: [expect.objectContaining({ id: 'skill-1', name: '通用-代码审查-模版一' })],
       count: 1
     })
     expect(fetchMock).toHaveBeenCalledWith('https://server.example/api/v1/skills/active', {
