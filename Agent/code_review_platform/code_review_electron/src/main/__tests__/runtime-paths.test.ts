@@ -7,13 +7,13 @@ describe('runtime paths', () => {
     vi.resetModules()
   })
 
-  it('uses the exe directory when Electron is packaged', async () => {
+  it('uses a sibling data directory when Electron is packaged', async () => {
     vi.doMock('electron', () => ({
       app: {
         isPackaged: true,
         getPath: vi.fn((name: string) => {
           if (name === 'exe') {
-            return 'D:\\SoftWare\\CodeReviewClient\\CodeReview.exe'
+            return 'D:\\SoftWare\\code-review-electron\\AI代码审查客户端.exe'
           }
           throw new Error(`unexpected path request ${name}`)
         })
@@ -23,19 +23,19 @@ describe('runtime paths', () => {
     const { getRuntimePaths } = await import('../runtime-paths')
     const paths = await getRuntimePaths()
 
-    expect(paths.runtimeRoot).toBe('D:\\SoftWare\\CodeReviewClient\\runtime-data')
+    expect(paths.runtimeRoot).toBe('D:\\SoftWare\\code-review-electron-data')
     expect(paths.skillPackagesDir).toBe(
-      'D:\\SoftWare\\CodeReviewClient\\runtime-data\\skill-packages'
+      'D:\\SoftWare\\code-review-electron-data\\skill-packages'
     )
     expect(paths.skillManifestPath).toBe(
-      'D:\\SoftWare\\CodeReviewClient\\runtime-data\\skill-packages\\manifest.json'
+      'D:\\SoftWare\\code-review-electron-data\\skill-packages\\manifest.json'
     )
-    expect(paths.workspacesDir).toBe('D:\\SoftWare\\CodeReviewClient\\runtime-data\\workspaces')
+    expect(paths.workspacesDir).toBe('D:\\SoftWare\\code-review-electron-data\\workspaces')
     expect(paths.workspaceForTask('task-1')).toBe(
-      'D:\\SoftWare\\CodeReviewClient\\runtime-data\\workspaces\\task-1'
+      'D:\\SoftWare\\code-review-electron-data\\workspaces\\task-1'
     )
     expect(paths.reportPathForTask('task-1')).toBe(
-      'D:\\SoftWare\\CodeReviewClient\\runtime-data\\workspaces\\task-1\\report.md'
+      'D:\\SoftWare\\code-review-electron-data\\workspaces\\task-1\\report.md'
     )
   })
 

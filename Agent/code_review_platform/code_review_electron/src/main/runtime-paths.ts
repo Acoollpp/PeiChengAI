@@ -11,12 +11,15 @@ export interface RuntimePaths {
 
 export const RUNTIME_DATA_DIR = 'runtime-data'
 export const DEV_RUNTIME_DATA_DIR = '.runtime-data'
+export const PACKAGED_RUNTIME_DATA_DIR = 'code-review-electron-data'
 
 export const getRuntimePaths = async (): Promise<RuntimePaths> => {
   const { app } = await import('electron')
   const pathApi = app.isPackaged && isWindowsPath(app.getPath('exe')) ? path.win32 : path
   const appRoot = app.isPackaged ? pathApi.dirname(app.getPath('exe')) : app.getAppPath()
-  const runtimeRoot = pathApi.join(appRoot, app.isPackaged ? RUNTIME_DATA_DIR : DEV_RUNTIME_DATA_DIR)
+  const runtimeRoot = app.isPackaged
+    ? pathApi.join(pathApi.dirname(appRoot), PACKAGED_RUNTIME_DATA_DIR)
+    : pathApi.join(appRoot, DEV_RUNTIME_DATA_DIR)
   const skillPackagesDir = pathApi.join(runtimeRoot, 'skill-packages')
   const workspacesDir = pathApi.join(runtimeRoot, 'workspaces')
 
