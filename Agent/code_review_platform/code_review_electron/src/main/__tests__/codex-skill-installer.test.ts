@@ -180,6 +180,26 @@ describe('installCodexSkillFromZip', () => {
       readFile(join(userProfile, '.codex', 'skills', '通用-代码审查-模版二', 'SKILL.md'), 'utf8')
     ).resolves.toContain('name: 通用-代码审查-模版二')
   })
+
+  it('fails instead of creating a relative .codex directory when no user home can be resolved', async () => {
+    delete process.env.CODEX_HOME
+    delete process.env.HOME
+    delete process.env.USERPROFILE
+    delete process.env.HOMEDRIVE
+    delete process.env.HOMEPATH
+    const { zipPath, hash } = await createSkillZip({ skillName: '通用-代码审查-模版二' })
+
+    await expect(
+      installCodexSkillFromZip({
+        packagePath: zipPath,
+        skillId: 'skill-1',
+        skillName: '通用-代码审查-模版二',
+        version: 'v1.0.0',
+        contentHash: hash,
+        timeoutMs: 1000
+      })
+    ).rejects.toThrow('Cannot resolve Codex home directory')
+  })
 })
 
 describe('deleteCodexSkill', () => {

@@ -399,7 +399,7 @@ describe('SkillSyncService', () => {
     )
   })
 
-  it('rejects instead of deleting a stale legacy manifest entry without a Skill name', async () => {
+  it('drops a stale legacy manifest entry without a Skill name and continues active Skill sync', async () => {
     const runtimeRoot = await mkdtemp(join(tmpdir(), 'skill-sync-runtime-'))
     tempDirs.push(runtimeRoot)
     const runtimePaths = runtimePathsFor(runtimeRoot)
@@ -437,7 +437,7 @@ describe('SkillSyncService', () => {
         ],
         count: 1
       })),
-      downloadSkill: vi.fn()
+      downloadSkill: vi.fn(async () => toArrayBuffer(activeZip))
     }
     const service = new SkillSyncService(api, {
       runtimePaths,
@@ -445,13 +445,15 @@ describe('SkillSyncService', () => {
       deleteSkill
     })
 
-    await expect(service.sync('token-123')).rejects.toThrow(
-      'Cannot delete stale skill without a name: skill-old'
-    )
+    await expect(service.sync('token-123')).resolves.toMatchObject({
+      status: 'synced',
+      skills: [expect.objectContaining({ id: 'skill-1', name: '通用-代码变更审查-模板一' })]
+    })
     expect(deleteSkill).not.toHaveBeenCalled()
-    await expect(readFile(runtimePaths.skillManifestPath, 'utf8')).resolves.toBe(
-      `${JSON.stringify(originalManifest, null, 2)}\n`
-    )
+    const manifest = JSON.parse(await readFile(runtimePaths.skillManifestPath, 'utf8')) as {
+      skills: Array<{ id: string }>
+    }
+    expect(manifest.skills).toEqual([expect.objectContaining({ id: 'skill-1' })])
   })
 
   it('rejects when stale Skill deletion fails and keeps the existing manifest unchanged', async () => {
@@ -652,6 +654,63 @@ describe('SkillSyncService', () => {
       skills: [expect.objectContaining({ id: 'skill-1', name: '通用-代码变更审查-模板一' })]
     })
     expect(api.downloadSkill).not.toHaveBeenCalled()
+  })
+
+  it('drops stale legacy manifest entries without names instead of blocking active Skill sync', async () => {
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'skill-sync-runtime-'))
+    tempDirs.push(runtimeRoot)
+    const runtimePaths = runtimePathsFor(runtimeRoot)
+    await mkdir(runtimePaths.skillPackagesDir, { recursive: true })
+    const freshZip = Buffer.from('fresh active zip bytes')
+    const freshHash = sha256(freshZip)
+    const packagePath = join(runtimePaths.skillPackagesDir, `skill-new-2026.06.09-${freshHash}.zip`)
+    await writeFile(
+      runtimePaths.skillManifestPath,
+      `${JSON.stringify(
+        {
+          id: 'skill-stale',
+          version: '2026.05.01',
+          package_path: join(runtimePaths.skillPackagesDir, 'stale.zip'),
+          installed_at: '2026-05-01T10:00:00.000Z'
+        },
+        null,
+        2
+      )}\n`
+    )
+    const deleteSkill = vi.fn()
+    const installSkill = vi.fn(async () => ({ stdout: 'installed', stderr: '' }))
+    const api = {
+      getActiveSkills: vi.fn(async () => ({
+        data: [
+          {
+            id: 'skill-new',
+            name: '通用-代码审查-模版一',
+            version: '2026.06.09',
+            content_hash: freshHash,
+            file_size: freshZip.byteLength
+          }
+        ],
+        count: 1
+      })),
+      downloadSkill: vi.fn(async () => toArrayBuffer(freshZip))
+    }
+    const service = new SkillSyncService(api, {
+      runtimePaths,
+      installSkill,
+      deleteSkill
+    })
+
+    await expect(service.sync('token-123')).resolves.toMatchObject({
+      status: 'synced',
+      skills: [expect.objectContaining({ id: 'skill-new', name: '通用-代码审查-模版一' })]
+    })
+    expect(deleteSkill).not.toHaveBeenCalled()
+    expect(api.downloadSkill).toHaveBeenCalledWith('token-123', 'skill-new')
+    await expect(readFile(packagePath)).resolves.toEqual(freshZip)
+    const manifest = JSON.parse(await readFile(runtimePaths.skillManifestPath, 'utf8')) as {
+      skills: Array<{ id: string }>
+    }
+    expect(manifest.skills).toEqual([expect.objectContaining({ id: 'skill-new' })])
   })
 
   it('rejects a sync when the server has no active Skills configured', async () => {

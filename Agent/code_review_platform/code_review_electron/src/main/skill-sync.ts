@@ -77,7 +77,8 @@ export class SkillSyncService {
     )) {
       const staleSkillName = staleEntry.name.trim()
       if (!staleSkillName) {
-        throw new Error(`Cannot delete stale skill without a name: ${staleEntry.id}`)
+        didChange = true
+        continue
       }
 
       await this.deleteSkill({
