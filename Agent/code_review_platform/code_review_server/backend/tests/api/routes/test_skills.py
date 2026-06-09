@@ -234,6 +234,114 @@ def test_admin_can_deactivate_skill_and_download_by_id(
     assert active_response.json() == {"data": [], "count": 0}
 
 
+def test_legacy_active_download_downloads_single_active_skill(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SKILL_STORAGE_DIR", str(tmp_path))
+    uploaded = _upload_skill(
+        client,
+        superuser_token_headers,
+        name="通用-代码变更审查-模板一",
+        version="1.0.0",
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/skills/active/download",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/zip")
+    assert response.content == _skill_zip()
+    assert uploaded["is_active"] is True
+
+
+def test_legacy_active_download_returns_409_when_multiple_active_skills_exist(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SKILL_STORAGE_DIR", str(tmp_path))
+    _upload_skill(
+        client,
+        superuser_token_headers,
+        name="通用-代码变更审查-模板一",
+        version="1.0.0",
+    )
+    _upload_skill(
+        client,
+        superuser_token_headers,
+        name="通用-代码变更审查-模板二",
+        version="1.0.0",
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/skills/active/download",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 409
+    assert (
+        response.json()["detail"]
+        == "Multiple active skills are configured; download by skill id instead"
+    )
+
+
+def test_normal_user_cannot_download_inactive_skill_by_id(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SKILL_STORAGE_DIR", str(tmp_path))
+    uploaded = _upload_skill(
+        client,
+        superuser_token_headers,
+        name="通用-代码变更审查-模板一",
+        version="1.0.0",
+        activate="false",
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/skills/{uploaded['id']}/download",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Not enough permissions"
+
+
+def test_admin_can_download_inactive_skill_by_id(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SKILL_STORAGE_DIR", str(tmp_path))
+    uploaded = _upload_skill(
+        client,
+        superuser_token_headers,
+        name="通用-代码变更审查-模板一",
+        version="1.0.0",
+        activate="false",
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/skills/{uploaded['id']}/download",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/zip")
+
+
 def test_upload_skill_package_requires_skill_md(
     client: TestClient,
     superuser_token_headers: dict[str, str],
@@ -317,7 +425,7 @@ def test_activating_skill_deactivates_previous_active_skill(
     assert [skill["id"] for skill in active_skills] == [second_response.json()["id"]]
 
 
-def test_active_skill_returns_404_when_no_skill_exists(
+def test_active_skills_returns_empty_list_when_no_skill_exists(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
     db: Session,

@@ -9,6 +9,7 @@ from app.api.deps import (
     CurrentUser,
     SessionDep,
     get_current_active_admin,
+    has_admin_privileges,
 )
 from app.models import SkillPackage, SkillPackagePublic, SkillPackagesPublic
 from app.services import skill_service
@@ -112,11 +113,32 @@ def read_active_skills(session: SessionDep, _current_user: CurrentUser) -> Any:
     )
 
 
+@router.get("/active/download")
+def download_active_skill(
+    session: SessionDep, _current_user: CurrentUser
+) -> Response:
+    active_skills = skill_service.get_active_skills(session)
+    if not active_skills:
+        raise HTTPException(status_code=404, detail="No active skill is configured")
+    if len(active_skills) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail="Multiple active skills are configured; download by skill id instead",
+        )
+    return Response(
+        skill_service.read_skill_content(active_skills[0]),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="skill.zip"'},
+    )
+
+
 @router.get("/{skill_id}/download")
 def download_skill(
-    session: SessionDep, _current_user: CurrentUser, skill_id: uuid.UUID
+    session: SessionDep, current_user: CurrentUser, skill_id: uuid.UUID
 ) -> Response:
     skill = _get_skill_or_404(session, skill_id)
+    if not skill.is_active and not has_admin_privileges(current_user):
+        raise HTTPException(status_code=403, detail="Not enough permissions")
     return Response(
         skill_service.read_skill_content(skill),
         media_type="application/zip",
