@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { buildVersionCommandOptions } from './environment-checker'
+import { REVIEW_REPORT_IMAGES_DIR_NAME } from '../shared/report-artifacts'
 
 export interface ReviewPromptInput {
   svnUrl: string
@@ -113,7 +114,7 @@ export const buildReviewPrompt = ({
 请严格按该 Skill 的输入模块、SVN 获取策略、规则模块、输出模块执行代码变更审查。
 最终生成 Markdown 审查报告到报告输出路径：${reportPath}
 如需生成或保存审查相关图片，必须保存到图片保存目录：${imagesDir}
-Markdown 报告中引用图片时必须使用相对路径：images/<文件名>
+Markdown 报告中引用图片时必须使用相对路径：${REVIEW_REPORT_IMAGES_DIR_NAME}/<文件名>
 
 ---
 

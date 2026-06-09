@@ -264,7 +264,9 @@ describe('registerIpcHandlers', () => {
       executeHandler({}, {
         svn_url: 'svn://repo/project',
         old_revision: '1',
-        new_revision: '2'
+        new_revision: '2',
+        template_key: 'template_1',
+        skill_name: '通用-代码变更审查-模板一'
       })
     ).resolves.toMatchObject({
       status: 'success',

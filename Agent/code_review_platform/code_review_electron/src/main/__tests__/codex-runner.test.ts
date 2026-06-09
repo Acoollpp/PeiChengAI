@@ -71,6 +71,7 @@ describe('runCodexReview', () => {
 })
 
 import { buildCodexCommand, buildCodexExecArgs, buildReviewPrompt } from '../codex-runner'
+import { REVIEW_REPORT_IMAGES_DIR_NAME } from '../../shared/report-artifacts'
 
 describe('buildCodexCommand', () => {
   it('uses the real Codex exe on Windows so prompt stays a single argv without shell parsing', () => {
@@ -101,7 +102,7 @@ describe('buildReviewPrompt', () => {
     expect(prompt).toContain('新版本号：130')
     expect(prompt).toContain('报告输出路径：/tmp/review/代码审查报告.md')
     expect(prompt).toContain('图片保存目录：/tmp/review/images')
-    expect(prompt).toContain('images/<文件名>')
+    expect(prompt).toContain(`${REVIEW_REPORT_IMAGES_DIR_NAME}/<文件名>`)
     expect(prompt).toContain('SVN 获取策略')
     expect(prompt).not.toContain('{svnUrl}')
     expect(prompt).not.toContain('{oldRevision}')
