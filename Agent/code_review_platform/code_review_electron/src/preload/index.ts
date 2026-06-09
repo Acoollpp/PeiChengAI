@@ -5,6 +5,7 @@ import type {
   AppUpdateInfo,
   AppUpdateProgress,
   EnvironmentCheckResult,
+  EnvironmentProgressEvent,
   ExecuteTaskRequest,
   ExecuteTaskResult,
   KeyLoginRequest,
@@ -60,6 +61,8 @@ contextBridge.exposeInMainWorld('codeReview', {
   installSvn: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('svn:install'),
   installSkill: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('skill:install'),
   checkEnvironment: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('environment:check'),
+  onEnvironmentProgress: (callback: (event: EnvironmentProgressEvent) => void): (() => void) =>
+    listen('environment:progress', callback),
   checkForAppUpdate: (): Promise<boolean> => ipcRenderer.invoke('app-update:check'),
   downloadAppUpdate: (): Promise<true> => ipcRenderer.invoke('app-update:download'),
   installAppUpdate: (): Promise<true> => ipcRenderer.invoke('app-update:install'),

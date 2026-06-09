@@ -5,6 +5,7 @@ import type { EnvironmentCheckResult } from '../code-review-api'
 type EnvironmentStatusProps = {
   result: EnvironmentCheckResult | null
   isChecking: boolean
+  isInstallingSkillDuringCheck: boolean
   isInstallingCodex: boolean
   isInstallingSvn: boolean
   onRefresh: () => Promise<void>
@@ -34,6 +35,7 @@ type DependencyItem = {
 export function EnvironmentStatus({
   result,
   isChecking,
+  isInstallingSkillDuringCheck,
   isInstallingCodex,
   isInstallingSvn,
   onRefresh,
@@ -50,6 +52,8 @@ export function EnvironmentStatus({
   const codexMissing = hasKnownResult && status === 'missing_codex'
   const isUnknownChecking = !hasKnownResult
   const statusClass = hasKnownResult ? status : 'checking'
+  const checkingStatusText = isInstallingSkillDuringCheck ? '安装 Skill 中' : '检查中'
+  const refreshText = isInstallingSkillDuringCheck ? '安装 Skill 中...' : '检查中...'
   const showDependencyPanel = hasKnownResult && (isOpen || hasIssue || hasSkillSyncIssue)
   const showDownstreamDependencies = hasKnownResult && !codexMissing
   const items: DependencyItem[] = hasKnownResult
@@ -121,7 +125,9 @@ export function EnvironmentStatus({
           )}
         </button>
         <div>
-          <span className={`status-pill status-${statusClass}`}>{result ? statusLabels[status] : '检查中'}</span>
+          <span className={`status-pill status-${statusClass}`}>
+            {result ? statusLabels[status] : checkingStatusText}
+          </span>
           <p className="environment-detail">
             {codexMissing
               ? `Codex ${result?.codexVersion ?? '-'}`
@@ -130,7 +136,7 @@ export function EnvironmentStatus({
         </div>
         <button className="ghost-button" type="button" disabled={busy} onClick={() => void onRefresh()}>
           {isChecking && <span className="button-spinner" aria-hidden="true" />}
-          {isChecking ? '检查中...' : '重新检查'}
+          {isChecking ? refreshText : '重新检查'}
         </button>
       </div>
 

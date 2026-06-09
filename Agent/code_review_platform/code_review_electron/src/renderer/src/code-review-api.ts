@@ -1,11 +1,12 @@
 import type {
+  EnvironmentProgressEvent,
   EnvironmentStatus,
   ReviewTask,
   ReviewTaskStatus,
   TaskProgressEvent
 } from '../../shared/types'
 
-export type { TaskProgressEvent }
+export type { EnvironmentProgressEvent, TaskProgressEvent }
 
 export interface KeyLoginRequest {
   server_url: string
@@ -113,6 +114,7 @@ export interface CodeReviewApi {
   installSvn(): Promise<EnvironmentCheckResult>
   installSkill(): Promise<EnvironmentCheckResult>
   checkEnvironment(): Promise<EnvironmentCheckResult>
+  onEnvironmentProgress(callback: (event: EnvironmentProgressEvent) => void): () => void
   bindSvnCredential(payload: SvnCredentialPayload): Promise<true>
   checkForAppUpdate(): Promise<boolean>
   downloadAppUpdate(): Promise<true>

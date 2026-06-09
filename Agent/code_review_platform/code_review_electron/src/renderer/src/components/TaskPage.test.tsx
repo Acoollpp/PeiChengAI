@@ -25,6 +25,7 @@ const setupCodeReviewApi = (): void => {
     installSvn: vi.fn(),
     installSkill: vi.fn(),
     checkEnvironment: vi.fn(),
+    onEnvironmentProgress: vi.fn(() => vi.fn()),
     bindSvnCredential: vi.fn()
   } as unknown as CodeReviewApi
 }
@@ -45,6 +46,7 @@ describe('TaskPage', () => {
       <TaskPage
         environment={{ status: 'ready', codexVersion: 'codex-cli 0.130.0', svnVersion: '1.14.5' }}
         isCheckingEnvironment={false}
+        isInstallingSkillDuringCheck={false}
         isInstallingCodex={false}
         isInstallingSvn={false}
         svnUsername="Key 用户"
@@ -66,6 +68,7 @@ describe('TaskPage', () => {
       <TaskPage
         environment={{ status: 'missing_svn' }}
         isCheckingEnvironment={false}
+        isInstallingSkillDuringCheck={false}
         isInstallingCodex={false}
         isInstallingSvn={false}
         svnUsername="Key 用户"

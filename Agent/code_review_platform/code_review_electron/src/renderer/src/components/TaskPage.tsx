@@ -12,6 +12,7 @@ import { AdminContactDialog } from './AdminContactDialog'
 type TaskPageProps = {
   environment: EnvironmentCheckResult | null
   isCheckingEnvironment: boolean
+  isInstallingSkillDuringCheck: boolean
   isInstallingCodex: boolean
   isInstallingSvn: boolean
   svnUsername: string
@@ -24,6 +25,7 @@ type TaskPageProps = {
 export function TaskPage({
   environment,
   isCheckingEnvironment,
+  isInstallingSkillDuringCheck,
   isInstallingCodex,
   isInstallingSvn,
   svnUsername,
@@ -183,6 +185,7 @@ export function TaskPage({
         <EnvironmentStatus
           result={environment}
           isChecking={isCheckingEnvironment}
+          isInstallingSkillDuringCheck={isInstallingSkillDuringCheck}
           isInstallingCodex={isInstallingCodex}
           isInstallingSvn={isInstallingSvn}
           onRefresh={onRefreshEnvironment}

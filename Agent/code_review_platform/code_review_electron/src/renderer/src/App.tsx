@@ -5,6 +5,7 @@ import type {
   AppUpdateProgress,
   AppUpdateStatus,
   EnvironmentCheckResult,
+  EnvironmentProgressEvent,
   KeyLoginRequest,
   SvnLoginRequest
 } from './code-review-api'
@@ -25,6 +26,8 @@ export function App(): React.JSX.Element {
   const [session, setSession] = useState<AuthSession | null>(null)
   const [environment, setEnvironment] = useState<EnvironmentCheckResult | null>(null)
   const [isCheckingEnvironment, setIsCheckingEnvironment] = useState(false)
+  const [environmentProgress, setEnvironmentProgress] =
+    useState<EnvironmentProgressEvent | null>(null)
   const [isInstallingCodex, setIsInstallingCodex] = useState(false)
   const [isInstallingSvn, setIsInstallingSvn] = useState(false)
   const [needSvnBinding, setNeedSvnBinding] = useState(false)
@@ -40,12 +43,14 @@ export function App(): React.JSX.Element {
 
   const checkEnvironment = useCallback(async (): Promise<void> => {
     setIsCheckingEnvironment(true)
+    setEnvironmentProgress(null)
     try {
       setEnvironment(await window.codeReview.checkEnvironment())
     } catch {
       setEnvironment(fallbackEnvironment)
     } finally {
       setIsCheckingEnvironment(false)
+      setEnvironmentProgress(null)
     }
   }, [])
 
@@ -78,6 +83,7 @@ export function App(): React.JSX.Element {
   }, [])
 
   const installSkill = useCallback(async (): Promise<void> => {
+    setEnvironmentProgress({ stage: 'installing_skill' })
     try {
       setEnvironment(await window.codeReview.installSkill())
     } catch {
@@ -85,6 +91,8 @@ export function App(): React.JSX.Element {
         status: 'missing_skill',
         skillError: 'Skill 安装失败'
       })
+    } finally {
+      setEnvironmentProgress(null)
     }
   }, [])
 
@@ -196,6 +204,9 @@ export function App(): React.JSX.Element {
         setUpdateError(error.message || '更新失败，当前版本仍可继续使用。')
         setUpdateState('error')
         setIsUpdateDialogVisible(true)
+      }),
+      window.codeReview.onEnvironmentProgress((progress) => {
+        setEnvironmentProgress(progress)
       })
     ]
 
@@ -217,6 +228,7 @@ export function App(): React.JSX.Element {
       <TaskPage
         environment={environment}
         isCheckingEnvironment={isCheckingEnvironment}
+        isInstallingSkillDuringCheck={environmentProgress?.stage === 'installing_skill'}
         isInstallingCodex={isInstallingCodex}
         isInstallingSvn={isInstallingSvn}
         svnUsername={session.displayName}

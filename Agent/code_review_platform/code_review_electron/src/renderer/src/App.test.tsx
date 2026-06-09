@@ -7,17 +7,25 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { App } from './App'
-import type { AppUpdateInfo, AppUpdateProgress, CodeReviewApi } from './code-review-api'
+import type {
+  AppUpdateInfo,
+  AppUpdateProgress,
+  CodeReviewApi,
+  EnvironmentProgressEvent
+} from './code-review-api'
 
 type ProgressListener = (progress: AppUpdateProgress) => void
 type AvailableListener = (info: AppUpdateInfo) => void
+type EnvironmentProgressListener = (progress: EnvironmentProgressEvent) => void
 
 let progressListener: ProgressListener | null = null
 let availableListener: AvailableListener | null = null
+let environmentProgressListener: EnvironmentProgressListener | null = null
 
 const setupCodeReviewApi = (): void => {
   progressListener = null
   availableListener = null
+  environmentProgressListener = null
   window.codeReview = {
     loadServerConfig: vi.fn(async () => ({ server_url: 'http://127.0.0.1:8000' })),
     loadCredentials: vi.fn(async () => null),
@@ -34,6 +42,10 @@ const setupCodeReviewApi = (): void => {
     installSvn: vi.fn(),
     installSkill: vi.fn(),
     checkEnvironment: vi.fn(async () => ({ status: 'ready' })),
+    onEnvironmentProgress: vi.fn((callback: EnvironmentProgressListener) => {
+      environmentProgressListener = callback
+      return vi.fn()
+    }),
     bindSvnCredential: vi.fn(),
     checkForAppUpdate: vi.fn(async () => true),
     downloadAppUpdate: vi.fn(async () => true),

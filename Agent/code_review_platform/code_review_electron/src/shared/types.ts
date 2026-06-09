@@ -5,6 +5,12 @@ export type EnvironmentStatus =
   | 'missing_skill'
   | 'failed'
 
+export type EnvironmentProgressStage = 'installing_skill'
+
+export interface EnvironmentProgressEvent {
+  stage: EnvironmentProgressStage
+}
+
 export type ReviewTaskStatus =
   | 'created'
   | 'checking_environment'

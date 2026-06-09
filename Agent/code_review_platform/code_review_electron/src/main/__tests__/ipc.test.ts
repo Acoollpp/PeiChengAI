@@ -505,6 +505,40 @@ describe('registerIpcHandlers', () => {
     expect(calls).toEqual(['checkEnvironment:first', 'syncSkill', 'checkEnvironment:second'])
   })
 
+  it('notifies the renderer when environment check starts installing the active skill', async () => {
+    const event = {
+      sender: {
+        send: vi.fn()
+      }
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const syncSkill = vi.fn(async () => ({
+      status: 'synced' as const,
+      packagePath: '/tmp/code-review-runtime/skill-packages/skill.zip'
+    }))
+    const checkEnvironment = vi.fn(async () => ({ status: 'ready' as const }))
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      authStore: authStore as never,
+      syncSkill,
+      checkEnvironment
+    })
+
+    const environmentHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'environment:check'
+    )?.[1]
+
+    await environmentHandler(event)
+
+    expect(event.sender.send).toHaveBeenCalledWith('environment:progress', {
+      stage: 'installing_skill'
+    })
+  })
+
   it('skips skill sync while Codex CLI is missing', async () => {
     const authStore = {
       load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),

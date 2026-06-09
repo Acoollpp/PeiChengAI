@@ -16,6 +16,7 @@ import { installCodexCli } from './codex-cli-installer'
 import { installSvnCli } from './svn-cli-installer'
 import { CredentialStore, type RememberedCredentials } from './credential-store'
 import { checkEnvironment } from './environment-checker'
+import type { EnvironmentProgressEvent } from '../shared/types'
 import {
   defaultPrepareWorkspace,
   defaultRunCodex,
@@ -79,6 +80,12 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       return service.sync(token)
     })
   let latestSuccessfulReport: DownloadCurrentReportResult | null = null
+  const notifyEnvironmentProgress = (
+    event: Electron.IpcMainInvokeEvent | undefined,
+    progress: EnvironmentProgressEvent
+  ): void => {
+    event?.sender.send('environment:progress', progress)
+  }
 
   ipcMain.handle('auth:key-login', async (_event, payload: KeyLoginRequest): Promise<{ needSvnBinding: boolean }> => {
     const serverUrl = normalizeServerUrl(payload.server_url)
@@ -174,7 +181,8 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
   ipcMain.handle('svn:install', (): Promise<EnvironmentCheckResult> => installLocalSvnCli())
 
-  ipcMain.handle('skill:install', async (): Promise<EnvironmentCheckResult> => {
+  ipcMain.handle('skill:install', async (event): Promise<EnvironmentCheckResult> => {
+    notifyEnvironmentProgress(event, { stage: 'installing_skill' })
     const skillError = await syncSkillForCurrentUser(authStore, syncSkill, {
       loginRequiredMessage: '请先登录后安装 Skill'
     })
@@ -190,13 +198,14 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     return result
   })
 
-  ipcMain.handle('environment:check', async (): Promise<EnvironmentCheckResult> => {
+  ipcMain.handle('environment:check', async (event): Promise<EnvironmentCheckResult> => {
     const firstPass = await checkLocalEnvironment()
 
     if (firstPass.status === 'missing_codex' || firstPass.status === 'failed') {
       return firstPass
     }
 
+    notifyEnvironmentProgress(event, { stage: 'installing_skill' })
     const skillError = await syncSkillForCurrentUser(authStore, syncSkill)
     const result = await checkLocalEnvironment()
 
