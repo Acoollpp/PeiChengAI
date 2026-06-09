@@ -1,4 +1,11 @@
-import { Briefcase, Home, Library, ListChecks, Users } from "lucide-react"
+import {
+  Briefcase,
+  Home,
+  Library,
+  ListChecks,
+  MonitorDown,
+  Users,
+} from "lucide-react"
 
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
@@ -44,6 +51,7 @@ const adminItems: Item[] = [
     ],
   },
   { icon: Library, title: "Skill库", path: "/admin/skills" },
+  { icon: MonitorDown, title: "客户端版本", path: "/admin/client-releases" },
 ]
 
 export function AppSidebar() {

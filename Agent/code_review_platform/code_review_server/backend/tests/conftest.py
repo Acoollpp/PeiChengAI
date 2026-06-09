@@ -1,10 +1,10 @@
-from collections.abc import Generator
 import os
+from collections.abc import Generator
 from pathlib import Path
 
+import pytest
 from alembic import command
 from alembic.config import Config
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, text
 from sqlmodel import Session, delete
@@ -54,6 +54,7 @@ from app.core.db import engine, init_db
 from app.main import app
 from app.models import (
     AuditLog,
+    ClientRelease,
     Item,
     ReviewTask,
     SkillPackage,
@@ -92,6 +93,9 @@ def db() -> Generator[Session, None, None]:
         session.execute(statement)
         statement = delete(AuditLog)
         session.execute(statement)
+        if inspect(engine).has_table("client_release"):
+            statement = delete(ClientRelease)
+            session.execute(statement)
         if inspect(engine).has_table("skill_package"):
             statement = delete(SkillPackage)
             session.execute(statement)

@@ -249,6 +249,59 @@ class SkillPackagesPublic(SQLModel):
     count: int
 
 
+class ClientRelease(SQLModel, table=True):
+    __tablename__ = "client_release"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    version: str = Field(max_length=128, index=True)
+    platform: str = Field(default="win32", max_length=32, index=True)
+    arch: str = Field(default="x64", max_length=32, index=True)
+    release_notes: str | None = Field(default=None, max_length=4096)
+    artifact_name: str = Field(max_length=255)
+    artifact_path: str = Field(max_length=2048)
+    artifact_size: int = Field(default=0)
+    artifact_sha512: str = Field(max_length=128, index=True)
+    latest_yml_name: str = Field(max_length=255)
+    latest_yml_path: str = Field(max_length=2048)
+    blockmap_name: str | None = Field(default=None, max_length=255)
+    blockmap_path: str | None = Field(default=None, max_length=2048)
+    is_active: bool = Field(default=False, index=True)
+    created_by_user_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class ClientReleasePublic(SQLModel):
+    id: uuid.UUID
+    version: str
+    platform: str
+    arch: str
+    release_notes: str | None = None
+    artifact_name: str
+    artifact_path: str
+    artifact_size: int
+    artifact_sha512: str
+    latest_yml_name: str
+    latest_yml_path: str
+    blockmap_name: str | None = None
+    blockmap_path: str | None = None
+    is_active: bool
+    created_by_user_id: uuid.UUID | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ClientReleasesPublic(SQLModel):
+    data: list[ClientReleasePublic]
+    count: int
+
+
 class AuditLog(SQLModel, table=True):
     __tablename__ = "audit_log"
 

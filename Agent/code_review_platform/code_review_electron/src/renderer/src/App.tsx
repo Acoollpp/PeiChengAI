@@ -1,9 +1,17 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import type { EnvironmentCheckResult, KeyLoginRequest, SvnLoginRequest } from './code-review-api'
+import type {
+  AppUpdateInfo,
+  AppUpdateProgress,
+  AppUpdateStatus,
+  EnvironmentCheckResult,
+  KeyLoginRequest,
+  SvnLoginRequest
+} from './code-review-api'
 import { LoginPage } from './components/LoginPage'
 import { SvnBindingDialog } from './components/SvnBindingDialog'
 import { TaskPage } from './components/TaskPage'
+import { UpdateDialog } from './components/UpdateDialog'
 
 type AuthSession = {
   displayName: string
@@ -22,6 +30,13 @@ export function App(): React.JSX.Element {
   const [needSvnBinding, setNeedSvnBinding] = useState(false)
   const [bindingError, setBindingError] = useState('')
   const [isBinding, setIsBinding] = useState(false)
+  const [updateState, setUpdateState] = useState<AppUpdateStatus>('idle')
+  const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null)
+  const [updateProgress, setUpdateProgress] = useState<AppUpdateProgress | null>(null)
+  const [updateError, setUpdateError] = useState('')
+  const [isUpdateDialogVisible, setIsUpdateDialogVisible] = useState(false)
+  const [isStartingDownload, setIsStartingDownload] = useState(false)
+  const [isInstallingUpdate, setIsInstallingUpdate] = useState(false)
 
   const checkEnvironment = useCallback(async (): Promise<void> => {
     setIsCheckingEnvironment(true)
@@ -73,6 +88,50 @@ export function App(): React.JSX.Element {
     }
   }, [])
 
+  const checkForUpdate = useCallback(async (): Promise<void> => {
+    try {
+      const didStartChecking = await window.codeReview.checkForAppUpdate()
+
+      if (!didStartChecking) {
+        setUpdateState('idle')
+        setIsUpdateDialogVisible(false)
+      }
+    } catch {
+      setUpdateError('更新检查失败，当前版本仍可继续使用。')
+      setUpdateState('error')
+      setIsUpdateDialogVisible(true)
+    }
+  }, [])
+
+  const downloadUpdate = useCallback(async (): Promise<void> => {
+    setUpdateError('')
+    setIsStartingDownload(true)
+    setUpdateState('downloading')
+    setIsUpdateDialogVisible(true)
+    try {
+      await window.codeReview.downloadAppUpdate()
+    } catch {
+      setUpdateError('更新下载失败，当前版本仍可继续使用。')
+      setUpdateState('error')
+      setIsUpdateDialogVisible(true)
+    } finally {
+      setIsStartingDownload(false)
+    }
+  }, [])
+
+  const installUpdate = useCallback(async (): Promise<void> => {
+    setIsInstallingUpdate(true)
+    try {
+      await window.codeReview.installAppUpdate()
+    } catch {
+      setUpdateError('更新安装启动失败，请稍后重试。')
+      setUpdateState('error')
+      setIsUpdateDialogVisible(true)
+    } finally {
+      setIsInstallingUpdate(false)
+    }
+  }, [])
+
   const bindSvnCredential = useCallback(
     async (credentials: { svn_username: string; svn_password: string }): Promise<void> => {
       setBindingError('')
@@ -98,15 +157,52 @@ export function App(): React.JSX.Element {
           setNeedSvnBinding(true)
         }
         await checkEnvironment()
+        void checkForUpdate()
       },
       async svnLogin(payload: SvnLoginRequest): Promise<void> {
         await window.codeReview.svnLogin(payload)
         setSession({ displayName: payload.svn_username })
         await checkEnvironment()
+        void checkForUpdate()
       }
     }),
-    [checkEnvironment]
+    [checkEnvironment, checkForUpdate]
   )
+
+  useEffect(() => {
+    const disposers = [
+      window.codeReview.onAppUpdateAvailable((info) => {
+        setUpdateInfo(info)
+        setUpdateProgress(null)
+        setUpdateError('')
+        setUpdateState('available')
+        setIsUpdateDialogVisible(true)
+      }),
+      window.codeReview.onAppUpdateNotAvailable(() => {
+        setUpdateState('idle')
+        setIsUpdateDialogVisible(false)
+      }),
+      window.codeReview.onAppUpdateProgress((progress) => {
+        setUpdateProgress(progress)
+        setUpdateState('downloading')
+      }),
+      window.codeReview.onAppUpdateDownloaded((info) => {
+        setUpdateInfo(info)
+        setUpdateProgress(null)
+        setUpdateState('downloaded')
+        setIsUpdateDialogVisible(true)
+      }),
+      window.codeReview.onAppUpdateError((error) => {
+        setUpdateError(error.message || '更新失败，当前版本仍可继续使用。')
+        setUpdateState('error')
+        setIsUpdateDialogVisible(true)
+      })
+    ]
+
+    return () => {
+      disposers.forEach((dispose) => dispose())
+    }
+  }, [])
 
   if (!session) {
     return (
@@ -135,6 +231,19 @@ export function App(): React.JSX.Element {
           onSkip={() => setNeedSvnBinding(false)}
           isSubmitting={isBinding}
           error={bindingError}
+        />
+      )}
+      {updateState !== 'idle' && isUpdateDialogVisible && (
+        <UpdateDialog
+          state={updateState}
+          info={updateInfo}
+          progress={updateProgress}
+          error={updateError}
+          isDownloading={isStartingDownload}
+          isInstalling={isInstallingUpdate}
+          onDownload={downloadUpdate}
+          onInstall={installUpdate}
+          onDismiss={() => setIsUpdateDialogVisible(false)}
         />
       )}
     </main>

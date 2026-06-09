@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     SVN_CREDENTIAL_MASTER_KEY: str
     REPORT_STORAGE_DIR: str = "/app/reports"
     SKILL_STORAGE_DIR: str = "/app/skills"
+    CLIENT_RELEASE_STORAGE_DIR: str = "/app/client-releases"
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value == "changethis":

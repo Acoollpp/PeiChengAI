@@ -10,6 +10,7 @@ import {
   type KeyLoginRequest,
   type SvnLoginRequest
 } from './api-client'
+import { createAppUpdateService, type AppUpdateService } from './app-updater'
 import { AuthStore } from './auth-store'
 import { installCodexCli } from './codex-cli-installer'
 import { installSvnCli } from './svn-cli-installer'
@@ -41,6 +42,7 @@ export interface IpcHandlerDependencies {
   runCodex?: typeof defaultRunCodex
   uploadReport?: TaskAgentDependencies['uploadReport']
   runtimePaths?: RuntimePaths
+  appUpdateService?: AppUpdateService
 }
 
 export interface DownloadCurrentReportResult {
@@ -54,6 +56,8 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   const authStore = dependencies.authStore ?? new AuthStore()
   const credentialStore = dependencies.credentialStore ?? new CredentialStore()
   const serverConfigStore = dependencies.serverConfigStore ?? new ServerConfigStore()
+  const appUpdateService =
+    dependencies.appUpdateService ?? createAppUpdateService(authStore, serverConfigStore)
   const checkLocalEnvironment = dependencies.checkEnvironment ?? checkEnvironment
   const installLocalCodexCli = dependencies.installCodexCli ?? installCodexCli
   const installLocalSvnCli = dependencies.installSvnCli ?? installSvnCli
@@ -137,6 +141,12 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   ipcMain.handle('server-config:load', (): Promise<{ server_url: string }> =>
     serverConfigStore.load()
   )
+
+  ipcMain.handle('app-update:check', (): Promise<boolean> => appUpdateService.check())
+
+  ipcMain.handle('app-update:download', (): Promise<true> => appUpdateService.download())
+
+  ipcMain.handle('app-update:install', (): true => appUpdateService.install())
 
   ipcMain.handle('task:list', async () => {
     const tokens = await authStore.load()
