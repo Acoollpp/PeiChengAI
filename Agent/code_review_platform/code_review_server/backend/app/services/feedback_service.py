@@ -62,7 +62,7 @@ async def save_screenshots(
             screenshot_path.parent.mkdir(parents=True, exist_ok=True)
             screenshot_path.write_bytes(content)
             saved.append((screenshot_path, upload, content, sort_order))
-    except HTTPException:
+    except Exception:
         remove_feedback_files(feedback_id)
         raise
     return saved

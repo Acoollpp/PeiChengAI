@@ -3,9 +3,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
+from sqlmodel import select
 
 from app.core.config import settings
-from app.models import UserRole
+from app.models import Feedback, FeedbackScreenshot, UserRole
+from app.services import feedback_service
 from tests.utils.user import authentication_token_from_key, create_key_user
 
 
@@ -33,6 +35,20 @@ def _assert_private_paths_not_exposed(content: object) -> None:
     elif isinstance(content, list):
         for item in content:
             _assert_private_paths_not_exposed(item)
+
+
+def _assert_no_feedback_saved(db: Session, description: str) -> None:
+    feedbacks = db.exec(
+        select(Feedback).where(Feedback.description == description)
+    ).all()
+    assert feedbacks == []
+    feedback_ids = [feedback.id for feedback in feedbacks]
+    screenshots = db.exec(
+        select(FeedbackScreenshot).where(
+            FeedbackScreenshot.feedback_id.in_(feedback_ids)
+        )
+    ).all()
+    assert screenshots == []
 
 
 def _assert_single_screenshot_public(content: dict) -> None:
@@ -116,10 +132,12 @@ def test_create_feedback_with_multiple_screenshots_and_read_them(
 def test_create_feedback_rejects_more_than_five_screenshots(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
+    db: Session,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "FEEDBACK_STORAGE_DIR", str(tmp_path))
+    description = "截图太多"
     files = [
         ("screenshots", (f"screen-{index}.png", b"png-bytes", "image/png"))
         for index in range(6)
@@ -128,13 +146,74 @@ def test_create_feedback_rejects_more_than_five_screenshots(
     response = client.post(
         f"{settings.API_V1_STR}/feedback",
         headers=normal_user_token_headers,
-        data={"description": "截图太多"},
+        data={"description": description},
         files=files,
     )
 
     assert response.status_code == 400
     assert response.json()["detail"] == "最多只能上传 5 张截图"
     assert not any(tmp_path.iterdir())
+    _assert_no_feedback_saved(db, description)
+
+
+def test_create_feedback_cleans_files_and_db_when_later_screenshot_is_invalid(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEEDBACK_STORAGE_DIR", str(tmp_path))
+    description = "第二张截图为空"
+
+    response = client.post(
+        f"{settings.API_V1_STR}/feedback",
+        headers=normal_user_token_headers,
+        data={"description": description},
+        files=[
+            ("screenshots", ("first.png", b"first-image", "image/png")),
+            ("screenshots", ("second.png", b"", "image/png")),
+        ],
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "截图不能为空"
+    assert not any(tmp_path.iterdir())
+    _assert_no_feedback_saved(db, description)
+
+
+def test_create_feedback_rolls_back_db_and_files_when_screenshot_save_crashes(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEEDBACK_STORAGE_DIR", str(tmp_path))
+    description = "保存截图崩溃"
+
+    async def crash_after_writing(
+        feedback_id, uploads
+    ):  # type: ignore[no-untyped-def]
+        screenshot_dir = tmp_path / str(feedback_id)
+        screenshot_dir.mkdir(parents=True)
+        (screenshot_dir / "partial.png").write_bytes(b"partial")
+        raise RuntimeError("storage path leaked")
+
+    monkeypatch.setattr(feedback_service, "save_screenshots", crash_after_writing)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/feedback",
+        headers=normal_user_token_headers,
+        data={"description": description},
+        files={"screenshots": ("screen.png", b"png-bytes", "image/png")},
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "保存截图失败"
+    assert "storage path leaked" not in response.text
+    assert not any(tmp_path.iterdir())
+    _assert_no_feedback_saved(db, description)
 
 
 def test_create_feedback_rejects_blank_description(
@@ -259,18 +338,53 @@ def test_normal_user_cannot_read_other_user_screenshot(
         f"{settings.API_V1_STR}/feedback",
         headers=other_headers,
         data={"description": "其他人的截图"},
-        files={"screenshot": ("screen.png", b"png-bytes", "image/png")},
+        files={"screenshots": ("screen.png", b"png-bytes", "image/png")},
     )
     assert upload_response.status_code == 200
     other_feedback = upload_response.json()
+    screenshot_id = other_feedback["screenshots"][0]["id"]
 
     response = client.get(
-        f"{settings.API_V1_STR}/feedback/{other_feedback['id']}/screenshot",
+        f"{settings.API_V1_STR}/feedback/{other_feedback['id']}/screenshots/{screenshot_id}",
         headers=normal_user_token_headers,
     )
 
     assert response.status_code == 403
     assert response.json()["detail"] == "Not enough permissions"
+
+
+def test_read_feedback_screenshot_returns_404_when_screenshot_belongs_to_other_feedback(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEEDBACK_STORAGE_DIR", str(tmp_path))
+    first_response = client.post(
+        f"{settings.API_V1_STR}/feedback",
+        headers=normal_user_token_headers,
+        data={"description": "第一条截图"},
+        files={"screenshots": ("first.png", b"first-image", "image/png")},
+    )
+    assert first_response.status_code == 200
+    first_feedback = first_response.json()
+    second_response = client.post(
+        f"{settings.API_V1_STR}/feedback",
+        headers=normal_user_token_headers,
+        data={"description": "第二条截图"},
+        files={"screenshots": ("second.png", b"second-image", "image/png")},
+    )
+    assert second_response.status_code == 200
+    second_feedback = second_response.json()
+    other_screenshot_id = second_feedback["screenshots"][0]["id"]
+
+    response = client.get(
+        f"{settings.API_V1_STR}/feedback/{first_feedback['id']}/screenshots/{other_screenshot_id}",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Screenshot not found"
 
 
 def test_normal_user_cannot_update_feedback_status(

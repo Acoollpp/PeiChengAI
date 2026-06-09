@@ -75,7 +75,7 @@ async def create_feedback(
     session: SessionDep,
     current_user: CurrentUser,
     description: Annotated[str, Form(...)],
-    screenshots: Annotated[list[UploadFile], File()] = [],
+    screenshots: Annotated[list[UploadFile] | None, File()] = None,
 ) -> Any:
     normalized_description = description.strip()
     if not normalized_description:
@@ -91,16 +91,22 @@ async def create_feedback(
     session.add(feedback)
     session.flush()
 
-    if screenshots:
+    uploads = screenshots or []
+    if uploads:
         try:
             saved_screenshots = await feedback_service.save_screenshots(
-                feedback.id, screenshots
+                feedback.id, uploads
             )
         except HTTPException:
             feedback_service.remove_feedback_files(feedback.id)
             session.delete(feedback)
-            session.commit()
+            session.rollback()
             raise
+        except Exception as exc:
+            feedback_service.remove_feedback_files(feedback.id)
+            session.delete(feedback)
+            session.rollback()
+            raise HTTPException(status_code=500, detail="保存截图失败") from exc
         for screenshot_path, upload, content, sort_order in saved_screenshots:
             if sort_order == 0:
                 feedback.screenshot_path = str(screenshot_path)
