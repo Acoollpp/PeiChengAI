@@ -122,6 +122,26 @@ def test_create_feedback_with_multiple_screenshots_and_read_them(
         assert screenshot_response.headers["content-type"] == expected_type
 
 
+def test_create_feedback_accepts_legacy_screenshot_field(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEEDBACK_STORAGE_DIR", str(tmp_path))
+
+    response = client.post(
+        f"{settings.API_V1_STR}/feedback",
+        headers=normal_user_token_headers,
+        data={"description": "旧客户端单图字段"},
+        files={"screenshot": ("screen.png", b"png-bytes", "image/png")},
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    _assert_single_screenshot_public(content)
+
+
 def test_create_feedback_rejects_more_than_five_screenshots(
     client: TestClient,
     normal_user_token_headers: dict[str, str],

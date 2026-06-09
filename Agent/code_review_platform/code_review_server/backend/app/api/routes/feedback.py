@@ -76,6 +76,7 @@ async def create_feedback(
     current_user: CurrentUser,
     description: Annotated[str, Form(...)],
     screenshots: Annotated[list[UploadFile] | None, File()] = None,
+    screenshot: Annotated[UploadFile | None, File()] = None,
 ) -> Any:
     normalized_description = description.strip()
     if not normalized_description:
@@ -91,7 +92,7 @@ async def create_feedback(
     session.add(feedback)
     session.flush()
 
-    uploads = screenshots or []
+    uploads = screenshots or ([screenshot] if screenshot else [])
     if uploads:
         try:
             saved_screenshots = await feedback_service.save_screenshots(
