@@ -53,13 +53,13 @@ describe('preload codeReview API', () => {
     const api = exposeInMainWorldMock.mock.calls[0][1]
 
     await api.readReportAsset({
-      reportPath: '/tmp/runtime/workspaces/task-1/report.md',
-      assetPath: '01.png'
+      reportPath: '/tmp/runtime/workspaces/task-1/代码审查报告.md',
+      assetPath: 'images/diagram.png'
     })
 
     expect(invokeMock).toHaveBeenCalledWith('report:asset', {
-      reportPath: '/tmp/runtime/workspaces/task-1/report.md',
-      assetPath: '01.png'
+      reportPath: '/tmp/runtime/workspaces/task-1/代码审查报告.md',
+      assetPath: 'images/diagram.png'
     })
   })
 })

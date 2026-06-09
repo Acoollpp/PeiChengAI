@@ -82,15 +82,15 @@ describe('MarkdownPreview', () => {
   it('使用报告路径加载相对图片', async () => {
     render(
       <MarkdownPreview
-        markdown="![问题截图](01_r25576对r29303.png)"
-        reportPath="/tmp/runtime/workspaces/task-1/report.md"
+        markdown="![问题截图](images/diagram.png)"
+        reportPath="/tmp/runtime/workspaces/task-1/代码审查报告.md"
       />
     )
 
     const image = await screen.findByRole('img', { name: '问题截图' })
     expect(window.codeReview.readReportAsset).toHaveBeenCalledWith({
-      reportPath: '/tmp/runtime/workspaces/task-1/report.md',
-      assetPath: '01_r25576对r29303.png'
+      reportPath: '/tmp/runtime/workspaces/task-1/代码审查报告.md',
+      assetPath: 'images/diagram.png'
     })
     expect(image).toHaveAttribute('src', 'data:image/png;base64,aW1hZ2U=')
   })

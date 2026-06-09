@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -241,7 +241,7 @@ describe('registerIpcHandlers', () => {
     }
     const cwd = await mkdtemp(join(tmpdir(), 'ipc-report-'))
     tempDirs.push(cwd)
-    const reportPath = join(cwd, 'report.md')
+    const reportPath = join(cwd, '代码审查报告.md')
     const imagesDir = join(cwd, 'images')
     const { registerIpcHandlers } = await import('../ipc')
 
@@ -270,12 +270,12 @@ describe('registerIpcHandlers', () => {
       })
     ).resolves.toMatchObject({
       status: 'success',
-      reportPath: expect.stringContaining('report.md')
+      reportPath: expect.stringContaining('代码审查报告.md')
     })
 
     await expect(downloadHandler()).resolves.toMatchObject({
       status: 'ready',
-      reportPath: expect.stringContaining('report.md')
+      reportPath: expect.stringContaining('代码审查报告.md')
     })
     expect(showItemInFolderMock).toHaveBeenCalledWith(reportPath)
   })
@@ -301,7 +301,8 @@ describe('registerIpcHandlers', () => {
         skillManifestPath: join(runtimeRoot, 'skill-packages', 'manifest.json'),
         workspacesDir: join(runtimeRoot, 'workspaces'),
         workspaceForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId),
-        reportPathForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'report.md'),
+        reportPathForTask: (taskId: string) =>
+          join(runtimeRoot, 'workspaces', taskId, '代码审查报告.md'),
         imagesDirForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'images')
       }
     })
@@ -310,7 +311,7 @@ describe('registerIpcHandlers', () => {
       ([channel]) => channel === 'report:download-current'
     )?.[1]
 
-    const reportPath = join(runtimeRoot, 'workspaces', 'task-remote', 'report.md')
+    const reportPath = join(runtimeRoot, 'workspaces', 'task-remote', '代码审查报告.md')
     await expect(downloadHandler({}, 'task-remote')).resolves.toEqual({
       status: 'ready',
       taskId: 'task-remote',
@@ -319,6 +320,32 @@ describe('registerIpcHandlers', () => {
     await expect(readFile(reportPath, 'utf8')).resolves.toBe('# historical report\n')
     expect(api.readTaskReport).toHaveBeenCalledWith('token-123', 'task-remote')
     expect(showItemInFolderMock).toHaveBeenCalledWith(reportPath)
+  })
+
+  it('reads report image assets relative to a Chinese-named report file', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'ipc-report-asset-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '代码审查报告.md')
+    const imagePath = join(cwd, 'images', 'diagram.png')
+    await mkdir(join(cwd, 'images'), { recursive: true })
+    await writeFile(reportPath, '![流程图](images/diagram.png)\n')
+    await writeFile(imagePath, Buffer.from('png-bytes'))
+
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers()
+
+    const assetHandler = handleMock.mock.calls.find(([channel]) => channel === 'report:asset')?.[1]
+
+    await expect(
+      assetHandler({}, {
+        reportPath,
+        assetPath: 'images/diagram.png'
+      })
+    ).resolves.toEqual({
+      dataUrl: `data:image/png;base64,${Buffer.from('png-bytes').toString('base64')}`,
+      contentType: 'image/png'
+    })
   })
 
   it('lists tasks for the authenticated user', async () => {
