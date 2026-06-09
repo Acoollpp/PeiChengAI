@@ -214,8 +214,8 @@ class ReviewTaskPublic(SQLModel):
     svn_url: str
     old_revision: str
     new_revision: str
-    template_key: str | None = None
-    skill_name: str | None = None
+    template_key: str | None = Field(default=None, max_length=64)
+    skill_name: str | None = Field(default=None, max_length=255)
     status: ReviewTaskStatus
     report_path: str | None = None
     error_message: str | None = None
