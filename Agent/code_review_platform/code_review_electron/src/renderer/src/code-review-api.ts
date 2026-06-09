@@ -61,6 +61,17 @@ export interface SubmitFeedbackPayload {
   screenshot?: File | null
 }
 
+export interface SerializedFeedbackScreenshot {
+  name: string
+  type: string
+  bytes: ArrayBuffer
+}
+
+export interface SubmitFeedbackIpcPayload {
+  description: string
+  screenshot?: SerializedFeedbackScreenshot | null
+}
+
 export interface SubmitFeedbackResult {
   id: string
   status: 'pending' | 'processing' | 'resolved'

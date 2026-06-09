@@ -448,14 +448,27 @@ describe('registerIpcHandlers', () => {
   })
 
   it('submits feedback with the current access token', async () => {
+    const submitFeedbackMock = vi.fn(
+      async (
+        _token: string,
+        _payload: { description: string; screenshot: Blob | null; screenshotName: string | null }
+      ) => ({ id: 'feedback-1', status: 'pending' })
+    )
     const api = {
-      submitFeedback: vi.fn(async () => ({ id: 'feedback-1' }))
+      submitFeedback: submitFeedbackMock
     }
     const authStore = {
       load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
       save: vi.fn()
     }
-    const payload = { description: '无法下载报告' }
+    const payload = {
+      description: '无法下载报告',
+      screenshot: {
+        name: 'feedback.png',
+        type: 'image/png',
+        bytes: new TextEncoder().encode('image-bytes').buffer
+      }
+    }
     const { registerIpcHandlers } = await import('../ipc')
 
     registerIpcHandlers({
@@ -467,8 +480,22 @@ describe('registerIpcHandlers', () => {
       ([channel]) => channel === 'feedback:submit'
     )?.[1]
 
-    await expect(feedbackHandler({}, payload)).resolves.toEqual({ id: 'feedback-1' })
-    expect(api.submitFeedback).toHaveBeenCalledWith('token-123', payload)
+    await expect(feedbackHandler({}, payload)).resolves.toEqual({
+      id: 'feedback-1',
+      status: 'pending'
+    })
+    expect(api.submitFeedback).toHaveBeenCalledWith(
+      'token-123',
+      expect.objectContaining({
+        description: '无法下载报告',
+        screenshotName: 'feedback.png'
+      })
+    )
+    const submittedPayload = submitFeedbackMock.mock.calls[0][1]
+    expect(submittedPayload.screenshot).toBeInstanceOf(Blob)
+    const submittedScreenshot = submittedPayload.screenshot as Blob
+    expect(submittedScreenshot.type).toBe('image/png')
+    await expect(submittedScreenshot.text()).resolves.toBe('image-bytes')
   })
 
   it('installs Codex CLI on demand', async () => {

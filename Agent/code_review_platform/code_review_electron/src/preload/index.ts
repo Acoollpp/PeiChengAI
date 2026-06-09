@@ -12,6 +12,7 @@ import type {
   KeyLoginResult,
   DownloadCurrentReportResult,
   RememberedCredentials,
+  SubmitFeedbackIpcPayload,
   SubmitFeedbackPayload,
   SubmitFeedbackResult,
   SvnCredentialPayload,
@@ -29,6 +30,19 @@ const listen = <T>(channel: string, callback: (event: T) => void): (() => void) 
     ipcRenderer.removeListener(channel, listener)
   }
 }
+
+const serializeFeedbackPayload = async (
+  payload: SubmitFeedbackPayload
+): Promise<SubmitFeedbackIpcPayload> => ({
+  description: payload.description,
+  screenshot: payload.screenshot
+    ? {
+        name: payload.screenshot.name,
+        type: payload.screenshot.type,
+        bytes: await payload.screenshot.arrayBuffer()
+      }
+    : null
+})
 
 contextBridge.exposeInMainWorld('codeReview', {
   keyLogin: (payload: KeyLoginRequest): Promise<KeyLoginResult> =>
@@ -65,8 +79,8 @@ contextBridge.exposeInMainWorld('codeReview', {
   checkEnvironment: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('environment:check'),
   onEnvironmentProgress: (callback: (event: EnvironmentProgressEvent) => void): (() => void) =>
     listen('environment:progress', callback),
-  submitFeedback: (payload: SubmitFeedbackPayload): Promise<SubmitFeedbackResult> =>
-    ipcRenderer.invoke('feedback:submit', payload),
+  submitFeedback: async (payload: SubmitFeedbackPayload): Promise<SubmitFeedbackResult> =>
+    ipcRenderer.invoke('feedback:submit', await serializeFeedbackPayload(payload)),
   checkForAppUpdate: (): Promise<boolean> => ipcRenderer.invoke('app-update:check'),
   downloadAppUpdate: (): Promise<true> => ipcRenderer.invoke('app-update:download'),
   installAppUpdate: (): Promise<true> => ipcRenderer.invoke('app-update:install'),

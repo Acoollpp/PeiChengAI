@@ -270,7 +270,9 @@ describe('ApiClient', () => {
 
   it('submits feedback as multipart form data with authorization header', async () => {
     vi.stubGlobal('File', File)
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'feedback-1' }))
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ id: 'feedback-1', status: 'pending' })
+    )
     const client = new ApiClient('https://server.example/', fetchMock)
     const screenshot = new File(['image-bytes'], 'feedback.png', {
       type: 'image/png'
@@ -278,10 +280,11 @@ describe('ApiClient', () => {
 
     const result = await client.submitFeedback('token-123', {
       description: '按钮点击后没有反应',
-      screenshot: screenshot as unknown as globalThis.File
+      screenshot: screenshot as unknown as globalThis.File,
+      screenshotName: 'feedback.png'
     })
 
-    expect(result).toEqual({ id: 'feedback-1' })
+    expect(result).toEqual({ id: 'feedback-1', status: 'pending' })
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe('https://server.example/api/v1/feedback')
     expect(init.method).toBe('POST')

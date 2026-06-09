@@ -40,6 +40,12 @@ export interface UploadReportRequest {
 export interface SubmitFeedbackRequest {
   description: string
   screenshot?: File | Blob | null
+  screenshotName?: string | null
+}
+
+export interface FeedbackResult {
+  id: string
+  status: 'pending' | 'processing' | 'resolved'
 }
 
 export interface ReviewTasksResponse {
@@ -201,12 +207,12 @@ export class ApiClient {
     )
   }
 
-  submitFeedback(token: string, payload: SubmitFeedbackRequest): Promise<unknown> {
+  submitFeedback(token: string, payload: SubmitFeedbackRequest): Promise<FeedbackResult> {
     const body = new FormData()
     body.set('description', payload.description)
 
     if (payload.screenshot) {
-      body.set('screenshot', payload.screenshot)
+      body.set('screenshot', payload.screenshot, payload.screenshotName ?? 'screenshot')
     }
 
     return this.request(

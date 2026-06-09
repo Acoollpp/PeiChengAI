@@ -7,6 +7,7 @@ import {
   ApiClient,
   ApiError,
   type CreateTaskRequest,
+  type FeedbackResult,
   type KeyLoginRequest,
   type SubmitFeedbackRequest,
   type SvnLoginRequest
@@ -31,6 +32,17 @@ import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
 import { ServerConfigStore, normalizeServerUrl } from './server-config-store'
 import { createSkillSyncService, type SkillSyncResult } from './skill-sync'
 
+interface SerializedFeedbackScreenshot {
+  name: string
+  type: string
+  bytes: ArrayBuffer
+}
+
+interface SubmitFeedbackIpcPayload {
+  description: string
+  screenshot?: SerializedFeedbackScreenshot | null
+}
+
 export interface IpcHandlerDependencies {
   api?: ApiClient
   authStore?: AuthStore
@@ -52,6 +64,14 @@ export interface DownloadCurrentReportResult {
   taskId?: string
   reportPath?: string
 }
+
+const toSubmitFeedbackRequest = (payload: SubmitFeedbackIpcPayload): SubmitFeedbackRequest => ({
+  description: payload.description,
+  screenshot: payload.screenshot
+    ? new Blob([payload.screenshot.bytes], { type: payload.screenshot.type })
+    : null,
+  screenshotName: payload.screenshot?.name ?? null
+})
 
 export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): void => {
   const apiOverride = dependencies.api
@@ -261,16 +281,19 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     }
   )
 
-  ipcMain.handle('feedback:submit', async (_event, payload: SubmitFeedbackRequest): Promise<unknown> => {
-    const tokens = await authStore.load()
+  ipcMain.handle(
+    'feedback:submit',
+    async (_event, payload: SubmitFeedbackIpcPayload): Promise<FeedbackResult> => {
+      const tokens = await authStore.load()
 
-    if (!tokens) {
-      throw new Error('Not authenticated')
+      if (!tokens) {
+        throw new Error('Not authenticated')
+      }
+
+      const api = await createApiClient()
+      return api.submitFeedback(tokens.access_token, toSubmitFeedbackRequest(payload))
     }
-
-    const api = await createApiClient()
-    return api.submitFeedback(tokens.access_token, payload)
-  })
+  )
 
   ipcMain.handle('report:download-current', async (_event, taskId?: string): Promise<DownloadCurrentReportResult> => {
     if (!latestSuccessfulReport && !taskId) {
