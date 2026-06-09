@@ -6,9 +6,19 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from app import crud
+from app.api.routes import users as users_route
 from app.core.config import settings
 from app.core.db import DEFAULT_LOCAL_ADMIN_NAME
-from app.models import AuthSource, Feedback, FeedbackScreenshot, User, UserCreate, UserRole
+from app.models import (
+    AuthSource,
+    Feedback,
+    FeedbackScreenshot,
+    ReviewTask,
+    User,
+    UserCreate,
+    UserRole,
+    UserSvnCredential,
+)
 from tests.utils.user import create_random_user
 from tests.utils.utils import auth_headers_for_user_id, random_lower_string
 
@@ -399,6 +409,22 @@ def test_delete_user_me_removes_feedback_screenshot_files(
     monkeypatch.setattr(settings, "FEEDBACK_STORAGE_DIR", str(tmp_path))
     user = create_random_user(db)
     user_id = user.id
+    credential = UserSvnCredential(
+        user_id=user_id,
+        encrypted_password="encrypted-password",
+        encryption_version="v1",
+    )
+    task = ReviewTask(
+        user_id=user_id,
+        svn_url="svn://example.com/project",
+        old_revision="1",
+        new_revision="2",
+    )
+    db.add(credential)
+    db.add(task)
+    db.commit()
+    credential_id = credential.id
+    task_id = task.id
     headers = auth_headers_for_user_id(user_id)
     upload_response = client.post(
         f"{settings.API_V1_STR}/feedback",
@@ -421,6 +447,39 @@ def test_delete_user_me_removes_feedback_screenshot_files(
     assert db.get(User, user_id) is None
     assert db.get(Feedback, feedback_id) is None
     assert db.get(FeedbackScreenshot, screenshot_id) is None
+    assert db.get(UserSvnCredential, credential_id) is None
+    assert db.get(ReviewTask, task_id) is None
+
+
+def test_delete_user_me_ignores_feedback_file_cleanup_errors(
+    client: TestClient,
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = create_random_user(db)
+    user_id = user.id
+    feedback = Feedback(user_id=user_id, description="清理文件失败仍删除用户")
+    db.add(feedback)
+    db.commit()
+    feedback_id = feedback.id
+    headers = auth_headers_for_user_id(user_id)
+
+    def fail_remove_feedback_files(_feedback_id: uuid.UUID) -> None:
+        raise RuntimeError("cleanup failed")
+
+    monkeypatch.setattr(
+        users_route.feedback_service,
+        "remove_feedback_files",
+        fail_remove_feedback_files,
+    )
+
+    response = client.delete(f"{settings.API_V1_STR}/users/me", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "User deleted successfully"
+    db.expire_all()
+    assert db.get(User, user_id) is None
+    assert db.get(Feedback, feedback_id) is None
 
 
 def test_delete_user_me_as_superuser(

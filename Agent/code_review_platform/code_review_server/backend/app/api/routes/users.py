@@ -15,10 +15,13 @@ from app.models import (
     Feedback,
     Item,
     Message,
+    ReviewTask,
     User,
+    UserApiKey,
     UserCreate,
     UserPublic,
     UserRole,
+    UserSvnCredential,
     UsersPublic,
     UserUpdate,
     UserUpdateMe,
@@ -48,12 +51,23 @@ def _delete_user_with_related_data(*, session: SessionDep, user: User) -> None:
     ).all()
     feedback_statement = delete(Feedback).where(col(Feedback.user_id) == user.id)
     session.exec(feedback_statement)
+    review_task_statement = delete(ReviewTask).where(col(ReviewTask.user_id) == user.id)
+    session.exec(review_task_statement)
+    credential_statement = delete(UserSvnCredential).where(
+        col(UserSvnCredential.user_id) == user.id
+    )
+    session.exec(credential_statement)
+    api_key_statement = delete(UserApiKey).where(col(UserApiKey.user_id) == user.id)
+    session.exec(api_key_statement)
     item_statement = delete(Item).where(col(Item.owner_id) == user.id)
     session.exec(item_statement)
     session.delete(user)
     session.commit()
     for feedback_id in feedback_ids:
-        feedback_service.remove_feedback_files(feedback_id)
+        try:
+            feedback_service.remove_feedback_files(feedback_id)
+        except Exception:
+            pass
 
 
 @router.get(
