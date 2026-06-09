@@ -1,7 +1,10 @@
-import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { createWriteStream } from 'node:fs'
+import { access, mkdir, readFile, rename, rm, stat } from 'node:fs/promises'
+import { basename, dirname, join, resolve, sep } from 'node:path'
+import { pipeline } from 'node:stream/promises'
 
-import { buildCodexCommand, buildCodexExecArgs } from './codex-runner'
-import { buildVersionCommandOptions } from './environment-checker'
+import { open, type Entry, type ZipFile } from 'yauzl'
 
 export interface InstallCodexSkillInput {
   packagePath: string
@@ -113,84 +116,269 @@ const hasInstallMetadata = (
   'version' in input &&
   input.version.length > 0
 
-const runCodexPrompt = (
-  prompt: string,
-  timeoutMs = 5 * 60 * 1000,
-  failureLabel = 'Codex Skill operation',
-  errorMarker?: string
-): Promise<InstallCodexSkillResult> =>
-  new Promise((resolve, reject) => {
-    const commandOptions = buildVersionCommandOptions()
-    const child = spawn(buildCodexCommand(), buildCodexExecArgs(prompt), {
-      ...commandOptions,
-      shell: false,
-      env: {
-        ...commandOptions.env,
-        CODEX_UNSAFE_ALLOW_NO_SANDBOX: '1'
+const readZipEntries = (zipPath: string): Promise<Array<{ entry: Entry; fileName: string }>> =>
+  new Promise((resolvePromise, reject) => {
+    const entries: Array<{ entry: Entry; fileName: string }> = []
+    open(
+      zipPath,
+      { lazyEntries: true, validateEntrySizes: true },
+      (openError: Error | null, zipfile: ZipFile) => {
+        if (openError) {
+          reject(openError)
+          return
+        }
+
+        zipfile.on('entry', (entry: Entry) => {
+          const fileName = normalizeZipEntryName(entry.fileName)
+          const validationError = validateZipEntryPath(fileName)
+          if (validationError) {
+            zipfile.close()
+            reject(new Error(validationError))
+            return
+          }
+
+          entries.push({ entry, fileName })
+          zipfile.readEntry()
+        })
+        zipfile.once('end', () => {
+          zipfile.close()
+          resolvePromise(entries)
+        })
+        zipfile.once('error', reject)
+        zipfile.readEntry()
       }
-    })
+    )
+  })
 
-    const stdoutChunks: Buffer[] = []
-    const stderrChunks: Buffer[] = []
-    let settled = false
+const openZipFile = (zipPath: string): Promise<ZipFile> =>
+  new Promise((resolvePromise, reject) => {
+    open(
+      zipPath,
+      { lazyEntries: true, validateEntrySizes: true },
+      (error: Error | null, zipfile: ZipFile) => {
+        if (error) {
+          reject(error)
+          return
+        }
+        resolvePromise(zipfile)
+      }
+    )
+  })
 
-    const settle = (callback: () => void): void => {
-      if (!settled) {
-        settled = true
-        clearTimeout(timeout)
-        callback()
+const extractZip = async (
+  zipPath: string,
+  destination: string,
+  entries: Array<{ entry: Entry; fileName: string }>,
+  rootPrefix: string
+): Promise<void> => {
+  const zipfile = await openZipFile(zipPath)
+
+  try {
+    for (const { entry, fileName } of entries) {
+      const relativePath = removeRootPrefix(fileName, rootPrefix)
+      if (!relativePath) {
+        continue
+      }
+
+      const outputPath = safeJoin(destination, relativePath)
+      if (isDirectoryEntry(fileName)) {
+        await mkdir(outputPath, { recursive: true })
+        continue
+      }
+
+      await mkdir(dirname(outputPath), { recursive: true })
+      await extractEntry(zipfile, entry, outputPath)
+      const fileStat = await stat(outputPath)
+      if (fileStat.size !== entry.uncompressedSize) {
+        throw new Error(
+          `Extracted file size mismatch: ${relativePath} expected ${entry.uncompressedSize}, received ${fileStat.size}`
+        )
       }
     }
+  } finally {
+    zipfile.close()
+  }
+}
 
-    const timeout = setTimeout(() => {
-      settle(() => {
-        child.kill()
-        reject(new Error(`${failureLabel} timed out after ${timeoutMs}ms`))
-      })
-    }, timeoutMs)
+const extractEntry = (zipfile: ZipFile, entry: Entry, outputPath: string): Promise<void> =>
+  new Promise((resolvePromise, reject) => {
+    zipfile.openReadStream(entry, (error: Error | null, readStream) => {
+      if (error) {
+        reject(error)
+        return
+      }
 
-    child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk))
-    child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk))
-    child.stdin.end()
-
-    child.on('error', (error) => {
-      settle(() => reject(error))
-    })
-
-    child.on('close', (code) => {
-      settle(() => {
-        const stdout = Buffer.concat(stdoutChunks).toString('utf8')
-        const stderr = Buffer.concat(stderrChunks).toString('utf8')
-
-        if (code !== 0) {
-          reject(new Error(`${failureLabel} failed with exit code ${code}: ${stderr}`))
-          return
-        }
-
-        if (errorMarker && (stdout.includes(errorMarker) || stderr.includes(errorMarker))) {
-          reject(new Error(`${failureLabel} reported failure: ${stdout}${stderr}`.trim()))
-          return
-        }
-
-        resolve({ stdout, stderr })
-      })
+      pipeline(readStream, createWriteStream(outputPath)).then(resolvePromise, reject)
     })
   })
+
+const parseSkillName = (skillText: string): string | null => {
+  const match = /^name:\s*(.+?)\s*$/m.exec(skillText)
+  return match?.[1]?.trim().replace(/^['"]|['"]$/g, '') ?? null
+}
+
+const readSkillNameFromZip = async (
+  zipPath: string,
+  entries: Array<{ entry: Entry; fileName: string }>
+): Promise<{ skillName: string; rootPrefix: string }> => {
+  const skillEntries = entries.filter(({ fileName }) => fileName === 'SKILL.md' || fileName.endsWith('/SKILL.md'))
+  if (skillEntries.length !== 1) {
+    throw new Error(`Skill package must contain exactly one SKILL.md, received ${skillEntries.length}`)
+  }
+
+  const zipfile = await openZipFile(zipPath)
+  try {
+    const skillText = await readEntryText(zipfile, skillEntries[0].entry)
+    const skillName = parseSkillName(skillText)
+    if (!skillName) {
+      throw new Error('Skill package SKILL.md must declare a name')
+    }
+
+    return {
+      skillName,
+      rootPrefix: skillEntries[0].fileName.slice(0, -'SKILL.md'.length)
+    }
+  } finally {
+    zipfile.close()
+  }
+}
+
+const readEntryText = (zipfile: ZipFile, entry: Entry): Promise<string> =>
+  new Promise((resolvePromise, reject) => {
+    zipfile.openReadStream(entry, (error: Error | null, readStream) => {
+      if (error) {
+        reject(error)
+        return
+      }
+
+      const chunks: Buffer[] = []
+      readStream.on('data', (chunk: Buffer) => chunks.push(chunk))
+      readStream.once('error', reject)
+      readStream.once('end', () => resolvePromise(Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, '')))
+    })
+  })
+
+const codexSkillsDir = (): string => join(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex'), 'skills')
+
+const skillDir = (skillName: string): string => join(codexSkillsDir(), sanitizeSkillDirectoryName(skillName))
+
+const sanitizeSkillDirectoryName = (skillName: string): string => {
+  if (skillName.includes('/') || skillName.includes('\\') || skillName === '.' || skillName === '..') {
+    throw new Error(`Unsafe skill name: ${skillName}`)
+  }
+  return skillName
+}
+
+const normalizeZipEntryName = (fileName: string): string => {
+  const normalized = fileName.replace(/\\/g, '/')
+  try {
+    return Buffer.from(normalized, 'utf8').toString('latin1').includes('Ã')
+      ? Buffer.from(normalized, 'latin1').toString('utf8').replace(/\\/g, '/')
+      : normalized
+  } catch {
+    return normalized
+  }
+}
+
+const validateZipEntryPath = (fileName: string): string | null => {
+  if (fileName.startsWith('/') || /^[a-zA-Z]:\//.test(fileName)) {
+    return `Skill package contains absolute path: ${fileName}`
+  }
+  if (fileName.split('/').includes('..')) {
+    return `Skill package contains unsafe path: ${fileName}`
+  }
+  return null
+}
+
+const safeJoin = (root: string, relativePath: string): string => {
+  const resolvedRoot = resolve(root)
+  const resolvedTarget = resolve(root, relativePath)
+  if (resolvedTarget !== resolvedRoot && !resolvedTarget.startsWith(`${resolvedRoot}${sep}`)) {
+    throw new Error(`Skill package entry escapes destination: ${relativePath}`)
+  }
+  return resolvedTarget
+}
+
+const isDirectoryEntry = (fileName: string): boolean => fileName.endsWith('/')
+
+const removeRootPrefix = (fileName: string, rootPrefix: string): string =>
+  rootPrefix && fileName.startsWith(rootPrefix) ? fileName.slice(rootPrefix.length) : fileName
+
+const verifyPackageHash = async (packagePath: string, expectedHash?: string): Promise<string> => {
+  const packageBytes = await readFile(packagePath)
+  const actualHash = createHash('sha256').update(packageBytes).digest('hex')
+  if (expectedHash && actualHash !== expectedHash) {
+    throw new Error(`Skill package hash mismatch: expected ${expectedHash}, received ${actualHash}`)
+  }
+  return actualHash
+}
+
+const installSkillLocally = async (input: InstallCodexSkillInput): Promise<InstallCodexSkillResult> => {
+  const packageHash = await verifyPackageHash(input.packagePath, input.contentHash)
+  const entries = await readZipEntries(input.packagePath)
+  const { skillName: packageSkillName, rootPrefix } = await readSkillNameFromZip(input.packagePath, entries)
+  if (packageSkillName !== input.skillName) {
+    throw new Error(
+      `Skill package name mismatch: expected ${input.skillName}, received ${packageSkillName}`
+    )
+  }
+
+  const targetDir = skillDir(input.skillName)
+  const parentDir = dirname(targetDir)
+  const tempDir = join(parentDir, `.installing-${basename(targetDir)}-${Date.now()}`)
+  await mkdir(parentDir, { recursive: true })
+  await rm(tempDir, { recursive: true, force: true })
+  await mkdir(tempDir, { recursive: true })
+
+  try {
+    await extractZip(input.packagePath, tempDir, entries, rootPrefix)
+    const installedSkillText = await readFile(join(tempDir, 'SKILL.md'), 'utf8')
+    const installedSkillName = parseSkillName(installedSkillText)
+    if (installedSkillName !== input.skillName) {
+      throw new Error(
+        `Installed skill name mismatch: expected ${input.skillName}, received ${installedSkillName ?? 'missing'}`
+      )
+    }
+
+    await rm(targetDir, { recursive: true, force: true })
+    await rename(tempDir, targetDir)
+  } catch (error) {
+    await rm(tempDir, { recursive: true, force: true })
+    throw error
+  }
+
+  return {
+    stdout: `[SKILL_INSTALL_OK] ${input.skillName}@${input.version} ${packageHash}\n`,
+    stderr: ''
+  }
+}
+
+const deleteSkillLocally = async (input: DeleteCodexSkillInput): Promise<InstallCodexSkillResult> => {
+  const targetDir = skillDir(input.skillName)
+  try {
+    const skillText = await readFile(join(targetDir, 'SKILL.md'), 'utf8')
+    const installedSkillName = parseSkillName(skillText)
+    if (installedSkillName === input.skillName) {
+      await rm(targetDir, { recursive: true, force: true })
+    }
+  } catch {
+    await access(targetDir).catch(() => undefined)
+  }
+
+  return {
+    stdout: `[SKILL_DELETE_OK] ${input.skillName}\n`,
+    stderr: ''
+  }
+}
 
 export function installCodexSkillFromZip(
   input: InstallCodexSkillInput | LegacyInstallCodexSkillInput
 ): Promise<InstallCodexSkillResult> {
-  const prompt = hasInstallMetadata(input)
-    ? buildInstallSkillPrompt(input)
-    : buildLegacyInstallSkillPrompt(input.packagePath)
-
-  return runCodexPrompt(prompt, input.timeoutMs, 'Codex Skill install', '[SKILL_INSTALL_ERROR]')
+  if (!hasInstallMetadata(input)) {
+    throw new Error('Skill metadata is required for local Skill installation')
+  }
+  return installSkillLocally(input)
 }
 
 export const deleteCodexSkill = (input: DeleteCodexSkillInput): Promise<InstallCodexSkillResult> =>
-  runCodexPrompt(
-    buildDeleteSkillPrompt(input),
-    input.timeoutMs,
-    'Codex Skill delete',
-    '[SKILL_DELETE_ERROR]'
-  )
+  deleteSkillLocally(input)

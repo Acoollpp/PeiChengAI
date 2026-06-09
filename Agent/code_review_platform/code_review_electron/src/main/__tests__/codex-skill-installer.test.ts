@@ -1,21 +1,32 @@
-import { EventEmitter } from 'node:events'
-import type { EventEmitter as EventEmitterType } from 'node:events'
+import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { promisify } from 'node:util'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   buildDeleteSkillPrompt,
   buildInstallSkillPrompt,
-  deleteCodexSkill
+  deleteCodexSkill,
+  installCodexSkillFromZip
 } from '../codex-skill-installer'
+
+const execFileAsync = promisify(execFile)
 
 const { spawnMock } = vi.hoisted(() => ({
   spawnMock: vi.fn()
 }))
 
-vi.mock('node:child_process', () => ({
-  spawn: spawnMock
-}))
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>()
+  return {
+    ...actual,
+    spawn: spawnMock
+  }
+})
 
 vi.mock('../codex-runner', () => ({
   buildCodexCommand: () => 'codex',
@@ -30,24 +41,46 @@ vi.mock('../environment-checker', () => ({
   buildVersionCommandOptions: () => ({ shell: true, env: { PATH: 'test-path' } })
 }))
 
-const makeChild = (): EventEmitterType & {
-  stdout: EventEmitterType
-  stderr: EventEmitterType
-  stdin: { end: ReturnType<typeof vi.fn> }
-  kill: ReturnType<typeof vi.fn>
-} => {
-  const child = new EventEmitter() as EventEmitterType & {
-    stdout: EventEmitterType
-    stderr: EventEmitterType
-    stdin: { end: ReturnType<typeof vi.fn> }
-    kill: ReturnType<typeof vi.fn>
+const originalCodexHome = process.env.CODEX_HOME
+const tempRoots: string[] = []
+
+const createTempRoot = async (): Promise<string> => {
+  const tempRoot = await mkdtemp(join(tmpdir(), 'codex-skill-installer-test-'))
+  tempRoots.push(tempRoot)
+  return tempRoot
+}
+
+const createSkillZip = async ({
+  skillName,
+  files = {}
+}: {
+  skillName: string
+  files?: Record<string, string>
+}): Promise<{ zipPath: string; hash: string }> => {
+  const tempRoot = await createTempRoot()
+  const sourceRoot = join(tempRoot, 'source')
+  const skillRoot = join(sourceRoot, 'zip-root')
+  await mkdir(skillRoot, { recursive: true })
+  await writeFile(
+    join(skillRoot, 'SKILL.md'),
+    ['---', `name: ${skillName}`, 'description: test skill', '---', '', '# Test Skill', ''].join('\n')
+  )
+  for (const [relativePath, content] of Object.entries(files)) {
+    const filePath = join(skillRoot, relativePath)
+    await mkdir(dirname(filePath), { recursive: true })
+    await writeFile(filePath, content)
   }
-  child.stdout = new EventEmitter()
-  child.stderr = new EventEmitter()
-  child.stdin = { end: vi.fn() }
-  child.kill = vi.fn()
-  spawnMock.mockReturnValue(child)
-  return child
+
+  const zipPath = join(tempRoot, 'skill.zip')
+  await execFileAsync('zip', ['-qr', zipPath, 'zip-root'], { cwd: sourceRoot })
+  const zipBytes = await readFile(zipPath)
+  return { zipPath, hash: createHash('sha256').update(zipBytes).digest('hex') }
+}
+
+const setCodexHome = async (): Promise<string> => {
+  const codexHome = await createTempRoot()
+  process.env.CODEX_HOME = codexHome
+  return codexHome
 }
 
 describe('installCodexSkillFromZip', () => {
@@ -56,80 +89,75 @@ describe('installCodexSkillFromZip', () => {
     vi.resetModules()
   })
 
-  it('uses the legacy install prompt for package-path-only calls', async () => {
-    const { installCodexSkillFromZip } = await import('../codex-skill-installer')
-    const child = makeChild()
-
-    const resultPromise = installCodexSkillFromZip({
-      packagePath: 'D:\\SoftWare\\CodeReviewClient\\runtime-data\\skill-packages\\skill.zip',
-      timeoutMs: 1000
+  it('installs a verified zip locally and replaces an older same-name skill without spawning Codex', async () => {
+    const codexHome = await setCodexHome()
+    const { zipPath, hash } = await createSkillZip({
+      skillName: '通用-代码审查-模版二',
+      files: {
+        'references/rule.md': 'new rule'
+      }
     })
-    child.stdout.emit('data', Buffer.from('installed\n'))
-    child.emit('close', 0)
-
-    await expect(resultPromise).resolves.toEqual({
-      stdout: 'installed\n',
-      stderr: ''
-    })
-    expect(spawnMock).toHaveBeenCalledWith(
-      'codex',
-      [
-        'exec',
-        '--dangerously-bypass-approvals-and-sandbox',
-        expect.stringContaining(
-          'D:\\SoftWare\\CodeReviewClient\\runtime-data\\skill-packages\\skill.zip'
-        )
-      ],
-      expect.objectContaining({
-        shell: false
-      })
+    const oldSkillDir = join(codexHome, 'skills', '通用-代码审查-模版二')
+    await mkdir(oldSkillDir, { recursive: true })
+    await writeFile(
+      join(oldSkillDir, 'SKILL.md'),
+      '---\nname: 通用-代码审查-模版二\ndescription: old\n---\n'
     )
-    const prompt = spawnMock.mock.calls[0]?.[1]?.[2]
-    expect(prompt).toContain(
-      'D:\\SoftWare\\CodeReviewClient\\runtime-data\\skill-packages\\skill.zip'
-    )
-    expect(prompt).not.toContain('未提供')
-    expect(prompt).toContain('直接读取这个 zip 文件路径，不要修改 zip 内容')
-    expect(prompt).toContain('先定位 Codex 当前已安装的同名 Skill')
-    expect(prompt).toContain('删除旧的同名 Skill')
-    expect(prompt).toContain('再安装这个 zip 包中的最新 Skill')
-    expect(prompt).toContain('如果无法确认旧 Skill 已删除或新 Skill 已安装成功')
-    expect(child.stdin.end).toHaveBeenCalledWith()
-  })
+    await writeFile(join(oldSkillDir, 'old.txt'), 'old')
 
-  it('rejects with stderr when Codex install fails', async () => {
-    const { installCodexSkillFromZip } = await import('../codex-skill-installer')
-    const child = makeChild()
-
-    const resultPromise = installCodexSkillFromZip({
-      packagePath: 'D:\\runtime-data\\skill-packages\\bad.zip',
-      timeoutMs: 1000
-    })
-    child.stderr.emit('data', Buffer.from('invalid skill package'))
-    child.emit('close', 1)
-
-    await expect(resultPromise).rejects.toThrow(
-      'Codex Skill install failed with exit code 1: invalid skill package'
-    )
-  })
-
-  it('rejects when Codex prints an install error marker even if the process exits successfully', async () => {
-    const { installCodexSkillFromZip } = await import('../codex-skill-installer')
-    const child = makeChild()
-
-    const resultPromise = installCodexSkillFromZip({
-      packagePath: 'D:\\runtime-data\\skill-packages\\bad.zip',
+    const result = await installCodexSkillFromZip({
+      packagePath: zipPath,
       skillId: 'skill-1',
-      skillName: '通用-代码变更审查-模板一',
-      version: '1.0.0',
+      skillName: '通用-代码审查-模版二',
+      version: 'v1.0.0',
+      contentHash: hash,
       timeoutMs: 1000
     })
-    child.stdout.emit('data', Buffer.from('[SKILL_INSTALL_ERROR] broken'))
-    child.emit('close', 0)
 
-    await expect(resultPromise).rejects.toThrow(
-      'Codex Skill install reported failure: [SKILL_INSTALL_ERROR] broken'
+    await expect(readFile(join(oldSkillDir, 'SKILL.md'), 'utf8')).resolves.toContain(
+      'name: 通用-代码审查-模版二'
     )
+    await expect(readFile(join(oldSkillDir, 'references', 'rule.md'), 'utf8')).resolves.toBe(
+      'new rule'
+    )
+    await expect(readFile(join(oldSkillDir, 'old.txt'), 'utf8')).rejects.toThrow()
+    expect(spawnMock).not.toHaveBeenCalled()
+    expect(result.stdout).toContain('[SKILL_INSTALL_OK] 通用-代码审查-模版二@v1.0.0')
+    expect(result.stderr).toBe('')
+  })
+
+  it('rejects without installing when the zip hash does not match the server hash', async () => {
+    await setCodexHome()
+    const { zipPath } = await createSkillZip({ skillName: '通用-代码审查-模版二' })
+
+    await expect(
+      installCodexSkillFromZip({
+        packagePath: zipPath,
+        skillId: 'skill-1',
+        skillName: '通用-代码审查-模版二',
+        version: 'v1.0.0',
+        contentHash: 'bad-hash',
+        timeoutMs: 1000
+      })
+    ).rejects.toThrow('Skill package hash mismatch')
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects without installing when SKILL.md name differs from server metadata', async () => {
+    await setCodexHome()
+    const { zipPath, hash } = await createSkillZip({ skillName: '其他Skill' })
+
+    await expect(
+      installCodexSkillFromZip({
+        packagePath: zipPath,
+        skillId: 'skill-1',
+        skillName: '通用-代码审查-模版二',
+        version: 'v1.0.0',
+        contentHash: hash,
+        timeoutMs: 1000
+      })
+    ).rejects.toThrow('Skill package name mismatch')
+    expect(spawnMock).not.toHaveBeenCalled()
   })
 })
 
@@ -139,70 +167,29 @@ describe('deleteCodexSkill', () => {
     vi.resetModules()
   })
 
-  it('asks Codex to delete only the target Skill name', async () => {
-    const child = makeChild()
+  it('deletes only the target same-name skill directory locally', async () => {
+    const codexHome = await setCodexHome()
+    const targetDir = join(codexHome, 'skills', '通用-代码变更审查-模板一')
+    const otherDir = join(codexHome, 'skills', '其他Skill')
+    await mkdir(targetDir, { recursive: true })
+    await mkdir(otherDir, { recursive: true })
+    await writeFile(
+      join(targetDir, 'SKILL.md'),
+      '---\nname: 通用-代码变更审查-模板一\ndescription: target\n---\n'
+    )
+    await writeFile(join(otherDir, 'SKILL.md'), '---\nname: 其他Skill\ndescription: other\n---\n')
 
-    const resultPromise = deleteCodexSkill({
+    const result = await deleteCodexSkill({
       skillId: 'skill-1',
       skillName: '通用-代码变更审查-模板一',
       version: '1.0.0',
       timeoutMs: 1000
     })
-    child.stdout.emit('data', Buffer.from('deleted\n'))
-    child.emit('close', 0)
 
-    await expect(resultPromise).resolves.toEqual({
-      stdout: 'deleted\n',
-      stderr: ''
-    })
-    expect(spawnMock).toHaveBeenCalledWith(
-      'codex',
-      [
-        'exec',
-        '--dangerously-bypass-approvals-and-sandbox',
-        expect.stringContaining('[SKILL_DELETE_OK] 通用-代码变更审查-模板一')
-      ],
-      expect.objectContaining({
-        shell: false
-      })
-    )
-    const prompt = spawnMock.mock.calls[0]?.[1]?.[2]
-    expect(prompt).toContain('通用-代码变更审查-模板一')
-    expect(prompt).toContain('[SKILL_DELETE_OK] 通用-代码变更审查-模板一')
-  })
-
-  it('rejects when Codex prints a delete error marker to stdout even if the process exits successfully', async () => {
-    const child = makeChild()
-
-    const resultPromise = deleteCodexSkill({
-      skillId: 'skill-1',
-      skillName: '通用-代码变更审查-模板一',
-      version: '1.0.0',
-      timeoutMs: 1000
-    })
-    child.stdout.emit('data', Buffer.from('[SKILL_DELETE_ERROR] broken'))
-    child.emit('close', 0)
-
-    await expect(resultPromise).rejects.toThrow(
-      'Codex Skill delete reported failure: [SKILL_DELETE_ERROR] broken'
-    )
-  })
-
-  it('rejects when Codex prints a delete error marker to stderr even if the process exits successfully', async () => {
-    const child = makeChild()
-
-    const resultPromise = deleteCodexSkill({
-      skillId: 'skill-1',
-      skillName: '通用-代码变更审查-模板一',
-      version: '1.0.0',
-      timeoutMs: 1000
-    })
-    child.stderr.emit('data', Buffer.from('[SKILL_DELETE_ERROR] broken'))
-    child.emit('close', 0)
-
-    await expect(resultPromise).rejects.toThrow(
-      'Codex Skill delete reported failure: [SKILL_DELETE_ERROR] broken'
-    )
+    await expect(readFile(join(targetDir, 'SKILL.md'), 'utf8')).rejects.toThrow()
+    await expect(readFile(join(otherDir, 'SKILL.md'), 'utf8')).resolves.toContain('其他Skill')
+    expect(spawnMock).not.toHaveBeenCalled()
+    expect(result.stdout).toContain('[SKILL_DELETE_OK] 通用-代码变更审查-模板一')
   })
 })
 
@@ -236,4 +223,9 @@ describe('Codex Skill prompts', () => {
     expect(prompt).toContain('不要删除其他名称的 Skill')
     expect(prompt).toContain('[SKILL_DELETE_OK] 通用-代码变更审查-模板一')
   })
+})
+
+afterEach(async () => {
+  process.env.CODEX_HOME = originalCodexHome
+  await Promise.all(tempRoots.splice(0).map((tempRoot) => rm(tempRoot, { recursive: true, force: true })))
 })
