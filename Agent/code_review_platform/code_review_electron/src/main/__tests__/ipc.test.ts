@@ -542,7 +542,18 @@ describe('registerIpcHandlers', () => {
       calls.push('syncSkill')
       return {
         status: 'synced' as const,
-        packagePath: '/tmp/code-review-runtime/skill-packages/skill.zip'
+        skills: [
+          {
+            id: 'skill-1',
+            name: '通用-代码变更审查-模板一',
+            version: '2026.05.29',
+            content_hash: 'hash',
+            hash: 'hash',
+            file_size: 9,
+            package_path: '/tmp/code-review-runtime/skill-packages/skill.zip',
+            installed_at: '2026-05-29T10:00:00.000Z'
+          }
+        ]
       }
     })
     const checkEnvironment = vi.fn(async () => {
@@ -580,7 +591,18 @@ describe('registerIpcHandlers', () => {
     }
     const syncSkill = vi.fn(async () => ({
       status: 'synced' as const,
-      packagePath: '/tmp/code-review-runtime/skill-packages/skill.zip'
+      skills: [
+        {
+          id: 'skill-1',
+          name: '通用-代码变更审查-模板一',
+          version: '2026.05.29',
+          content_hash: 'hash',
+          hash: 'hash',
+          file_size: 9,
+          package_path: '/tmp/code-review-runtime/skill-packages/skill.zip',
+          installed_at: '2026-05-29T10:00:00.000Z'
+        }
+      ]
     }))
     const checkEnvironment = vi.fn(async () => ({ status: 'ready' as const }))
     const { registerIpcHandlers } = await import('../ipc')
@@ -661,7 +683,18 @@ describe('registerIpcHandlers', () => {
     }
     const syncSkill = vi.fn(async () => ({
       status: 'synced' as const,
-      packagePath: '/tmp/code-review-runtime/skill-packages/skill.zip'
+      skills: [
+        {
+          id: 'skill-1',
+          name: '通用-代码变更审查-模板一',
+          version: '2026.05.29',
+          content_hash: 'hash',
+          hash: 'hash',
+          file_size: 9,
+          package_path: '/tmp/code-review-runtime/skill-packages/skill.zip',
+          installed_at: '2026-05-29T10:00:00.000Z'
+        }
+      ]
     }))
     const checkEnvironment = vi.fn(async () => ({ status: 'ready' as const }))
     const { registerIpcHandlers } = await import('../ipc')

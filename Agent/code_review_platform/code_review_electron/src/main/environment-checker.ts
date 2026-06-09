@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 
+import { REQUIRED_REVIEW_SKILL_NAMES } from '../shared/review-templates'
 import type { EnvironmentStatus } from '../shared/types'
 import { getRuntimePaths } from './runtime-paths'
 
@@ -216,21 +217,48 @@ export const checkRuntimeWritable = async (runtimeRoot: string): Promise<boolean
 export const checkSkillPackageReady = async (manifestPath: string): Promise<boolean> => {
   try {
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as unknown
-    if (
-      typeof manifest !== 'object' ||
-      manifest === null ||
-      !('package_path' in manifest) ||
-      typeof manifest.package_path !== 'string'
-    ) {
+    if (!isSkillManifest(manifest)) {
       return false
     }
 
-    await access(manifest.package_path)
+    for (const requiredSkillName of REQUIRED_REVIEW_SKILL_NAMES) {
+      const entry = manifest.skills.find((skill) => skill.name === requiredSkillName)
+      if (!entry) {
+        return false
+      }
+
+      await access(entry.package_path)
+    }
+
     return true
   } catch {
     return false
   }
 }
+
+interface SkillManifestEntry {
+  name: string
+  package_path: string
+}
+
+interface SkillManifest {
+  skills: SkillManifestEntry[]
+}
+
+const isSkillManifest = (value: unknown): value is SkillManifest =>
+  typeof value === 'object' &&
+  value !== null &&
+  'skills' in value &&
+  Array.isArray(value.skills) &&
+  value.skills.every(
+    (entry) =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      'name' in entry &&
+      'package_path' in entry &&
+      typeof entry.name === 'string' &&
+      typeof entry.package_path === 'string'
+  )
 
 export const checkEnvironment = async (
   dependencies: EnvironmentCheckDependencies = {}
