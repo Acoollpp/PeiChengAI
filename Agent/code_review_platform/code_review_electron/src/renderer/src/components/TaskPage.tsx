@@ -7,7 +7,7 @@ import { EnvironmentStatus } from './EnvironmentStatus'
 import { MarkdownPreview } from './MarkdownPreview'
 import { TaskBoard } from './TaskBoard'
 import { TaskForm } from './TaskForm'
-import { AdminContactDialog } from './AdminContactDialog'
+import { SubmitFeedbackDialog } from './SubmitFeedbackDialog'
 
 type TaskPageProps = {
   environment: EnvironmentCheckResult | null
@@ -41,7 +41,7 @@ export function TaskPage({
   const [isLoadingTasks, setIsLoadingTasks] = useState(true)
   const [selectedTaskId, setSelectedTaskId] = useState<string>()
   const [loadingReportTaskId, setLoadingReportTaskId] = useState<string>()
-  const [showAdminContact, setShowAdminContact] = useState(false)
+  const [showSubmitFeedback, setShowSubmitFeedback] = useState(false)
 
   const canRunTask = environment?.status === 'ready'
 
@@ -175,9 +175,9 @@ export function TaskPage({
             <button
               className="admin-contact-button"
               type="button"
-              onClick={() => setShowAdminContact(true)}
+              onClick={() => setShowSubmitFeedback(true)}
             >
-              联系管理员
+              提交意见
             </button>
           </div>
         </div>
@@ -226,7 +226,7 @@ export function TaskPage({
         </div>
         <MarkdownPreview markdown={markdown} />
       </section>
-      {showAdminContact && <AdminContactDialog onClose={() => setShowAdminContact(false)} />}
+      <SubmitFeedbackDialog open={showSubmitFeedback} onClose={() => setShowSubmitFeedback(false)} />
     </section>
   )
 }

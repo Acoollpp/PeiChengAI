@@ -26,7 +26,8 @@ const setupCodeReviewApi = (): void => {
     installSkill: vi.fn(),
     checkEnvironment: vi.fn(),
     onEnvironmentProgress: vi.fn(() => vi.fn()),
-    bindSvnCredential: vi.fn()
+    bindSvnCredential: vi.fn(),
+    submitFeedback: vi.fn(async () => ({ id: 'feedback-1', status: 'pending' }))
   } as unknown as CodeReviewApi
 }
 
@@ -39,7 +40,7 @@ afterEach(() => {
 })
 
 describe('TaskPage', () => {
-  it('在工作台顶部打开管理员名片', async () => {
+  it('在工作台顶部打开提交意见弹窗', async () => {
     const user = userEvent.setup()
 
     render(
@@ -57,10 +58,13 @@ describe('TaskPage', () => {
       />
     )
 
-    await user.click(screen.getByRole('button', { name: '联系管理员' }))
+    expect(screen.getAllByRole('button', { name: '提交意见' })).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: '联系管理员' })).not.toBeInTheDocument()
 
-    expect(screen.getByRole('dialog', { name: '管理员联系方式' })).toBeInTheDocument()
-    expect(screen.getByText('杨慧城')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '提交意见' }))
+
+    expect(screen.getByRole('dialog', { name: '提交意见' })).toBeInTheDocument()
+    expect(screen.getByLabelText('问题描述')).toBeInTheDocument()
   })
 
   it('环境面板不再额外显示联系管理员入口', () => {
@@ -79,6 +83,7 @@ describe('TaskPage', () => {
       />
     )
 
-    expect(screen.getAllByRole('button', { name: '联系管理员' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: '提交意见' })).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: '联系管理员' })).not.toBeInTheDocument()
   })
 })
