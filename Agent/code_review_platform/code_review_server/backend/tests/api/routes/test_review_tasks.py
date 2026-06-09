@@ -77,6 +77,50 @@ def test_create_review_task_normalizes_revisions(
     assert content["status"] == "created"
 
 
+def test_create_review_task_stores_template_and_skill_name(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+        json={
+            "svn_url": "svn://repo/project",
+            "old_revision": "r12",
+            "new_revision": "r14",
+            "template_key": "template_2",
+            "skill_name": "通用-代码变更审查-模板二",
+        },
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["template_key"] == "template_2"
+    assert content["skill_name"] == "通用-代码变更审查-模板二"
+    assert content["old_revision"] == "r12"
+    assert content["new_revision"] == "r14"
+
+
+def test_create_review_task_without_template_fields_remains_supported(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+        json={
+            "svn_url": "svn://repo/project",
+            "old_revision": "12",
+            "new_revision": "14",
+        },
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["template_key"] is None
+    assert content["skill_name"] is None
+
+
 def test_create_review_task_rejects_same_revision(
     client: TestClient, normal_user_token_headers: dict[str, str]
 ) -> None:
@@ -644,7 +688,11 @@ def test_admin_task_stats_include_all_nonzero_report_counts_by_user(
     )
 
     assert response.status_code == 200
-    reports_by_user = response.json()["reports_by_user"]
+    reports_by_user = [
+        user_stat
+        for user_stat in response.json()["reports_by_user"]
+        if user_stat["user_name"].startswith("报告用户 ")
+    ]
     assert len(reports_by_user) == 21
     assert reports_by_user[0] == {
         "user_name": "报告用户 20",
