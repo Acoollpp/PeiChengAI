@@ -24,6 +24,32 @@ def _headers_for_new_user(client: TestClient, db: Session) -> dict[str, str]:
     return authentication_token_from_key(client=client, key=api_key.key, db=db)
 
 
+def _assert_private_paths_not_exposed(content: object) -> None:
+    if isinstance(content, dict):
+        assert "file_path" not in content
+        assert "screenshot_path" not in content
+        for value in content.values():
+            _assert_private_paths_not_exposed(value)
+    elif isinstance(content, list):
+        for item in content:
+            _assert_private_paths_not_exposed(item)
+
+
+def _assert_single_screenshot_public(content: dict) -> None:
+    assert content["has_screenshot"] is True
+    assert content["screenshot_name"] == "screen.png"
+    assert content["screenshot_content_type"] == "image/png"
+    assert content["screenshot_size"] == len(b"png-bytes")
+    assert content["screenshot_count"] == 1
+    assert len(content["screenshots"]) == 1
+    screenshot = content["screenshots"][0]
+    assert screenshot["file_name"] == "screen.png"
+    assert screenshot["content_type"] == "image/png"
+    assert screenshot["file_size"] == len(b"png-bytes")
+    assert screenshot["sort_order"] == 0
+    _assert_private_paths_not_exposed(content)
+
+
 def test_create_feedback_text_only(
     client: TestClient, normal_user_token_headers: dict[str, str]
 ) -> None:
@@ -41,8 +67,7 @@ def test_create_feedback_text_only(
     assert content["status"] == "pending"
     assert content["screenshot_count"] == 0
     assert content["screenshots"] == []
-    assert "screenshot_path" not in content
-    assert "file_path" not in str(content)
+    _assert_private_paths_not_exposed(content)
 
 
 def test_create_feedback_with_screenshot_and_read_it(
@@ -62,19 +87,25 @@ def test_create_feedback_with_screenshot_and_read_it(
 
     assert response.status_code == 200
     content = response.json()
-    assert content["has_screenshot"] is True
-    assert content["screenshot_name"] == "screen.png"
-    assert content["screenshot_content_type"] == "image/png"
-    assert content["screenshot_size"] == len(b"png-bytes")
-    assert content["screenshot_count"] == 1
-    assert len(content["screenshots"]) == 1
-    screenshot = content["screenshots"][0]
-    assert screenshot["file_name"] == "screen.png"
-    assert screenshot["content_type"] == "image/png"
-    assert screenshot["file_size"] == len(b"png-bytes")
-    assert screenshot["sort_order"] == 0
-    assert "screenshot_path" not in content
-    assert "file_path" not in str(content)
+    _assert_single_screenshot_public(content)
+
+    detail_response = client.get(
+        f"{settings.API_V1_STR}/feedback/{content['id']}",
+        headers=normal_user_token_headers,
+    )
+    assert detail_response.status_code == 200
+    _assert_single_screenshot_public(detail_response.json())
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/feedback",
+        headers=normal_user_token_headers,
+    )
+    assert list_response.status_code == 200
+    list_content = list_response.json()
+    listed_feedback = next(
+        item for item in list_content["data"] if item["id"] == content["id"]
+    )
+    _assert_single_screenshot_public(listed_feedback)
 
     screenshot_response = client.get(
         f"{settings.API_V1_STR}/feedback/{content['id']}/screenshot",

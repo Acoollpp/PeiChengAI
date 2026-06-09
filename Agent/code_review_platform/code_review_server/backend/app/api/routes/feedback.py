@@ -5,6 +5,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from sqlalchemy.orm import selectinload
 from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep, has_admin_privileges
@@ -55,7 +56,12 @@ def _feedback_public(feedback: Feedback, user: User | None = None) -> FeedbackPu
 def _get_feedback_for_user(
     *, session: SessionDep, current_user: CurrentUser, feedback_id: uuid.UUID
 ) -> Feedback:
-    feedback = session.get(Feedback, feedback_id)
+    statement = (
+        select(Feedback)
+        .options(selectinload(Feedback.screenshots))
+        .where(Feedback.id == feedback_id)
+    )
+    feedback = session.exec(statement).first()
     if not feedback:
         raise HTTPException(status_code=404, detail="Feedback not found")
     if not has_admin_privileges(current_user) and feedback.user_id != current_user.id:
@@ -144,6 +150,7 @@ def read_feedback(
     )
     statement = (
         select(Feedback, User)
+        .options(selectinload(Feedback.screenshots))
         .join(User, Feedback.user_id == User.id)
         .where(*filters)
         .order_by(col(Feedback.created_at).desc())
