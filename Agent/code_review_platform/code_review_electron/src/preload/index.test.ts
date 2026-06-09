@@ -63,6 +63,38 @@ describe('preload codeReview API', () => {
     expect(new TextDecoder().decode(payload.screenshots[1].bytes)).toBe('second-image')
   })
 
+  it('serializes legacy screenshot payload into screenshots IPC field', async () => {
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+    const screenshot = {
+      name: 'legacy-feedback.png',
+      type: 'image/png',
+      arrayBuffer: vi.fn(async () => new TextEncoder().encode('legacy-image-bytes').buffer)
+    } as unknown as File
+
+    await api.submitFeedback({
+      description: '旧版截图上传',
+      screenshot
+    })
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      'feedback:submit',
+      expect.objectContaining({
+        description: '旧版截图上传',
+        screenshots: [
+          expect.objectContaining({
+            name: 'legacy-feedback.png',
+            type: 'image/png'
+          })
+        ]
+      })
+    )
+    const payload = invokeMock.mock.calls[0][1]
+    expect(payload.screenshots).toHaveLength(1)
+    expect(new TextDecoder().decode(payload.screenshots[0].bytes)).toBe('legacy-image-bytes')
+    expect(payload).not.toHaveProperty('screenshot')
+  })
+
   it('invokes report asset IPC with report path and asset path', async () => {
     await import('./index')
     const api = exposeInMainWorldMock.mock.calls[0][1]
