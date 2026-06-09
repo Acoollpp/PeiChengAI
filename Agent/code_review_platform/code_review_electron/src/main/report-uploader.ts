@@ -6,6 +6,8 @@ export interface ReportUploadApi {
   uploadReport: ApiClient['uploadReport']
 }
 
+export const REVIEW_REPORT_FILE_NAME = '代码审查报告.md'
+
 export const ensureReportReady = async (reportPath: string): Promise<void> => {
   let reportStat
 
@@ -32,6 +34,7 @@ export const uploadReportFile = async (
 
   return api.uploadReport(token, taskId, {
     report_content: reportContent,
-    report_path: reportPath
-  })
+    report_path: reportPath,
+    report_name: REVIEW_REPORT_FILE_NAME
+  } as Parameters<ApiClient['uploadReport']>[2] & { report_name: string })
 }

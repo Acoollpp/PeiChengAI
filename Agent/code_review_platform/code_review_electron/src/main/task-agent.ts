@@ -21,11 +21,14 @@ export interface ExecuteReviewTaskInput {
 export interface PreparedWorkspace {
   cwd: string
   reportPath: string
+  imagesDir?: string
 }
 
 export interface RunCodexInput {
   cwd: string
   reportPath: string
+  imagesDir: string
+  skillName: string
   task: ReviewTask
   onProgress?: TaskProgressReporter
 }
@@ -88,18 +91,23 @@ const toReviewTask = (value: unknown): ReviewTask => {
 export const defaultPrepareWorkspace = async (taskId: string): Promise<PreparedWorkspace> => {
   const runtimePaths = await getRuntimePaths()
   const cwd = runtimePaths.workspaceForTask(taskId)
+  const imagesDir = runtimePaths.imagesDirForTask?.(taskId) ?? `${cwd}/images`
 
   await mkdir(cwd, { recursive: true })
+  await mkdir(imagesDir, { recursive: true })
 
   return {
     cwd,
-    reportPath: runtimePaths.reportPathForTask(taskId)
+    reportPath: runtimePaths.reportPathForTask(taskId),
+    imagesDir
   }
 }
 
 export const defaultRunCodex = async ({
   cwd,
   reportPath,
+  imagesDir,
+  skillName,
   task,
   onProgress
 }: RunCodexInput): Promise<void> => {
@@ -109,7 +117,9 @@ export const defaultRunCodex = async ({
       svnUrl: task.svn_url,
       oldRevision: task.old_revision,
       newRevision: task.new_revision,
-      reportPath
+      reportPath,
+      imagesDir,
+      skillName
     }),
     timeoutMs: 30 * 60 * 1000,
     onOutput: (event) =>
@@ -138,6 +148,8 @@ export const executeReviewTask = async (
   const task = toReviewTask(await dependencies.api.createTask(input.token, input.request))
 
   try {
+    const skillName = resolveSkillName(input.request.skill_name, task.skill_name)
+
     emitStage(onProgress, task.id, 'checking_environment', '检查本机环境')
     await updateStatus(dependencies, input.token, task.id, {
       status: 'checking_environment'
@@ -157,6 +169,7 @@ export const executeReviewTask = async (
 
     emitStage(onProgress, task.id, 'preparing_workspace', '准备任务工作区')
     const workspace = await dependencies.prepareWorkspace(task.id)
+    const imagesDir = workspace.imagesDir ?? `${workspace.cwd}/images`
 
     emitStage(onProgress, task.id, 'running_codex', '启动 Codex 执行审查 Skill')
     await updateStatus(dependencies, input.token, task.id, {
@@ -165,6 +178,8 @@ export const executeReviewTask = async (
 
     await dependencies.runCodex({
       ...workspace,
+      imagesDir,
+      skillName,
       task,
       onProgress
     })
@@ -198,6 +213,19 @@ export const executeReviewTask = async (
 
     throw error
   }
+}
+
+const resolveSkillName = (
+  requestSkillName: string | undefined,
+  taskSkillName: string | undefined
+): string => {
+  const skillName = requestSkillName?.trim() || taskSkillName?.trim()
+
+  if (!skillName) {
+    throw new Error('未选择审查模板 Skill')
+  }
+
+  return skillName
 }
 
 const emitStage = (

@@ -14,7 +14,9 @@ import type { ReviewTask } from '../../shared/types'
 const request = {
   svn_url: 'svn://repo/project',
   old_revision: '12',
-  new_revision: '14'
+  new_revision: '14',
+  template_key: 'template_2' as const,
+  skill_name: '通用-代码变更审查-模板二'
 }
 
 const makeTask = (overrides: Partial<ReviewTask> = {}): ReviewTask => ({
@@ -78,7 +80,8 @@ describe('executeReviewTask', () => {
   it('runs codex, uploads the report, and returns markdown after the environment is ready', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-'))
     tempDirs.push(cwd)
-    const reportPath = join(cwd, 'report.md')
+    const reportPath = join(cwd, '代码审查报告.md')
+    const imagesDir = join(cwd, 'images')
     const calls: string[] = []
     const dependencies: TaskAgentDependencies = {
       api: {
@@ -96,7 +99,7 @@ describe('executeReviewTask', () => {
       }),
       prepareWorkspace: vi.fn(async () => {
         calls.push('prepareWorkspace')
-        return { cwd, reportPath }
+        return { cwd, reportPath, imagesDir }
       }),
       runCodex: vi.fn(async () => {
         calls.push('runCodex')
@@ -118,6 +121,8 @@ describe('executeReviewTask', () => {
     expect(dependencies.runCodex).toHaveBeenCalledWith({
       cwd,
       reportPath,
+      imagesDir,
+      skillName: '通用-代码变更审查-模板二',
       task: makeTask()
     })
     expect(dependencies.uploadReport).toHaveBeenCalledWith('token-123', 'task-1', reportPath)
@@ -144,7 +149,8 @@ describe('executeReviewTask', () => {
   it('emits task progress events around environment, workspace, Codex, and upload stages', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-'))
     tempDirs.push(cwd)
-    const reportPath = join(cwd, 'report.md')
+    const reportPath = join(cwd, '代码审查报告.md')
+    const imagesDir = join(cwd, 'images')
     const events: string[] = []
     const dependencies: TaskAgentDependencies = {
       api: {
@@ -152,7 +158,7 @@ describe('executeReviewTask', () => {
         updateTaskStatus: vi.fn(async () => undefined)
       },
       checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
-      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
       runCodex: vi.fn(async ({ onProgress }) => {
         onProgress?.({
           taskId: 'task-1',
@@ -187,14 +193,15 @@ describe('executeReviewTask', () => {
   it('marks task as failed with a sanitized summary when codex throws', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-'))
     tempDirs.push(cwd)
-    const reportPath = join(cwd, 'report.md')
+    const reportPath = join(cwd, '代码审查报告.md')
+    const imagesDir = join(cwd, 'images')
     const dependencies: TaskAgentDependencies = {
       api: {
         createTask: vi.fn(async () => makeTask()),
         updateTaskStatus: vi.fn(async () => undefined)
       },
       checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
-      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
       runCodex: vi.fn(async () => {
         throw new Error(`failure using token secret-token at ${cwd}`)
       }),
@@ -219,14 +226,15 @@ describe('executeReviewTask', () => {
   it('redacts secret-like values from codex failure summaries', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-'))
     tempDirs.push(cwd)
-    const reportPath = join(cwd, 'report.md')
+    const reportPath = join(cwd, '代码审查报告.md')
+    const imagesDir = join(cwd, 'images')
     const dependencies: TaskAgentDependencies = {
       api: {
         createTask: vi.fn(async () => makeTask()),
         updateTaskStatus: vi.fn(async () => undefined)
       },
       checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
-      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
       runCodex: vi.fn(async () => {
         throw new Error('failed with password=hunter2 access_token: abc Bearer xyz')
       }),
@@ -243,6 +251,42 @@ describe('executeReviewTask', () => {
     expect(lastStatus?.error_message).not.toContain('hunter2')
     expect(lastStatus?.error_message).not.toContain('abc')
     expect(lastStatus?.error_message).not.toContain('xyz')
+    expect(dependencies.uploadReport).not.toHaveBeenCalled()
+  })
+
+  it('fails and reports failed status when no review template Skill is selected', async () => {
+    const dependencies: TaskAgentDependencies = {
+      api: {
+        createTask: vi.fn(async () =>
+          makeTask({
+            skill_name: undefined,
+            template_key: undefined
+          })
+        ),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      prepareWorkspace: vi.fn(),
+      runCodex: vi.fn(),
+      uploadReport: vi.fn()
+    }
+
+    const requestWithoutSkill = {
+      svn_url: request.svn_url,
+      old_revision: request.old_revision,
+      new_revision: request.new_revision
+    }
+
+    await expect(
+      executeReviewTask({ token: 'token-123', request: requestWithoutSkill }, dependencies)
+    ).rejects.toThrow('未选择审查模板 Skill')
+
+    expect(dependencies.api.updateTaskStatus).toHaveBeenLastCalledWith('token-123', 'task-1', {
+      status: 'failed',
+      error_message: '未选择审查模板 Skill'
+    })
+    expect(dependencies.prepareWorkspace).not.toHaveBeenCalled()
+    expect(dependencies.runCodex).not.toHaveBeenCalled()
     expect(dependencies.uploadReport).not.toHaveBeenCalled()
   })
 })
@@ -269,7 +313,8 @@ describe('defaultPrepareWorkspace', () => {
 
     expect(workspace).toEqual({
       cwd: join(appRoot, '.runtime-data', 'workspaces', 'task-runtime-workspace'),
-      reportPath: join(appRoot, '.runtime-data', 'workspaces', 'task-runtime-workspace', 'report.md')
+      reportPath: join(appRoot, '.runtime-data', 'workspaces', 'task-runtime-workspace', '代码审查报告.md'),
+      imagesDir: join(appRoot, '.runtime-data', 'workspaces', 'task-runtime-workspace', 'images')
     })
     await expect(
       readFile(join(workspace.cwd, 'skills', '??-??????', 'SKILL.md'), 'utf8')
