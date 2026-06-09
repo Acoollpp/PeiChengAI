@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import Any
 
@@ -32,6 +33,7 @@ from app.models import (
 from app.services import feedback_service
 
 router = APIRouter(prefix="/users", tags=["users"])
+logger = logging.getLogger(__name__)
 
 
 def _ensure_svn_username_available(
@@ -93,8 +95,12 @@ def _delete_user_with_related_data(*, session: SessionDep, user: User) -> None:
     for feedback_id in feedback_ids:
         try:
             feedback_service.remove_feedback_files(feedback_id)
-        except Exception:
-            pass
+        except Exception as error:
+            logger.warning(
+                "Failed to remove feedback files for %s",
+                feedback_id,
+                exc_info=error,
+            )
 
 
 @router.get(
