@@ -117,15 +117,18 @@ def _should_skip_entry(filename: str) -> bool:
 
 
 def activate_skill(session: Session, skill: SkillPackage) -> SkillPackage:
-    active_skills = session.exec(
-        select(SkillPackage).where(SkillPackage.is_active == True)  # noqa: E712
+    active_same_name_skills = session.exec(
+        select(SkillPackage).where(
+            SkillPackage.is_active == True,  # noqa: E712
+            SkillPackage.name == skill.name,
+            SkillPackage.id != skill.id,
+        )
     ).all()
     now = get_datetime_utc()
-    for active_skill in active_skills:
-        if active_skill.id != skill.id:
-            active_skill.is_active = False
-            active_skill.updated_at = now
-            session.add(active_skill)
+    for active_skill in active_same_name_skills:
+        active_skill.is_active = False
+        active_skill.updated_at = now
+        session.add(active_skill)
 
     skill.is_active = True
     skill.updated_at = now
@@ -135,9 +138,18 @@ def activate_skill(session: Session, skill: SkillPackage) -> SkillPackage:
     return skill
 
 
-def get_active_skill(session: Session) -> SkillPackage | None:
+def deactivate_skill(session: Session, skill: SkillPackage) -> SkillPackage:
+    skill.is_active = False
+    skill.updated_at = get_datetime_utc()
+    session.add(skill)
+    session.commit()
+    session.refresh(skill)
+    return skill
+
+
+def get_active_skills(session: Session) -> list[SkillPackage]:
     return session.exec(
         select(SkillPackage)
         .where(SkillPackage.is_active == True)  # noqa: E712
         .order_by(col(SkillPackage.updated_at).desc())
-    ).first()
+    ).all()

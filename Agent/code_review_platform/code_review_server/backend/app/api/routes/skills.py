@@ -23,13 +23,6 @@ def _get_skill_or_404(session: SessionDep, skill_id: uuid.UUID) -> SkillPackage:
     return skill
 
 
-def _get_active_skill_or_404(session: SessionDep) -> SkillPackage:
-    skill = skill_service.get_active_skill(session)
-    if skill is None:
-        raise HTTPException(status_code=404, detail="No active skill is configured")
-    return skill
-
-
 @router.get(
     "",
     dependencies=[Depends(get_current_active_admin)],
@@ -100,16 +93,30 @@ def activate_skill(session: SessionDep, skill_id: uuid.UUID) -> Any:
     return skill_service.activate_skill(session, skill)
 
 
-@router.get("/active", response_model=SkillPackagePublic)
-def read_active_skill(session: SessionDep, _current_user: CurrentUser) -> Any:
-    return _get_active_skill_or_404(session)
+@router.post(
+    "/{skill_id}/deactivate",
+    dependencies=[Depends(get_current_active_admin)],
+    response_model=SkillPackagePublic,
+)
+def deactivate_skill(session: SessionDep, skill_id: uuid.UUID) -> Any:
+    skill = _get_skill_or_404(session, skill_id)
+    return skill_service.deactivate_skill(session, skill)
 
 
-@router.get("/active/download")
-def download_active_skill(
-    session: SessionDep, _current_user: CurrentUser
+@router.get("/active", response_model=SkillPackagesPublic)
+def read_active_skills(session: SessionDep, _current_user: CurrentUser) -> Any:
+    skills = skill_service.get_active_skills(session)
+    return SkillPackagesPublic(
+        data=[SkillPackagePublic.model_validate(skill) for skill in skills],
+        count=len(skills),
+    )
+
+
+@router.get("/{skill_id}/download")
+def download_skill(
+    session: SessionDep, _current_user: CurrentUser, skill_id: uuid.UUID
 ) -> Response:
-    skill = _get_active_skill_or_404(session)
+    skill = _get_skill_or_404(session, skill_id)
     return Response(
         skill_service.read_skill_content(skill),
         media_type="application/zip",

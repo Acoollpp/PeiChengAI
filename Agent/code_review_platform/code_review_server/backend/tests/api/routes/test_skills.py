@@ -24,6 +24,30 @@ def _skill_zip() -> bytes:
     return buffer.getvalue()
 
 
+@pytest.fixture(autouse=True)
+def _clear_skill_packages(db: Session) -> None:
+    db.exec(delete(SkillPackage))
+    db.commit()
+
+
+def _upload_skill(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    name: str,
+    version: str,
+    activate: str = "true",
+) -> dict[str, object]:
+    response = client.post(
+        f"{settings.API_V1_STR}/skills",
+        headers=headers,
+        data={"name": name, "version": version, "activate": activate},
+        files={"upload": ("skill.zip", _skill_zip(), "application/zip")},
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
 def test_admin_can_upload_activate_and_download_skill_package(
     client: TestClient,
     superuser_token_headers: dict[str, str],
@@ -66,11 +90,12 @@ def test_admin_can_upload_activate_and_download_skill_package(
     )
 
     assert active_response.status_code == 200
-    assert active_response.json()["id"] == uploaded["id"]
-    assert active_response.json()["file_size"] == len(skill_zip)
+    assert active_response.json()["count"] == 1
+    assert active_response.json()["data"][0]["id"] == uploaded["id"]
+    assert active_response.json()["data"][0]["file_size"] == len(skill_zip)
 
     download_response = client.get(
-        f"{settings.API_V1_STR}/skills/active/download",
+        f"{settings.API_V1_STR}/skills/{uploaded['id']}/download",
         headers=normal_user_token_headers,
     )
 
@@ -89,6 +114,124 @@ def test_admin_can_upload_activate_and_download_skill_package(
             == "---\nname: test\n---\n\n# Code Review Skill\n![diagram](image/SKILL/diagram.png)\n"
         )
         assert archive.read("通用-代码变更审查/image/SKILL/diagram.png") == b"png bytes"
+
+
+def test_active_skills_returns_all_different_active_skill_names(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SKILL_STORAGE_DIR", str(tmp_path))
+
+    first = _upload_skill(
+        client,
+        superuser_token_headers,
+        name="通用-代码变更审查-模板一",
+        version="1.0.0",
+    )
+    second = _upload_skill(
+        client,
+        superuser_token_headers,
+        name="通用-代码变更审查-模板二",
+        version="1.0.0",
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/skills/active",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["count"] == 2
+    assert {skill["id"] for skill in content["data"]} == {first["id"], second["id"]}
+    assert {skill["name"] for skill in content["data"]} == {
+        "通用-代码变更审查-模板一",
+        "通用-代码变更审查-模板二",
+    }
+
+
+def test_activating_same_name_replaces_only_previous_same_name_active_skill(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SKILL_STORAGE_DIR", str(tmp_path))
+
+    old_same_name = _upload_skill(
+        client,
+        superuser_token_headers,
+        name="通用-代码变更审查-模板一",
+        version="1.0.0",
+    )
+    other_name = _upload_skill(
+        client,
+        superuser_token_headers,
+        name="通用-代码变更审查-模板二",
+        version="1.0.0",
+    )
+    new_same_name = _upload_skill(
+        client,
+        superuser_token_headers,
+        name="通用-代码变更审查-模板一",
+        version="1.0.1",
+        activate="false",
+    )
+
+    response = client.post(
+        f"{settings.API_V1_STR}/skills/{new_same_name['id']}/activate",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    active_response = client.get(
+        f"{settings.API_V1_STR}/skills/active",
+        headers=normal_user_token_headers,
+    )
+    active_ids = {skill["id"] for skill in active_response.json()["data"]}
+    assert active_ids == {new_same_name["id"], other_name["id"]}
+    assert old_same_name["id"] not in active_ids
+
+
+def test_admin_can_deactivate_skill_and_download_by_id(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SKILL_STORAGE_DIR", str(tmp_path))
+    uploaded = _upload_skill(
+        client,
+        superuser_token_headers,
+        name="通用-代码变更审查-模板一",
+        version="1.0.0",
+    )
+
+    download_response = client.get(
+        f"{settings.API_V1_STR}/skills/{uploaded['id']}/download",
+        headers=normal_user_token_headers,
+    )
+    assert download_response.status_code == 200
+    assert download_response.headers["content-type"].startswith("application/zip")
+
+    deactivate_response = client.post(
+        f"{settings.API_V1_STR}/skills/{uploaded['id']}/deactivate",
+        headers=superuser_token_headers,
+    )
+    assert deactivate_response.status_code == 200
+    assert deactivate_response.json()["is_active"] is False
+
+    active_response = client.get(
+        f"{settings.API_V1_STR}/skills/active",
+        headers=normal_user_token_headers,
+    )
+    assert active_response.status_code == 200
+    assert active_response.json() == {"data": [], "count": 0}
 
 
 def test_upload_skill_package_requires_skill_md(
@@ -187,5 +330,5 @@ def test_active_skill_returns_404_when_no_skill_exists(
         headers=normal_user_token_headers,
     )
 
-    assert response.status_code == 404
-    assert response.json()["detail"] == "No active skill is configured"
+    assert response.status_code == 200
+    assert response.json() == {"data": [], "count": 0}
