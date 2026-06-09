@@ -1,3 +1,4 @@
+import type { ReviewTemplateKey } from '../shared/review-templates'
 import type { ReviewTask } from '../shared/types'
 
 export interface TokenPair {
@@ -24,6 +25,8 @@ export interface CreateTaskRequest {
   svn_url: string
   old_revision: string
   new_revision: string
+  template_key?: ReviewTemplateKey
+  skill_name?: string
 }
 
 export interface UpdateTaskStatusRequest {
@@ -55,10 +58,17 @@ export interface ReviewTasksResponse {
 
 export interface ActiveSkill {
   id: string
+  name?: string
   version: string
   content_hash?: string
   file_size?: number
   hash?: string
+  is_active?: boolean
+}
+
+export interface ActiveSkillsResponse {
+  data: ActiveSkill[]
+  count: number
 }
 
 type FetchLike = typeof fetch
@@ -162,11 +172,34 @@ export class ApiClient {
     })
   }
 
+  getActiveSkills(token: string): Promise<ActiveSkillsResponse> {
+    return this.request<ActiveSkillsResponse>('/api/v1/skills/active', {
+      method: 'GET',
+      headers: this.authHeaders(token)
+    })
+  }
+
   async downloadActiveSkill(token: string): Promise<ArrayBuffer> {
     const response = await this.fetchImpl(`${this.baseUrl}/api/v1/skills/active/download`, {
       method: 'GET',
       headers: this.authHeaders(token)
     })
+
+    if (!response.ok) {
+      throw new ApiError(response.status, await this.readErrorMessage(response))
+    }
+
+    return response.arrayBuffer()
+  }
+
+  async downloadSkill(token: string, skillId: string): Promise<ArrayBuffer> {
+    const response = await this.fetchImpl(
+      `${this.baseUrl}/api/v1/skills/${encodeURIComponent(skillId)}/download`,
+      {
+        method: 'GET',
+        headers: this.authHeaders(token)
+      }
+    )
 
     if (!response.ok) {
       throw new ApiError(response.status, await this.readErrorMessage(response))

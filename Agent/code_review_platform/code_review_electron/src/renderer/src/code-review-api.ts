@@ -1,3 +1,4 @@
+import type { ReviewTemplateKey } from '../../shared/review-templates'
 import type {
   EnvironmentProgressEvent,
   EnvironmentStatus,
@@ -36,6 +37,8 @@ export interface ExecuteTaskRequest {
   svn_url: string
   old_revision: string
   new_revision: string
+  template_key?: ReviewTemplateKey
+  skill_name?: string
 }
 
 export interface EnvironmentCheckResult {

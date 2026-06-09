@@ -215,6 +215,53 @@ describe('ApiClient', () => {
     )
   })
 
+  it('gets active skill list with authorization header', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'skill-1',
+              name: '通用-代码变更审查-模板一',
+              version: '1.0.0',
+              content_hash: 'hash-1',
+              file_size: 100,
+              is_active: true
+            }
+          ],
+          count: 1
+        })
+      )
+    )
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    await expect(client.getActiveSkills('token-123')).resolves.toMatchObject({
+      data: [expect.objectContaining({ id: 'skill-1', name: '通用-代码变更审查-模板一' })],
+      count: 1
+    })
+    expect(fetchMock).toHaveBeenCalledWith('https://server.example/api/v1/skills/active', {
+      method: 'GET',
+      headers: { authorization: 'Bearer token-123', 'content-type': 'application/json' }
+    })
+  })
+
+  it('downloads a skill package by id with authorization header', async () => {
+    const bytes = new Uint8Array([1, 2, 3])
+    const fetchMock = vi.fn(async () => new Response(bytes))
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    const result = await client.downloadSkill('token-123', 'skill-1')
+
+    expect(new Uint8Array(result)).toEqual(bytes)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://server.example/api/v1/skills/skill-1/download',
+      {
+        method: 'GET',
+        headers: { authorization: 'Bearer token-123' }
+      }
+    )
+  })
+
   it('updates review task status with authorization header', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'task-1' }))
     const client = new ApiClient('https://server.example', fetchMock)
