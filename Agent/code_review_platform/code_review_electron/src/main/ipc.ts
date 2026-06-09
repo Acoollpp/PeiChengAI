@@ -255,19 +255,11 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
   ipcMain.handle('skill:install', async (event): Promise<EnvironmentCheckResult> => {
     notifyEnvironmentProgress(event, { stage: 'installing_skill' })
-    const skillError = await syncSkillForCurrentUser(authStore, syncSkill, {
+    const skillSyncResult = await syncSkillForCurrentUser(authStore, syncSkill, {
       loginRequiredMessage: '请先登录后安装 Skill'
     })
     const result = await checkLocalEnvironment()
-
-    if (skillError) {
-      return {
-        ...result,
-        skillError
-      }
-    }
-
-    return result
+    return withSkillSyncResult(result, skillSyncResult)
   })
 
   ipcMain.handle('environment:check', async (event): Promise<EnvironmentCheckResult> => {
@@ -278,17 +270,9 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     }
 
     notifyEnvironmentProgress(event, { stage: 'installing_skill' })
-    const skillError = await syncSkillForCurrentUser(authStore, syncSkill)
+    const skillSyncResult = await syncSkillForCurrentUser(authStore, syncSkill)
     const result = await checkLocalEnvironment()
-
-    if (skillError) {
-      return {
-        ...result,
-        skillError
-      }
-    }
-
-    return result
+    return withSkillSyncResult(result, skillSyncResult)
   })
 
   ipcMain.handle(
@@ -398,7 +382,7 @@ const syncSkillForCurrentUser = async (
   authStore: AuthStore,
   syncSkill: (token: string) => Promise<SkillSyncResult>,
   options: { loginRequiredMessage?: string } = {}
-): Promise<string | undefined> => {
+): Promise<SkillSyncResult | string | undefined> => {
   const tokens = await authStore.load()
 
   if (!tokens) {
@@ -406,10 +390,31 @@ const syncSkillForCurrentUser = async (
   }
 
   try {
-    await syncSkill(tokens.access_token)
+    return await syncSkill(tokens.access_token)
   } catch (error) {
     return error instanceof Error ? error.message : String(error)
   }
+}
 
-  return undefined
+const withSkillSyncResult = (
+  result: EnvironmentCheckResult,
+  syncResult: SkillSyncResult | string | undefined
+): EnvironmentCheckResult => {
+  if (typeof syncResult === 'string') {
+    return {
+      ...result,
+      status: 'missing_skill',
+      skillError: syncResult,
+      skills: []
+    }
+  }
+
+  if (!syncResult) {
+    return result
+  }
+
+  return {
+    ...result,
+    skills: syncResult.skills
+  }
 }

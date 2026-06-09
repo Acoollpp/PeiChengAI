@@ -61,6 +61,7 @@ describe('checkEnvironment', () => {
     )
     const checkRuntimeWritable = vi.fn(async () => true)
     const checkSkillPackageReady = vi.fn(async () => true)
+    const readSyncedSkills = vi.fn(async () => [])
     const getRuntimePaths = vi.fn(async () => ({
       runtimeRoot: '/tmp/code-review-runtime',
       skillPackagesDir: '/tmp/code-review-runtime/skill-packages',
@@ -77,6 +78,7 @@ describe('checkEnvironment', () => {
         findVersionCommand,
         checkRuntimeWritable,
         checkSkillPackageReady,
+        readSyncedSkills,
         getRuntimePaths
       })
     ).resolves.toEqual({
@@ -98,6 +100,7 @@ describe('checkEnvironment', () => {
     )
     const checkRuntimeWritable = vi.fn(async () => true)
     const checkSkillPackageReady = vi.fn(async () => true)
+    const readSyncedSkills = vi.fn(async () => [])
     const getRuntimePaths = vi.fn(async () => ({
       runtimeRoot: '/tmp/code-review-runtime',
       skillPackagesDir: '/tmp/code-review-runtime/skill-packages',
@@ -114,6 +117,7 @@ describe('checkEnvironment', () => {
         findVersionCommand,
         checkRuntimeWritable,
         checkSkillPackageReady,
+        readSyncedSkills,
         getRuntimePaths
       })
     ).resolves.toEqual({
@@ -121,7 +125,8 @@ describe('checkEnvironment', () => {
       codexVersion: 'codex-cli 0.130.0',
       codexPath: 'codex',
       svnVersion: undefined,
-      svnPath: undefined
+      svnPath: undefined,
+      skills: []
     })
 
     expect(findVersionCommand).toHaveBeenCalledWith('codex', ['--version'])
@@ -140,14 +145,12 @@ describe('runtime environment helpers', () => {
     await rm(runtimeRoot, { recursive: true, force: true })
   })
 
-  it('returns true when the Skill package manifest includes both required review Skills with existing packages', async () => {
+  it('returns true when the Skill package manifest includes synced active review Skills with existing packages', async () => {
     const runtimeRoot = join(tmpdir(), `runtime-skill-${Date.now()}`)
     const skillPackagesDir = join(runtimeRoot, 'skill-packages')
     const templateOnePackagePath = join(skillPackagesDir, 'template-one.zip')
-    const templateTwoPackagePath = join(skillPackagesDir, 'template-two.zip')
     await mkdir(skillPackagesDir, { recursive: true })
     await writeFile(templateOnePackagePath, 'template one zip bytes')
-    await writeFile(templateTwoPackagePath, 'template two zip bytes')
     await writeFile(
       join(skillPackagesDir, 'manifest.json'),
       JSON.stringify({
@@ -159,14 +162,6 @@ describe('runtime environment helpers', () => {
             content_hash: 'hash-1',
             package_path: templateOnePackagePath,
             installed_at: '2026-05-29T10:00:00.000Z'
-          },
-          {
-            id: 'skill-2',
-            name: '通用-代码变更审查-模板二',
-            version: '2026.05.30',
-            content_hash: 'hash-2',
-            package_path: templateTwoPackagePath,
-            installed_at: '2026-05-30T10:00:00.000Z'
           }
         ]
       })
@@ -178,25 +173,14 @@ describe('runtime environment helpers', () => {
     await rm(runtimeRoot, { recursive: true, force: true })
   })
 
-  it('returns false when the Skill package manifest is missing one required review Skill', async () => {
+  it('returns false when the Skill package manifest has no synced active Skills', async () => {
     const runtimeRoot = join(tmpdir(), `runtime-skill-${Date.now()}`)
     const skillPackagesDir = join(runtimeRoot, 'skill-packages')
-    const packagePath = join(skillPackagesDir, 'template-one.zip')
     await mkdir(skillPackagesDir, { recursive: true })
-    await writeFile(packagePath, 'template one zip bytes')
     await writeFile(
       join(skillPackagesDir, 'manifest.json'),
       JSON.stringify({
-        skills: [
-          {
-            id: 'skill-1',
-            name: '通用-代码变更审查-模板一',
-            version: '2026.05.29',
-            content_hash: 'hash',
-            package_path: packagePath,
-            installed_at: '2026-05-29T10:00:00.000Z'
-          }
-        ]
+        skills: []
       })
     )
 

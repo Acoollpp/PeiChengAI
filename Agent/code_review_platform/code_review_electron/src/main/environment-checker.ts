@@ -3,8 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 
-import { REQUIRED_REVIEW_SKILL_NAMES } from '../shared/review-templates'
-import type { EnvironmentStatus } from '../shared/types'
+import type { EnvironmentStatus, SyncedSkill } from '../shared/types'
 import { getRuntimePaths } from './runtime-paths'
 
 interface EnvironmentChecks {
@@ -24,6 +23,7 @@ export interface EnvironmentCheckDependencies {
   findVersionCommand?: typeof findVersionCommand
   checkRuntimeWritable?: typeof checkRuntimeWritable
   checkSkillPackageReady?: typeof checkSkillPackageReady
+  readSyncedSkills?: typeof readSyncedSkills
 }
 
 export interface EnvironmentCheckResult {
@@ -35,6 +35,7 @@ export interface EnvironmentCheckResult {
   codexError?: string
   svnError?: string
   skillError?: string
+  skills?: SyncedSkill[]
 }
 
 export const classifyEnvironment = ({
@@ -221,12 +222,11 @@ export const checkSkillPackageReady = async (manifestPath: string): Promise<bool
       return false
     }
 
-    for (const requiredSkillName of REQUIRED_REVIEW_SKILL_NAMES) {
-      const entry = manifest.skills.find((skill) => skill.name === requiredSkillName)
-      if (!entry) {
-        return false
-      }
+    if (manifest.skills.length === 0) {
+      return false
+    }
 
+    for (const entry of manifest.skills) {
       await access(entry.package_path)
     }
 
@@ -237,8 +237,11 @@ export const checkSkillPackageReady = async (manifestPath: string): Promise<bool
 }
 
 interface SkillManifestEntry {
+  id: string
   name: string
+  version: string
   package_path: string
+  installed_at: string
 }
 
 interface SkillManifest {
@@ -255,10 +258,30 @@ const isSkillManifest = (value: unknown): value is SkillManifest =>
       typeof entry === 'object' &&
       entry !== null &&
       'name' in entry &&
+      'version' in entry &&
       'package_path' in entry &&
+      'installed_at' in entry &&
+      typeof entry.id === 'string' &&
       typeof entry.name === 'string' &&
-      typeof entry.package_path === 'string'
+      typeof entry.version === 'string' &&
+      typeof entry.package_path === 'string' &&
+      typeof entry.installed_at === 'string'
   )
+
+export const readSyncedSkills = async (manifestPath: string): Promise<SyncedSkill[]> => {
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as unknown
+  if (!isSkillManifest(manifest)) {
+    return []
+  }
+
+  return manifest.skills.map((skill) => ({
+    id: skill.id,
+    name: skill.name,
+    version: skill.version,
+    package_path: skill.package_path,
+    installed_at: skill.installed_at
+  }))
+}
 
 export const checkEnvironment = async (
   dependencies: EnvironmentCheckDependencies = {}
@@ -267,6 +290,7 @@ export const checkEnvironment = async (
   const findCommand = dependencies.findVersionCommand ?? findVersionCommand
   const runtimeWritableCheck = dependencies.checkRuntimeWritable ?? checkRuntimeWritable
   const skillPackageReadyCheck = dependencies.checkSkillPackageReady ?? checkSkillPackageReady
+  const syncedSkillsReader = dependencies.readSyncedSkills ?? readSyncedSkills
 
   try {
     const runtimePaths = await loadRuntimePaths()
@@ -294,6 +318,7 @@ export const checkEnvironment = async (
       findCommand('svn', ['--version', '--quiet']),
       skillPackageReadyCheck(runtimePaths.skillManifestPath)
     ])
+    const syncedSkills = skillOk ? await syncedSkillsReader(runtimePaths.skillManifestPath) : []
 
     return {
       status: classifyEnvironment({
@@ -304,7 +329,8 @@ export const checkEnvironment = async (
       codexVersion: codexResult.output,
       svnVersion: svnResult.output,
       codexPath: codexResult.path,
-      svnPath: svnResult.path
+      svnPath: svnResult.path,
+      skills: syncedSkills
     }
   } catch (error) {
     return {

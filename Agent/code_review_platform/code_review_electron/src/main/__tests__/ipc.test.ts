@@ -603,11 +603,42 @@ describe('registerIpcHandlers', () => {
       ([channel]) => channel === 'environment:check'
     )?.[1]
 
-    await expect(environmentHandler()).resolves.toEqual({ status: 'ready' })
+    await expect(environmentHandler()).resolves.toMatchObject({
+      status: 'ready',
+      skills: [expect.objectContaining({ id: 'skill-1' })]
+    })
     expect(syncSkill).toHaveBeenCalledWith('token-123')
     expect(syncSkill).toHaveBeenCalledTimes(1)
     expect(checkEnvironment).toHaveBeenCalledTimes(2)
     expect(calls).toEqual(['checkEnvironment:first', 'syncSkill', 'checkEnvironment:second'])
+  })
+
+  it('reports missing Skill when syncing active Skills fails even if stale local Skill exists', async () => {
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const syncSkill = vi.fn(async () => {
+      throw new Error('No active skill is configured')
+    })
+    const checkEnvironment = vi.fn(async () => ({ status: 'ready' as const }))
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      authStore: authStore as never,
+      syncSkill,
+      checkEnvironment
+    })
+
+    const environmentHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'environment:check'
+    )?.[1]
+
+    await expect(environmentHandler()).resolves.toEqual({
+      status: 'missing_skill',
+      skillError: 'No active skill is configured',
+      skills: []
+    })
   })
 
   it('notifies the renderer when environment check starts installing the active skill', async () => {
@@ -738,7 +769,10 @@ describe('registerIpcHandlers', () => {
 
     const installHandler = handleMock.mock.calls.find(([channel]) => channel === 'skill:install')?.[1]
 
-    await expect(installHandler()).resolves.toEqual({ status: 'ready' })
+    await expect(installHandler()).resolves.toMatchObject({
+      status: 'ready',
+      skills: [expect.objectContaining({ id: 'skill-1' })]
+    })
     expect(syncSkill).toHaveBeenCalledWith('token-123')
     expect(checkEnvironment).toHaveBeenCalled()
   })
@@ -762,7 +796,8 @@ describe('registerIpcHandlers', () => {
 
     await expect(installHandler()).resolves.toEqual({
       status: 'missing_skill',
-      skillError: '请先登录后安装 Skill'
+      skillError: '请先登录后安装 Skill',
+      skills: []
     })
     expect(syncSkill).not.toHaveBeenCalled()
     expect(checkEnvironment).toHaveBeenCalled()
@@ -791,7 +826,8 @@ describe('registerIpcHandlers', () => {
 
     await expect(environmentHandler()).resolves.toEqual({
       status: 'missing_skill',
-      skillError: 'No active skill'
+      skillError: 'No active skill',
+      skills: []
     })
     expect(checkEnvironment).toHaveBeenCalled()
   })
@@ -818,8 +854,9 @@ describe('registerIpcHandlers', () => {
     )?.[1]
 
     await expect(environmentHandler()).resolves.toEqual({
-      status: 'ready',
-      skillError: 'No active skill'
+      status: 'missing_skill',
+      skillError: 'No active skill',
+      skills: []
     })
   })
 

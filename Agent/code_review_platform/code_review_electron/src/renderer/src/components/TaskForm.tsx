@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 
 import {
   DEFAULT_REVIEW_TEMPLATE_KEY,
@@ -10,15 +10,36 @@ import type { ExecuteTaskRequest } from '../code-review-api'
 
 type TaskFormProps = {
   disabled: boolean
+  activeSkillNames?: string[]
   onSubmit: (payload: ExecuteTaskRequest) => Promise<void>
 }
 
-export function TaskForm({ disabled, onSubmit }: TaskFormProps): React.JSX.Element {
+export function TaskForm({ disabled, activeSkillNames, onSubmit }: TaskFormProps): React.JSX.Element {
   const [svnUrl, setSvnUrl] = useState('')
   const [oldRevision, setOldRevision] = useState('')
   const [newRevision, setNewRevision] = useState('')
   const [templateKey, setTemplateKey] = useState<ReviewTemplateKey>(DEFAULT_REVIEW_TEMPLATE_KEY)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const activeSkillNameSet = useMemo(
+    () => (activeSkillNames ? new Set(activeSkillNames) : null),
+    [activeSkillNames]
+  )
+  const selectedTemplate = resolveReviewTemplate(templateKey)
+  const selectedTemplateAvailable =
+    !activeSkillNameSet || activeSkillNameSet.has(selectedTemplate.skillName)
+
+  useEffect(() => {
+    if (!activeSkillNameSet || activeSkillNameSet.has(selectedTemplate.skillName)) {
+      return
+    }
+
+    const firstAvailableTemplate = REVIEW_TEMPLATES.find((template) =>
+      activeSkillNameSet.has(template.skillName)
+    )
+    if (firstAvailableTemplate) {
+      setTemplateKey(firstAvailableTemplate.key)
+    }
+  }, [activeSkillNameSet, selectedTemplate.skillName])
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
@@ -26,6 +47,10 @@ export function TaskForm({ disabled, onSubmit }: TaskFormProps): React.JSX.Eleme
 
     try {
       const template = resolveReviewTemplate(templateKey)
+      if (activeSkillNameSet && !activeSkillNameSet.has(template.skillName)) {
+        return
+      }
+
       await onSubmit({
         svn_url: svnUrl.trim(),
         old_revision: oldRevision.trim(),
@@ -80,6 +105,7 @@ export function TaskForm({ disabled, onSubmit }: TaskFormProps): React.JSX.Eleme
                 type="radio"
                 name="review-template"
                 value={template.key}
+                disabled={Boolean(activeSkillNameSet && !activeSkillNameSet.has(template.skillName))}
                 checked={templateKey === template.key}
                 onChange={() => setTemplateKey(template.key)}
               />
@@ -89,7 +115,11 @@ export function TaskForm({ disabled, onSubmit }: TaskFormProps): React.JSX.Eleme
         </div>
       </fieldset>
 
-      <button className="primary-button" type="submit" disabled={disabled || isSubmitting}>
+      <button
+        className="primary-button"
+        type="submit"
+        disabled={disabled || isSubmitting || !selectedTemplateAvailable}
+      >
         {isSubmitting ? '审查中...' : '开始审查'}
       </button>
     </form>

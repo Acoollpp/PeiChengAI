@@ -352,6 +352,53 @@ describe('SkillSyncService', () => {
     expect(manifest.skills).toEqual([expect.objectContaining({ id: 'skill-1' })])
   })
 
+  it('deletes every local manifest entry when the server has no active Skills', async () => {
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'skill-sync-runtime-'))
+    tempDirs.push(runtimeRoot)
+    const runtimePaths = runtimePathsFor(runtimeRoot)
+    await mkdir(runtimePaths.skillPackagesDir, { recursive: true })
+    const stalePackagePath = join(runtimePaths.skillPackagesDir, 'stale.zip')
+    await writeFile(stalePackagePath, 'stale zip bytes')
+    await writeFile(
+      runtimePaths.skillManifestPath,
+      JSON.stringify({
+        skills: [
+          {
+            id: 'skill-1',
+            name: '通用-代码变更审查-模板一',
+            version: '2026.05.29',
+            content_hash: 'hash-1',
+            package_path: stalePackagePath,
+            installed_at: '2026-05-29T10:00:00.000Z'
+          }
+        ]
+      })
+    )
+    const deleteSkill = vi.fn()
+    const api = {
+      getActiveSkills: vi.fn(async () => ({
+        data: [],
+        count: 0
+      })),
+      downloadSkill: vi.fn()
+    }
+    const service = new SkillSyncService(api, {
+      runtimePaths,
+      deleteSkill
+    })
+
+    await expect(service.sync('token-123')).rejects.toThrow('No active skill is configured')
+
+    expect(deleteSkill).toHaveBeenCalledWith({
+      skillId: 'skill-1',
+      skillName: '通用-代码变更审查-模板一',
+      version: '2026.05.29'
+    })
+    await expect(readFile(runtimePaths.skillManifestPath, 'utf8')).resolves.toBe(
+      `${JSON.stringify({ skills: [] }, null, 2)}\n`
+    )
+  })
+
   it('rejects instead of deleting a stale legacy manifest entry without a Skill name', async () => {
     const runtimeRoot = await mkdtemp(join(tmpdir(), 'skill-sync-runtime-'))
     tempDirs.push(runtimeRoot)

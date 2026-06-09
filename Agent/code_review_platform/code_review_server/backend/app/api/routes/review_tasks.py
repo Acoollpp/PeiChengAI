@@ -23,6 +23,7 @@ from app.models import (
 from app.services import report_service
 
 router = APIRouter(prefix="/review-tasks", tags=["review-tasks"])
+REVIEW_REPORT_FILE_NAME = "代码审查报告.md"
 
 _REVISION_RE = re.compile(r"^r?(\d+)$")
 
@@ -303,5 +304,5 @@ def download_review_task_report(
     return FileResponse(
         report_path,
         media_type="text/markdown",
-        filename=f"review-task-{task.id}.md",
+        filename=REVIEW_REPORT_FILE_NAME,
     )

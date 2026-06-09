@@ -13,6 +13,14 @@ export interface EnvironmentProgressEvent {
   stage: EnvironmentProgressStage
 }
 
+export interface SyncedSkill {
+  id: string
+  name: string
+  version: string
+  package_path: string
+  installed_at: string
+}
+
 export type ReviewTaskStatus =
   | 'created'
   | 'checking_environment'

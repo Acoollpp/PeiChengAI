@@ -67,11 +67,6 @@ export class SkillSyncService {
 
   async sync(token: string): Promise<SkillSyncResult> {
     const activeSkills = (await this.api.getActiveSkills(token)).data
-
-    if (activeSkills.length === 0) {
-      throw new Error('No active skill is configured')
-    }
-
     const currentManifest = await this.readManifest()
     const currentEntries = currentManifest?.skills ?? []
     const nextEntries: SkillManifestEntry[] = []
@@ -91,6 +86,11 @@ export class SkillSyncService {
         version: staleEntry.version
       })
       didChange = true
+    }
+
+    if (activeSkills.length === 0) {
+      await this.writeManifest({ skills: [] })
+      throw new Error('No active skill is configured')
     }
 
     for (const activeSkill of activeSkills) {

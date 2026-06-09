@@ -4,6 +4,7 @@ import type {
   EnvironmentStatus,
   ReviewTask,
   ReviewTaskStatus,
+  SyncedSkill,
   TaskProgressEvent
 } from '../../shared/types'
 
@@ -50,6 +51,7 @@ export interface EnvironmentCheckResult {
   codexError?: string
   svnError?: string
   skillError?: string
+  skills?: SyncedSkill[]
 }
 
 export interface ExecuteTaskResult {

@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import unquote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -164,6 +165,32 @@ def test_upload_and_read_review_task_report(
     assert read_response.status_code == 200
     assert read_response.headers["content-type"].startswith("text/markdown")
     assert read_response.text == "# Review\n\nLooks good.\n"
+
+
+def test_download_review_task_report_uses_chinese_report_filename(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers, old_revision="10")
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        files={"upload": ("report.md", b"# Review\n", "text/markdown")},
+    )
+    assert upload_response.status_code == 200
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/download",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/markdown")
+    assert "代码审查报告.md" in unquote(response.headers["content-disposition"])
+    assert response.content == b"# Review\n"
 
 
 def test_delete_review_task_removes_task_row(
