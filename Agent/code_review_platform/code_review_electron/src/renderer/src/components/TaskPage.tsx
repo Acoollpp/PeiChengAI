@@ -91,6 +91,8 @@ export function TaskPage({
       svn_url: payload.svn_url,
       old_revision: payload.old_revision,
       new_revision: payload.new_revision,
+      template_key: payload.template_key,
+      skill_name: payload.skill_name,
       status: 'created'
     }
 
@@ -113,6 +115,8 @@ export function TaskPage({
                 ...task,
                 id: result.taskId,
                 status: result.status,
+                template_key: payload.template_key,
+                skill_name: payload.skill_name,
                 report_path: result.reportPath,
                 progress_message: result.status === 'success' ? '审查完成' : task.progress_message
               }

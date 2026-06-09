@@ -1,5 +1,11 @@
 import { FormEvent, useState } from 'react'
 
+import {
+  DEFAULT_REVIEW_TEMPLATE_KEY,
+  REVIEW_TEMPLATES,
+  resolveReviewTemplate,
+  type ReviewTemplateKey
+} from '../../../shared/review-templates'
 import type { ExecuteTaskRequest } from '../code-review-api'
 
 type TaskFormProps = {
@@ -11,6 +17,7 @@ export function TaskForm({ disabled, onSubmit }: TaskFormProps): React.JSX.Eleme
   const [svnUrl, setSvnUrl] = useState('')
   const [oldRevision, setOldRevision] = useState('')
   const [newRevision, setNewRevision] = useState('')
+  const [templateKey, setTemplateKey] = useState<ReviewTemplateKey>(DEFAULT_REVIEW_TEMPLATE_KEY)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -18,10 +25,13 @@ export function TaskForm({ disabled, onSubmit }: TaskFormProps): React.JSX.Eleme
     setIsSubmitting(true)
 
     try {
+      const template = resolveReviewTemplate(templateKey)
       await onSubmit({
         svn_url: svnUrl.trim(),
         old_revision: oldRevision.trim(),
-        new_revision: newRevision.trim()
+        new_revision: newRevision.trim(),
+        template_key: template.key,
+        skill_name: template.skillName
       })
     } finally {
       setIsSubmitting(false)
@@ -60,6 +70,24 @@ export function TaskForm({ disabled, onSubmit }: TaskFormProps): React.JSX.Eleme
           />
         </label>
       </div>
+
+      <fieldset className="template-choice">
+        <legend>审查模板</legend>
+        <div className="template-options">
+          {REVIEW_TEMPLATES.map((template) => (
+            <label className="template-option" key={template.key}>
+              <input
+                type="radio"
+                name="review-template"
+                value={template.key}
+                checked={templateKey === template.key}
+                onChange={() => setTemplateKey(template.key)}
+              />
+              <span>{template.label}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       <button className="primary-button" type="submit" disabled={disabled || isSubmitting}>
         {isSubmitting ? '审查中...' : '开始审查'}

@@ -40,6 +40,46 @@ afterEach(() => {
 })
 
 describe('TaskPage', () => {
+  it('提交任务时 executeTask payload 包含默认模板字段', async () => {
+    const user = userEvent.setup()
+    window.codeReview.executeTask = vi.fn(async () => ({
+      taskId: 'task-1',
+      status: 'success' as const,
+      reportMarkdown: '# 审查报告',
+      reportPath: '/tmp/report.md'
+    }))
+
+    render(
+      <TaskPage
+        environment={{ status: 'ready', codexVersion: 'codex-cli 0.130.0', svnVersion: '1.14.5' }}
+        isCheckingEnvironment={false}
+        isInstallingSkillDuringCheck={false}
+        isInstallingCodex={false}
+        isInstallingSvn={false}
+        svnUsername="Key 用户"
+        onRefreshEnvironment={vi.fn()}
+        onInstallCodex={vi.fn()}
+        onInstallSvn={vi.fn()}
+        onInstallSkill={vi.fn()}
+      />
+    )
+
+    await user.type(screen.getByLabelText('SVN 地址'), 'svn://repo/project')
+    await user.type(screen.getByLabelText('旧版本号'), '12')
+    await user.type(screen.getByLabelText('新版本号'), '14')
+    await user.click(screen.getByRole('button', { name: '开始审查' }))
+
+    expect(window.codeReview.executeTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        svn_url: 'svn://repo/project',
+        old_revision: '12',
+        new_revision: '14',
+        template_key: 'template_1',
+        skill_name: '通用-代码变更审查-模板一'
+      })
+    )
+  })
+
   it('在工作台顶部打开提交意见弹窗', async () => {
     const user = userEvent.setup()
 
