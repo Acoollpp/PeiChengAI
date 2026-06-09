@@ -4,6 +4,12 @@ const MAX_SCREENSHOT_SIZE = 5 * 1024 * 1024
 const MAX_SCREENSHOTS = 5
 const ACCEPTED_SCREENSHOT_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 
+type ScreenshotItem = {
+  id: string
+  file: File
+  previewUrl: string
+}
+
 type SubmitFeedbackDialogProps = {
   open: boolean
   onClose: () => void
@@ -14,11 +20,12 @@ export function SubmitFeedbackDialog({
   onClose
 }: SubmitFeedbackDialogProps): React.JSX.Element | null {
   const [description, setDescription] = useState('')
-  const [screenshots, setScreenshots] = useState<File[]>([])
-  const [previewUrls, setPreviewUrls] = useState<string[]>([])
+  const [screenshots, setScreenshots] = useState<ScreenshotItem[]>([])
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const screenshotsRef = useRef<ScreenshotItem[]>([])
+  const nextScreenshotIdRef = useRef(0)
 
   useEffect(() => {
     if (!open) {
@@ -26,19 +33,7 @@ export function SubmitFeedbackDialog({
     }
   }, [open])
 
-  useEffect(() => {
-    if (screenshots.length === 0 || !URL.createObjectURL) {
-      setPreviewUrls([])
-      return
-    }
-
-    const objectUrls = screenshots.map((screenshot) => URL.createObjectURL(screenshot))
-    setPreviewUrls(objectUrls)
-
-    return () => {
-      objectUrls.forEach((objectUrl) => URL.revokeObjectURL?.(objectUrl))
-    }
-  }, [screenshots])
+  useEffect(() => () => revokeScreenshots(screenshotsRef.current), [])
 
   function resetFileInput(): void {
     if (fileInputRef.current) {
@@ -47,11 +42,17 @@ export function SubmitFeedbackDialog({
   }
 
   function resetForm(): void {
+    revokeScreenshots(screenshotsRef.current)
     setDescription('')
-    setScreenshots([])
+    updateScreenshots([])
     setError('')
     setIsSubmitting(false)
     resetFileInput()
+  }
+
+  function updateScreenshots(nextScreenshots: ScreenshotItem[]): void {
+    screenshotsRef.current = nextScreenshots
+    setScreenshots(nextScreenshots)
   }
 
   const handleClose = (): void => {
@@ -75,31 +76,37 @@ export function SubmitFeedbackDialog({
     return ''
   }
 
+  const createScreenshotItem = (file: File): ScreenshotItem => {
+    nextScreenshotIdRef.current += 1
+    return {
+      id: `screenshot-${nextScreenshotIdRef.current}`,
+      file,
+      previewUrl: URL.createObjectURL?.(file) ?? ''
+    }
+  }
+
   const addScreenshots = (selectedFiles: File[]): void => {
     if (selectedFiles.length === 0) {
       return
     }
 
-    const validationError = selectedFiles.map(validateScreenshot).find(Boolean)
-    if (validationError) {
+    const availableSlots = MAX_SCREENSHOTS - screenshotsRef.current.length
+    if (availableSlots <= 0) {
+      setError(`最多只能添加 ${MAX_SCREENSHOTS} 张截图`)
       resetFileInput()
-      setError(validationError)
       return
     }
 
-    setScreenshots((currentScreenshots) => {
-      const availableSlots = MAX_SCREENSHOTS - currentScreenshots.length
-      if (availableSlots <= 0) {
-        setError(`最多只能添加 ${MAX_SCREENSHOTS} 张截图`)
-        return currentScreenshots
-      }
+    const acceptedFiles = selectedFiles.slice(0, availableSlots)
+    const validationError = acceptedFiles.map(validateScreenshot).find(Boolean)
+    if (validationError) {
+      setError(validationError)
+      resetFileInput()
+      return
+    }
 
-      const acceptedFiles = selectedFiles.slice(0, availableSlots)
-      setError(
-        acceptedFiles.length < selectedFiles.length ? `最多只能添加 ${MAX_SCREENSHOTS} 张截图` : ''
-      )
-      return [...currentScreenshots, ...acceptedFiles]
-    })
+    updateScreenshots([...screenshotsRef.current, ...acceptedFiles.map(createScreenshotItem)])
+    setError(acceptedFiles.length < selectedFiles.length ? `最多只能添加 ${MAX_SCREENSHOTS} 张截图` : '')
     resetFileInput()
   }
 
@@ -116,9 +123,12 @@ export function SubmitFeedbackDialog({
   }
 
   const handleRemoveScreenshot = (indexToRemove: number): void => {
-    setScreenshots((currentScreenshots) =>
-      currentScreenshots.filter((_screenshot, index) => index !== indexToRemove)
-    )
+    const removedScreenshot = screenshotsRef.current[indexToRemove]
+    if (removedScreenshot) {
+      URL.revokeObjectURL?.(removedScreenshot.previewUrl)
+    }
+
+    updateScreenshots(screenshotsRef.current.filter((_screenshot, index) => index !== indexToRemove))
     setError('')
     resetFileInput()
   }
@@ -138,7 +148,7 @@ export function SubmitFeedbackDialog({
     try {
       await window.codeReview.submitFeedback({
         description: normalizedDescription,
-        screenshots
+        screenshots: screenshots.map((screenshot) => screenshot.file)
       })
       handleClose()
     } catch (submitError) {
@@ -187,16 +197,18 @@ export function SubmitFeedbackDialog({
           {screenshots.length > 0 && (
             <div className="feedback-screenshot-grid" aria-label="已选择截图">
               {screenshots.map((screenshot, index) => (
-                <div className="feedback-screenshot-preview" key={`${screenshot.name}-${screenshot.size}-${index}`}>
-                  {previewUrls[index] && <img src={previewUrls[index]} alt={`${screenshot.name} 预览`} />}
+                <div className="feedback-screenshot-preview" key={screenshot.id}>
+                  {screenshot.previewUrl && (
+                    <img src={screenshot.previewUrl} alt={`${screenshot.file.name} 预览`} />
+                  )}
                   <div className="feedback-screenshot-meta">
-                    <strong title={screenshot.name}>{screenshot.name}</strong>
-                    <span>{formatFileSize(screenshot.size)}</span>
+                    <strong title={screenshot.file.name}>{screenshot.file.name}</strong>
+                    <span>{formatFileSize(screenshot.file.size)}</span>
                   </div>
                   <button
                     className="ghost-button"
                     type="button"
-                    aria-label={`移除 ${screenshot.name}`}
+                    aria-label={`移除 ${screenshot.file.name}`}
                     onClick={() => handleRemoveScreenshot(index)}
                   >
                     移除
@@ -228,4 +240,10 @@ const formatFileSize = (size: number): string => {
   }
 
   return `${(size / 1024 / 1024).toFixed(1)}MB`
+}
+
+const revokeScreenshots = (screenshots: ScreenshotItem[]): void => {
+  screenshots.forEach((screenshot) => {
+    URL.revokeObjectURL?.(screenshot.previewUrl)
+  })
 }

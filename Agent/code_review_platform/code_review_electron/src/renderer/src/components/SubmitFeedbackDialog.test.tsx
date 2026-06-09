@@ -162,6 +162,25 @@ describe('SubmitFeedbackDialog', () => {
     expect(screen.queryByText('feedback-6.png')).not.toBeInTheDocument()
   })
 
+  it('一次选择 6 张且第 6 张非法时保留前 5 张合法截图', async () => {
+    const user = userEvent.setup({ applyAccept: false })
+    const validFiles = Array.from(
+      { length: 5 },
+      (_, index) => new File([`image-${index}`], `valid-${index + 1}.png`, { type: 'image/png' })
+    )
+    const invalidFile = new File(['plain text'], 'invalid.txt', { type: 'text/plain' })
+
+    render(<SubmitFeedbackDialog open={true} onClose={vi.fn()} />)
+
+    await user.upload(screen.getByLabelText('选择截图'), [...validFiles, invalidFile])
+
+    expect(await screen.findByText('最多只能添加 5 张截图')).toBeInTheDocument()
+    expect(screen.getByText('valid-1.png')).toBeInTheDocument()
+    expect(screen.getByText('valid-5.png')).toBeInTheDocument()
+    expect(screen.queryByText('invalid.txt')).not.toBeInTheDocument()
+    expect(screen.queryByText('仅支持 PNG、JPG 或 WEBP 截图')).not.toBeInTheDocument()
+  })
+
   it('支持移除单张截图', async () => {
     const user = userEvent.setup()
     const files = [
@@ -177,6 +196,31 @@ describe('SubmitFeedbackDialog', () => {
     expect(screen.queryByText('feedback-1.png')).not.toBeInTheDocument()
     expect(screen.getByText('feedback-2.png')).toBeInTheDocument()
     expect(revokeObjectURLMock).toHaveBeenCalledWith('blob:feedback-screenshot-1')
+  })
+
+  it('移除第一张和中间截图后剩余截图预览 URL 与文件名仍对应', async () => {
+    const user = userEvent.setup()
+    const files = [
+      new File(['image-1'], 'feedback-1.png', { type: 'image/png' }),
+      new File(['image-2'], 'feedback-2.png', { type: 'image/png' }),
+      new File(['image-3'], 'feedback-3.png', { type: 'image/png' }),
+      new File(['image-4'], 'feedback-4.png', { type: 'image/png' })
+    ]
+
+    render(<SubmitFeedbackDialog open={true} onClose={vi.fn()} />)
+
+    await user.upload(screen.getByLabelText('选择截图'), files)
+    await user.click(screen.getByRole('button', { name: '移除 feedback-1.png' }))
+    await user.click(screen.getByRole('button', { name: '移除 feedback-3.png' }))
+
+    expect(screen.queryByText('feedback-1.png')).not.toBeInTheDocument()
+    expect(screen.queryByText('feedback-3.png')).not.toBeInTheDocument()
+    expect(screen.getByAltText('feedback-2.png 预览')).toHaveAttribute('src', 'blob:feedback-screenshot-2')
+    expect(screen.getByAltText('feedback-4.png 预览')).toHaveAttribute('src', 'blob:feedback-screenshot-4')
+    expect(revokeObjectURLMock).toHaveBeenCalledWith('blob:feedback-screenshot-1')
+    expect(revokeObjectURLMock).toHaveBeenCalledWith('blob:feedback-screenshot-3')
+    expect(revokeObjectURLMock).not.toHaveBeenCalledWith('blob:feedback-screenshot-2')
+    expect(revokeObjectURLMock).not.toHaveBeenCalledWith('blob:feedback-screenshot-4')
   })
 
   it('关闭弹窗时释放截图预览并清空表单状态', async () => {
