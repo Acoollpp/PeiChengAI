@@ -688,11 +688,7 @@ def test_admin_task_stats_include_all_nonzero_report_counts_by_user(
     )
 
     assert response.status_code == 200
-    reports_by_user = [
-        user_stat
-        for user_stat in response.json()["reports_by_user"]
-        if user_stat["user_name"].startswith("报告用户 ")
-    ]
+    reports_by_user = response.json()["reports_by_user"]
     assert len(reports_by_user) == 21
     assert reports_by_user[0] == {
         "user_name": "报告用户 20",
