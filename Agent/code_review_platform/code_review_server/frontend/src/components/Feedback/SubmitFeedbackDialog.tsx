@@ -154,26 +154,29 @@ export function SubmitFeedbackDialog({
       return
     }
 
-    setScreenshots((current) => {
-      const next = [...current]
+    const nextScreenshots = [...screenshots]
+    const errors: string[] = []
 
-      for (const file of files) {
-        if (next.length >= MAX_SCREENSHOT_COUNT) {
-          showErrorToast("最多只能上传 5 张截图")
-          break
-        }
-
-        const error = validateScreenshot(file)
-        if (error) {
-          showErrorToast(error)
-          continue
-        }
-
-        next.push(file)
+    for (const file of files) {
+      if (nextScreenshots.length >= MAX_SCREENSHOT_COUNT) {
+        errors.push("最多只能上传 5 张截图")
+        break
       }
 
-      return next
-    })
+      const error = validateScreenshot(file)
+      if (error) {
+        errors.push(error)
+        continue
+      }
+
+      nextScreenshots.push(file)
+    }
+
+    for (const error of errors) {
+      showErrorToast(error)
+    }
+
+    setScreenshots(nextScreenshots)
   }
 
   const removeScreenshot = (index: number) => {

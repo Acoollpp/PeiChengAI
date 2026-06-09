@@ -1,6 +1,4 @@
 import { writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { expect, test } from "@playwright/test"
 import { testApiKey, testSvnPassword } from "./config.ts"
 import { createUser, uniqueSvnUsername } from "./utils/privateApi"
@@ -61,11 +59,10 @@ const feedbackList = {
 test.describe("意见管理", () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
-  test("普通用户可以进入意见管理并提交意见", async ({ page }) => {
+  test("普通用户可以进入意见管理并提交意见", async ({ page }, testInfo) => {
     const svnUsername = uniqueSvnUsername()
-    const uploadDir = tmpdir()
-    const firstScreenshotPath = join(uploadDir, `feedback-${Date.now()}-1.png`)
-    const secondScreenshotPath = join(uploadDir, `feedback-${Date.now()}-2.png`)
+    const firstScreenshotPath = testInfo.outputPath("feedback-1.png")
+    const secondScreenshotPath = testInfo.outputPath("feedback-2.png")
     const pngBuffer = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8z8BQDwAFgwJ/lWfJxQAAAABJRU5ErkJggg==",
       "base64",
