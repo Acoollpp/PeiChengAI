@@ -21,7 +21,8 @@ const runtimePathsFor = (runtimeRoot: string) => ({
   skillManifestPath: join(runtimeRoot, 'skill-packages', 'manifest.json'),
   workspacesDir: join(runtimeRoot, 'workspaces'),
   workspaceForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId),
-  reportPathForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'report.md')
+  reportPathForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'report.md'),
+  imagesDirForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'images')
 })
 
 describe('SkillSyncService', () => {

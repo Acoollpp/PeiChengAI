@@ -21,7 +21,7 @@ export interface ExecuteReviewTaskInput {
 export interface PreparedWorkspace {
   cwd: string
   reportPath: string
-  imagesDir?: string
+  imagesDir: string
 }
 
 export interface RunCodexInput {
@@ -91,7 +91,7 @@ const toReviewTask = (value: unknown): ReviewTask => {
 export const defaultPrepareWorkspace = async (taskId: string): Promise<PreparedWorkspace> => {
   const runtimePaths = await getRuntimePaths()
   const cwd = runtimePaths.workspaceForTask(taskId)
-  const imagesDir = runtimePaths.imagesDirForTask?.(taskId) ?? `${cwd}/images`
+  const imagesDir = runtimePaths.imagesDirForTask(taskId)
 
   await mkdir(cwd, { recursive: true })
   await mkdir(imagesDir, { recursive: true })
@@ -169,7 +169,6 @@ export const executeReviewTask = async (
 
     emitStage(onProgress, task.id, 'preparing_workspace', '准备任务工作区')
     const workspace = await dependencies.prepareWorkspace(task.id)
-    const imagesDir = workspace.imagesDir ?? `${workspace.cwd}/images`
 
     emitStage(onProgress, task.id, 'running_codex', '启动 Codex 执行审查 Skill')
     await updateStatus(dependencies, input.token, task.id, {
@@ -178,7 +177,6 @@ export const executeReviewTask = async (
 
     await dependencies.runCodex({
       ...workspace,
-      imagesDir,
       skillName,
       task,
       onProgress

@@ -1,4 +1,5 @@
 import type { ReviewTemplateKey } from '../shared/review-templates'
+import { REVIEW_REPORT_FILE_NAME } from '../shared/report-artifacts'
 import type { ReviewTask } from '../shared/types'
 
 export interface TokenPair {
@@ -232,7 +233,7 @@ export class ApiClient {
     const body = new FormData()
     body.set(
       'upload',
-      new File([payload.report_content], payload.report_name ?? '代码审查报告.md', {
+      new File([payload.report_content], payload.report_name ?? REVIEW_REPORT_FILE_NAME, {
         type: 'text/markdown'
       })
     )

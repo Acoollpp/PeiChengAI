@@ -67,7 +67,8 @@ describe('checkEnvironment', () => {
       skillManifestPath: '/tmp/code-review-runtime/skill-packages/manifest.json',
       workspacesDir: '/tmp/code-review-runtime/workspaces',
       workspaceForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}`,
-      reportPathForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}/report.md`
+      reportPathForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}/report.md`,
+      imagesDirForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}/images`
     }))
     const { checkEnvironment } = await import('../environment-checker')
 
@@ -103,7 +104,8 @@ describe('checkEnvironment', () => {
       skillManifestPath: '/tmp/code-review-runtime/skill-packages/manifest.json',
       workspacesDir: '/tmp/code-review-runtime/workspaces',
       workspaceForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}`,
-      reportPathForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}/report.md`
+      reportPathForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}/report.md`,
+      imagesDirForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}/images`
     }))
     const { checkEnvironment } = await import('../environment-checker')
 

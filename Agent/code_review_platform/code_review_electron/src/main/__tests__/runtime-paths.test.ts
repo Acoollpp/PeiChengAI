@@ -37,7 +37,7 @@ describe('runtime paths', () => {
     expect(paths.reportPathForTask('task-1')).toBe(
       'D:\\SoftWare\\code-review-electron-data\\workspaces\\task-1\\代码审查报告.md'
     )
-    expect(paths.imagesDirForTask?.('task-1')).toBe(
+    expect(paths.imagesDirForTask('task-1')).toBe(
       'D:\\SoftWare\\code-review-electron-data\\workspaces\\task-1\\images'
     )
   })
@@ -57,7 +57,7 @@ describe('runtime paths', () => {
     expect(paths.workspaceForTask('task-2')).toBe(
       join('D:\\repo\\code_review_electron', '.runtime-data', 'workspaces', 'task-2')
     )
-    expect(paths.imagesDirForTask?.('task-2')).toBe(
+    expect(paths.imagesDirForTask('task-2')).toBe(
       join('D:\\repo\\code_review_electron', '.runtime-data', 'workspaces', 'task-2', 'images')
     )
   })

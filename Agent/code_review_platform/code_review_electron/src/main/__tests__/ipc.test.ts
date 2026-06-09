@@ -242,13 +242,14 @@ describe('registerIpcHandlers', () => {
     const cwd = await mkdtemp(join(tmpdir(), 'ipc-report-'))
     tempDirs.push(cwd)
     const reportPath = join(cwd, 'report.md')
+    const imagesDir = join(cwd, 'images')
     const { registerIpcHandlers } = await import('../ipc')
 
     registerIpcHandlers({
       api: api as never,
       authStore: authStore as never,
       checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
-      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
       runCodex: vi.fn(async () => {
         await writeFile(reportPath, '# latest report\n')
       })
@@ -298,7 +299,8 @@ describe('registerIpcHandlers', () => {
         skillManifestPath: join(runtimeRoot, 'skill-packages', 'manifest.json'),
         workspacesDir: join(runtimeRoot, 'workspaces'),
         workspaceForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId),
-        reportPathForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'report.md')
+        reportPathForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'report.md'),
+        imagesDirForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'images')
       }
     })
 

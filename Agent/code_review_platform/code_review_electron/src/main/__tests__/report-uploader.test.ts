@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { REVIEW_REPORT_FILE_NAME, ensureReportReady, uploadReportFile } from '../report-uploader'
+import { ensureReportReady, uploadReportFile } from '../report-uploader'
+import { REVIEW_REPORT_FILE_NAME } from '../../shared/report-artifacts'
 
 describe('report uploader', () => {
   let tempDirs: string[] = []

@@ -1,5 +1,7 @@
 import path from 'node:path'
 
+import { REVIEW_REPORT_FILE_NAME, REVIEW_REPORT_IMAGES_DIR_NAME } from '../shared/report-artifacts'
+
 export interface RuntimePaths {
   runtimeRoot: string
   skillPackagesDir: string
@@ -7,7 +9,7 @@ export interface RuntimePaths {
   workspacesDir: string
   workspaceForTask(taskId: string): string
   reportPathForTask(taskId: string): string
-  imagesDirForTask?: (taskId: string) => string
+  imagesDirForTask(taskId: string): string
 }
 
 export const RUNTIME_DATA_DIR = 'runtime-data'
@@ -30,8 +32,8 @@ export const getRuntimePaths = async (): Promise<RuntimePaths> => {
     skillManifestPath: pathApi.join(skillPackagesDir, 'manifest.json'),
     workspacesDir,
     workspaceForTask: (taskId: string) => pathApi.join(workspacesDir, taskId),
-    reportPathForTask: (taskId: string) => pathApi.join(workspacesDir, taskId, '代码审查报告.md'),
-    imagesDirForTask: (taskId: string) => pathApi.join(workspacesDir, taskId, 'images')
+    reportPathForTask: (taskId: string) => pathApi.join(workspacesDir, taskId, REVIEW_REPORT_FILE_NAME),
+    imagesDirForTask: (taskId: string) => pathApi.join(workspacesDir, taskId, REVIEW_REPORT_IMAGES_DIR_NAME)
   }
 }
 
