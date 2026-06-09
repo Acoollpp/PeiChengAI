@@ -12,6 +12,11 @@ export type Body_review_tasks_upload_review_task_report = {
     upload: (Blob | File);
 };
 
+export type Body_feedback_create_feedback = {
+    description: string;
+    screenshot?: (Blob | File | null);
+};
+
 export type Body_skills_upload_skill = {
     name: string;
     version: string;
@@ -32,6 +37,32 @@ export type CchSyncResultPublic = {
 
 export type HTTPValidationError = {
     detail?: Array<ValidationError>;
+};
+
+export type FeedbackPublic = {
+    id: string;
+    user_id: string;
+    user_name?: (string | null);
+    svn_username?: (string | null);
+    description: string;
+    has_screenshot?: boolean;
+    screenshot_name?: (string | null);
+    screenshot_content_type?: (string | null);
+    screenshot_size?: (number | null);
+    status: FeedbackStatus;
+    created_at?: (string | null);
+    updated_at?: (string | null);
+};
+
+export type FeedbacksPublic = {
+    data: Array<FeedbackPublic>;
+    count: number;
+};
+
+export type FeedbackStatus = 'pending' | 'processing' | 'resolved';
+
+export type FeedbackStatusUpdate = {
+    status: FeedbackStatus;
 };
 
 export type ItemCreate = {
@@ -201,6 +232,41 @@ export type CredentialsUpdateMySvnCredentialData = {
 };
 
 export type CredentialsUpdateMySvnCredentialResponse = (SvnCredentialPublic);
+
+export type FeedbackCreateFeedbackData = {
+    formData: Body_feedback_create_feedback;
+};
+
+export type FeedbackCreateFeedbackResponse = (FeedbackPublic);
+
+export type FeedbackReadFeedbackData = {
+    limit?: number;
+    skip?: number;
+    status?: (FeedbackStatus | null);
+    svnUsername?: (string | null);
+    userName?: (string | null);
+};
+
+export type FeedbackReadFeedbackResponse = (FeedbacksPublic);
+
+export type FeedbackReadFeedbackByIdData = {
+    feedbackId: string;
+};
+
+export type FeedbackReadFeedbackByIdResponse = (FeedbackPublic);
+
+export type FeedbackReadFeedbackScreenshotData = {
+    feedbackId: string;
+};
+
+export type FeedbackReadFeedbackScreenshotResponse = (unknown);
+
+export type FeedbackUpdateFeedbackStatusData = {
+    feedbackId: string;
+    requestBody: FeedbackStatusUpdate;
+};
+
+export type FeedbackUpdateFeedbackStatusResponse = (FeedbackPublic);
 
 export type ItemsReadItemsData = {
     limit?: number;

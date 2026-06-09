@@ -3,6 +3,7 @@ import {
   Home,
   Library,
   ListChecks,
+  MessageSquareText,
   MonitorDown,
   Users,
 } from "lucide-react"
@@ -22,6 +23,7 @@ import { User } from "./User"
 
 const userItems: Item[] = [
   { icon: Home, title: "主页", path: "/" },
+  { icon: MessageSquareText, title: "意见管理", path: "/feedback" },
   {
     icon: ListChecks,
     title: "任务管理",
@@ -39,6 +41,7 @@ const adminItems: Item[] = [
   { icon: Home, title: "主页", path: "/" },
   { icon: Briefcase, title: "部门管理", path: "/items" },
   { icon: Users, title: "用户管理", path: "/admin/users" },
+  { icon: MessageSquareText, title: "意见管理", path: "/feedback" },
   {
     icon: ListChecks,
     title: "任务管理",
