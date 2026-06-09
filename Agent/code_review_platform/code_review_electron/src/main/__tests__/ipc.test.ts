@@ -53,6 +53,7 @@ describe('registerIpcHandlers', () => {
       'skill:install',
       'environment:check',
       'task:execute',
+      'feedback:submit',
       'report:download-current'
     ])
   })
@@ -419,6 +420,55 @@ describe('registerIpcHandlers', () => {
 
     await expect(reportHandler({}, 'task-1')).rejects.toThrow('Not authenticated')
     expect(api.readTaskReport).not.toHaveBeenCalled()
+  })
+
+  it('rejects feedback submission when unauthenticated', async () => {
+    const api = {
+      submitFeedback: vi.fn()
+    }
+    const authStore = {
+      load: vi.fn(async () => null),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never
+    })
+
+    const feedbackHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'feedback:submit'
+    )?.[1]
+
+    await expect(feedbackHandler({}, { description: '无法提交任务' })).rejects.toThrow(
+      'Not authenticated'
+    )
+    expect(api.submitFeedback).not.toHaveBeenCalled()
+  })
+
+  it('submits feedback with the current access token', async () => {
+    const api = {
+      submitFeedback: vi.fn(async () => ({ id: 'feedback-1' }))
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const payload = { description: '无法下载报告' }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never
+    })
+
+    const feedbackHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'feedback:submit'
+    )?.[1]
+
+    await expect(feedbackHandler({}, payload)).resolves.toEqual({ id: 'feedback-1' })
+    expect(api.submitFeedback).toHaveBeenCalledWith('token-123', payload)
   })
 
   it('installs Codex CLI on demand', async () => {

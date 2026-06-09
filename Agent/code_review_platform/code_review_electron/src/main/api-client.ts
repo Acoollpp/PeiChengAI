@@ -37,6 +37,11 @@ export interface UploadReportRequest {
   report_path?: string
 }
 
+export interface SubmitFeedbackRequest {
+  description: string
+  screenshot?: File | Blob | null
+}
+
 export interface ReviewTasksResponse {
   data: ReviewTask[]
   count: number
@@ -187,6 +192,25 @@ export class ApiClient {
 
     return this.request(
       `/api/v1/review-tasks/${encodeURIComponent(taskId)}/report`,
+      {
+        method: 'POST',
+        headers: this.authHeaders(token),
+        body
+      },
+      { json: false }
+    )
+  }
+
+  submitFeedback(token: string, payload: SubmitFeedbackRequest): Promise<unknown> {
+    const body = new FormData()
+    body.set('description', payload.description)
+
+    if (payload.screenshot) {
+      body.set('screenshot', payload.screenshot)
+    }
+
+    return this.request(
+      '/api/v1/feedback',
       {
         method: 'POST',
         headers: this.authHeaders(token),

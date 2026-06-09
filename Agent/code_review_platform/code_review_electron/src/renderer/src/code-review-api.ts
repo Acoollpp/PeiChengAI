@@ -56,6 +56,16 @@ export interface ExecuteTaskResult {
   reportPath?: string
 }
 
+export interface SubmitFeedbackPayload {
+  description: string
+  screenshot?: File | null
+}
+
+export interface SubmitFeedbackResult {
+  id: string
+  status: 'pending' | 'processing' | 'resolved'
+}
+
 export interface ReviewTasksResponse {
   data: ReviewTask[]
   count: number
@@ -115,6 +125,7 @@ export interface CodeReviewApi {
   installSkill(): Promise<EnvironmentCheckResult>
   checkEnvironment(): Promise<EnvironmentCheckResult>
   onEnvironmentProgress(callback: (event: EnvironmentProgressEvent) => void): () => void
+  submitFeedback(payload: SubmitFeedbackPayload): Promise<SubmitFeedbackResult>
   bindSvnCredential(payload: SvnCredentialPayload): Promise<true>
   checkForAppUpdate(): Promise<boolean>
   downloadAppUpdate(): Promise<true>

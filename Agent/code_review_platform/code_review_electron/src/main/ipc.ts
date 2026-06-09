@@ -8,6 +8,7 @@ import {
   ApiError,
   type CreateTaskRequest,
   type KeyLoginRequest,
+  type SubmitFeedbackRequest,
   type SvnLoginRequest
 } from './api-client'
 import { createAppUpdateService, type AppUpdateService } from './app-updater'
@@ -259,6 +260,17 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       return result
     }
   )
+
+  ipcMain.handle('feedback:submit', async (_event, payload: SubmitFeedbackRequest): Promise<unknown> => {
+    const tokens = await authStore.load()
+
+    if (!tokens) {
+      throw new Error('Not authenticated')
+    }
+
+    const api = await createApiClient()
+    return api.submitFeedback(tokens.access_token, payload)
+  })
 
   ipcMain.handle('report:download-current', async (_event, taskId?: string): Promise<DownloadCurrentReportResult> => {
     if (!latestSuccessfulReport && !taskId) {
