@@ -112,6 +112,25 @@ describe('installCodexSkillFromZip', () => {
       'Codex Skill install failed with exit code 1: invalid skill package'
     )
   })
+
+  it('rejects when Codex prints an install error marker even if the process exits successfully', async () => {
+    const { installCodexSkillFromZip } = await import('../codex-skill-installer')
+    const child = makeChild()
+
+    const resultPromise = installCodexSkillFromZip({
+      packagePath: 'D:\\runtime-data\\skill-packages\\bad.zip',
+      skillId: 'skill-1',
+      skillName: '通用-代码变更审查-模板一',
+      version: '1.0.0',
+      timeoutMs: 1000
+    })
+    child.stdout.emit('data', Buffer.from('[SKILL_INSTALL_ERROR] broken'))
+    child.emit('close', 0)
+
+    await expect(resultPromise).rejects.toThrow(
+      'Codex Skill install reported failure: [SKILL_INSTALL_ERROR] broken'
+    )
+  })
 })
 
 describe('deleteCodexSkill', () => {
@@ -150,6 +169,40 @@ describe('deleteCodexSkill', () => {
     const prompt = spawnMock.mock.calls[0]?.[1]?.[2]
     expect(prompt).toContain('通用-代码变更审查-模板一')
     expect(prompt).toContain('[SKILL_DELETE_OK] 通用-代码变更审查-模板一')
+  })
+
+  it('rejects when Codex prints a delete error marker to stdout even if the process exits successfully', async () => {
+    const child = makeChild()
+
+    const resultPromise = deleteCodexSkill({
+      skillId: 'skill-1',
+      skillName: '通用-代码变更审查-模板一',
+      version: '1.0.0',
+      timeoutMs: 1000
+    })
+    child.stdout.emit('data', Buffer.from('[SKILL_DELETE_ERROR] broken'))
+    child.emit('close', 0)
+
+    await expect(resultPromise).rejects.toThrow(
+      'Codex Skill delete reported failure: [SKILL_DELETE_ERROR] broken'
+    )
+  })
+
+  it('rejects when Codex prints a delete error marker to stderr even if the process exits successfully', async () => {
+    const child = makeChild()
+
+    const resultPromise = deleteCodexSkill({
+      skillId: 'skill-1',
+      skillName: '通用-代码变更审查-模板一',
+      version: '1.0.0',
+      timeoutMs: 1000
+    })
+    child.stderr.emit('data', Buffer.from('[SKILL_DELETE_ERROR] broken'))
+    child.emit('close', 0)
+
+    await expect(resultPromise).rejects.toThrow(
+      'Codex Skill delete reported failure: [SKILL_DELETE_ERROR] broken'
+    )
   })
 })
 

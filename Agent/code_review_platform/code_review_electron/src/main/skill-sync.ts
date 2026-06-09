@@ -80,9 +80,14 @@ export class SkillSyncService {
     for (const staleEntry of currentEntries.filter(
       (entry) => !activeSkills.some((skill) => skill.id === entry.id)
     )) {
+      const staleSkillName = staleEntry.name.trim()
+      if (!staleSkillName) {
+        throw new Error(`Cannot delete stale skill without a name: ${staleEntry.id}`)
+      }
+
       await this.deleteSkill({
         skillId: staleEntry.id,
-        skillName: staleEntry.name,
+        skillName: staleSkillName,
         version: staleEntry.version
       })
       didChange = true
@@ -258,10 +263,25 @@ export class SkillSyncService {
       return null
     }
 
-    return {
-      ...value,
-      name: 'name' in value && typeof value.name === 'string' ? value.name : ''
-    } as SkillManifestEntry
+    const entry: SkillManifestEntry = {
+      id: value.id,
+      name: 'name' in value && typeof value.name === 'string' ? value.name : '',
+      version: value.version,
+      package_path: value.package_path,
+      installed_at: value.installed_at
+    }
+
+    if ('content_hash' in value && typeof value.content_hash === 'string') {
+      entry.content_hash = value.content_hash
+    }
+    if ('hash' in value && typeof value.hash === 'string') {
+      entry.hash = value.hash
+    }
+    if ('file_size' in value && typeof value.file_size === 'number') {
+      entry.file_size = value.file_size
+    }
+
+    return entry
   }
 
   private async writeManifest(manifest: SkillManifest): Promise<void> {

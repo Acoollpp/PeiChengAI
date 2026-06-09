@@ -116,7 +116,8 @@ const hasInstallMetadata = (
 const runCodexPrompt = (
   prompt: string,
   timeoutMs = 5 * 60 * 1000,
-  failureLabel = 'Codex Skill operation'
+  failureLabel = 'Codex Skill operation',
+  errorMarker?: string
 ): Promise<InstallCodexSkillResult> =>
   new Promise((resolve, reject) => {
     const commandOptions = buildVersionCommandOptions()
@@ -166,6 +167,11 @@ const runCodexPrompt = (
           return
         }
 
+        if (errorMarker && (stdout.includes(errorMarker) || stderr.includes(errorMarker))) {
+          reject(new Error(`${failureLabel} reported failure: ${stdout}${stderr}`.trim()))
+          return
+        }
+
         resolve({ stdout, stderr })
       })
     })
@@ -178,8 +184,13 @@ export function installCodexSkillFromZip(
     ? buildInstallSkillPrompt(input)
     : buildLegacyInstallSkillPrompt(input.packagePath)
 
-  return runCodexPrompt(prompt, input.timeoutMs, 'Codex Skill install')
+  return runCodexPrompt(prompt, input.timeoutMs, 'Codex Skill install', '[SKILL_INSTALL_ERROR]')
 }
 
 export const deleteCodexSkill = (input: DeleteCodexSkillInput): Promise<InstallCodexSkillResult> =>
-  runCodexPrompt(buildDeleteSkillPrompt(input), input.timeoutMs, 'Codex Skill delete')
+  runCodexPrompt(
+    buildDeleteSkillPrompt(input),
+    input.timeoutMs,
+    'Codex Skill delete',
+    '[SKILL_DELETE_ERROR]'
+  )

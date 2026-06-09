@@ -351,6 +351,140 @@ describe('SkillSyncService', () => {
     expect(manifest.skills).toEqual([expect.objectContaining({ id: 'skill-1' })])
   })
 
+  it('rejects instead of deleting a stale legacy manifest entry without a Skill name', async () => {
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'skill-sync-runtime-'))
+    tempDirs.push(runtimeRoot)
+    const runtimePaths = runtimePathsFor(runtimeRoot)
+    await mkdir(runtimePaths.skillPackagesDir, { recursive: true })
+    const staleZip = Buffer.from('legacy stale zip bytes')
+    const staleHash = sha256(staleZip)
+    const stalePackagePath = join(
+      runtimePaths.skillPackagesDir,
+      `skill-old-2026.05.01-${staleHash}.zip`
+    )
+    const originalManifest = {
+      id: 'skill-old',
+      version: '2026.05.01',
+      content_hash: staleHash,
+      hash: staleHash,
+      file_size: staleZip.byteLength,
+      package_path: stalePackagePath,
+      installed_at: '2026-05-01T10:00:00.000Z'
+    }
+    await writeFile(stalePackagePath, staleZip)
+    await writeFile(runtimePaths.skillManifestPath, `${JSON.stringify(originalManifest, null, 2)}\n`)
+    const activeZip = Buffer.from('active zip bytes')
+    const activeHash = sha256(activeZip)
+    const deleteSkill = vi.fn()
+    const api = {
+      getActiveSkills: vi.fn(async () => ({
+        data: [
+          {
+            id: 'skill-1',
+            name: '通用-代码变更审查-模板一',
+            version: '2026.05.29',
+            content_hash: activeHash,
+            file_size: activeZip.byteLength
+          }
+        ],
+        count: 1
+      })),
+      downloadSkill: vi.fn()
+    }
+    const service = new SkillSyncService(api, {
+      runtimePaths,
+      installSkill: vi.fn(),
+      deleteSkill
+    })
+
+    await expect(service.sync('token-123')).rejects.toThrow(
+      'Cannot delete stale skill without a name: skill-old'
+    )
+    expect(deleteSkill).not.toHaveBeenCalled()
+    await expect(readFile(runtimePaths.skillManifestPath, 'utf8')).resolves.toBe(
+      `${JSON.stringify(originalManifest, null, 2)}\n`
+    )
+  })
+
+  it('rejects when stale Skill deletion fails and keeps the existing manifest unchanged', async () => {
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'skill-sync-runtime-'))
+    tempDirs.push(runtimeRoot)
+    const runtimePaths = runtimePathsFor(runtimeRoot)
+    await mkdir(runtimePaths.skillPackagesDir, { recursive: true })
+    const activeZip = Buffer.from('active zip bytes')
+    const staleZip = Buffer.from('stale zip bytes')
+    const activeHash = sha256(activeZip)
+    const staleHash = sha256(staleZip)
+    const activePackagePath = join(
+      runtimePaths.skillPackagesDir,
+      `skill-1-2026.05.29-${activeHash}.zip`
+    )
+    const stalePackagePath = join(
+      runtimePaths.skillPackagesDir,
+      `skill-old-2026.05.01-${staleHash}.zip`
+    )
+    const originalManifest = {
+      skills: [
+        {
+          id: 'skill-1',
+          name: '通用-代码变更审查-模板一',
+          version: '2026.05.29',
+          content_hash: activeHash,
+          hash: activeHash,
+          file_size: activeZip.byteLength,
+          package_path: activePackagePath,
+          installed_at: '2026-05-29T10:00:00.000Z'
+        },
+        {
+          id: 'skill-old',
+          name: '旧审查Skill',
+          version: '2026.05.01',
+          content_hash: staleHash,
+          hash: staleHash,
+          file_size: staleZip.byteLength,
+          package_path: stalePackagePath,
+          installed_at: '2026-05-01T10:00:00.000Z'
+        }
+      ]
+    }
+    await writeFile(activePackagePath, activeZip)
+    await writeFile(stalePackagePath, staleZip)
+    await writeFile(runtimePaths.skillManifestPath, `${JSON.stringify(originalManifest, null, 2)}\n`)
+    const deleteSkill = vi.fn(async () => {
+      throw new Error('delete failed')
+    })
+    const api = {
+      getActiveSkills: vi.fn(async () => ({
+        data: [
+          {
+            id: 'skill-1',
+            name: '通用-代码变更审查-模板一',
+            version: '2026.05.29',
+            content_hash: activeHash,
+            file_size: activeZip.byteLength
+          }
+        ],
+        count: 1
+      })),
+      downloadSkill: vi.fn()
+    }
+    const service = new SkillSyncService(api, {
+      runtimePaths,
+      installSkill: vi.fn(),
+      deleteSkill
+    })
+
+    await expect(service.sync('token-123')).rejects.toThrow('delete failed')
+    expect(deleteSkill).toHaveBeenCalledWith({
+      skillId: 'skill-old',
+      skillName: '旧审查Skill',
+      version: '2026.05.01'
+    })
+    await expect(readFile(runtimePaths.skillManifestPath, 'utf8')).resolves.toBe(
+      `${JSON.stringify(originalManifest, null, 2)}\n`
+    )
+  })
+
   it('downloads and installs when cached package file_size does not match the active Skill metadata', async () => {
     const runtimeRoot = await mkdtemp(join(tmpdir(), 'skill-sync-runtime-'))
     tempDirs.push(runtimeRoot)
