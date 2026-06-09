@@ -4,6 +4,7 @@ from app.api.routes import (
     cch_sync,
     client_releases,
     credentials,
+    feedback,
     items,
     login,
     private,
@@ -24,6 +25,7 @@ api_router.include_router(credentials.router)
 api_router.include_router(cch_sync.router)
 api_router.include_router(skills.router)
 api_router.include_router(client_releases.router)
+api_router.include_router(feedback.router)
 
 
 if settings.ENVIRONMENT == "local":

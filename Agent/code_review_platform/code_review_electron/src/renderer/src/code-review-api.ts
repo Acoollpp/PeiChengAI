@@ -56,6 +56,27 @@ export interface ExecuteTaskResult {
   reportPath?: string
 }
 
+export interface SubmitFeedbackPayload {
+  description: string
+  screenshot?: File | null
+}
+
+export interface SerializedFeedbackScreenshot {
+  name: string
+  type: string
+  bytes: ArrayBuffer
+}
+
+export interface SubmitFeedbackIpcPayload {
+  description: string
+  screenshot?: SerializedFeedbackScreenshot | null
+}
+
+export interface SubmitFeedbackResult {
+  id: string
+  status: 'pending' | 'processing' | 'resolved'
+}
+
 export interface ReviewTasksResponse {
   data: ReviewTask[]
   count: number
@@ -65,6 +86,16 @@ export interface DownloadCurrentReportResult {
   status: 'ready' | 'missing'
   taskId?: string
   reportPath?: string
+}
+
+export interface ReadReportAssetRequest {
+  reportPath: string
+  assetPath: string
+}
+
+export interface ReadReportAssetResult {
+  dataUrl: string
+  contentType: string
 }
 
 export interface KeyLoginResult {
@@ -110,11 +141,13 @@ export interface CodeReviewApi {
   executeTask(payload: ExecuteTaskRequest): Promise<ExecuteTaskResult>
   onTaskProgress(callback: (event: TaskProgressEvent) => void): () => void
   downloadCurrentReport(taskId?: string): Promise<DownloadCurrentReportResult>
+  readReportAsset(payload: ReadReportAssetRequest): Promise<ReadReportAssetResult>
   installCodex(): Promise<EnvironmentCheckResult>
   installSvn(): Promise<EnvironmentCheckResult>
   installSkill(): Promise<EnvironmentCheckResult>
   checkEnvironment(): Promise<EnvironmentCheckResult>
   onEnvironmentProgress(callback: (event: EnvironmentProgressEvent) => void): () => void
+  submitFeedback(payload: SubmitFeedbackPayload): Promise<SubmitFeedbackResult>
   bindSvnCredential(payload: SvnCredentialPayload): Promise<true>
   checkForAppUpdate(): Promise<boolean>
   downloadAppUpdate(): Promise<true>

@@ -12,6 +12,7 @@ from app.api.deps import (
     has_admin_privileges,
 )
 from app.models import (
+    Feedback,
     Item,
     Message,
     User,
@@ -196,6 +197,8 @@ def delete_user(
         raise HTTPException(
             status_code=403, detail="Admins are not allowed to delete themselves"
         )
+    feedback_statement = delete(Feedback).where(col(Feedback.user_id) == user_id)
+    session.exec(feedback_statement)
     statement = delete(Item).where(col(Item.owner_id) == user_id)
     session.exec(statement)
     session.delete(user)

@@ -37,6 +37,17 @@ export interface UploadReportRequest {
   report_path?: string
 }
 
+export interface SubmitFeedbackRequest {
+  description: string
+  screenshot?: File | Blob | null
+  screenshotName?: string | null
+}
+
+export interface FeedbackResult {
+  id: string
+  status: 'pending' | 'processing' | 'resolved'
+}
+
 export interface ReviewTasksResponse {
   data: ReviewTask[]
   count: number
@@ -187,6 +198,25 @@ export class ApiClient {
 
     return this.request(
       `/api/v1/review-tasks/${encodeURIComponent(taskId)}/report`,
+      {
+        method: 'POST',
+        headers: this.authHeaders(token),
+        body
+      },
+      { json: false }
+    )
+  }
+
+  submitFeedback(token: string, payload: SubmitFeedbackRequest): Promise<FeedbackResult> {
+    const body = new FormData()
+    body.set('description', payload.description)
+
+    if (payload.screenshot) {
+      body.set('screenshot', payload.screenshot, payload.screenshotName ?? 'screenshot')
+    }
+
+    return this.request(
+      '/api/v1/feedback',
       {
         method: 'POST',
         headers: this.authHeaders(token),

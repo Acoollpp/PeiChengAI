@@ -18,7 +18,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -863,6 +864,16 @@ h2 {
   text-decoration: underline;
 }
 
+.markdown-preview img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 10px 0 18px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 4%);
+}
+
 .markdown-preview :not(pre) > code {
   border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 5px;
@@ -1037,6 +1048,133 @@ h2 {
 .dialog-actions .primary-button,
 .dialog-actions .secondary-button {
   width: 100%;
+}
+
+.submit-feedback-dialog {
+  width: min(520px, calc(100vw - 32px));
+  padding: 30px;
+}
+
+.submit-feedback-field {
+  gap: 9px;
+  margin-bottom: 14px;
+  color: rgb(245 247 251 / 62%);
+}
+
+.submit-feedback-field textarea {
+  width: 100%;
+  min-height: 148px;
+  resize: vertical;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 8px;
+  padding: 12px;
+  color: #f5f7fb;
+  background: rgb(8 10 12 / 72%);
+  line-height: 1.55;
+  outline: none;
+}
+
+.submit-feedback-field textarea::placeholder {
+  color: rgb(245 247 251 / 34%);
+}
+
+.submit-feedback-field textarea:focus {
+  border-color: #12b978;
+  box-shadow: 0 0 0 3px rgb(18 185 120 / 18%);
+}
+
+.feedback-screenshot-block {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.feedback-screenshot-picker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  min-height: 36px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 7px;
+  padding: 0 13px;
+  color: #f5f7fb;
+  background: rgb(255 255 255 / 8%);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.feedback-screenshot-picker:hover {
+  background: rgb(255 255 255 / 14%);
+}
+
+.feedback-screenshot-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.feedback-paste-hint {
+  margin: 0;
+  color: rgb(245 247 251 / 46%);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.feedback-screenshot-preview {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 76px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 8px;
+  padding: 9px;
+  background: rgb(255 255 255 / 5%);
+}
+
+.feedback-screenshot-preview img {
+  width: 72px;
+  height: 56px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: rgb(0 0 0 / 28%);
+}
+
+.feedback-screenshot-preview strong,
+.feedback-screenshot-preview span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feedback-screenshot-preview strong {
+  color: #f5f7fb;
+  font-size: 13px;
+}
+
+.feedback-screenshot-preview span {
+  margin-top: 4px;
+  color: rgb(245 247 251 / 48%);
+  font-size: 12px;
+}
+
+.feedback-screenshot-preview .ghost-button {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.feedback-error {
+  margin-bottom: 14px;
 }
 
 .modal-backdrop {

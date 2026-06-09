@@ -11,7 +11,12 @@ import type {
   KeyLoginRequest,
   KeyLoginResult,
   DownloadCurrentReportResult,
+  ReadReportAssetRequest,
+  ReadReportAssetResult,
   RememberedCredentials,
+  SubmitFeedbackIpcPayload,
+  SubmitFeedbackPayload,
+  SubmitFeedbackResult,
   SvnCredentialPayload,
   SvnLoginRequest,
   ReviewTasksResponse,
@@ -27,6 +32,19 @@ const listen = <T>(channel: string, callback: (event: T) => void): (() => void) 
     ipcRenderer.removeListener(channel, listener)
   }
 }
+
+const serializeFeedbackPayload = async (
+  payload: SubmitFeedbackPayload
+): Promise<SubmitFeedbackIpcPayload> => ({
+  description: payload.description,
+  screenshot: payload.screenshot
+    ? {
+        name: payload.screenshot.name,
+        type: payload.screenshot.type,
+        bytes: await payload.screenshot.arrayBuffer()
+      }
+    : null
+})
 
 contextBridge.exposeInMainWorld('codeReview', {
   keyLogin: (payload: KeyLoginRequest): Promise<KeyLoginResult> =>
@@ -55,6 +73,8 @@ contextBridge.exposeInMainWorld('codeReview', {
   },
   downloadCurrentReport: (taskId?: string): Promise<DownloadCurrentReportResult> =>
     ipcRenderer.invoke('report:download-current', taskId),
+  readReportAsset: (payload: ReadReportAssetRequest): Promise<ReadReportAssetResult> =>
+    ipcRenderer.invoke('report:asset', payload),
   bindSvnCredential: (payload: SvnCredentialPayload): Promise<true> =>
     ipcRenderer.invoke('svn:bind-credential', payload),
   installCodex: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('codex:install'),
@@ -63,6 +83,8 @@ contextBridge.exposeInMainWorld('codeReview', {
   checkEnvironment: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('environment:check'),
   onEnvironmentProgress: (callback: (event: EnvironmentProgressEvent) => void): (() => void) =>
     listen('environment:progress', callback),
+  submitFeedback: async (payload: SubmitFeedbackPayload): Promise<SubmitFeedbackResult> =>
+    ipcRenderer.invoke('feedback:submit', await serializeFeedbackPayload(payload)),
   checkForAppUpdate: (): Promise<boolean> => ipcRenderer.invoke('app-update:check'),
   downloadAppUpdate: (): Promise<true> => ipcRenderer.invoke('app-update:download'),
   installAppUpdate: (): Promise<true> => ipcRenderer.invoke('app-update:install'),

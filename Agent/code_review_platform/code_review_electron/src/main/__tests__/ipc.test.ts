@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -53,6 +53,8 @@ describe('registerIpcHandlers', () => {
       'skill:install',
       'environment:check',
       'task:execute',
+      'feedback:submit',
+      'report:asset',
       'report:download-current'
     ])
   })
@@ -315,6 +317,53 @@ describe('registerIpcHandlers', () => {
     expect(showItemInFolderMock).toHaveBeenCalledWith(reportPath)
   })
 
+  it('reads a report image asset from the report directory', async () => {
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-report-asset-'))
+    tempDirs.push(runtimeRoot)
+    const reportDir = join(runtimeRoot, 'workspaces', 'task-asset')
+    const reportPath = join(reportDir, 'report.md')
+    await mkdir(reportDir, { recursive: true })
+    await writeFile(reportPath, '# report\n')
+    await writeFile(join(reportDir, '01.png'), Buffer.from('image-bytes'))
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers()
+
+    const assetHandler = handleMock.mock.calls.find(([channel]) => channel === 'report:asset')?.[1]
+
+    await expect(
+      assetHandler({}, {
+        reportPath,
+        assetPath: '01.png'
+      })
+    ).resolves.toEqual({
+      dataUrl: `data:image/png;base64,${Buffer.from('image-bytes').toString('base64')}`,
+      contentType: 'image/png'
+    })
+  })
+
+  it('rejects report image assets outside the report directory', async () => {
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-report-asset-'))
+    tempDirs.push(runtimeRoot)
+    const reportDir = join(runtimeRoot, 'workspaces', 'task-asset')
+    const reportPath = join(reportDir, 'report.md')
+    await mkdir(reportDir, { recursive: true })
+    await writeFile(reportPath, '# report\n')
+    await writeFile(join(runtimeRoot, 'secret.png'), Buffer.from('secret'))
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers()
+
+    const assetHandler = handleMock.mock.calls.find(([channel]) => channel === 'report:asset')?.[1]
+
+    await expect(
+      assetHandler({}, {
+        reportPath,
+        assetPath: '../secret.png'
+      })
+    ).rejects.toThrow('Report asset is outside the report directory')
+  })
+
   it('lists tasks for the authenticated user', async () => {
     const api = {
       listTasks: vi.fn(async () => ({
@@ -419,6 +468,82 @@ describe('registerIpcHandlers', () => {
 
     await expect(reportHandler({}, 'task-1')).rejects.toThrow('Not authenticated')
     expect(api.readTaskReport).not.toHaveBeenCalled()
+  })
+
+  it('rejects feedback submission when unauthenticated', async () => {
+    const api = {
+      submitFeedback: vi.fn()
+    }
+    const authStore = {
+      load: vi.fn(async () => null),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never
+    })
+
+    const feedbackHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'feedback:submit'
+    )?.[1]
+
+    await expect(feedbackHandler({}, { description: '无法提交任务' })).rejects.toThrow(
+      'Not authenticated'
+    )
+    expect(api.submitFeedback).not.toHaveBeenCalled()
+  })
+
+  it('submits feedback with the current access token', async () => {
+    const submitFeedbackMock = vi.fn(
+      async (
+        _token: string,
+        _payload: { description: string; screenshot: Blob | null; screenshotName: string | null }
+      ) => ({ id: 'feedback-1', status: 'pending' })
+    )
+    const api = {
+      submitFeedback: submitFeedbackMock
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const payload = {
+      description: '无法下载报告',
+      screenshot: {
+        name: 'feedback.png',
+        type: 'image/png',
+        bytes: new TextEncoder().encode('image-bytes').buffer
+      }
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never
+    })
+
+    const feedbackHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'feedback:submit'
+    )?.[1]
+
+    await expect(feedbackHandler({}, payload)).resolves.toEqual({
+      id: 'feedback-1',
+      status: 'pending'
+    })
+    expect(api.submitFeedback).toHaveBeenCalledWith(
+      'token-123',
+      expect.objectContaining({
+        description: '无法下载报告',
+        screenshotName: 'feedback.png'
+      })
+    )
+    const submittedPayload = submitFeedbackMock.mock.calls[0][1]
+    expect(submittedPayload.screenshot).toBeInstanceOf(Blob)
+    const submittedScreenshot = submittedPayload.screenshot as Blob
+    expect(submittedScreenshot.type).toBe('image/png')
+    await expect(submittedScreenshot.text()).resolves.toBe('image-bytes')
   })
 
   it('installs Codex CLI on demand', async () => {

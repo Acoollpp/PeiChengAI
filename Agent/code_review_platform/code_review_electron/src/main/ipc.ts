@@ -1,5 +1,5 @@
-import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, extname, isAbsolute, resolve, sep } from 'node:path'
 
 import { ipcMain, shell } from 'electron'
 
@@ -7,7 +7,9 @@ import {
   ApiClient,
   ApiError,
   type CreateTaskRequest,
+  type FeedbackResult,
   type KeyLoginRequest,
+  type SubmitFeedbackRequest,
   type SvnLoginRequest
 } from './api-client'
 import { createAppUpdateService, type AppUpdateService } from './app-updater'
@@ -30,6 +32,17 @@ import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
 import { ServerConfigStore, normalizeServerUrl } from './server-config-store'
 import { createSkillSyncService, type SkillSyncResult } from './skill-sync'
 
+interface SerializedFeedbackScreenshot {
+  name: string
+  type: string
+  bytes: ArrayBuffer
+}
+
+interface SubmitFeedbackIpcPayload {
+  description: string
+  screenshot?: SerializedFeedbackScreenshot | null
+}
+
 export interface IpcHandlerDependencies {
   api?: ApiClient
   authStore?: AuthStore
@@ -50,6 +63,65 @@ export interface DownloadCurrentReportResult {
   status: 'ready' | 'missing'
   taskId?: string
   reportPath?: string
+}
+
+interface ReadReportAssetRequest {
+  reportPath: string
+  assetPath: string
+}
+
+interface ReadReportAssetResult {
+  dataUrl: string
+  contentType: string
+}
+
+const toSubmitFeedbackRequest = (payload: SubmitFeedbackIpcPayload): SubmitFeedbackRequest => ({
+  description: payload.description,
+  screenshot: payload.screenshot
+    ? new Blob([payload.screenshot.bytes], { type: payload.screenshot.type })
+    : null,
+  screenshotName: payload.screenshot?.name ?? null
+})
+
+const imageContentTypes: Record<string, string> = {
+  '.gif': 'image/gif',
+  '.jpeg': 'image/jpeg',
+  '.jpg': 'image/jpeg',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp'
+}
+
+const isInsideDirectory = (filePath: string, directory: string): boolean =>
+  filePath === directory || filePath.startsWith(`${directory}${sep}`)
+
+const readReportAsset = async ({
+  reportPath,
+  assetPath
+}: ReadReportAssetRequest): Promise<ReadReportAssetResult> => {
+  if (isAbsolute(assetPath)) {
+    throw new Error('Report asset must be a relative path')
+  }
+
+  const reportDirectory = resolve(dirname(reportPath))
+  const assetFilePath = resolve(reportDirectory, assetPath)
+
+  if (!isInsideDirectory(assetFilePath, reportDirectory)) {
+    throw new Error('Report asset is outside the report directory')
+  }
+
+  const extension = extname(assetFilePath).toLowerCase()
+  const contentType = imageContentTypes[extension]
+
+  if (!contentType) {
+    throw new Error('Unsupported report asset type')
+  }
+
+  const content = await readFile(assetFilePath)
+  return {
+    dataUrl: `data:${contentType};base64,${content.toString('base64')}`,
+    contentType
+  }
 }
 
 export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): void => {
@@ -258,6 +330,24 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
       return result
     }
+  )
+
+  ipcMain.handle(
+    'feedback:submit',
+    async (_event, payload: SubmitFeedbackIpcPayload): Promise<FeedbackResult> => {
+      const tokens = await authStore.load()
+
+      if (!tokens) {
+        throw new Error('Not authenticated')
+      }
+
+      const api = await createApiClient()
+      return api.submitFeedback(tokens.access_token, toSubmitFeedbackRequest(payload))
+    }
+  )
+
+  ipcMain.handle('report:asset', (_event, payload: ReadReportAssetRequest) =>
+    readReportAsset(payload)
   )
 
   ipcMain.handle('report:download-current', async (_event, taskId?: string): Promise<DownloadCurrentReportResult> => {

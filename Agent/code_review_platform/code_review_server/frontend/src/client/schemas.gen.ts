@@ -40,6 +40,30 @@ export const Body_review_tasks_upload_review_task_reportSchema = {
     title: 'Body_review-tasks-upload_review_task_report'
 } as const;
 
+export const Body_feedback_create_feedbackSchema = {
+    properties: {
+        description: {
+            type: 'string',
+            title: 'Description'
+        },
+        screenshot: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'binary'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Screenshot'
+        }
+    },
+    type: 'object',
+    required: ['description'],
+    title: 'Body_feedback-create_feedback'
+} as const;
+
 export const Body_skills_upload_skillSchema = {
     properties: {
         name: {
@@ -142,6 +166,151 @@ export const HTTPValidationErrorSchema = {
     },
     type: 'object',
     title: 'HTTPValidationError'
+} as const;
+
+export const FeedbackPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        user_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'User Id'
+        },
+        user_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'User Name'
+        },
+        svn_username: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Svn Username'
+        },
+        description: {
+            type: 'string',
+            title: 'Description'
+        },
+        has_screenshot: {
+            type: 'boolean',
+            title: 'Has Screenshot',
+            default: false
+        },
+        screenshot_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Screenshot Name'
+        },
+        screenshot_content_type: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Screenshot Content Type'
+        },
+        screenshot_size: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Screenshot Size'
+        },
+        status: {
+            '$ref': '#/components/schemas/FeedbackStatus'
+        },
+        created_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created At'
+        },
+        updated_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'user_id', 'description', 'status'],
+    title: 'FeedbackPublic'
+} as const;
+
+export const FeedbacksPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/FeedbackPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'FeedbacksPublic'
+} as const;
+
+export const FeedbackStatusSchema = {
+    type: 'string',
+    enum: ['pending', 'processing', 'resolved'],
+    title: 'FeedbackStatus'
+} as const;
+
+export const FeedbackStatusUpdateSchema = {
+    properties: {
+        status: {
+            '$ref': '#/components/schemas/FeedbackStatus'
+        }
+    },
+    type: 'object',
+    required: ['status'],
+    title: 'FeedbackStatusUpdate'
 } as const;
 
 export const ItemCreateSchema = {

@@ -268,6 +268,39 @@ describe('ApiClient', () => {
     await expect((upload as File).text()).resolves.toBe('# report\n')
   })
 
+  it('submits feedback as multipart form data with authorization header', async () => {
+    vi.stubGlobal('File', File)
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ id: 'feedback-1', status: 'pending' })
+    )
+    const client = new ApiClient('https://server.example/', fetchMock)
+    const screenshot = new File(['image-bytes'], 'feedback.png', {
+      type: 'image/png'
+    })
+
+    const result = await client.submitFeedback('token-123', {
+      description: '按钮点击后没有反应',
+      screenshot: screenshot as unknown as globalThis.File,
+      screenshotName: 'feedback.png'
+    })
+
+    expect(result).toEqual({ id: 'feedback-1', status: 'pending' })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://server.example/api/v1/feedback')
+    expect(init.method).toBe('POST')
+    expect(init.headers).toEqual({
+      authorization: 'Bearer token-123'
+    })
+    expect(init.body).toBeInstanceOf(FormData)
+    expect(init.body.get('description')).toBe('按钮点击后没有反应')
+
+    const uploadedScreenshot = init.body.get('screenshot')
+    expect(uploadedScreenshot).toBeInstanceOf(File)
+    expect((uploadedScreenshot as File).name).toBe('feedback.png')
+    expect((uploadedScreenshot as File).type).toBe('image/png')
+    await expect((uploadedScreenshot as File).text()).resolves.toBe('image-bytes')
+  })
+
   it('throws an ApiError containing http status for failed responses', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse(
