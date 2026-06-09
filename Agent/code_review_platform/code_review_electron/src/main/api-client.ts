@@ -165,11 +165,17 @@ export class ApiClient {
     })
   }
 
-  getActiveSkill(token: string): Promise<ActiveSkill> {
-    return this.request<ActiveSkill>('/api/v1/skills/active', {
-      method: 'GET',
-      headers: this.authHeaders(token)
-    })
+  async getActiveSkill(token: string): Promise<ActiveSkill> {
+    const response = await this.getActiveSkills(token)
+
+    if (response.count === 0 || response.data.length === 0) {
+      throw new Error('No active skill is configured')
+    }
+    if (response.count > 1 || response.data.length > 1) {
+      throw new Error('Multiple active skills are configured; use getActiveSkills instead')
+    }
+
+    return response.data[0]
   }
 
   getActiveSkills(token: string): Promise<ActiveSkillsResponse> {
@@ -180,6 +186,7 @@ export class ApiClient {
   }
 
   async downloadActiveSkill(token: string): Promise<ArrayBuffer> {
+    // 兼容旧的单 active Skill 下载入口；Task 5 会迁移到 downloadSkill(id)。
     const response = await this.fetchImpl(`${this.baseUrl}/api/v1/skills/active/download`, {
       method: 'GET',
       headers: this.authHeaders(token)

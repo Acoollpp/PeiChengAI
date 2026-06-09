@@ -15,8 +15,8 @@ export type ReviewTemplateKey = (typeof REVIEW_TEMPLATES)[number]['key']
 
 export const DEFAULT_REVIEW_TEMPLATE_KEY: ReviewTemplateKey = 'template_1'
 
-export const REQUIRED_REVIEW_SKILL_NAMES = REVIEW_TEMPLATES.map(
-  (template) => template.skillName
+export const REQUIRED_REVIEW_SKILL_NAMES = Object.freeze(
+  REVIEW_TEMPLATES.map((template) => template.skillName)
 )
 
 export const resolveReviewTemplate = (key: string): (typeof REVIEW_TEMPLATES)[number] => {
