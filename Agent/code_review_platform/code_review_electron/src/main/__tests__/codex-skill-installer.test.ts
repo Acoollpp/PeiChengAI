@@ -3,7 +3,11 @@ import type { EventEmitter as EventEmitterType } from 'node:events'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { buildDeleteSkillPrompt, buildInstallSkillPrompt } from '../codex-skill-installer'
+import {
+  buildDeleteSkillPrompt,
+  buildInstallSkillPrompt,
+  deleteCodexSkill
+} from '../codex-skill-installer'
 
 const { spawnMock } = vi.hoisted(() => ({
   spawnMock: vi.fn()
@@ -52,7 +56,7 @@ describe('installCodexSkillFromZip', () => {
     vi.resetModules()
   })
 
-  it('asks Codex to install the Skill from the local zip path', async () => {
+  it('uses the legacy install prompt for package-path-only calls', async () => {
     const { installCodexSkillFromZip } = await import('../codex-skill-installer')
     const child = makeChild()
 
@@ -84,10 +88,12 @@ describe('installCodexSkillFromZip', () => {
     expect(prompt).toContain(
       'D:\\SoftWare\\CodeReviewClient\\runtime-data\\skill-packages\\skill.zip'
     )
-    expect(prompt).toContain('必须定位 Codex 当前已安装的所有同名 Skill')
-    expect(prompt).toContain('删除所有旧的同名 Skill')
-    expect(prompt).toContain('删除完成后，安装当前 zip 包中的 Skill')
-    expect(prompt).toContain('如果无法确认旧同名 Skill 已删除、无法确认新 Skill 已安装成功')
+    expect(prompt).not.toContain('未提供')
+    expect(prompt).toContain('直接读取这个 zip 文件路径，不要修改 zip 内容')
+    expect(prompt).toContain('先定位 Codex 当前已安装的同名 Skill')
+    expect(prompt).toContain('删除旧的同名 Skill')
+    expect(prompt).toContain('再安装这个 zip 包中的最新 Skill')
+    expect(prompt).toContain('如果无法确认旧 Skill 已删除或新 Skill 已安装成功')
     expect(child.stdin.end).toHaveBeenCalledWith()
   })
 
@@ -105,6 +111,45 @@ describe('installCodexSkillFromZip', () => {
     await expect(resultPromise).rejects.toThrow(
       'Codex Skill install failed with exit code 1: invalid skill package'
     )
+  })
+})
+
+describe('deleteCodexSkill', () => {
+  afterEach(() => {
+    vi.clearAllMocks()
+    vi.resetModules()
+  })
+
+  it('asks Codex to delete only the target Skill name', async () => {
+    const child = makeChild()
+
+    const resultPromise = deleteCodexSkill({
+      skillId: 'skill-1',
+      skillName: '通用-代码变更审查-模板一',
+      version: '1.0.0',
+      timeoutMs: 1000
+    })
+    child.stdout.emit('data', Buffer.from('deleted\n'))
+    child.emit('close', 0)
+
+    await expect(resultPromise).resolves.toEqual({
+      stdout: 'deleted\n',
+      stderr: ''
+    })
+    expect(spawnMock).toHaveBeenCalledWith(
+      'codex',
+      [
+        'exec',
+        '--dangerously-bypass-approvals-and-sandbox',
+        expect.stringContaining('[SKILL_DELETE_OK] 通用-代码变更审查-模板一')
+      ],
+      expect.objectContaining({
+        shell: false
+      })
+    )
+    const prompt = spawnMock.mock.calls[0]?.[1]?.[2]
+    expect(prompt).toContain('通用-代码变更审查-模板一')
+    expect(prompt).toContain('[SKILL_DELETE_OK] 通用-代码变更审查-模板一')
   })
 })
 

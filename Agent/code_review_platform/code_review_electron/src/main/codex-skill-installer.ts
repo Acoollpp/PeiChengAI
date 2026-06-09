@@ -90,18 +90,28 @@ export const buildDeleteSkillPrompt = ({
     `[SKILL_DELETE_OK] ${skillName}`
   ].join('\n')
 
-const toInstallPromptInput = (input: InstallCodexSkillInput | LegacyInstallCodexSkillInput): InstallCodexSkillInput => {
-  if ('skillId' in input && 'skillName' in input && 'version' in input) {
-    return input
-  }
+export const buildLegacyInstallSkillPrompt = (packagePath: string): string =>
+  [
+    '请将下面这个本地 Skill zip 包作为最新版本安装到 Codex 自己的 Skill 目录中。',
+    '要求：',
+    '1. 直接读取这个 zip 文件路径，不要修改 zip 内容。',
+    '2. 先定位 Codex 当前已安装的同名 Skill，并删除旧的同名 Skill，包括 Codex 自己机制中记录的旧版本目录或注册信息。',
+    '3. 再安装这个 zip 包中的最新 Skill，确保后续 Codex 调用同名 Skill 时只会使用这次安装的新版本。',
+    '4. 如果无法确认旧 Skill 已删除或新 Skill 已安装成功，请明确输出失败原因并以失败状态结束。',
+    '5. 安装成功后只输出简短成功信息。',
+    '',
+    `Skill zip 路径：${packagePath}`
+  ].join('\n')
 
-  return {
-    packagePath: input.packagePath,
-    skillId: '未提供',
-    skillName: '未提供',
-    version: '未提供'
-  }
-}
+const hasInstallMetadata = (
+  input: InstallCodexSkillInput | LegacyInstallCodexSkillInput
+): input is InstallCodexSkillInput =>
+  'skillId' in input &&
+  input.skillId.length > 0 &&
+  'skillName' in input &&
+  input.skillName.length > 0 &&
+  'version' in input &&
+  input.version.length > 0
 
 const runCodexPrompt = (
   prompt: string,
@@ -164,11 +174,11 @@ const runCodexPrompt = (
 export function installCodexSkillFromZip(
   input: InstallCodexSkillInput | LegacyInstallCodexSkillInput
 ): Promise<InstallCodexSkillResult> {
-  return runCodexPrompt(
-    buildInstallSkillPrompt(toInstallPromptInput(input)),
-    input.timeoutMs,
-    'Codex Skill install'
-  )
+  const prompt = hasInstallMetadata(input)
+    ? buildInstallSkillPrompt(input)
+    : buildLegacyInstallSkillPrompt(input.packagePath)
+
+  return runCodexPrompt(prompt, input.timeoutMs, 'Codex Skill install')
 }
 
 export const deleteCodexSkill = (input: DeleteCodexSkillInput): Promise<InstallCodexSkillResult> =>
