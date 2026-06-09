@@ -1,12 +1,14 @@
 import uuid
+from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from app import crud
 from app.core.config import settings
 from app.core.db import DEFAULT_LOCAL_ADMIN_NAME
-from app.models import AuthSource, Feedback, User, UserCreate, UserRole
+from app.models import AuthSource, Feedback, FeedbackScreenshot, User, UserCreate, UserRole
 from tests.utils.user import create_random_user
 from tests.utils.utils import auth_headers_for_user_id, random_lower_string
 
@@ -386,6 +388,39 @@ def test_delete_user_me(client: TestClient, db: Session) -> None:
     assert deleted_user["message"] == "User deleted successfully"
     result = db.exec(select(User).where(User.id == user_id)).first()
     assert result is None
+
+
+def test_delete_user_me_removes_feedback_screenshot_files(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEEDBACK_STORAGE_DIR", str(tmp_path))
+    user = create_random_user(db)
+    user_id = user.id
+    headers = auth_headers_for_user_id(user_id)
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/feedback",
+        headers=headers,
+        data={"description": "自删前提交的截图意见"},
+        files={"screenshots": ("screen.png", b"png-bytes", "image/png")},
+    )
+    assert upload_response.status_code == 200
+    feedback = upload_response.json()
+    feedback_id = feedback["id"]
+    screenshot_id = feedback["screenshots"][0]["id"]
+    assert (tmp_path / feedback_id).is_dir()
+
+    response = client.delete(f"{settings.API_V1_STR}/users/me", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "User deleted successfully"
+    assert not (tmp_path / feedback_id).exists()
+    db.expire_all()
+    assert db.get(User, user_id) is None
+    assert db.get(Feedback, feedback_id) is None
+    assert db.get(FeedbackScreenshot, screenshot_id) is None
 
 
 def test_delete_user_me_as_superuser(

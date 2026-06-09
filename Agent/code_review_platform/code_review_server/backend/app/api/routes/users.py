@@ -42,6 +42,20 @@ def _ensure_svn_username_available(
         )
 
 
+def _delete_user_with_related_data(*, session: SessionDep, user: User) -> None:
+    feedback_ids = session.exec(
+        select(Feedback.id).where(col(Feedback.user_id) == user.id)
+    ).all()
+    feedback_statement = delete(Feedback).where(col(Feedback.user_id) == user.id)
+    session.exec(feedback_statement)
+    item_statement = delete(Item).where(col(Item.owner_id) == user.id)
+    session.exec(item_statement)
+    session.delete(user)
+    session.commit()
+    for feedback_id in feedback_ids:
+        feedback_service.remove_feedback_files(feedback_id)
+
+
 @router.get(
     "/",
     dependencies=[Depends(get_current_active_admin)],
@@ -128,8 +142,7 @@ def delete_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
         raise HTTPException(
             status_code=403, detail="Admins are not allowed to delete themselves"
         )
-    session.delete(current_user)
-    session.commit()
+    _delete_user_with_related_data(session=session, user=current_user)
     return Message(message="User deleted successfully")
 
 
@@ -198,15 +211,5 @@ def delete_user(
         raise HTTPException(
             status_code=403, detail="Admins are not allowed to delete themselves"
         )
-    feedback_ids = session.exec(
-        select(Feedback.id).where(col(Feedback.user_id) == user_id)
-    ).all()
-    feedback_statement = delete(Feedback).where(col(Feedback.user_id) == user_id)
-    session.exec(feedback_statement)
-    statement = delete(Item).where(col(Item.owner_id) == user_id)
-    session.exec(statement)
-    session.delete(user)
-    session.commit()
-    for feedback_id in feedback_ids:
-        feedback_service.remove_feedback_files(feedback_id)
+    _delete_user_with_related_data(session=session, user=user)
     return Message(message="User deleted successfully")
