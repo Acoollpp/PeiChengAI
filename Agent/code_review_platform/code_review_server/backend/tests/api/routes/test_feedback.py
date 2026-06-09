@@ -66,7 +66,15 @@ def test_create_feedback_with_screenshot_and_read_it(
     assert content["screenshot_name"] == "screen.png"
     assert content["screenshot_content_type"] == "image/png"
     assert content["screenshot_size"] == len(b"png-bytes")
+    assert content["screenshot_count"] == 1
+    assert len(content["screenshots"]) == 1
+    screenshot = content["screenshots"][0]
+    assert screenshot["file_name"] == "screen.png"
+    assert screenshot["content_type"] == "image/png"
+    assert screenshot["file_size"] == len(b"png-bytes")
+    assert screenshot["sort_order"] == 0
     assert "screenshot_path" not in content
+    assert "file_path" not in str(content)
 
     screenshot_response = client.get(
         f"{settings.API_V1_STR}/feedback/{content['id']}/screenshot",

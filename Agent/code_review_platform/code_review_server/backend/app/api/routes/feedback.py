@@ -98,6 +98,16 @@ async def create_feedback(
         feedback.screenshot_name = screenshot.filename
         feedback.screenshot_content_type = screenshot.content_type
         feedback.screenshot_size = len(content)
+        session.add(
+            FeedbackScreenshot(
+                feedback_id=feedback.id,
+                file_path=str(screenshot_path),
+                file_name=screenshot.filename or "screenshot.png",
+                content_type=screenshot.content_type or "application/octet-stream",
+                file_size=len(content),
+                sort_order=0,
+            )
+        )
 
     session.add(feedback)
     session.commit()
