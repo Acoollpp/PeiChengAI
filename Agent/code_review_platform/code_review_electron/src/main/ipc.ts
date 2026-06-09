@@ -284,6 +284,11 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
         throw new Error('Not authenticated')
       }
 
+      const skillSyncResult = await syncSkillForCurrentUser(authStore, syncSkill)
+      if (typeof skillSyncResult === 'string') {
+        throw new Error(skillSyncResult)
+      }
+
       const taskApi = await createApiClient()
       const result = await executeReviewTask(
         {

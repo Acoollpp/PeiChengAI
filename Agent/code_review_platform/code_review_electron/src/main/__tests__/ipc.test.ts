@@ -243,11 +243,24 @@ describe('registerIpcHandlers', () => {
     tempDirs.push(cwd)
     const reportPath = join(cwd, '代码审查报告.md')
     const imagesDir = join(cwd, 'images')
+    const syncSkill = vi.fn(async () => ({
+      status: 'current' as const,
+      skills: [
+        {
+          id: 'skill-1',
+          name: '通用-代码变更审查-模板一',
+          version: '2026.05.29',
+          package_path: '/tmp/code-review-runtime/skill-packages/skill.zip',
+          installed_at: '2026-05-29T10:00:00.000Z'
+        }
+      ]
+    }))
     const { registerIpcHandlers } = await import('../ipc')
 
     registerIpcHandlers({
       api: api as never,
       authStore: authStore as never,
+      syncSkill,
       checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
       runCodex: vi.fn(async () => {
@@ -272,12 +285,55 @@ describe('registerIpcHandlers', () => {
       status: 'success',
       reportPath: expect.stringContaining('代码审查报告.md')
     })
+    expect(syncSkill).toHaveBeenCalledWith('token-123')
 
     await expect(downloadHandler()).resolves.toMatchObject({
       status: 'ready',
       reportPath: expect.stringContaining('代码审查报告.md')
     })
     expect(showItemInFolderMock).toHaveBeenCalledWith(reportPath)
+  })
+
+  it('syncs active Skills before executing a task and blocks stale local Skill execution on sync failure', async () => {
+    const api = {
+      createTask: vi.fn(),
+      updateTaskStatus: vi.fn(),
+      uploadReport: vi.fn()
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123' })),
+      save: vi.fn()
+    }
+    const syncSkill = vi.fn(async () => {
+      throw new Error('No active skill is configured')
+    })
+    const checkEnvironment = vi.fn(async () => ({ status: 'ready' as const }))
+    const runCodex = vi.fn()
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      syncSkill,
+      checkEnvironment,
+      runCodex
+    })
+
+    const executeHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:execute')?.[1]
+
+    await expect(
+      executeHandler({}, {
+        svn_url: 'svn://repo/project',
+        old_revision: '1',
+        new_revision: '2',
+        template_key: 'template_1',
+        skill_name: '通用-代码变更审查-模板一'
+      })
+    ).rejects.toThrow('No active skill is configured')
+    expect(syncSkill).toHaveBeenCalledWith('token-123')
+    expect(api.createTask).not.toHaveBeenCalled()
+    expect(checkEnvironment).not.toHaveBeenCalled()
+    expect(runCodex).not.toHaveBeenCalled()
   })
 
   it('downloads a historical task report into the local runtime workspace before opening it', async () => {
