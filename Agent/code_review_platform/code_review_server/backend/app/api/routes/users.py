@@ -2,7 +2,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import col, delete, func, or_, select
+from sqlmodel import col, delete, func, or_, select, update
 
 from app import crud
 from app.api.deps import (
@@ -12,10 +12,13 @@ from app.api.deps import (
     has_admin_privileges,
 )
 from app.models import (
+    AuditLog,
+    ClientRelease,
     Feedback,
     Item,
     Message,
     ReviewTask,
+    SkillPackage,
     User,
     UserApiKey,
     UserCreate,
@@ -49,6 +52,30 @@ def _delete_user_with_related_data(*, session: SessionDep, user: User) -> None:
     feedback_ids = session.exec(
         select(Feedback.id).where(col(Feedback.user_id) == user.id)
     ).all()
+    audit_actor_statement = (
+        update(AuditLog)
+        .where(col(AuditLog.actor_user_id) == user.id)
+        .values(actor_user_id=None)
+    )
+    session.exec(audit_actor_statement)
+    audit_target_statement = (
+        update(AuditLog)
+        .where(col(AuditLog.target_user_id) == user.id)
+        .values(target_user_id=None)
+    )
+    session.exec(audit_target_statement)
+    skill_package_statement = (
+        update(SkillPackage)
+        .where(col(SkillPackage.created_by_user_id) == user.id)
+        .values(created_by_user_id=None)
+    )
+    session.exec(skill_package_statement)
+    client_release_statement = (
+        update(ClientRelease)
+        .where(col(ClientRelease.created_by_user_id) == user.id)
+        .values(created_by_user_id=None)
+    )
+    session.exec(client_release_statement)
     feedback_statement = delete(Feedback).where(col(Feedback.user_id) == user.id)
     session.exec(feedback_statement)
     review_task_statement = delete(ReviewTask).where(col(ReviewTask.user_id) == user.id)
