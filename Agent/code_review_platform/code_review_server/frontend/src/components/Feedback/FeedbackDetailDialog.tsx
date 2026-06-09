@@ -89,6 +89,10 @@ export function FeedbackDetailDialog({
     Promise.all(
       sortedScreenshots.map(async (screenshot) => {
         const blob = await fetchScreenshot(feedbackId, screenshot.id)
+        if (!isMounted) {
+          return null
+        }
+
         const url = URL.createObjectURL(blob)
         objectUrls.push(url)
 
@@ -106,7 +110,7 @@ export function FeedbackDetailDialog({
           return
         }
 
-        setScreenshotPreviews(previews)
+        setScreenshotPreviews(previews.filter((preview) => preview !== null))
       })
       .catch((error) => {
         if (isMounted) {

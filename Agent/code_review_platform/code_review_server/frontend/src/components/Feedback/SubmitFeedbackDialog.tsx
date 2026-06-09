@@ -326,7 +326,7 @@ export function SubmitFeedbackDialog({
               type="button"
               variant="outline"
               disabled={mutation.isPending}
-              onClick={() => setOpen(false)}
+              onClick={() => handleOpenChange(false)}
             >
               取消
             </Button>
