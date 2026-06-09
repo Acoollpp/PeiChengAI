@@ -1,9 +1,10 @@
-import { Component, isValidElement, type ReactNode } from 'react'
+import { Component, isValidElement, type ReactNode, useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 type MarkdownPreviewProps = {
   markdown: string
+  reportPath?: string
 }
 
 const safeUrl = (href?: string): string | undefined => {
@@ -16,6 +17,22 @@ const safeUrl = (href?: string): string | undefined => {
   }
 
   return undefined
+}
+
+const isRelativeImagePath = (src?: string): src is string => {
+  if (!src) {
+    return false
+  }
+
+  return !/^[a-z][a-z\d+.-]*:/i.test(src) && !src.startsWith('/') && !src.startsWith('#')
+}
+
+const decodeAssetPath = (src: string): string => {
+  try {
+    return decodeURIComponent(src)
+  } catch {
+    return src
+  }
 }
 
 const getCodeLanguage = (children: ReactNode): string | undefined => {
@@ -67,7 +84,55 @@ class MarkdownErrorBoundary extends Component<
   }
 }
 
-export function MarkdownPreview({ markdown }: MarkdownPreviewProps): React.JSX.Element {
+function ReportImage({
+  alt,
+  reportPath,
+  src
+}: {
+  alt?: string
+  reportPath?: string
+  src?: string
+}): React.JSX.Element {
+  const [resolvedSrc, setResolvedSrc] = useState<string | undefined>(() =>
+    isRelativeImagePath(src) ? undefined : safeUrl(src)
+  )
+
+  useEffect(() => {
+    let isMounted = true
+
+    if (!isRelativeImagePath(src)) {
+      setResolvedSrc(safeUrl(src))
+      return
+    }
+
+    if (!reportPath) {
+      setResolvedSrc(undefined)
+      return
+    }
+
+    setResolvedSrc(undefined)
+    window.codeReview
+      .readReportAsset({ reportPath, assetPath: decodeAssetPath(src) })
+      .then((asset) => {
+        if (isMounted) {
+          setResolvedSrc(asset.dataUrl)
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setResolvedSrc(undefined)
+        }
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [reportPath, src])
+
+  return <img src={resolvedSrc} alt={alt ?? ''} />
+}
+
+export function MarkdownPreview({ markdown, reportPath }: MarkdownPreviewProps): React.JSX.Element {
   if (!markdown.trim()) {
     return (
       <div className="preview-scroll">
@@ -82,7 +147,9 @@ export function MarkdownPreview({ markdown }: MarkdownPreviewProps): React.JSX.E
         <article className="markdown-preview">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
-            urlTransform={(url) => safeUrl(url)}
+            urlTransform={(url, key) =>
+              key === 'src' && isRelativeImagePath(url) ? url : safeUrl(url)
+            }
             components={{
               a: ({ href, children }) => {
                 const safeHref = safeUrl(href)
@@ -114,7 +181,8 @@ export function MarkdownPreview({ markdown }: MarkdownPreviewProps): React.JSX.E
                 <div className="markdown-table-wrapper" style={{ overflowX: 'auto' }}>
                   <table>{children}</table>
                 </div>
-              )
+              ),
+              img: ({ alt, src }) => <ReportImage alt={alt} src={src} reportPath={reportPath} />
             }}
           >
             {markdown}

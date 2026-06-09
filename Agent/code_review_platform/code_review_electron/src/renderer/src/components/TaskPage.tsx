@@ -38,6 +38,7 @@ export function TaskPage({
   const [markdown, setMarkdown] = useState('')
   const [error, setError] = useState('')
   const [reportMessage, setReportMessage] = useState('')
+  const [currentReportPath, setCurrentReportPath] = useState<string>()
   const [isLoadingTasks, setIsLoadingTasks] = useState(true)
   const [selectedTaskId, setSelectedTaskId] = useState<string>()
   const [loadingReportTaskId, setLoadingReportTaskId] = useState<string>()
@@ -102,6 +103,7 @@ export function TaskPage({
       }
       setSelectedTaskId(result.taskId)
       if (result.reportPath) {
+        setCurrentReportPath(result.reportPath)
         setReportMessage(`报告已生成：${result.reportPath}`)
       }
       setTasks((current) =>
@@ -137,6 +139,7 @@ export function TaskPage({
     try {
       const reportMarkdown = await window.codeReview.readTaskReport(task.id)
       setMarkdown(reportMarkdown)
+      setCurrentReportPath(task.report_path)
     } catch (reportError) {
       setError(reportError instanceof Error ? reportError.message : '历史报告加载失败。')
     } finally {
@@ -156,6 +159,7 @@ export function TaskPage({
       }
 
       setReportMessage(`报告位置：${result.reportPath}`)
+      setCurrentReportPath(result.reportPath)
     } catch (downloadError) {
       setError(downloadError instanceof Error ? downloadError.message : '报告位置打开失败。')
     }
@@ -224,7 +228,7 @@ export function TaskPage({
             查看报告位置
           </button>
         </div>
-        <MarkdownPreview markdown={markdown} />
+        <MarkdownPreview markdown={markdown} reportPath={currentReportPath} />
       </section>
       <SubmitFeedbackDialog open={showSubmitFeedback} onClose={() => setShowSubmitFeedback(false)} />
     </section>

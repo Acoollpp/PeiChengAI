@@ -88,6 +88,16 @@ export interface DownloadCurrentReportResult {
   reportPath?: string
 }
 
+export interface ReadReportAssetRequest {
+  reportPath: string
+  assetPath: string
+}
+
+export interface ReadReportAssetResult {
+  dataUrl: string
+  contentType: string
+}
+
 export interface KeyLoginResult {
   needSvnBinding: boolean
 }
@@ -131,6 +141,7 @@ export interface CodeReviewApi {
   executeTask(payload: ExecuteTaskRequest): Promise<ExecuteTaskResult>
   onTaskProgress(callback: (event: TaskProgressEvent) => void): () => void
   downloadCurrentReport(taskId?: string): Promise<DownloadCurrentReportResult>
+  readReportAsset(payload: ReadReportAssetRequest): Promise<ReadReportAssetResult>
   installCodex(): Promise<EnvironmentCheckResult>
   installSvn(): Promise<EnvironmentCheckResult>
   installSkill(): Promise<EnvironmentCheckResult>

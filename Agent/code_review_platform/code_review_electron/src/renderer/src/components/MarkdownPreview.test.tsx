@@ -2,7 +2,7 @@
 
 import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen, within } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MarkdownPreview } from './MarkdownPreview'
 
@@ -11,6 +11,15 @@ afterEach(() => {
 })
 
 describe('MarkdownPreview', () => {
+  beforeEach(() => {
+    window.codeReview = {
+      readReportAsset: vi.fn(async () => ({
+        dataUrl: 'data:image/png;base64,aW1hZ2U=',
+        contentType: 'image/png'
+      }))
+    } as never
+  })
+
   it('空内容显示空状态', () => {
     render(<MarkdownPreview markdown="" />)
 
@@ -68,6 +77,22 @@ describe('MarkdownPreview', () => {
     expect(screen.queryByRole('link', { name: '相对链接' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: '路径链接' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: '锚点' })).not.toBeInTheDocument()
+  })
+
+  it('使用报告路径加载相对图片', async () => {
+    render(
+      <MarkdownPreview
+        markdown="![问题截图](01_r25576对r29303.png)"
+        reportPath="/tmp/runtime/workspaces/task-1/report.md"
+      />
+    )
+
+    const image = await screen.findByRole('img', { name: '问题截图' })
+    expect(window.codeReview.readReportAsset).toHaveBeenCalledWith({
+      reportPath: '/tmp/runtime/workspaces/task-1/report.md',
+      assetPath: '01_r25576对r29303.png'
+    })
+    expect(image).toHaveAttribute('src', 'data:image/png;base64,aW1hZ2U=')
   })
 
   it('表格被横向滚动容器包裹', () => {

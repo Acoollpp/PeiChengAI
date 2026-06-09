@@ -11,6 +11,8 @@ import type {
   KeyLoginRequest,
   KeyLoginResult,
   DownloadCurrentReportResult,
+  ReadReportAssetRequest,
+  ReadReportAssetResult,
   RememberedCredentials,
   SubmitFeedbackIpcPayload,
   SubmitFeedbackPayload,
@@ -71,6 +73,8 @@ contextBridge.exposeInMainWorld('codeReview', {
   },
   downloadCurrentReport: (taskId?: string): Promise<DownloadCurrentReportResult> =>
     ipcRenderer.invoke('report:download-current', taskId),
+  readReportAsset: (payload: ReadReportAssetRequest): Promise<ReadReportAssetResult> =>
+    ipcRenderer.invoke('report:asset', payload),
   bindSvnCredential: (payload: SvnCredentialPayload): Promise<true> =>
     ipcRenderer.invoke('svn:bind-credential', payload),
   installCodex: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('codex:install'),
