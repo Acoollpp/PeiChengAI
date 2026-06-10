@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { EventEmitter as EventEmitterType } from 'node:events'
 
-const { spawnMock } = vi.hoisted(() => ({
+const { existingPaths, spawnMock } = vi.hoisted(() => ({
+  existingPaths: new Set<string>(),
   spawnMock: vi.fn()
 }))
 
@@ -10,7 +11,7 @@ vi.mock('node:child_process', () => ({
 }))
 
 vi.mock('node:fs', () => ({
-  existsSync: vi.fn((path: string) => path.endsWith('codex.exe'))
+  existsSync: vi.fn((path: string) => existingPaths.has(path))
 }))
 
 vi.mock('../environment-checker', () => ({
@@ -59,7 +60,7 @@ describe('runCodexReview', () => {
       { stream: 'stderr', text: 'svn warning\n' }
     ])
     expect(spawnMock).toHaveBeenCalledWith(
-      expect.stringMatching(/codex(\.exe)?$/),
+      'codex',
       ['exec', '--dangerously-bypass-approvals-and-sandbox', 'prompt text'],
       expect.objectContaining({
         cwd: '/tmp/workspace',
@@ -70,16 +71,61 @@ describe('runCodexReview', () => {
   })
 })
 
-import { buildCodexCommand, buildCodexExecArgs, buildReviewPrompt } from '../codex-runner'
+import {
+  buildCodexCommand,
+  buildCodexExecArgs,
+  buildCodexShellOption,
+  buildReviewPrompt
+} from '../codex-runner'
 import { REVIEW_REPORT_IMAGES_DIR_NAME } from '../../shared/report-artifacts'
 
 describe('buildCodexCommand', () => {
+  afterEach(() => {
+    existingPaths.clear()
+  })
+
   it('uses the real Codex exe on Windows so prompt stays a single argv without shell parsing', () => {
-    expect(buildCodexCommand('win32')).toContain('codex.exe')
+    const codexExe =
+      'C:\\Users\\admin\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe'
+    existingPaths.add(codexExe)
+
+    expect(buildCodexCommand('win32', { APPDATA: 'C:\\Users\\admin\\AppData\\Roaming' })).toBe(
+      codexExe
+    )
+  })
+
+  it('resolves the real Codex exe from a codex.cmd directory on Windows', () => {
+    const nodeBin = 'C:\\Users\\admin\\Documents\\Codex\\2026-06-10\\node-js\\tools\\nodejs'
+    const codexCmd = `${nodeBin}\\codex.cmd`
+    const codexExe = `${nodeBin}\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe`
+    existingPaths.add(codexCmd)
+    existingPaths.add(codexExe)
+
+    expect(buildCodexCommand('win32', { PATH: nodeBin })).toBe(codexExe)
+  })
+
+  it('falls back to the codex.cmd shim when the vendor exe is unavailable on Windows', () => {
+    const nodeBin = 'C:\\Users\\admin\\Documents\\Codex\\2026-06-10\\node-js\\tools\\nodejs'
+    const codexCmd = `${nodeBin}\\codex.cmd`
+    existingPaths.add(codexCmd)
+
+    expect(buildCodexCommand('win32', { PATH: nodeBin })).toBe(codexCmd)
   })
 
   it('uses codex on non-Windows platforms', () => {
     expect(buildCodexCommand('darwin')).toBe('codex')
+  })
+})
+
+describe('buildCodexShellOption', () => {
+  it('keeps direct executables out of the shell', () => {
+    expect(buildCodexShellOption('C:\\tools\\codex.exe', 'win32')).toBe(false)
+    expect(buildCodexShellOption('codex', 'darwin')).toBe(false)
+  })
+
+  it('uses the shell on Windows when falling back to command shims', () => {
+    expect(buildCodexShellOption('C:\\tools\\codex.cmd', 'win32')).toBe(true)
+    expect(buildCodexShellOption('codex', 'win32')).toBe(true)
   })
 })
 

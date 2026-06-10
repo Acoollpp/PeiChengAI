@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { win32 as windowsPath } from 'node:path'
 
 import { buildVersionCommandOptions } from './environment-checker'
 import { REVIEW_REPORT_IMAGES_DIR_NAME } from '../shared/report-artifacts'
@@ -64,29 +64,56 @@ export interface CodexOutputEvent {
   text: string
 }
 
-export const buildWindowsCodexBinaryPath = (): string =>
-  join(
-    process.env.APPDATA ?? '',
+const codexVendorBinaryParts = [
+  'node_modules',
+  '@openai',
+  'codex',
+  'node_modules',
+  '@openai',
+  'codex-win32-x64',
+  'vendor',
+  'x86_64-pc-windows-msvc',
+  'bin',
+  'codex.exe'
+]
+
+export const buildWindowsCodexBinaryPath = (env: NodeJS.ProcessEnv = process.env): string =>
+  windowsPath.join(
+    env.APPDATA ?? '',
     'npm',
-    'node_modules',
-    '@openai',
-    'codex',
-    'node_modules',
-    '@openai',
-    'codex-win32-x64',
-    'vendor',
-    'x86_64-pc-windows-msvc',
-    'bin',
-    'codex.exe'
+    ...codexVendorBinaryParts
   )
 
-export const buildCodexCommand = (platform: NodeJS.Platform = process.platform): string => {
+const resolveCodexCommandFromPath = (env: NodeJS.ProcessEnv): string | null => {
+  const pathValue = env.PATH ?? env.Path ?? ''
+  for (const entry of pathValue.split(';').filter(Boolean)) {
+    const codexCmd = windowsPath.join(entry, 'codex.cmd')
+    const codexExe = windowsPath.join(entry, ...codexVendorBinaryParts)
+    if (existsSync(codexCmd) && existsSync(codexExe)) {
+      return codexExe
+    }
+    if (existsSync(codexCmd)) {
+      return codexCmd
+    }
+  }
+
+  return null
+}
+
+export const buildCodexCommand = (
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env
+): string => {
   if (platform !== 'win32') {
     return 'codex'
   }
 
-  const bundledBinary = buildWindowsCodexBinaryPath()
-  return existsSync(bundledBinary) ? bundledBinary : 'codex'
+  const bundledBinary = buildWindowsCodexBinaryPath(env)
+  if (existsSync(bundledBinary)) {
+    return bundledBinary
+  }
+
+  return resolveCodexCommandFromPath(env) ?? 'codex'
 }
 
 export const buildCodexExecArgs = (prompt: string): string[] => [
@@ -94,6 +121,11 @@ export const buildCodexExecArgs = (prompt: string): string[] => [
   '--dangerously-bypass-approvals-and-sandbox',
   prompt
 ]
+
+export const buildCodexShellOption = (
+  command: string,
+  platform: NodeJS.Platform = process.platform
+): boolean => platform === 'win32' && !command.toLowerCase().endsWith('.exe')
 
 export const buildReviewPrompt = ({
   svnUrl,
@@ -149,10 +181,11 @@ export const runCodexReview = ({
 }: RunCodexReviewOptions): Promise<CodexReviewResult> =>
   new Promise((resolve, reject) => {
     const commandOptions = buildVersionCommandOptions()
-    const child = spawn(buildCodexCommand(), buildCodexExecArgs(prompt), {
+    const command = buildCodexCommand(process.platform, commandOptions.env)
+    const child = spawn(command, buildCodexExecArgs(prompt), {
       ...commandOptions,
       cwd,
-      shell: false,
+      shell: buildCodexShellOption(command),
       env: {
         ...commandOptions.env,
         CODEX_UNSAFE_ALLOW_NO_SANDBOX: '1'
