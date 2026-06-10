@@ -3,11 +3,10 @@ __MACOSX/
 logs/
 *.log
 .worktrees/
-software_website/backups/
-software_website/logs/
-software_website/docs/
 
+AIsoftware_website/check-website-health.sh
+AIsoftware_website/sync-and-restart-service.sh
+AIsoftware_website/ops/
 AIsoftware_website/frontend/assets/downloads/*.rar
 AIsoftware_website/frontend/download/*.rar
 AIsoftware_website/frontend/download/*.zip
-

@@ -7,14 +7,12 @@ const rootDir = path.join(__dirname, "..");
 const repoRoot = path.join(rootDir, "..");
 const urlFile = path.join(rootDir, "frontend/data/platform-urls.js");
 const dataFile = path.join(rootDir, "frontend/data/site-data.js");
-const healthScript = path.join(rootDir, "check-website-health.sh");
-const nginxTemplate = path.join(rootDir, "ops/nginx-software-website.conf");
+const previewScript = path.join(rootDir, "start-mac-preview.sh");
 const gitignoreFile = path.join(repoRoot, ".gitignore");
 const healthFile = path.join(rootDir, "frontend/healthz");
 
 assert.ok(fs.existsSync(urlFile), "platform URL registry should exist");
-assert.ok(fs.existsSync(healthScript), "website health check script should exist");
-assert.ok(fs.existsSync(nginxTemplate), "nginx config template should exist");
+assert.ok(fs.existsSync(previewScript), "portable preview script should exist");
 assert.equal(fs.readFileSync(healthFile, "utf8").trim(), "ok", "static health endpoint should exist");
 
 const context = { window: {} };
@@ -38,20 +36,17 @@ assert.equal(openclaw.links[1].url, context.window.platformUrls.openclawDepartme
 assert.equal(platforms.find((item) => item.title === "AI 应用统计管理平台").link, context.window.platformUrls.aiStatistics);
 assert.equal(platforms.find((item) => item.title === "GPT 账号管理平台").link, context.window.platformUrls.gptAccount);
 
-const health = fs.readFileSync(healthScript, "utf8");
-assert.ok(health.includes("platform-urls.js"), "health check should load central URL registry");
-assert.ok(health.includes("5174"), "health check should verify website service");
-assert.ok(health.includes("nginx"), "health check should report nginx status");
-
-const nginxTemplateText = fs.readFileSync(nginxTemplate, "utf8");
-assert.ok(nginxTemplateText.includes("listen 5174"), "nginx template should keep current public port");
-assert.ok(nginxTemplateText.includes("try_files $uri"), "nginx template should serve static health endpoint");
-assert.ok(nginxTemplateText.includes("Cache-Control"), "nginx template should include cache policy");
-assert.ok(nginxTemplateText.includes("worker_connections 1024"), "nginx template should support higher local concurrency");
-assert.ok(!nginxTemplateText.includes("gzip on"), "nginx template should not enable gzip when current nginx was built without gzip module");
+const previewScriptText = fs.readFileSync(previewScript, "utf8");
+assert.ok(previewScriptText.includes("python3 -m http.server"), "preview script should use portable Python static server");
+assert.ok(previewScriptText.includes("frontend"), "preview script should serve the frontend directory");
 
 const gitignore = fs.readFileSync(gitignoreFile, "utf8");
-["software_website/backups/", "software_website/logs/", ".DS_Store"].forEach((text) => {
+[
+  ".DS_Store",
+  "AIsoftware_website/check-website-health.sh",
+  "AIsoftware_website/sync-and-restart-service.sh",
+  "AIsoftware_website/ops/",
+].forEach((text) => {
   assert.ok(gitignore.includes(text), `.gitignore should include ${text}`);
 });
 
