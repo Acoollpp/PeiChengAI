@@ -17,6 +17,7 @@ import type {
 export interface ExecuteReviewTaskInput {
   token: string
   request: CreateTaskRequest
+  clientTaskId?: string
 }
 
 export interface PreparedWorkspace {
@@ -38,6 +39,7 @@ export interface RunCodexInput {
   imagesDir: string
   skillName: string
   task: ReviewTask
+  clientTaskId?: string
   onProgress?: TaskProgressReporter
 }
 
@@ -127,6 +129,7 @@ export const defaultRunCodex = async ({
   imagesDir,
   skillName,
   task,
+  clientTaskId,
   onProgress
 }: RunCodexInput): Promise<void> => {
   await runCodexReview({
@@ -143,6 +146,7 @@ export const defaultRunCodex = async ({
     onOutput: (event) =>
       onProgress?.({
         taskId: task.id,
+        clientTaskId,
         type: 'codex_output',
         stream: event.stream,
         message: event.text
@@ -164,11 +168,12 @@ export const executeReviewTask = async (
   onProgress?: TaskProgressReporter
 ): Promise<ExecuteReviewTaskResult> => {
   const task = toReviewTask(await dependencies.api.createTask(input.token, input.request))
+  emitStage(onProgress, task.id, input.clientTaskId, 'created', '任务已创建')
 
   try {
     const skillName = resolveSkillName(input.request.skill_name, task.skill_name)
 
-    emitStage(onProgress, task.id, 'checking_environment', '检查本机环境')
+    emitStage(onProgress, task.id, input.clientTaskId, 'checking_environment', '检查本机环境')
     await updateStatus(dependencies, input.token, task.id, {
       status: 'checking_environment'
     })
@@ -176,7 +181,13 @@ export const executeReviewTask = async (
     const environment = await dependencies.checkEnvironment()
 
     if (environment.status !== 'ready') {
-      emitStage(onProgress, task.id, 'environment_error', environmentErrorMessages[environment.status])
+      emitStage(
+        onProgress,
+        task.id,
+        input.clientTaskId,
+        'environment_error',
+        environmentErrorMessages[environment.status]
+      )
       await updateStatus(dependencies, input.token, task.id, {
         status: 'environment_error',
         error_message: environmentErrorMessages[environment.status]
@@ -185,14 +196,14 @@ export const executeReviewTask = async (
       return { taskId: task.id, status: 'environment_error' }
     }
 
-    emitStage(onProgress, task.id, 'preparing_workspace', '准备任务工作区')
+    emitStage(onProgress, task.id, input.clientTaskId, 'preparing_workspace', '准备任务工作区')
     const workspace = await dependencies.prepareWorkspace({
       taskId: task.id,
       oldRevision: task.old_revision,
       newRevision: task.new_revision
     })
 
-    emitStage(onProgress, task.id, 'running_codex', '启动 Codex 执行审查 Skill')
+    emitStage(onProgress, task.id, input.clientTaskId, 'running_codex', '启动 Codex 执行审查 Skill')
     await updateStatus(dependencies, input.token, task.id, {
       status: 'running_codex'
     })
@@ -201,10 +212,11 @@ export const executeReviewTask = async (
       ...workspace,
       skillName,
       task,
-      onProgress
+      clientTaskId: input.clientTaskId,
+      onProgress: withClientTaskId(onProgress, input.clientTaskId)
     })
 
-    emitStage(onProgress, task.id, 'uploading_report', '上传审查报告')
+    emitStage(onProgress, task.id, input.clientTaskId, 'uploading_report', '上传审查报告')
     await updateStatus(dependencies, input.token, task.id, {
       status: 'uploading_report'
     })
@@ -213,7 +225,7 @@ export const executeReviewTask = async (
     await dependencies.uploadReport(input.token, task.id, workspace.reportPath)
     const reportMarkdown = await readFile(workspace.reportPath, 'utf8')
 
-    emitStage(onProgress, task.id, 'success', '审查完成')
+    emitStage(onProgress, task.id, input.clientTaskId, 'success', '审查完成')
     return {
       taskId: task.id,
       status: 'success',
@@ -229,7 +241,7 @@ export const executeReviewTask = async (
       status: 'failed',
       error_message: errorMessage
     })
-    emitStage(onProgress, task.id, 'failed', errorMessage)
+    emitStage(onProgress, task.id, input.clientTaskId, 'failed', errorMessage)
 
     throw error
   }
@@ -251,16 +263,31 @@ const resolveSkillName = (
 const emitStage = (
   onProgress: TaskProgressReporter | undefined,
   taskId: string,
+  clientTaskId: string | undefined,
   stage: TaskProgressStage,
   message: string
 ): void => {
   onProgress?.({
     taskId,
+    clientTaskId,
     type: 'stage',
     stage,
     message
   })
 }
+
+const withClientTaskId = (
+  onProgress: TaskProgressReporter | undefined,
+  clientTaskId: string | undefined
+): TaskProgressReporter | undefined =>
+  onProgress
+    ? (event) => {
+        onProgress({
+          ...event,
+          clientTaskId: event.clientTaskId ?? clientTaskId
+        })
+      }
+    : undefined
 
 const updateStatus = (
   dependencies: TaskAgentDependencies,

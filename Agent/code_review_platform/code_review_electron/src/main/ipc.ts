@@ -124,6 +124,26 @@ const readReportAsset = async ({
   }
 }
 
+const sendToRenderer = (
+  sender: Electron.WebContents | undefined,
+  channel: string,
+  payload: unknown
+): void => {
+  if (!sender || (typeof sender.isDestroyed === 'function' && sender.isDestroyed())) {
+    return
+  }
+
+  try {
+    sender.send(channel, payload)
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Object has been destroyed')) {
+      return
+    }
+
+    throw error
+  }
+}
+
 export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): void => {
   const apiOverride = dependencies.api
   const authStore = dependencies.authStore ?? new AuthStore()
@@ -156,7 +176,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     event: Electron.IpcMainInvokeEvent | undefined,
     progress: EnvironmentProgressEvent
   ): void => {
-    event?.sender.send('environment:progress', progress)
+    sendToRenderer(event?.sender, 'environment:progress', progress)
   }
 
   ipcMain.handle('auth:key-login', async (_event, payload: KeyLoginRequest): Promise<{ needSvnBinding: boolean }> => {
@@ -277,7 +297,10 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
   ipcMain.handle(
     'task:execute',
-    async (event, payload: CreateTaskRequest): Promise<ExecuteReviewTaskResult> => {
+    async (
+      event,
+      payload: CreateTaskRequest & { client_task_id?: string }
+    ): Promise<ExecuteReviewTaskResult> => {
       const tokens = await authStore.load()
 
       if (!tokens) {
@@ -290,10 +313,12 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       }
 
       const taskApi = await createApiClient()
+      const { client_task_id: clientTaskId, ...createTaskPayload } = payload
       const result = await executeReviewTask(
         {
           token: tokens.access_token,
-          request: payload
+          request: createTaskPayload,
+          clientTaskId
         },
         {
           api: taskApi,
@@ -305,7 +330,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
             ((token, taskId, reportPath) => uploadReportFile(taskApi, token, taskId, reportPath))
         },
         (progressEvent) => {
-          event.sender?.send('task:progress', progressEvent)
+          sendToRenderer(event.sender, 'task:progress', progressEvent)
         }
       )
 

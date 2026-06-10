@@ -40,6 +40,7 @@ export interface ExecuteTaskRequest {
   new_revision: string
   template_key?: ReviewTemplateKey
   skill_name?: string
+  client_task_id?: string
 }
 
 export interface EnvironmentCheckResult {

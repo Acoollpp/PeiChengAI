@@ -194,21 +194,22 @@ describe('executeReviewTask', () => {
     }
 
     await executeReviewTask(
-      { token: 'token-123', request },
+      { token: 'token-123', request, clientTaskId: 'local-task-1' },
       dependencies,
       (event) => {
         const detail = event.type === 'stage' ? event.stage : event.stream
-        events.push(`${event.type}:${detail}:${event.message}`)
+        events.push(`${event.clientTaskId}:${event.taskId}:${event.type}:${detail}:${event.message}`)
       }
     )
 
     expect(events).toEqual([
-      'stage:checking_environment:检查本机环境',
-      'stage:preparing_workspace:准备任务工作区',
-      'stage:running_codex:启动 Codex 执行审查 Skill',
-      'codex_output:stdout:读取 Skill\n',
-      'stage:uploading_report:上传审查报告',
-      'stage:success:审查完成'
+      'local-task-1:task-1:stage:created:任务已创建',
+      'local-task-1:task-1:stage:checking_environment:检查本机环境',
+      'local-task-1:task-1:stage:preparing_workspace:准备任务工作区',
+      'local-task-1:task-1:stage:running_codex:启动 Codex 执行审查 Skill',
+      'local-task-1:task-1:codex_output:stdout:读取 Skill\n',
+      'local-task-1:task-1:stage:uploading_report:上传审查报告',
+      'local-task-1:task-1:stage:success:审查完成'
     ])
   })
 
