@@ -21,14 +21,14 @@ const docs = [
     urls: ["http://172.24.21.3:8080/"],
   },
   {
+    file: "docs/code-review-platform.html",
+    keys: ["codeReview"],
+    urls: ["http://172.23.17.242:5174/"],
+  },
+  {
     file: "docs/gpt-account-platform.html",
     keys: ["gptAccount"],
     urls: ["http://172.23.17.242:8080/"],
-  },
-  {
-    file: "docs/code-review-platform.html",
-    keys: ["codeReview"],
-    urls: [],
   },
 ];
 

@@ -47,22 +47,22 @@ assert.deepEqual(
   ],
 );
 
-const codeReviewPlatform = platforms.find((item) => item.title === "代码审查平台");
-assert.ok(codeReviewPlatform, "代码审查平台 should exist");
-assert.equal(codeReviewPlatform.link, context.window.platformUrls.codeReview);
-assert.equal(codeReviewPlatform.docLink, "docs/code-review-platform.html");
-assert.deepEqual(
-  Array.from(codeReviewPlatform.links || []).map((item) => [item.label, item.url]),
-  [
-    ["看板平台", context.window.platformUrls.codeReview],
-    ["客户端下载", "download/AI代码审查客户端-v1.3.4.exe.zip"],
-  ],
-);
-
 const statisticsPlatform = platforms.find((item) => item.title === "AI 应用统计管理平台");
 assert.ok(statisticsPlatform, "AI 应用统计管理平台 should exist");
 assert.equal(statisticsPlatform.link, "http://172.24.21.3:8080/");
 assert.equal(statisticsPlatform.docLink, "docs/ai-app-statistics.html");
+
+const codeReviewPlatform = platforms.find((item) => item.title === "代码审查平台");
+assert.ok(codeReviewPlatform, "代码审查平台 should exist");
+assert.equal(codeReviewPlatform.link, "http://172.23.17.242:5174/");
+assert.equal(codeReviewPlatform.docLink, "docs/code-review-platform.html");
+assert.deepEqual(
+  Array.from(codeReviewPlatform.links || []).map((item) => [item.label, item.url]),
+  [
+    ["看板平台", "http://172.23.17.242:5174/"],
+    ["客户端下载", "download/AI代码审查客户端-v1.3.4.exe.zip"],
+  ],
+);
 
 const gptAccountPlatform = platforms.find((item) => item.title === "GPT 账号管理平台");
 assert.ok(gptAccountPlatform, "GPT 账号管理平台 should exist");

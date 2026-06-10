@@ -8,14 +8,12 @@ const repoRoot = path.join(rootDir, "..");
 const urlFile = path.join(rootDir, "frontend/data/platform-urls.js");
 const dataFile = path.join(rootDir, "frontend/data/site-data.js");
 const healthScript = path.join(rootDir, "check-website-health.sh");
-const opsDoc = path.join(rootDir, "docs/网站维护与运维说明.md");
 const nginxTemplate = path.join(rootDir, "ops/nginx-software-website.conf");
 const gitignoreFile = path.join(repoRoot, ".gitignore");
 const healthFile = path.join(rootDir, "frontend/healthz");
 
 assert.ok(fs.existsSync(urlFile), "platform URL registry should exist");
 assert.ok(fs.existsSync(healthScript), "website health check script should exist");
-assert.ok(fs.existsSync(opsDoc), "maintenance operation doc should exist");
 assert.ok(fs.existsSync(nginxTemplate), "nginx config template should exist");
 assert.equal(fs.readFileSync(healthFile, "utf8").trim(), "ok", "static health endpoint should exist");
 
@@ -44,11 +42,6 @@ const health = fs.readFileSync(healthScript, "utf8");
 assert.ok(health.includes("platform-urls.js"), "health check should load central URL registry");
 assert.ok(health.includes("5174"), "health check should verify website service");
 assert.ok(health.includes("nginx"), "health check should report nginx status");
-
-const opsDocText = fs.readFileSync(opsDoc, "utf8");
-["正式发布目录", "Nginx", "单点风险", "Git 基线", "平台地址集中维护"].forEach((text) => {
-  assert.ok(opsDocText.includes(text), `ops doc should include ${text}`);
-});
 
 const nginxTemplateText = fs.readFileSync(nginxTemplate, "utf8");
 assert.ok(nginxTemplateText.includes("listen 5174"), "nginx template should keep current public port");

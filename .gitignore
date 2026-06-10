@@ -5,6 +5,9 @@ logs/
 .worktrees/
 software_website/backups/
 software_website/logs/
+software_website/docs/
+
 AIsoftware_website/frontend/assets/downloads/*.rar
 AIsoftware_website/frontend/download/*.rar
 AIsoftware_website/frontend/download/*.zip
+

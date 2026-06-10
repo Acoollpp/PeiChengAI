@@ -6,6 +6,7 @@ PORT="5174"
 USER_ID="$(id -u)"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$PROJECT_DIR/frontend/"
+DOWNLOAD_DIR="$SOURCE_DIR/download/"
 TARGET_DIR="$HOME/Sites/software_website_frontend/"
 PLIST_PATH="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG_DIR="$PROJECT_DIR/logs"
@@ -32,6 +33,10 @@ echo "Target: $TARGET_DIR"
 echo
 
 rsync -a --delete --exclude ".DS_Store" "$SOURCE_DIR" "$TARGET_DIR"
+if [[ -d "$DOWNLOAD_DIR" ]]; then
+  mkdir -p "$TARGET_DIR/download"
+  rsync -a --delete --exclude ".DS_Store" "$DOWNLOAD_DIR" "$TARGET_DIR/download/"
+fi
 
 echo "== Reload nginx background service =="
 if launchctl print "gui/$USER_ID/$LABEL" >/dev/null 2>&1; then
