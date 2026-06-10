@@ -5,7 +5,7 @@ import { checkEnvironment, type EnvironmentCheckResult } from './environment-che
 import { buildReviewPrompt, CodexReviewError, runCodexReview, type CodexErrorCode } from './codex-runner'
 import { ensureReportReady, uploadReportFile } from './report-uploader'
 import { getRuntimePaths } from './runtime-paths'
-import { buildReviewReportFileName } from '../shared/report-artifacts'
+import { resolveReviewReportFileName, type RunSvnLog } from './svn-report-name-resolver'
 import type {
   EnvironmentStatus,
   ReviewTask,
@@ -28,9 +28,11 @@ export interface PreparedWorkspace {
 
 export interface PrepareWorkspaceInput {
   taskId: string
+  svnUrl: string
   oldRevision: string
   newRevision: string
   generatedAt?: Date
+  runSvnLog?: RunSvnLog
 }
 
 export interface RunCodexInput {
@@ -100,17 +102,21 @@ const toReviewTask = (value: unknown): ReviewTask => {
 
 export const defaultPrepareWorkspace = async ({
   taskId,
+  svnUrl,
   oldRevision,
   newRevision,
-  generatedAt
+  generatedAt,
+  runSvnLog
 }: PrepareWorkspaceInput): Promise<PreparedWorkspace> => {
   const runtimePaths = await getRuntimePaths()
   const cwd = runtimePaths.workspaceForTask(taskId)
   const imagesDir = runtimePaths.imagesDirForTask(taskId)
-  const reportFileName = buildReviewReportFileName({
+  const reportFileName = await resolveReviewReportFileName({
+    svnUrl,
     oldRevision,
     newRevision,
-    generatedAt
+    generatedAt,
+    runSvnLog
   })
 
   await mkdir(cwd, { recursive: true })
@@ -199,6 +205,7 @@ export const executeReviewTask = async (
     emitStage(onProgress, task.id, input.clientTaskId, 'preparing_workspace', '准备任务工作区')
     const workspace = await dependencies.prepareWorkspace({
       taskId: task.id,
+      svnUrl: task.svn_url,
       oldRevision: task.old_revision,
       newRevision: task.new_revision
     })

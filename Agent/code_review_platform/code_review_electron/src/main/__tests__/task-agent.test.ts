@@ -50,13 +50,21 @@ describe('executeReviewTask', () => {
 
     const workspace = await defaultPrepareWorkspace({
       taskId: 'task-dynamic-report',
+      svnUrl: 'svn://repo/project',
       oldRevision: 'r12',
       newRevision: '14',
-      generatedAt: new Date(2026, 5, 10, 14, 25, 30)
+      generatedAt: new Date(2026, 5, 10, 14, 25, 30),
+      runSvnLog: vi.fn(async () => '<log><logentry revision="14"><msg>代码：P16S100A-41662-1.30-000</msg></logentry></log>')
     })
 
     expect(workspace.reportPath).toBe(
-      '/tmp/code_review_electron/.runtime-data/workspaces/task-dynamic-report/r12_r14审查报告_20260610_142530.md'
+      join(
+        '/tmp/code_review_electron',
+        '.runtime-data',
+        'workspaces',
+        'task-dynamic-report',
+        'P16S100A-41662-1.30-000_审查报告.md'
+      )
     )
   })
 
@@ -148,6 +156,12 @@ describe('executeReviewTask', () => {
       task: makeTask()
     })
     expect(dependencies.uploadReport).toHaveBeenCalledWith('token-123', 'task-1', reportPath)
+    expect(dependencies.prepareWorkspace).toHaveBeenCalledWith({
+      taskId: 'task-1',
+      svnUrl: 'svn://repo/project',
+      oldRevision: '12',
+      newRevision: '14'
+    })
     expect(calls).toEqual([
       'createTask',
       'status:checking_environment',
@@ -334,9 +348,11 @@ describe('defaultPrepareWorkspace', () => {
     const { defaultPrepareWorkspace } = await import('../task-agent')
     const workspace = await defaultPrepareWorkspace({
       taskId: 'task-runtime-workspace',
+      svnUrl: 'svn://repo/project',
       oldRevision: 'r12',
       newRevision: 'r14',
-      generatedAt: new Date(2026, 5, 10, 14, 25, 30)
+      generatedAt: new Date(2026, 5, 10, 14, 25, 30),
+      runSvnLog: vi.fn(async () => '<log><logentry revision="14"><msg>代码：P16S100A-41662-1.30-000</msg></logentry></log>')
     })
 
     expect(workspace).toEqual({
@@ -346,7 +362,7 @@ describe('defaultPrepareWorkspace', () => {
         '.runtime-data',
         'workspaces',
         'task-runtime-workspace',
-        'r12_r14审查报告_20260610_142530.md'
+        'P16S100A-41662-1.30-000_审查报告.md'
       ),
       imagesDir: join(appRoot, '.runtime-data', 'workspaces', 'task-runtime-workspace', 'images')
     })
