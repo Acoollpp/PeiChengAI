@@ -6,6 +6,8 @@
 
 平台采用静态前端方式建设，页面内容主要通过 `frontend/data/site-data.js` 和 `frontend/data/platform-urls.js` 统一维护，便于后续新增应用、更新 Skill 信息和调整平台访问地址。
 
+仓库保留可跨电脑直接预览的网站本体和校验脚本。本机 Nginx 发布配置、同步脚本、健康检查脚本和大型下载包不进入 Git。
+
 ## 目录结构
 
 ```text
@@ -15,10 +17,13 @@ AIsoftware_website/
 │  ├─ platform.html             # 智能体应用页面
 │  ├─ skills.html               # Skills 库页面
 │  ├─ skill-detail.html         # Skill 详情页面
+│  ├─ tools.html                # 提效工具库页面
+│  ├─ updates.html              # 近期更新页面
 │  ├─ contact.html              # 需求对接页面
 │  ├─ data/                     # 应用、Skills 和平台地址配置
 │  ├─ docs/                     # 各智能体应用使用文档
-│  └─ assets/                   # 图片、截图、名片等静态资源
+│  ├─ assets/                   # 图片、截图、名片和 Skill 包等静态资源
+│  └─ download/                 # 本地下载包目录，不提交 Git
 │
 ├─ tests/                       # 页面内容和数据校验脚本
 ├─ start-mac-preview.sh         # 本地预览脚本
@@ -35,6 +40,8 @@ AIsoftware_website/
 
 也可以直接进入 `frontend` 目录，通过静态服务预览页面。
 
+网站是纯静态页面，没有后端依赖。普通预览只需要浏览器和一个静态文件服务。
+
 ## 内容维护
 
 常用维护文件：
@@ -45,6 +52,7 @@ AIsoftware_website/
 | `frontend/data/platform-urls.js` | 维护 AI 应用中心、API 管理平台、Openclaw、GPT 账号管理等访问地址 |
 | `frontend/docs/*.html` | 维护各智能体应用的使用文档页面 |
 | `frontend/assets/` | 存放页面图片、平台截图和联系人名片等资源 |
+| `frontend/download/` | 存放本机下载包，已忽略，不随 GitHub 分发 |
 
 ## 跨电脑使用
 
@@ -58,6 +66,20 @@ cd AIsoftware_website
 即可通过本地浏览器访问网站。
 
 如果不需要脚本，也可以直接打开 `frontend/index.html`，或在 `frontend` 目录下使用任意静态文件服务。
+
+## 本机专用文件
+
+以下文件用于当前 Mac 的内网发布服务，已经写入 `.gitignore`，不会随 GitHub 分发：
+
+```text
+AIsoftware_website/check-website-health.sh
+AIsoftware_website/sync-and-restart-service.sh
+AIsoftware_website/ops/
+AIsoftware_website/frontend/download/*.rar
+AIsoftware_website/frontend/download/*.zip
+```
+
+换电脑后如果需要下载按钮可用，需要在对应机器上自行补齐 `frontend/download/` 下的压缩包，或改成内网文件服务器地址。
 
 ## 注意事项
 
