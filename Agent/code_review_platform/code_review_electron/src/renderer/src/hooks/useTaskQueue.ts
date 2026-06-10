@@ -213,7 +213,8 @@ export function useTaskQueue({
           return true
         }
 
-        return task.id === event.taskId
+        const isUnboundLocalTask = task.id === task.localTaskId && task.id.startsWith('local-')
+        return task.id === event.taskId && !isUnboundLocalTask
       })
 
       if (targetIndex < 0) {
@@ -252,7 +253,7 @@ export function useTaskQueue({
       const serverViewItems = serverTasks.map((task) => {
         const existing = current.find((currentTask) => currentTask.id === task.id)
         const localQueueState =
-          existing?.localQueueState ?? (isTerminalStatus(task.status) ? 'finished' : 'running')
+          isTerminalStatus(task.status) ? 'finished' : (existing?.localQueueState ?? 'running')
 
         return {
           ...toTaskViewItem(task, existing?.createdAtMs ?? Date.now()),

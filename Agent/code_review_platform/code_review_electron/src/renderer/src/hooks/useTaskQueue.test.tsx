@@ -125,6 +125,125 @@ describe('useTaskQueue', () => {
     )
   })
 
+  it('没有 clientTaskId 的进度事件不能用本地 ID 匹配未绑定服务端 ID 的任务', async () => {
+    const deferred = createDeferred<ExecuteTaskResult>()
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)
+
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
+
+    await act(async () => {
+      await result.current.submitTask(basePayload(1))
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
+    const localTaskId = executeTask.mock.calls[0][0].client_task_id
+    expect(localTaskId).toBeDefined()
+
+    await act(async () => {
+      result.current.applyProgressEvent({
+        taskId: localTaskId!,
+        type: 'stage',
+        stage: 'running_codex',
+        message: '不应更新本地未绑定任务'
+      })
+    })
+
+    expect(result.current.tasks[0].progress_message).toBeUndefined()
+    expect(result.current.tasks[0]).toEqual(
+      expect.objectContaining({
+        id: localTaskId,
+        localTaskId,
+        status: 'created'
+      })
+    )
+  })
+
+  it('没有 clientTaskId 的进度事件可以用 taskId 匹配服务端任务', async () => {
+    const executeTask = vi.fn()
+    const { result } = renderHook(() =>
+      useTaskQueue({
+        executeTask,
+        initialTasks: [
+          {
+            id: 'task-1',
+            svn_url: 'svn://repo/project-1',
+            old_revision: '1',
+            new_revision: '2',
+            template_key: 'template_1',
+            skill_name: '通用-代码审查-模版一',
+            status: 'created'
+          }
+        ]
+      })
+    )
+
+    await act(async () => {
+      result.current.applyProgressEvent({
+        taskId: 'task-1',
+        type: 'stage',
+        stage: 'running_codex',
+        message: '服务端任务正在执行'
+      })
+    })
+
+    expect(result.current.tasks[0]).toEqual(
+      expect.objectContaining({
+        id: 'task-1',
+        localTaskId: 'task-1',
+        status: 'running_codex',
+        progress_message: '服务端任务正在执行'
+      })
+    )
+  })
+
+  it('服务端终态任务覆盖本地 running 状态后进入历史任务', async () => {
+    const executeTask = vi.fn()
+    const { result } = renderHook(() =>
+      useTaskQueue({
+        executeTask,
+        initialTasks: [
+          {
+            id: 'task-1',
+            svn_url: 'svn://repo/project-1',
+            old_revision: '1',
+            new_revision: '2',
+            template_key: 'template_1',
+            skill_name: '通用-代码审查-模版一',
+            status: 'running_codex'
+          }
+        ]
+      })
+    )
+
+    expect(result.current.runningTasks).toHaveLength(1)
+
+    await act(async () => {
+      result.current.setServerTasks([
+        {
+          id: 'task-1',
+          svn_url: 'svn://repo/project-1',
+          old_revision: '1',
+          new_revision: '2',
+          template_key: 'template_1',
+          skill_name: '通用-代码审查-模版一',
+          status: 'success',
+          progress_message: '审查完成'
+        }
+      ])
+    })
+
+    expect(result.current.runningTasks).toHaveLength(0)
+    expect(result.current.historyTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'task-1',
+          status: 'success',
+          localQueueState: 'finished'
+        })
+      ])
+    )
+  })
+
   it('任务失败后进入历史任务并继续调度下一条', async () => {
     const deferreds = [
       createDeferred<ExecuteTaskResult>(),
