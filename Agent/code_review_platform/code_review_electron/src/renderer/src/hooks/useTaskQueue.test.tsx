@@ -244,6 +244,53 @@ describe('useTaskQueue', () => {
     )
   })
 
+  it('服务端刷新合并尚未绑定服务端 ID 的本地运行任务', async () => {
+    const deferred = createDeferred<ExecuteTaskResult>()
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)
+    const payload = basePayload(1)
+
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
+
+    await act(async () => {
+      await result.current.submitTask(payload)
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
+    const localTaskId = executeTask.mock.calls[0][0].client_task_id
+    expect(localTaskId).toBeDefined()
+
+    await act(async () => {
+      result.current.setServerTasks([
+        {
+          id: 'task-server-1',
+          svn_url: payload.svn_url,
+          old_revision: payload.old_revision,
+          new_revision: payload.new_revision,
+          template_key: payload.template_key,
+          skill_name: payload.skill_name,
+          status: 'running_codex',
+          progress_message: '服务端任务运行中'
+        }
+      ])
+    })
+
+    expect(result.current.tasks).toHaveLength(1)
+    expect(result.current.tasks[0]).toEqual(
+      expect.objectContaining({
+        id: 'task-server-1',
+        localTaskId,
+        svn_url: payload.svn_url,
+        old_revision: payload.old_revision,
+        new_revision: payload.new_revision,
+        template_key: payload.template_key,
+        skill_name: payload.skill_name,
+        status: 'running_codex',
+        progress_message: '服务端任务运行中',
+        localQueueState: 'running'
+      })
+    )
+  })
+
   it('任务失败后进入历史任务并继续调度下一条', async () => {
     const deferreds = [
       createDeferred<ExecuteTaskResult>(),

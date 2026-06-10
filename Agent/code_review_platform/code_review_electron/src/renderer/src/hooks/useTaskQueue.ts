@@ -72,6 +72,21 @@ const mapProgressStageToTaskStatus = (
 
 const isTerminalStatus = (status: ReviewTask['status']): boolean => terminalStatuses.has(status)
 
+const isMatchingUnboundLocalTask = (
+  localTask: TaskViewItem,
+  serverTask: ReviewTask
+): boolean =>
+  Boolean(localTask.localTaskId) &&
+  localTask.id === localTask.localTaskId &&
+  (localTask.localQueueState === 'starting' ||
+    localTask.localQueueState === 'running' ||
+    localTask.status === 'created') &&
+  localTask.svn_url === serverTask.svn_url &&
+  localTask.old_revision === serverTask.old_revision &&
+  localTask.new_revision === serverTask.new_revision &&
+  localTask.template_key === serverTask.template_key &&
+  localTask.skill_name === serverTask.skill_name
+
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : '审查任务执行失败。'
 
@@ -255,15 +270,19 @@ export function useTaskQueue({
     setTasks((current) => {
       const serverIds = new Set(serverTasks.map((task) => task.id))
       const serverViewItems = serverTasks.map((task) => {
-        const existing = current.find((currentTask) => currentTask.id === task.id)
-        const localQueueState =
-          isTerminalStatus(task.status) ? 'finished' : (existing?.localQueueState ?? 'running')
+        const existing =
+          current.find((currentTask) => currentTask.id === task.id) ??
+          current.find((currentTask) => isMatchingUnboundLocalTask(currentTask, task))
+        const localQueueState: LocalTaskQueueState = isTerminalStatus(task.status)
+          ? 'finished'
+          : 'running'
 
         return {
           ...toTaskViewItem(task, existing?.createdAtMs ?? Date.now()),
           localTaskId: existing?.localTaskId ?? task.id,
           localQueueState,
-          reportMarkdown: existing?.reportMarkdown
+          reportMarkdown: existing?.reportMarkdown,
+          codex_log: existing?.codex_log
         }
       })
       const matchedLocalTaskIds = new Set(serverViewItems.map((task) => task.localTaskId))
