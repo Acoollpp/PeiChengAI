@@ -32,6 +32,142 @@ const createDeferred = <T,>(): Deferred<T> => {
 }
 
 describe('useTaskQueue', () => {
+  it('初始加载 2 个服务端运行任务时新提交任务仍按本地并发上限执行', async () => {
+    const deferreds = [
+      createDeferred<ExecuteTaskResult>(),
+      createDeferred<ExecuteTaskResult>(),
+      createDeferred<ExecuteTaskResult>()
+    ]
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => {
+      const deferred = deferreds[executeTask.mock.calls.length - 1]
+      return deferred.promise
+    })
+
+    const { result } = renderHook(() =>
+      useTaskQueue({
+        executeTask,
+        initialTasks: [
+          {
+            id: 'server-running-1',
+            svn_url: 'svn://repo/server-1',
+            old_revision: '1',
+            new_revision: '2',
+            template_key: 'template_1',
+            skill_name: '通用-代码审查-模版一',
+            status: 'running_codex'
+          },
+          {
+            id: 'server-running-2',
+            svn_url: 'svn://repo/server-2',
+            old_revision: '3',
+            new_revision: '4',
+            template_key: 'template_1',
+            skill_name: '通用-代码审查-模版一',
+            status: 'checking_environment'
+          }
+        ]
+      })
+    )
+
+    expect(result.current.runningTasks).toHaveLength(2)
+    expect(result.current.runningTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'server-running-1', isLocallyExecuting: false }),
+        expect.objectContaining({ id: 'server-running-2', isLocallyExecuting: false })
+      ])
+    )
+
+    await act(async () => {
+      await result.current.submitTask(basePayload(1))
+      await result.current.submitTask(basePayload(2))
+      await result.current.submitTask(basePayload(3))
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(2))
+    expect(executeTask.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        svn_url: 'svn://repo/project-1',
+        client_task_id: expect.stringMatching(/^local-/)
+      })
+    )
+    expect(executeTask.mock.calls[1][0]).toEqual(
+      expect.objectContaining({
+        svn_url: 'svn://repo/project-2',
+        client_task_id: expect.stringMatching(/^local-/)
+      })
+    )
+    expect(result.current.queuedTasks).toEqual([
+      expect.objectContaining({ svn_url: 'svn://repo/project-3' })
+    ])
+  })
+
+  it('服务端刷新 2 个运行任务后新提交任务仍按本地并发上限执行', async () => {
+    const deferreds = [
+      createDeferred<ExecuteTaskResult>(),
+      createDeferred<ExecuteTaskResult>(),
+      createDeferred<ExecuteTaskResult>()
+    ]
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => {
+      const deferred = deferreds[executeTask.mock.calls.length - 1]
+      return deferred.promise
+    })
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
+
+    await act(async () => {
+      result.current.setServerTasks([
+        {
+          id: 'server-running-1',
+          svn_url: 'svn://repo/server-1',
+          old_revision: '1',
+          new_revision: '2',
+          template_key: 'template_1',
+          skill_name: '通用-代码审查-模版一',
+          status: 'running_codex'
+        },
+        {
+          id: 'server-running-2',
+          svn_url: 'svn://repo/server-2',
+          old_revision: '3',
+          new_revision: '4',
+          template_key: 'template_1',
+          skill_name: '通用-代码审查-模版一',
+          status: 'checking_environment'
+        }
+      ])
+    })
+
+    expect(result.current.runningTasks).toHaveLength(2)
+    expect(result.current.runningTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'server-running-1', isLocallyExecuting: false }),
+        expect.objectContaining({ id: 'server-running-2', isLocallyExecuting: false })
+      ])
+    )
+
+    await act(async () => {
+      await result.current.submitTask(basePayload(1))
+      await result.current.submitTask(basePayload(2))
+      await result.current.submitTask(basePayload(3))
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(2))
+    expect(executeTask.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        svn_url: 'svn://repo/project-1',
+        client_task_id: expect.stringMatching(/^local-/)
+      })
+    )
+    expect(executeTask.mock.calls[1][0]).toEqual(
+      expect.objectContaining({
+        svn_url: 'svn://repo/project-2',
+        client_task_id: expect.stringMatching(/^local-/)
+      })
+    )
+    expect(result.current.queuedTasks).toEqual([
+      expect.objectContaining({ svn_url: 'svn://repo/project-3' })
+    ])
+  })
+
   it('连续提交 3 个任务时最多启动 2 个，第 1 个完成后自动启动第 3 个', async () => {
     const deferreds = [
       createDeferred<ExecuteTaskResult>(),

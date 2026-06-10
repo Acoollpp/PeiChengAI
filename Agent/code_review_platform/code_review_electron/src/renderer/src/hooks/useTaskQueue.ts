@@ -14,6 +14,7 @@ export type TaskViewItem = ReviewTask & {
   createdAtMs: number
   reportMarkdown?: string
   isLocalOnly?: boolean
+  isLocallyExecuting?: boolean
 }
 
 type UseTaskQueueOptions = {
@@ -44,7 +45,8 @@ const toTaskViewItem = (task: ReviewTask, createdAtMs = Date.now()): TaskViewIte
   localTaskId: task.id,
   localQueueState: terminalStatuses.has(task.status) ? 'finished' : 'running',
   queueIndex: 0,
-  createdAtMs
+  createdAtMs,
+  isLocallyExecuting: false
 })
 
 const normalizeQueueIndexes = (tasks: TaskViewItem[]): TaskViewItem[] => {
@@ -119,7 +121,8 @@ export function useTaskQueue({
             reportMarkdown: result.reportMarkdown,
             progress_message: result.status === 'success' ? '审查完成' : task.progress_message,
             localQueueState: 'finished',
-            isLocalOnly: false
+            isLocalOnly: false,
+            isLocallyExecuting: false
           }
 
           setTasks((current) =>
@@ -134,7 +137,8 @@ export function useTaskQueue({
                       progress_message:
                         result.status === 'success'
                           ? '审查完成'
-                          : currentTask.progress_message
+                          : currentTask.progress_message,
+                      isLocallyExecuting: false
                     }
                   : currentTask
               )
@@ -157,7 +161,8 @@ export function useTaskQueue({
                       status: 'failed',
                       error_message: message,
                       progress_message: message,
-                      localQueueState: 'finished'
+                      localQueueState: 'finished',
+                      isLocallyExecuting: false
                     }
                   : currentTask
               )
@@ -170,7 +175,7 @@ export function useTaskQueue({
 
   useEffect(() => {
     const activeCount = tasks.filter(
-      (task) => task.localQueueState === 'starting' || task.localQueueState === 'running'
+      (task) => task.isLocallyExecuting === true && !isTerminalStatus(task.status)
     ).length
     const slots = MAX_CONCURRENT_REVIEW_TASKS - activeCount
 
@@ -192,13 +197,15 @@ export function useTaskQueue({
       normalizeQueueIndexes(
         current.map((task) =>
           localTaskIdsToStart.has(task.localTaskId)
-            ? { ...task, localQueueState: 'starting' }
+            ? { ...task, localQueueState: 'starting', isLocallyExecuting: true }
             : task
         )
       )
     )
 
-    tasksToStart.forEach((task) => startTask({ ...task, localQueueState: 'starting' }))
+    tasksToStart.forEach((task) =>
+      startTask({ ...task, localQueueState: 'starting', isLocallyExecuting: true })
+    )
   }, [startTask, tasks])
 
   const submitTask = useCallback((payload: ExecuteTaskRequest): Promise<void> => {
@@ -217,7 +224,8 @@ export function useTaskQueue({
       localQueueState: 'queued',
       queueIndex: 0,
       createdAtMs,
-      isLocalOnly: true
+      isLocalOnly: true,
+      isLocallyExecuting: false
     }
 
     setTasks((current) => normalizeQueueIndexes([...current, task]))
@@ -252,6 +260,8 @@ export function useTaskQueue({
               ? [...(task.codex_log ?? []), event].slice(-20)
               : task.codex_log
 
+          const localQueueState = isTerminalStatus(status) ? 'finished' : 'running'
+
           return {
             ...task,
             id: event.taskId,
@@ -259,7 +269,8 @@ export function useTaskQueue({
             status,
             progress_message: event.message,
             codex_log: codexLog,
-            localQueueState: isTerminalStatus(status) ? 'finished' : 'running'
+            localQueueState,
+            isLocallyExecuting: isTerminalStatus(status) ? false : task.isLocallyExecuting
           }
         })
       )
@@ -281,6 +292,9 @@ export function useTaskQueue({
           ...toTaskViewItem(task, existing?.createdAtMs ?? Date.now()),
           localTaskId: existing?.localTaskId ?? task.id,
           localQueueState,
+          isLocallyExecuting: isTerminalStatus(task.status)
+            ? false
+            : existing?.isLocallyExecuting === true,
           reportMarkdown: existing?.reportMarkdown,
           codex_log: existing?.codex_log
         }
