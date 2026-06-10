@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, Menu } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -38,6 +38,7 @@ const createWindow = (): void => {
 }
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null)
   registerIpcHandlers()
   createWindow()
 

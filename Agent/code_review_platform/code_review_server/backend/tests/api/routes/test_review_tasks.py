@@ -1,12 +1,13 @@
 from pathlib import Path
 from urllib.parse import unquote
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.models import UserRole
+from app.models import ReviewTask, UserRole
 from tests.utils.user import (
     authentication_token_from_key,
     create_key_user,
@@ -167,9 +168,38 @@ def test_upload_and_read_review_task_report(
     assert read_response.text == "# Review\n\nLooks good.\n"
 
 
-def test_download_review_task_report_uses_chinese_report_filename(
+def test_download_review_task_report_uses_uploaded_report_filename(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers, old_revision="10")
+    report_name = "r10_r2审查报告_20260610_142530.md"
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        files={"upload": (report_name, b"# Review\n", "text/markdown")},
+    )
+    assert upload_response.status_code == 200
+    assert upload_response.json()["report_name"] == report_name
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/download",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/markdown")
+    assert report_name in unquote(response.headers["content-disposition"])
+    assert response.content == b"# Review\n"
+
+
+def test_download_review_task_report_falls_back_to_default_report_filename(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -182,15 +212,19 @@ def test_download_review_task_report_uses_chinese_report_filename(
     )
     assert upload_response.status_code == 200
 
+    db_task = db.get(ReviewTask, UUID(task["id"]))
+    assert db_task is not None
+    db_task.report_name = None
+    db.add(db_task)
+    db.commit()
+
     response = client.get(
         f"{settings.API_V1_STR}/review-tasks/{task['id']}/download",
         headers=normal_user_token_headers,
     )
 
     assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/markdown")
     assert "代码审查报告.md" in unquote(response.headers["content-disposition"])
-    assert response.content == b"# Review\n"
 
 
 def test_delete_review_task_removes_task_row(

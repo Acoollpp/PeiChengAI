@@ -33,9 +33,31 @@ describe('executeReviewTask', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks()
+    vi.resetModules()
 
     await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })))
     tempDirs = []
+  })
+
+  it('prepares the default workspace with a dynamic report file name from task revisions', async () => {
+    vi.doMock('electron', () => ({
+      app: {
+        isPackaged: false,
+        getAppPath: vi.fn(() => '/tmp/code_review_electron')
+      }
+    }))
+    const { defaultPrepareWorkspace } = await import('../task-agent')
+
+    const workspace = await defaultPrepareWorkspace({
+      taskId: 'task-dynamic-report',
+      oldRevision: 'r12',
+      newRevision: '14',
+      generatedAt: new Date(2026, 5, 10, 14, 25, 30)
+    })
+
+    expect(workspace.reportPath).toBe(
+      '/tmp/code_review_electron/.runtime-data/workspaces/task-dynamic-report/r12_r14审查报告_20260610_142530.md'
+    )
   })
 
   it('marks task as environment_error and skips codex/upload when SVN CLI is missing', async () => {
@@ -309,11 +331,22 @@ describe('defaultPrepareWorkspace', () => {
     }))
 
     const { defaultPrepareWorkspace } = await import('../task-agent')
-    const workspace = await defaultPrepareWorkspace('task-runtime-workspace')
+    const workspace = await defaultPrepareWorkspace({
+      taskId: 'task-runtime-workspace',
+      oldRevision: 'r12',
+      newRevision: 'r14',
+      generatedAt: new Date(2026, 5, 10, 14, 25, 30)
+    })
 
     expect(workspace).toEqual({
       cwd: join(appRoot, '.runtime-data', 'workspaces', 'task-runtime-workspace'),
-      reportPath: join(appRoot, '.runtime-data', 'workspaces', 'task-runtime-workspace', '代码审查报告.md'),
+      reportPath: join(
+        appRoot,
+        '.runtime-data',
+        'workspaces',
+        'task-runtime-workspace',
+        'r12_r14审查报告_20260610_142530.md'
+      ),
       imagesDir: join(appRoot, '.runtime-data', 'workspaces', 'task-runtime-workspace', 'images')
     })
     await expect(

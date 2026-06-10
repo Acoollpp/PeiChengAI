@@ -8,7 +8,7 @@ export interface RuntimePaths {
   skillManifestPath: string
   workspacesDir: string
   workspaceForTask(taskId: string): string
-  reportPathForTask(taskId: string): string
+  reportPathForTask(taskId: string, reportFileName?: string): string
   imagesDirForTask(taskId: string): string
 }
 
@@ -32,7 +32,8 @@ export const getRuntimePaths = async (): Promise<RuntimePaths> => {
     skillManifestPath: pathApi.join(skillPackagesDir, 'manifest.json'),
     workspacesDir,
     workspaceForTask: (taskId: string) => pathApi.join(workspacesDir, taskId),
-    reportPathForTask: (taskId: string) => pathApi.join(workspacesDir, taskId, REVIEW_REPORT_FILE_NAME),
+    reportPathForTask: (taskId: string, reportFileName = REVIEW_REPORT_FILE_NAME) =>
+      pathApi.join(workspacesDir, taskId, reportFileName),
     imagesDirForTask: (taskId: string) => pathApi.join(workspacesDir, taskId, REVIEW_REPORT_IMAGES_DIR_NAME)
   }
 }

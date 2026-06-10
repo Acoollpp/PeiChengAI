@@ -268,6 +268,7 @@ async def upload_review_task_report(
     report_path = await report_service.save_upload(task_id, upload)
     now = _utcnow()
     task.report_path = str(report_path)
+    task.report_name = upload.filename or REVIEW_REPORT_FILE_NAME
     task.status = ReviewTaskStatus.success
     if task.started_at is None:
         task.started_at = now
@@ -304,5 +305,5 @@ def download_review_task_report(
     return FileResponse(
         report_path,
         media_type="text/markdown",
-        filename=REVIEW_REPORT_FILE_NAME,
+        filename=task.report_name or REVIEW_REPORT_FILE_NAME,
     )

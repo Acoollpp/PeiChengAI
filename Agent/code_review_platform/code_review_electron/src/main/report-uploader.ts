@@ -1,7 +1,7 @@
 import { readFile, stat } from 'node:fs/promises'
+import { basename } from 'node:path'
 
 import type { ApiClient } from './api-client'
-import { REVIEW_REPORT_FILE_NAME } from '../shared/report-artifacts'
 
 export interface ReportUploadApi {
   uploadReport: ApiClient['uploadReport']
@@ -34,6 +34,6 @@ export const uploadReportFile = async (
   return api.uploadReport(token, taskId, {
     report_content: reportContent,
     report_path: reportPath,
-    report_name: REVIEW_REPORT_FILE_NAME
+    report_name: basename(reportPath)
   })
 }

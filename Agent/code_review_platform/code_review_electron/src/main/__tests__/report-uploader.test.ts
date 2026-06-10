@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ensureReportReady, uploadReportFile } from '../report-uploader'
-import { REVIEW_REPORT_FILE_NAME } from '../../shared/report-artifacts'
 
 describe('report uploader', () => {
   let tempDirs: string[] = []
@@ -28,10 +27,10 @@ describe('report uploader', () => {
     await expect(ensureReportReady(emptyReportPath)).rejects.toThrow('审查报告为空')
   })
 
-  it('uploads report content from disk', async () => {
+  it('uploads report content and file name from disk path', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'report-uploader-'))
     tempDirs.push(dir)
-    const reportPath = join(dir, '代码审查报告.md')
+    const reportPath = join(dir, 'r12_r14审查报告_20260610_142530.md')
     const api = {
       uploadReport: vi.fn(async () => ({ ok: true }))
     }
@@ -42,8 +41,7 @@ describe('report uploader', () => {
     expect(api.uploadReport).toHaveBeenCalledWith('token-123', 'task-1', {
       report_content: '# report\n',
       report_path: reportPath,
-      report_name: REVIEW_REPORT_FILE_NAME
+      report_name: 'r12_r14审查报告_20260610_142530.md'
     })
-    expect(reportPath.endsWith('代码审查报告.md')).toBe(true)
   })
 })

@@ -5,6 +5,7 @@ import { checkEnvironment, type EnvironmentCheckResult } from './environment-che
 import { buildReviewPrompt, CodexReviewError, runCodexReview, type CodexErrorCode } from './codex-runner'
 import { ensureReportReady, uploadReportFile } from './report-uploader'
 import { getRuntimePaths } from './runtime-paths'
+import { buildReviewReportFileName } from '../shared/report-artifacts'
 import type {
   EnvironmentStatus,
   ReviewTask,
@@ -22,6 +23,13 @@ export interface PreparedWorkspace {
   cwd: string
   reportPath: string
   imagesDir: string
+}
+
+export interface PrepareWorkspaceInput {
+  taskId: string
+  oldRevision: string
+  newRevision: string
+  generatedAt?: Date
 }
 
 export interface RunCodexInput {
@@ -53,7 +61,7 @@ export interface TaskAgentApi {
 export interface TaskAgentDependencies {
   api: TaskAgentApi
   checkEnvironment: () => Promise<EnvironmentCheckResult>
-  prepareWorkspace: (taskId: string) => Promise<PreparedWorkspace>
+  prepareWorkspace: (input: PrepareWorkspaceInput) => Promise<PreparedWorkspace>
   runCodex: (input: RunCodexInput) => Promise<unknown>
   uploadReport: (token: string, taskId: string, reportPath: string) => Promise<unknown>
 }
@@ -88,17 +96,27 @@ const toReviewTask = (value: unknown): ReviewTask => {
   throw new Error('创建审查任务失败：服务端未返回任务 ID')
 }
 
-export const defaultPrepareWorkspace = async (taskId: string): Promise<PreparedWorkspace> => {
+export const defaultPrepareWorkspace = async ({
+  taskId,
+  oldRevision,
+  newRevision,
+  generatedAt
+}: PrepareWorkspaceInput): Promise<PreparedWorkspace> => {
   const runtimePaths = await getRuntimePaths()
   const cwd = runtimePaths.workspaceForTask(taskId)
   const imagesDir = runtimePaths.imagesDirForTask(taskId)
+  const reportFileName = buildReviewReportFileName({
+    oldRevision,
+    newRevision,
+    generatedAt
+  })
 
   await mkdir(cwd, { recursive: true })
   await mkdir(imagesDir, { recursive: true })
 
   return {
     cwd,
-    reportPath: runtimePaths.reportPathForTask(taskId),
+    reportPath: runtimePaths.reportPathForTask(taskId, reportFileName),
     imagesDir
   }
 }
@@ -168,7 +186,11 @@ export const executeReviewTask = async (
     }
 
     emitStage(onProgress, task.id, 'preparing_workspace', '准备任务工作区')
-    const workspace = await dependencies.prepareWorkspace(task.id)
+    const workspace = await dependencies.prepareWorkspace({
+      taskId: task.id,
+      oldRevision: task.old_revision,
+      newRevision: task.new_revision
+    })
 
     emitStage(onProgress, task.id, 'running_codex', '启动 Codex 执行审查 Skill')
     await updateStatus(dependencies, input.token, task.id, {
