@@ -135,7 +135,7 @@ assert.ok(scriptSource.includes("style.minHeight"), "skills directory should set
 
 const skills = context.window.siteData.skillsCatalog;
 assert.ok(Array.isArray(skills), "skills catalog should be a dedicated secondary-page data set");
-assert.equal(skills.length, 25, "skills catalog should include all 25 listed Skills");
+assert.equal(skills.length, 26, "skills catalog should include all 26 listed Skills");
 
 [
   "通用-svn拉取",
@@ -152,6 +152,8 @@ assert.equal(skills.length, 25, "skills catalog should include all 25 listed Ski
 ].forEach((title) => {
   assert.ok(rendered.includes(title), `skills directory first page should render ${title}`);
 });
+assert.ok(rendered.includes("ppt-master"), "skills directory first page should render ppt-master title");
+assert.ok(rendered.includes("PPT生成"), "skills directory first page should render ppt-master suffix");
 
 [
   "动力-CAN协议生成",
@@ -162,7 +164,7 @@ assert.equal(skills.length, 25, "skills catalog should include all 25 listed Ski
   assert.ok(!rendered.includes(title), `skills directory first page should not render later-page item ${title}`);
 });
 
-["通用", "需求分析", "任务计划", "户用", "动力", "基站", "天线", "代码审查", "代码测试"].forEach((category) => {
+["通用", "文档生成", "需求分析", "任务计划", "户用", "动力", "基站", "天线", "代码审查", "代码测试"].forEach((category) => {
   assert.ok(elements["#skillsFilters"].innerHTML.includes(`data-filter="${category}"`), `skills filters should include category ${category}`);
 });
 

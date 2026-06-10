@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>钉钉文档写入工具</title>
+    <link rel="stylesheet" href="../styles.css?v=20260610-recent-updates-1" />
+  </head>
+  <body class="doc-page docs-page-light">
+    <header class="doc-header docs-topbar">
+      <div class="container doc-header-inner">
+        <a class="doc-back" href="../tools.html">返回提效工具库</a>
+        <strong>钉钉文档写入工具</strong>
+      </div>
+    </header>
+
+    <main class="docs-shell">
+      <aside class="docs-sidebar" aria-label="文档导航">
+        <a class="docs-logo" href="#overview">钉钉文档</a>
+        <nav>
+          <a href="#overview">概览</a>
+          <a href="#prompt">提示词模板</a>
+          <a href="#steps">操作步骤</a>
+          <a href="#cases">示范案例</a>
+          <a href="#limits">注意事项</a>
+        </nav>
+      </aside>
+
+      <article class="docs-content">
+        <section class="docs-hero" id="overview">
+          <p class="section-kicker">提效工具</p>
+          <h1>钉钉文档写入工具</h1>
+          <p>
+            钉钉文档写入工具主要在 Codex 中通过 <strong>通用-钉钉文档编写</strong> 这个 Skill 实现，用于在指定钉钉文档文件夹内创建文档并写入正文。
+          </p>
+          <div class="doc-action-row">
+            <a class="button primary" href="../assets/skill-packages/通用-钉钉文档编写.zip" download>下载 Skill 包</a>
+            <a class="button secondary" href="#prompt">查看提示词模板</a>
+          </div>
+        </section>
+
+        <section class="doc-grid-3" aria-label="使用要点">
+          <article>
+            <span>01</span>
+            <strong>准备目标文件夹</strong>
+            <p>复制需要写入的钉钉文档文件夹地址，确保不是普通文档链接。</p>
+          </article>
+          <article>
+            <span>02</span>
+            <strong>准备操作者凭证</strong>
+            <p>操作者凭证找程昊工程师获取，凭证只在需要写入钉钉文档时使用。</p>
+          </article>
+          <article>
+            <span>03</span>
+            <strong>在 Codex 中调用</strong>
+            <p>在 Codex 中说明使用通用-钉钉文档编写 Skill，并粘贴目标文件夹、凭证和文档要求。</p>
+          </article>
+        </section>
+
+        <section id="prompt">
+          <h2>提示词模板</h2>
+          <div class="doc-code-card">
+            <pre><code>钉钉文档写入工具主要在codex下面实现，需要通用-钉钉文档编写这个skill；
+请基于以下信息，在指定钉钉文档文件夹内创建一份测试文档，并完成正文写入。
+
+目标文件夹地址：
+...
+
+操作者凭证：
+...
+
+文档要求：
+- 文档标题：测试文件_YYYYMMDD
+- 文档正文需包含：测试目的、测试范围、测试步骤、测试结果
+- 创建完成后，请返回文档标题及文档链接
+- 本次操作无需发送通知</code></pre>
+          </div>
+        </section>
+
+        <section id="steps">
+          <h2>操作步骤</h2>
+          <div class="tool-step-list">
+            <article>
+              <div class="tool-step-copy">
+                <span>步骤 1</span>
+                <h3>复制钉钉文档文件夹链接</h3>
+                <p>进入目标钉钉文档文件夹，复制文件夹地址，作为提示词中的“目标文件夹地址”。</p>
+              </div>
+              <a href="../assets/dingtalk-doc-tool-step-1.jpg" target="_blank" rel="noopener noreferrer">
+                <img src="../assets/dingtalk-doc-tool-step-1.jpg" alt="复制钉钉文档文件夹链接截图" loading="lazy" />
+              </a>
+            </article>
+            <article>
+              <div class="tool-step-copy">
+                <span>步骤 2</span>
+                <h3>在 Codex 中粘贴模板</h3>
+                <p>打开 Codex，填写目标文件夹地址、操作者凭证、文档标题和正文要求。操作者凭证找程昊工程师获取。</p>
+              </div>
+              <a href="../assets/dingtalk-doc-tool-step-2.jpg" target="_blank" rel="noopener noreferrer">
+                <img src="../assets/dingtalk-doc-tool-step-2.jpg" alt="Codex 中使用钉钉文档写入工具提示词截图" loading="lazy" />
+              </a>
+            </article>
+            <article>
+              <div class="tool-step-copy">
+                <span>步骤 3</span>
+                <h3>查看写入结果</h3>
+                <p>创建完成后，检查 Codex 返回的文档标题及文档链接，并打开链接确认正文已写入。</p>
+              </div>
+              <a href="../assets/dingtalk-doc-tool-step-3.jpg" target="_blank" rel="noopener noreferrer">
+                <img src="../assets/dingtalk-doc-tool-step-3.jpg" alt="钉钉文档写入结果截图" loading="lazy" />
+              </a>
+            </article>
+          </div>
+        </section>
+
+        <section id="cases">
+          <h2>示范案例</h2>
+          <div class="doc-screenshot-grid">
+            <figure>
+              <a href="../assets/dingtalk-doc-tool-case-1-action.png" target="_blank" rel="noopener noreferrer">
+                <img src="../assets/dingtalk-doc-tool-case-1-action.png" alt="钉钉文档写入示范案例一操作截图" loading="lazy" />
+              </a>
+              <figcaption>
+                <strong>示范案例 1 操作</strong>
+                <span>在 Codex 中提交目标文件夹、凭证和文档要求。</span>
+              </figcaption>
+            </figure>
+            <figure>
+              <a href="../assets/dingtalk-doc-tool-case-1-result.png" target="_blank" rel="noopener noreferrer">
+                <img src="../assets/dingtalk-doc-tool-case-1-result.png" alt="钉钉文档写入示范案例一结果截图" loading="lazy" />
+              </a>
+              <figcaption>
+                <strong>示范案例 1 结果</strong>
+                <span>钉钉文档创建完成后，可查看标题和正文内容。</span>
+              </figcaption>
+            </figure>
+            <figure>
+              <a href="../assets/dingtalk-doc-tool-case-2-action.png" target="_blank" rel="noopener noreferrer">
+                <img src="../assets/dingtalk-doc-tool-case-2-action.png" alt="钉钉文档写入示范案例二操作截图" loading="lazy" />
+              </a>
+              <figcaption>
+                <strong>示范案例 2 操作</strong>
+                <span>按同一模板替换标题和正文要求即可复用。</span>
+              </figcaption>
+            </figure>
+            <figure>
+              <a href="../assets/dingtalk-doc-tool-case-2-result.png" target="_blank" rel="noopener noreferrer">
+                <img src="../assets/dingtalk-doc-tool-case-2-result.png" alt="钉钉文档写入示范案例二结果截图" loading="lazy" />
+              </a>
+              <figcaption>
+                <strong>示范案例 2 结果</strong>
+                <span>创建完成后返回文档标题和文档链接。</span>
+              </figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section id="limits">
+          <h2>注意事项</h2>
+          <div class="doc-flow">
+            <article>
+              <span>1</span>
+              <strong>凭证获取</strong>
+              <p>操作者凭证找程昊工程师获取，不要在公开聊天、截图或文档中暴露完整凭证。</p>
+            </article>
+            <article>
+              <span>2</span>
+              <strong>不处理图片写入</strong>
+              <p>不能写入图片到文档中，本工具仅用于创建文档并写入文本正文。</p>
+            </article>
+            <article>
+              <span>3</span>
+              <strong>不读取图片文档</strong>
+              <p>不能读取识别文档到图片，也不要把图片识别类任务交给该工具处理。</p>
+            </article>
+          </div>
+        </section>
+      </article>
+    </main>
+  </body>
+</html>
