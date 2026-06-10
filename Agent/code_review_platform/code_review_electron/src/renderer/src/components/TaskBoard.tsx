@@ -1,13 +1,14 @@
-import { useState } from 'react'
-
 import type { ReviewTask } from '../../../shared/types'
+import type { TaskViewItem } from '../hooks/useTaskQueue'
 
 type TaskBoardProps = {
-  tasks: ReviewTask[]
+  runningTasks: TaskViewItem[]
+  queuedTasks: TaskViewItem[]
+  historyTasks: TaskViewItem[]
   isLoading?: boolean
   selectedTaskId?: string
   loadingReportTaskId?: string
-  onViewReport?: (task: ReviewTask) => void
+  onViewReport?: (task: TaskViewItem) => void
 }
 
 const statusText: Record<ReviewTask['status'], string> = {
@@ -22,11 +23,12 @@ const statusText: Record<ReviewTask['status'], string> = {
 }
 
 type TaskCardProps = {
-  task: ReviewTask
+  task: TaskViewItem
   selectedTaskId?: string
   loadingReportTaskId?: string
   showCodexLog?: boolean
-  onViewReport?: (task: ReviewTask) => void
+  showQueueIndex?: boolean
+  onViewReport?: (task: TaskViewItem) => void
 }
 
 function TaskCard({
@@ -34,6 +36,7 @@ function TaskCard({
   selectedTaskId,
   loadingReportTaskId,
   showCodexLog = false,
+  showQueueIndex = false,
   onViewReport
 }: TaskCardProps): React.JSX.Element {
   return (
@@ -53,6 +56,7 @@ function TaskCard({
           <dd>{task.new_revision}</dd>
         </div>
       </dl>
+      {showQueueIndex && <p className="task-queue-index">排队第 {task.queueIndex} 位</p>}
       {task.status === 'success' && (
         <button
           className="task-action-button"
@@ -78,83 +82,99 @@ function TaskCard({
   )
 }
 
-export function TaskBoard({
+type TaskSectionProps = {
+  title: string
+  emptyText: string
+  tasks: TaskViewItem[]
+  selectedTaskId?: string
+  loadingReportTaskId?: string
+  showCodexLog?: boolean
+  showQueueIndex?: boolean
+  onViewReport?: (task: TaskViewItem) => void
+}
+
+function TaskSection({
+  title,
+  emptyText,
   tasks,
+  selectedTaskId,
+  loadingReportTaskId,
+  showCodexLog = false,
+  showQueueIndex = false,
+  onViewReport
+}: TaskSectionProps): React.JSX.Element {
+  return (
+    <section className="task-board-section" aria-label={title}>
+      <div className="task-section-header">
+        <h3>{title}</h3>
+        <span className="task-section-count">{tasks.length}</span>
+      </div>
+      {tasks.length === 0 ? (
+        <p className="empty-state">{emptyText}</p>
+      ) : (
+        <div className="task-list" aria-label={`${title}列表`}>
+          {tasks.map((task) => (
+            <TaskCard
+              key={task.localTaskId}
+              task={task}
+              selectedTaskId={selectedTaskId}
+              loadingReportTaskId={loadingReportTaskId}
+              showCodexLog={showCodexLog}
+              showQueueIndex={showQueueIndex}
+              onViewReport={onViewReport}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+export function TaskBoard({
+  runningTasks,
+  queuedTasks,
+  historyTasks,
   isLoading = false,
   selectedTaskId,
   loadingReportTaskId,
   onViewReport
 }: TaskBoardProps): React.JSX.Element {
-  const [activeView, setActiveView] = useState<'current' | 'history'>('current')
-  const currentTask = tasks[0]
-  const historyTasks = tasks.slice(1)
-  const isCurrentView = activeView === 'current'
-
-  const renderPanelContent = (): React.JSX.Element => {
-    if (isLoading) {
-      return <p className="empty-state">正在加载任务...</p>
-    }
-
-    if (isCurrentView) {
-      if (!currentTask) {
-        return <p className="empty-state">暂无当前任务，填写上方表单后开始审查。</p>
-      }
-
-      return (
-        <div className="task-list" aria-label="当前任务列表">
-          <TaskCard
-            task={currentTask}
-            selectedTaskId={selectedTaskId}
-            loadingReportTaskId={loadingReportTaskId}
-            showCodexLog
-            onViewReport={onViewReport}
-          />
-        </div>
-      )
-    }
-
-    if (historyTasks.length === 0) {
-      return <p className="empty-state">暂无历史任务。</p>
-    }
-
+  if (isLoading) {
     return (
-      <div className="task-list" aria-label="历史任务列表">
-        {historyTasks.map((task) => (
-          <TaskCard
-            key={task.id}
-            task={task}
-            selectedTaskId={selectedTaskId}
-            loadingReportTaskId={loadingReportTaskId}
-            onViewReport={onViewReport}
-          />
-        ))}
+      <div className="task-board">
+        <p className="empty-state">正在加载任务...</p>
       </div>
     )
   }
 
   return (
     <div className="task-board">
-      <div role="tablist" aria-label="任务看板">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={isCurrentView}
-          onClick={() => setActiveView('current')}
-        >
-          当前任务
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={!isCurrentView}
-          onClick={() => setActiveView('history')}
-        >
-          历史任务
-        </button>
-      </div>
-      <div role="tabpanel" aria-label={isCurrentView ? '当前任务' : '历史任务'}>
-        {renderPanelContent()}
-      </div>
+      <TaskSection
+        title="运行中"
+        emptyText="暂无运行中任务。"
+        tasks={runningTasks}
+        selectedTaskId={selectedTaskId}
+        loadingReportTaskId={loadingReportTaskId}
+        showCodexLog
+        onViewReport={onViewReport}
+      />
+      <TaskSection
+        title="等待中"
+        emptyText="暂无等待中的任务。"
+        tasks={queuedTasks}
+        selectedTaskId={selectedTaskId}
+        loadingReportTaskId={loadingReportTaskId}
+        showQueueIndex
+        onViewReport={onViewReport}
+      />
+      <TaskSection
+        title="历史任务"
+        emptyText="暂无历史任务。"
+        tasks={historyTasks}
+        selectedTaskId={selectedTaskId}
+        loadingReportTaskId={loadingReportTaskId}
+        onViewReport={onViewReport}
+      />
     </div>
   )
 }

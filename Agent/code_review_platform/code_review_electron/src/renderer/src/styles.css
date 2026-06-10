@@ -666,36 +666,45 @@ h2 {
 
 .task-board {
   display: grid;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
 }
 
-.task-board-tabs,
-.task-board [role='tablist'] {
+.task-board-section {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 8px;
-  background: rgb(255 255 255 / 8%);
+  padding: 12px;
+  background: rgb(255 255 255 / 4%);
 }
 
-.task-board-tab,
-.task-board [role='tab'] {
-  min-height: 34px;
-  border: 0;
-  border-radius: 6px;
-  color: rgb(245 247 251 / 60%);
-  background: transparent;
-  font-size: 13px;
+.task-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.task-section-header h3 {
+  margin: 0;
+  color: #f5f7fb;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.task-section-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 22px;
+  border-radius: 999px;
+  padding: 0 8px;
+  color: rgb(245 247 251 / 72%);
+  background: rgb(255 255 255 / 10%);
+  font-size: 12px;
   font-weight: 800;
-}
-
-.task-board-tab.is-active,
-.task-board [role='tab'][aria-selected='true'] {
-  color: #ffffff;
-  background: rgb(18 185 120 / 24%);
-  box-shadow: inset 0 0 0 1px rgb(18 185 120 / 24%);
 }
 
 .empty-state,
@@ -709,7 +718,7 @@ h2 {
 .history-task-list {
   display: grid;
   gap: 12px;
-  max-height: 460px;
+  max-height: 320px;
   min-width: 0;
   overflow: auto;
 }
@@ -722,16 +731,6 @@ h2 {
   border-radius: 8px;
   padding: 13px;
   background: #0b0f13;
-}
-
-.current-task-card,
-.task-list[aria-label='当前任务列表'] .task-card {
-  min-height: 250px;
-}
-
-.history-task-card,
-.task-list[aria-label='历史任务列表'] .task-card {
-  min-height: 0;
 }
 
 .task-card.is-selected {
@@ -812,6 +811,18 @@ h2 {
   color: #b9e8ff;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.task-queue-index {
+  justify-self: start;
+  margin: 4px 0 0;
+  border: 1px solid rgb(185 232 255 / 18%);
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: #b9e8ff;
+  background: rgb(30 96 126 / 26%);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .task-log {

@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { ReviewTask, TaskProgressEvent } from '../../../shared/types'
 import paceLogo from '../assets/pace-logo.png'
 import type { EnvironmentCheckResult, ExecuteTaskRequest } from '../code-review-api'
+import { useTaskQueue, type TaskViewItem } from '../hooks/useTaskQueue'
 import { EnvironmentStatus } from './EnvironmentStatus'
 import { MarkdownPreview } from './MarkdownPreview'
 import { TaskBoard } from './TaskBoard'
@@ -34,7 +34,6 @@ export function TaskPage({
   onInstallSvn,
   onInstallSkill
 }: TaskPageProps): React.JSX.Element {
-  const [tasks, setTasks] = useState<ReviewTask[]>([])
   const [markdown, setMarkdown] = useState('')
   const [error, setError] = useState('')
   const [reportMessage, setReportMessage] = useState('')
@@ -43,9 +42,41 @@ export function TaskPage({
   const [selectedTaskId, setSelectedTaskId] = useState<string>()
   const [loadingReportTaskId, setLoadingReportTaskId] = useState<string>()
   const [showSubmitFeedback, setShowSubmitFeedback] = useState(false)
+  const selectedTaskIdRef = useRef<string | undefined>(undefined)
 
   const canRunTask = environment?.status === 'ready' && !environment.skillError
   const activeSkillNames = environment?.skills?.map((skill) => skill.name)
+  const handleTaskSuccess = useCallback((task: TaskViewItem): void => {
+    if (selectedTaskIdRef.current) {
+      return
+    }
+
+    if (task.reportMarkdown) {
+      setMarkdown(task.reportMarkdown)
+    }
+    setSelectedTaskId(task.id)
+    selectedTaskIdRef.current = task.id
+    if (task.report_path) {
+      setCurrentReportPath(task.report_path)
+      setReportMessage(`报告已生成：${task.report_path}`)
+    }
+  }, [])
+  const {
+    runningTasks,
+    queuedTasks,
+    historyTasks,
+    submitTask,
+    applyProgressEvent,
+    setServerTasks
+  } = useTaskQueue({
+    executeTask: window.codeReview.executeTask,
+    onTaskSuccess: handleTaskSuccess
+  })
+
+  const updateSelectedTaskId = useCallback((taskId: string | undefined): void => {
+    selectedTaskIdRef.current = taskId
+    setSelectedTaskId(taskId)
+  }, [])
 
   useEffect(() => {
     let isMounted = true
@@ -57,7 +88,7 @@ export function TaskPage({
       try {
         const response = await window.codeReview.listTasks()
         if (isMounted) {
-          setTasks((current) => mergeTasks(response.data, current))
+          setServerTasks(response.data)
         }
       } catch (loadError) {
         if (isMounted) {
@@ -75,70 +106,24 @@ export function TaskPage({
     return () => {
       isMounted = false
     }
-  }, [])
+  }, [setServerTasks])
 
   useEffect(() => {
     return window.codeReview.onTaskProgress((event) => {
-      setTasks((current) => applyTaskProgress(current, event))
+      applyProgressEvent(event)
     })
-  }, [])
+  }, [applyProgressEvent])
 
   const handleTaskSubmit = async (payload: ExecuteTaskRequest): Promise<void> => {
     setError('')
     setReportMessage('')
-
-    const pendingTask: ReviewTask = {
-      id: `local-${Date.now()}`,
-      svn_url: payload.svn_url,
-      old_revision: payload.old_revision,
-      new_revision: payload.new_revision,
-      template_key: payload.template_key,
-      skill_name: payload.skill_name,
-      status: 'created'
-    }
-
-    setTasks((current) => [pendingTask, ...current])
-
-    try {
-      const result = await window.codeReview.executeTask(payload)
-      if (result.reportMarkdown) {
-        setMarkdown(result.reportMarkdown)
-      }
-      setSelectedTaskId(result.taskId)
-      if (result.reportPath) {
-        setCurrentReportPath(result.reportPath)
-        setReportMessage(`报告已生成：${result.reportPath}`)
-      }
-      setTasks((current) =>
-        current.map((task) =>
-          task.id === pendingTask.id
-            ? {
-                ...task,
-                id: result.taskId,
-                status: result.status,
-                template_key: payload.template_key,
-                skill_name: payload.skill_name,
-                report_path: result.reportPath,
-                progress_message: result.status === 'success' ? '审查完成' : task.progress_message
-              }
-            : task
-        )
-      )
-    } catch (taskError) {
-      const message = taskError instanceof Error ? taskError.message : '审查任务执行失败。'
-      setError(message)
-      setTasks((current) =>
-        current.map((task) =>
-          task.id === pendingTask.id ? { ...task, status: 'failed', error_message: message } : task
-        )
-      )
-    }
+    await submitTask(payload)
   }
 
-  const handleViewReport = async (task: ReviewTask): Promise<void> => {
+  const handleViewReport = async (task: TaskViewItem): Promise<void> => {
     setError('')
     setReportMessage('')
-    setSelectedTaskId(task.id)
+    updateSelectedTaskId(task.id)
     setLoadingReportTaskId(task.id)
 
     try {
@@ -218,7 +203,9 @@ export function TaskPage({
         <section className="panel board-panel">
           <h2>任务看板</h2>
           <TaskBoard
-            tasks={tasks}
+            runningTasks={runningTasks}
+            queuedTasks={queuedTasks}
+            historyTasks={historyTasks}
             isLoading={isLoadingTasks}
             selectedTaskId={selectedTaskId}
             loadingReportTaskId={loadingReportTaskId}
@@ -242,49 +229,4 @@ export function TaskPage({
       <SubmitFeedbackDialog open={showSubmitFeedback} onClose={() => setShowSubmitFeedback(false)} />
     </section>
   )
-}
-
-const mergeTasks = (serverTasks: ReviewTask[], localTasks: ReviewTask[]): ReviewTask[] => {
-  const serverIds = new Set(serverTasks.map((task) => task.id))
-  return [...serverTasks, ...localTasks.filter((task) => !serverIds.has(task.id))]
-}
-
-const applyTaskProgress = (tasks: ReviewTask[], event: TaskProgressEvent): ReviewTask[] => {
-  const targetIndex = tasks.findIndex(
-    (task) => task.id === event.taskId || task.id.startsWith('local-')
-  )
-
-  if (targetIndex < 0) {
-    return tasks
-  }
-
-  return tasks.map((task, index) => {
-    if (index !== targetIndex) {
-      return task
-    }
-
-    const codexLog = event.type === 'codex_output' ? [...(task.codex_log ?? []), event].slice(-20) : task.codex_log
-
-    return {
-      ...task,
-      id: event.taskId,
-      status: event.type === 'stage' ? mapProgressStageToTaskStatus(event.stage) : task.status,
-      progress_message: event.message,
-      codex_log: codexLog
-    }
-  })
-}
-
-const mapProgressStageToTaskStatus = (
-  stage: Extract<TaskProgressEvent, { type: 'stage' }>['stage']
-): ReviewTask['status'] => {
-  if (stage === 'preparing_workspace') {
-    return 'checking_environment'
-  }
-
-  if (stage === 'created') {
-    return 'created'
-  }
-
-  return stage
 }

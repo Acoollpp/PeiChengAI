@@ -120,7 +120,7 @@ export function TaskForm({ disabled, activeSkillNames, onSubmit }: TaskFormProps
         type="submit"
         disabled={disabled || isSubmitting || !selectedTemplateAvailable}
       >
-        {isSubmitting ? '审查中...' : '开始审查'}
+        {isSubmitting ? '提交中...' : '开始审查'}
       </button>
     </form>
   )

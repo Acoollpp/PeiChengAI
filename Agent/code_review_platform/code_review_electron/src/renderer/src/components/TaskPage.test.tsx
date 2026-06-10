@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -33,6 +33,51 @@ const setupCodeReviewApi = (): void => {
     bindSvnCredential: vi.fn(),
     submitFeedback: vi.fn(async () => ({ id: 'feedback-1', status: 'pending' }))
   } as unknown as CodeReviewApi
+}
+
+type Deferred<T> = {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (error: Error) => void
+}
+
+const createDeferred = <T,>(): Deferred<T> => {
+  let resolve!: (value: T) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+
+  return { promise, resolve, reject }
+}
+
+const renderReadyTaskPage = (): ReturnType<typeof render> =>
+  render(
+    <TaskPage
+      environment={{ status: 'ready', codexVersion: 'codex-cli 0.130.0', svnVersion: '1.14.5' }}
+      isCheckingEnvironment={false}
+      isInstallingSkillDuringCheck={false}
+      isInstallingCodex={false}
+      isInstallingSvn={false}
+      svnUsername="Key 用户"
+      onRefreshEnvironment={vi.fn()}
+      onInstallCodex={vi.fn()}
+      onInstallSvn={vi.fn()}
+      onInstallSkill={vi.fn()}
+    />
+  )
+
+const fillTaskForm = async (
+  user: ReturnType<typeof userEvent.setup>,
+  suffix: string
+): Promise<void> => {
+  await user.clear(screen.getByLabelText('SVN 地址'))
+  await user.type(screen.getByLabelText('SVN 地址'), `svn://repo/project-${suffix}`)
+  await user.clear(screen.getByLabelText('旧版本号'))
+  await user.type(screen.getByLabelText('旧版本号'), `${suffix}0`)
+  await user.clear(screen.getByLabelText('新版本号'))
+  await user.type(screen.getByLabelText('新版本号'), `${suffix}1`)
 }
 
 beforeEach(() => {
@@ -82,6 +127,117 @@ describe('TaskPage', () => {
         skill_name: '通用-代码审查-模版一'
       })
     )
+  })
+
+  it('连续提交任务不会等待前一个审查完成，表单按钮入队后恢复可点', async () => {
+    const user = userEvent.setup()
+    const firstTask = createDeferred<Awaited<ReturnType<CodeReviewApi['executeTask']>>>()
+    const secondTask = createDeferred<Awaited<ReturnType<CodeReviewApi['executeTask']>>>()
+    window.codeReview.executeTask = vi.fn((payload) => {
+      if (payload.svn_url.endsWith('project-1')) {
+        return firstTask.promise
+      }
+
+      return secondTask.promise
+    })
+
+    renderReadyTaskPage()
+
+    await fillTaskForm(user, '1')
+    await user.click(screen.getByRole('button', { name: '开始审查' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始审查' })).toBeEnabled())
+
+    await fillTaskForm(user, '2')
+    await user.click(screen.getByRole('button', { name: '开始审查' }))
+
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(2))
+    expect(window.codeReview.executeTask).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ svn_url: 'svn://repo/project-1' })
+    )
+    expect(window.codeReview.executeTask).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ svn_url: 'svn://repo/project-2' })
+    )
+    expect(screen.getByRole('button', { name: '开始审查' })).toBeEnabled()
+  })
+
+  it('查看报告位置时传入当前选中的 taskId', async () => {
+    const user = userEvent.setup()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-history-1',
+          svn_url: 'svn://repo/history-1',
+          old_revision: '1',
+          new_revision: '2',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history-1.md'
+        },
+        {
+          id: 'task-history-2',
+          svn_url: 'svn://repo/history-2',
+          old_revision: '3',
+          new_revision: '4',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history-2.md'
+        }
+      ],
+      count: 2
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () => '# 历史报告 2')
+    window.codeReview.downloadCurrentReport = vi.fn(async () => ({
+      status: 'ready' as const,
+      reportPath: '/app/reports/task-history-2.md'
+    }))
+
+    renderReadyTaskPage()
+
+    const historyRegion = await screen.findByRole('region', { name: '历史任务' })
+    await user.click(within(historyRegion).getAllByRole('button', { name: '查看报告' })[1])
+    await screen.findByText('历史报告 2')
+    await user.click(screen.getByRole('button', { name: '查看报告位置' }))
+
+    expect(window.codeReview.downloadCurrentReport).toHaveBeenCalledWith('task-history-2')
+  })
+
+  it('已有手动选择报告时，成功任务不会覆盖右侧预览', async () => {
+    const user = userEvent.setup()
+    const runningTask = createDeferred<Awaited<ReturnType<CodeReviewApi['executeTask']>>>()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-history',
+          svn_url: 'svn://repo/history',
+          old_revision: '3',
+          new_revision: '4',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history.md'
+        }
+      ],
+      count: 1
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () => '# 手动选择报告')
+    window.codeReview.executeTask = vi.fn(() => runningTask.promise)
+
+    renderReadyTaskPage()
+
+    const historyRegion = await screen.findByRole('region', { name: '历史任务' })
+    await user.click(within(historyRegion).getByRole('button', { name: '查看报告' }))
+    await screen.findByText('手动选择报告')
+
+    await fillTaskForm(user, '5')
+    await user.click(screen.getByRole('button', { name: '开始审查' }))
+
+    runningTask.resolve({
+      taskId: 'task-new-success',
+      status: 'success',
+      reportMarkdown: '# 新完成报告',
+      reportPath: '/tmp/new-report.md'
+    })
+
+    await waitFor(() => expect(screen.getByText('手动选择报告')).toBeInTheDocument())
+    expect(screen.queryByText('新完成报告')).not.toBeInTheDocument()
   })
 
   it('只允许选择已同步 Skill 对应的审查模板', async () => {
@@ -248,8 +404,8 @@ describe('TaskPage', () => {
     )
 
     await screen.findByText('svn://repo/current')
-    await user.click(screen.getByRole('tab', { name: '历史任务' }))
-    await user.click(screen.getByRole('button', { name: '查看报告' }))
+    const historyRegion = screen.getByRole('region', { name: '历史任务' })
+    await user.click(within(historyRegion).getByRole('button', { name: '查看报告' }))
 
     await screen.findByRole('img', { name: '流程图' })
     expect(window.codeReview.readTaskReport).toHaveBeenCalledWith('task-history')
