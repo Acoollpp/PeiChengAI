@@ -79,6 +79,7 @@ const isMatchingUnboundLocalTask = (
   serverTask: ReviewTask
 ): boolean =>
   Boolean(localTask.localTaskId) &&
+  !isTerminalStatus(serverTask.status) &&
   localTask.id === localTask.localTaskId &&
   (localTask.localQueueState === 'starting' || localTask.localQueueState === 'running') &&
   localTask.svn_url === serverTask.svn_url &&

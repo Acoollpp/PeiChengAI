@@ -501,6 +501,81 @@ describe('useTaskQueue', () => {
     ])
   })
 
+  it('服务端刷新同参数终态历史任务时不绑定本地运行任务且不释放并发槽位', async () => {
+    const deferreds = [
+      createDeferred<ExecuteTaskResult>(),
+      createDeferred<ExecuteTaskResult>(),
+      createDeferred<ExecuteTaskResult>()
+    ]
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => {
+      const deferred = deferreds[executeTask.mock.calls.length - 1]
+      return deferred.promise
+    })
+    const payload = basePayload(1)
+
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
+
+    await act(async () => {
+      await result.current.submitTask(payload)
+      await result.current.submitTask(payload)
+      await result.current.submitTask(payload)
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(2))
+    const startedLocalTaskIds = executeTask.mock.calls.map((call) => call[0].client_task_id)
+
+    await act(async () => {
+      result.current.setServerTasks([
+        {
+          id: 'task-history-1',
+          svn_url: payload.svn_url,
+          old_revision: payload.old_revision,
+          new_revision: payload.new_revision,
+          template_key: payload.template_key,
+          skill_name: payload.skill_name,
+          status: 'success'
+        },
+        {
+          id: 'task-history-2',
+          svn_url: payload.svn_url,
+          old_revision: payload.old_revision,
+          new_revision: payload.new_revision,
+          template_key: payload.template_key,
+          skill_name: payload.skill_name,
+          status: 'failed'
+        }
+      ])
+    })
+
+    expect(executeTask).toHaveBeenCalledTimes(2)
+    expect(result.current.runningTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: startedLocalTaskIds[0],
+          localTaskId: startedLocalTaskIds[0],
+          localQueueState: 'starting'
+        }),
+        expect.objectContaining({
+          id: startedLocalTaskIds[1],
+          localTaskId: startedLocalTaskIds[1],
+          localQueueState: 'starting'
+        })
+      ])
+    )
+    expect(result.current.queuedTasks).toEqual([
+      expect.objectContaining({
+        id: expect.stringMatching(/^local-/),
+        localQueueState: 'queued',
+        queueIndex: 1,
+        svn_url: payload.svn_url,
+        old_revision: payload.old_revision,
+        new_revision: payload.new_revision,
+        template_key: payload.template_key,
+        skill_name: payload.skill_name
+      })
+    ])
+  })
+
   it('任务失败后进入历史任务并继续调度下一条', async () => {
     const deferreds = [
       createDeferred<ExecuteTaskResult>(),
