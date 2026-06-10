@@ -63,6 +63,7 @@ export interface ExecuteTaskResult {
 
 export interface SubmitFeedbackPayload {
   description: string
+  screenshots?: File[]
   screenshot?: File | null
 }
 
@@ -74,7 +75,7 @@ export interface SerializedFeedbackScreenshot {
 
 export interface SubmitFeedbackIpcPayload {
   description: string
-  screenshot?: SerializedFeedbackScreenshot | null
+  screenshots?: SerializedFeedbackScreenshot[]
 }
 
 export interface SubmitFeedbackResult {

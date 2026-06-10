@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { CchSyncSyncCchUsersResponse, CredentialsReadMySvnCredentialResponse, CredentialsUpdateMySvnCredentialData, CredentialsUpdateMySvnCredentialResponse, FeedbackCreateFeedbackData, FeedbackCreateFeedbackResponse, FeedbackReadFeedbackData, FeedbackReadFeedbackResponse, FeedbackReadFeedbackByIdData, FeedbackReadFeedbackByIdResponse, FeedbackReadFeedbackScreenshotData, FeedbackReadFeedbackScreenshotResponse, FeedbackUpdateFeedbackStatusData, FeedbackUpdateFeedbackStatusResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginSvnAccountData, LoginLoginSvnAccountResponse, LoginLoginWithKeyData, LoginLoginWithKeyResponse, LoginTestTokenResponse, PrivateCreateUserData, PrivateCreateUserResponse, ReviewTasksCreateReviewTaskData, ReviewTasksCreateReviewTaskResponse, ReviewTasksReadReviewTasksData, ReviewTasksReadReviewTasksResponse, ReviewTasksReadReviewTaskData, ReviewTasksReadReviewTaskResponse, ReviewTasksDeleteReviewTaskData, ReviewTasksDeleteReviewTaskResponse, ReviewTasksUpdateReviewTaskStatusData, ReviewTasksUpdateReviewTaskStatusResponse, ReviewTasksUploadReviewTaskReportData, ReviewTasksUploadReviewTaskReportResponse, ReviewTasksReadReviewTaskReportData, ReviewTasksReadReviewTaskReportResponse, ReviewTasksDownloadReviewTaskReportData, ReviewTasksDownloadReviewTaskReportResponse, SkillsReadSkillsData, SkillsReadSkillsResponse, SkillsUploadSkillData, SkillsUploadSkillResponse, SkillsActivateSkillData, SkillsActivateSkillResponse, SkillsReadActiveSkillResponse, SkillsDownloadActiveSkillResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { CchSyncSyncCchUsersResponse, CredentialsReadMySvnCredentialResponse, CredentialsUpdateMySvnCredentialData, CredentialsUpdateMySvnCredentialResponse, FeedbackCreateFeedbackData, FeedbackCreateFeedbackResponse, FeedbackReadFeedbackData, FeedbackReadFeedbackResponse, FeedbackReadFeedbackByIdData, FeedbackReadFeedbackByIdResponse, FeedbackReadFeedbackScreenshotData, FeedbackReadFeedbackScreenshotResponse, FeedbackReadFeedbackScreenshotByIdData, FeedbackReadFeedbackScreenshotByIdResponse, FeedbackUpdateFeedbackStatusData, FeedbackUpdateFeedbackStatusResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginSvnAccountData, LoginLoginSvnAccountResponse, LoginLoginWithKeyData, LoginLoginWithKeyResponse, LoginTestTokenResponse, PrivateCreateUserData, PrivateCreateUserResponse, ReviewTasksCreateReviewTaskData, ReviewTasksCreateReviewTaskResponse, ReviewTasksReadReviewTasksData, ReviewTasksReadReviewTasksResponse, ReviewTasksReadReviewTaskData, ReviewTasksReadReviewTaskResponse, ReviewTasksDeleteReviewTaskData, ReviewTasksDeleteReviewTaskResponse, ReviewTasksUpdateReviewTaskStatusData, ReviewTasksUpdateReviewTaskStatusResponse, ReviewTasksUploadReviewTaskReportData, ReviewTasksUploadReviewTaskReportResponse, ReviewTasksReadReviewTaskReportData, ReviewTasksReadReviewTaskReportResponse, ReviewTasksDownloadReviewTaskReportData, ReviewTasksDownloadReviewTaskReportResponse, SkillsReadSkillsData, SkillsReadSkillsResponse, SkillsUploadSkillData, SkillsUploadSkillResponse, SkillsActivateSkillData, SkillsActivateSkillResponse, SkillsReadActiveSkillResponse, SkillsDownloadActiveSkillResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class CchSyncService {
     /**
@@ -133,6 +133,28 @@ export class FeedbackService {
             url: '/api/v1/feedback/{feedback_id}/screenshot',
             path: {
                 feedback_id: data.feedbackId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Read Feedback Screenshot By Id
+     * @param data The data for the request.
+     * @param data.feedbackId
+     * @param data.screenshotId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static readFeedbackScreenshotById(data: FeedbackReadFeedbackScreenshotByIdData): CancelablePromise<FeedbackReadFeedbackScreenshotByIdResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/feedback/{feedback_id}/screenshots/{screenshot_id}',
+            path: {
+                feedback_id: data.feedbackId,
+                screenshot_id: data.screenshotId
             },
             errors: {
                 422: 'Validation Error'

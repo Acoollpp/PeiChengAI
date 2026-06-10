@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 
 const MAX_SCREENSHOT_SIZE = 5 * 1024 * 1024
+const MAX_SCREENSHOTS = 5
 const ACCEPTED_SCREENSHOT_TYPES = ['image/png', 'image/jpeg', 'image/webp']
+
+type ScreenshotItem = {
+  id: string
+  file: File
+  previewUrl: string
+}
 
 type SubmitFeedbackDialogProps = {
   open: boolean
@@ -13,40 +20,20 @@ export function SubmitFeedbackDialog({
   onClose
 }: SubmitFeedbackDialogProps): React.JSX.Element | null {
   const [description, setDescription] = useState('')
-  const [screenshot, setScreenshot] = useState<File | null>(null)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [screenshots, setScreenshots] = useState<ScreenshotItem[]>([])
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const screenshotsRef = useRef<ScreenshotItem[]>([])
+  const nextScreenshotIdRef = useRef(0)
 
   useEffect(() => {
     if (!open) {
-      setDescription('')
-      setScreenshot(null)
-      setError('')
-      setIsSubmitting(false)
-      resetFileInput()
+      resetForm()
     }
   }, [open])
 
-  useEffect(() => {
-    if (!screenshot) {
-      setPreviewUrl(null)
-      return
-    }
-
-    if (!URL.createObjectURL) {
-      setPreviewUrl(null)
-      return
-    }
-
-    const objectUrl = URL.createObjectURL(screenshot)
-    setPreviewUrl(objectUrl)
-
-    return () => {
-      URL.revokeObjectURL?.(objectUrl)
-    }
-  }, [screenshot])
+  useEffect(() => () => revokeScreenshots(screenshotsRef.current), [])
 
   function resetFileInput(): void {
     if (fileInputRef.current) {
@@ -54,12 +41,22 @@ export function SubmitFeedbackDialog({
     }
   }
 
-  const handleClose = (): void => {
+  function resetForm(): void {
+    revokeScreenshots(screenshotsRef.current)
     setDescription('')
-    setScreenshot(null)
+    updateScreenshots([])
     setError('')
     setIsSubmitting(false)
     resetFileInput()
+  }
+
+  function updateScreenshots(nextScreenshots: ScreenshotItem[]): void {
+    screenshotsRef.current = nextScreenshots
+    setScreenshots(nextScreenshots)
+  }
+
+  const handleClose = (): void => {
+    resetForm()
     onClose()
   }
 
@@ -79,39 +76,60 @@ export function SubmitFeedbackDialog({
     return ''
   }
 
-  const selectScreenshot = (file: File): void => {
-    const validationError = validateScreenshot(file)
-    if (validationError) {
-      setScreenshot(null)
-      resetFileInput()
-      setError(validationError)
+  const createScreenshotItem = (file: File): ScreenshotItem => {
+    nextScreenshotIdRef.current += 1
+    return {
+      id: `screenshot-${nextScreenshotIdRef.current}`,
+      file,
+      previewUrl: URL.createObjectURL?.(file) ?? ''
+    }
+  }
+
+  const addScreenshots = (selectedFiles: File[]): void => {
+    if (selectedFiles.length === 0) {
       return
     }
 
-    setScreenshot(file)
-    setError('')
+    const availableSlots = MAX_SCREENSHOTS - screenshotsRef.current.length
+    if (availableSlots <= 0) {
+      setError(`最多只能添加 ${MAX_SCREENSHOTS} 张截图`)
+      resetFileInput()
+      return
+    }
+
+    const acceptedFiles = selectedFiles.slice(0, availableSlots)
+    const validationError = acceptedFiles.map(validateScreenshot).find(Boolean)
+    if (validationError) {
+      setError(validationError)
+      resetFileInput()
+      return
+    }
+
+    updateScreenshots([...screenshotsRef.current, ...acceptedFiles.map(createScreenshotItem)])
+    setError(acceptedFiles.length < selectedFiles.length ? `最多只能添加 ${MAX_SCREENSHOTS} 张截图` : '')
+    resetFileInput()
   }
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
-    const file = event.target.files?.[0]
-    if (!file) {
-      setScreenshot(null)
-      return
-    }
-
-    selectScreenshot(file)
+    addScreenshots(Array.from(event.target.files ?? []))
   }
 
   const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>): void => {
-    const imageFile = Array.from(event.clipboardData.files)[0]
+    const pastedFiles = Array.from(event.clipboardData.files)
 
-    if (imageFile) {
-      selectScreenshot(imageFile)
+    if (pastedFiles.length > 0) {
+      addScreenshots(pastedFiles)
     }
   }
 
-  const handleRemoveScreenshot = (): void => {
-    setScreenshot(null)
+  const handleRemoveScreenshot = (indexToRemove: number): void => {
+    const removedScreenshot = screenshotsRef.current[indexToRemove]
+    if (removedScreenshot) {
+      URL.revokeObjectURL?.(removedScreenshot.previewUrl)
+    }
+
+    updateScreenshots(screenshotsRef.current.filter((_screenshot, index) => index !== indexToRemove))
+    setError('')
     resetFileInput()
   }
 
@@ -130,7 +148,7 @@ export function SubmitFeedbackDialog({
     try {
       await window.codeReview.submitFeedback({
         description: normalizedDescription,
-        screenshot
+        screenshots: screenshots.map((screenshot) => screenshot.file)
       })
       handleClose()
     } catch (submitError) {
@@ -168,21 +186,35 @@ export function SubmitFeedbackDialog({
               type="file"
               accept="image/png,image/jpeg,image/webp"
               aria-label="选择截图"
+              multiple
               onChange={handleFileChange}
             />
           </label>
-          <p className="feedback-paste-hint">支持 PNG、JPG、WEBP，最大 5MB；可直接在描述框粘贴截图。</p>
+          <p className="feedback-paste-hint">
+            支持 PNG、JPG、WEBP，最多 {MAX_SCREENSHOTS} 张，每张最大 5MB；可直接在描述框粘贴截图。
+          </p>
 
-          {screenshot && (
-            <div className="feedback-screenshot-preview">
-              {previewUrl && <img src={previewUrl} alt="问题截图预览" />}
-              <div>
-                <strong>{screenshot.name}</strong>
-                <span>{formatFileSize(screenshot.size)}</span>
-              </div>
-              <button className="ghost-button" type="button" onClick={handleRemoveScreenshot}>
-                移除
-              </button>
+          {screenshots.length > 0 && (
+            <div className="feedback-screenshot-grid" aria-label="已选择截图">
+              {screenshots.map((screenshot, index) => (
+                <div className="feedback-screenshot-preview" key={screenshot.id}>
+                  {screenshot.previewUrl && (
+                    <img src={screenshot.previewUrl} alt={`${screenshot.file.name} 预览`} />
+                  )}
+                  <div className="feedback-screenshot-meta">
+                    <strong title={screenshot.file.name}>{screenshot.file.name}</strong>
+                    <span>{formatFileSize(screenshot.file.size)}</span>
+                  </div>
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    aria-label={`移除 ${screenshot.file.name}`}
+                    onClick={() => handleRemoveScreenshot(index)}
+                  >
+                    移除
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -208,4 +240,10 @@ const formatFileSize = (size: number): string => {
   }
 
   return `${(size / 1024 / 1024).toFixed(1)}MB`
+}
+
+const revokeScreenshots = (screenshots: ScreenshotItem[]): void => {
+  screenshots.forEach((screenshot) => {
+    URL.revokeObjectURL?.(screenshot.previewUrl)
+  })
 }

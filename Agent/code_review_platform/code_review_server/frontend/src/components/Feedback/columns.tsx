@@ -134,8 +134,11 @@ export function createFeedbackColumns({
     {
       accessorKey: "has_screenshot",
       header: "截图",
-      cell: ({ row }) =>
-        row.original.has_screenshot ? (
+      cell: ({ row }) => {
+        const screenshotCount =
+          row.original.screenshot_count ?? row.original.screenshots?.length ?? 0
+
+        return screenshotCount > 0 ? (
           <Button
             type="button"
             variant="ghost"
@@ -143,11 +146,12 @@ export function createFeedbackColumns({
             onClick={() => onOpenDetail(row.original)}
           >
             <ImageIcon />
-            查看
+            {screenshotCount} 张
           </Button>
         ) : (
           <span className="text-muted-foreground">-</span>
-        ),
+        )
+      },
     },
     {
       accessorKey: "status",

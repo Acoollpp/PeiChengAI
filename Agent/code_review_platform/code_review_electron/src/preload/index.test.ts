@@ -26,26 +26,73 @@ describe('preload codeReview API', () => {
   it('serializes screenshot files before invoking feedback IPC', async () => {
     await import('./index')
     const api = exposeInMainWorldMock.mock.calls[0][1]
-    const screenshot = {
+    const firstScreenshot = {
       name: 'feedback.png',
       type: 'image/png',
       arrayBuffer: vi.fn(async () => new TextEncoder().encode('image-bytes').buffer)
     } as unknown as File
+    const secondScreenshot = {
+      name: 'feedback-2.jpg',
+      type: 'image/jpeg',
+      arrayBuffer: vi.fn(async () => new TextEncoder().encode('second-image').buffer)
+    } as unknown as File
 
-    await api.submitFeedback({ description: '无法下载报告', screenshot })
+    await api.submitFeedback({
+      description: '无法下载报告',
+      screenshots: [firstScreenshot, secondScreenshot]
+    })
 
     expect(invokeMock).toHaveBeenCalledWith(
       'feedback:submit',
       expect.objectContaining({
         description: '无法下载报告',
-        screenshot: expect.objectContaining({
-          name: 'feedback.png',
-          type: 'image/png'
-        })
+        screenshots: [
+          expect.objectContaining({
+            name: 'feedback.png',
+            type: 'image/png'
+          }),
+          expect.objectContaining({
+            name: 'feedback-2.jpg',
+            type: 'image/jpeg'
+          })
+        ]
       })
     )
     const payload = invokeMock.mock.calls[0][1]
-    expect(new TextDecoder().decode(payload.screenshot.bytes)).toBe('image-bytes')
+    expect(new TextDecoder().decode(payload.screenshots[0].bytes)).toBe('image-bytes')
+    expect(new TextDecoder().decode(payload.screenshots[1].bytes)).toBe('second-image')
+  })
+
+  it('serializes legacy screenshot payload into screenshots IPC field', async () => {
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+    const screenshot = {
+      name: 'legacy-feedback.png',
+      type: 'image/png',
+      arrayBuffer: vi.fn(async () => new TextEncoder().encode('legacy-image-bytes').buffer)
+    } as unknown as File
+
+    await api.submitFeedback({
+      description: '旧版截图上传',
+      screenshot
+    })
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      'feedback:submit',
+      expect.objectContaining({
+        description: '旧版截图上传',
+        screenshots: [
+          expect.objectContaining({
+            name: 'legacy-feedback.png',
+            type: 'image/png'
+          })
+        ]
+      })
+    )
+    const payload = invokeMock.mock.calls[0][1]
+    expect(payload.screenshots).toHaveLength(1)
+    expect(new TextDecoder().decode(payload.screenshots[0].bytes)).toBe('legacy-image-bytes')
+    expect(payload).not.toHaveProperty('screenshot')
   })
 
   it('invokes report asset IPC with report path and asset path', async () => {

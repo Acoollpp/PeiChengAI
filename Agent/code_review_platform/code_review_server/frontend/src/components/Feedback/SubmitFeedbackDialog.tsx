@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label"
 import useCustomToast from "@/hooks/useCustomToast"
 
 const MAX_SCREENSHOT_SIZE = 5 * 1024 * 1024
+const MAX_SCREENSHOT_COUNT = 5
 const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"]
 
 function authHeaders(): HeadersInit {
@@ -84,13 +85,13 @@ function validateScreenshot(file: File) {
 
 async function createFeedback(input: {
   description: string
-  screenshot: File | null
+  screenshots: File[]
 }) {
   const formData = new FormData()
   formData.append("description", input.description)
 
-  if (input.screenshot) {
-    formData.append("screenshot", input.screenshot)
+  for (const screenshot of input.screenshots) {
+    formData.append("screenshots", screenshot)
   }
 
   const response = await fetch(`${OpenAPI.BASE}/api/v1/feedback`, {
@@ -115,23 +116,28 @@ export function SubmitFeedbackDialog({
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [open, setOpen] = useState(false)
   const [description, setDescription] = useState("")
-  const [screenshot, setScreenshot] = useState<File | null>(null)
+  const [screenshots, setScreenshots] = useState<File[]>([])
+  const [previewUrls, setPreviewUrls] = useState<string[]>([])
 
-  const previewUrl = useMemo(
-    () => (screenshot ? URL.createObjectURL(screenshot) : null),
-    [screenshot],
+  const remainingScreenshotCount = useMemo(
+    () => MAX_SCREENSHOT_COUNT - screenshots.length,
+    [screenshots.length],
   )
 
   useEffect(() => {
+    const nextPreviewUrls = screenshots.map((screenshot) =>
+      URL.createObjectURL(screenshot),
+    )
+    setPreviewUrls(nextPreviewUrls)
+
     return () => {
-      if (previewUrl) {
+      for (const previewUrl of nextPreviewUrls) {
         URL.revokeObjectURL(previewUrl)
       }
     }
-  }, [previewUrl])
+  }, [screenshots])
 
-  const clearScreenshot = () => {
-    setScreenshot(null)
+  const clearScreenshotInput = () => {
     if (inputRef.current) {
       inputRef.current.value = ""
     }
@@ -139,37 +145,60 @@ export function SubmitFeedbackDialog({
 
   const resetForm = () => {
     setDescription("")
-    clearScreenshot()
+    setScreenshots([])
+    clearScreenshotInput()
   }
 
-  const setValidatedScreenshot = (file: File | null) => {
-    if (!file) {
-      clearScreenshot()
+  const appendScreenshots = (files: File[]) => {
+    if (files.length === 0) {
       return
     }
 
-    const error = validateScreenshot(file)
-    if (error) {
+    const nextScreenshots = [...screenshots]
+    const errors: string[] = []
+
+    for (const file of files) {
+      if (nextScreenshots.length >= MAX_SCREENSHOT_COUNT) {
+        errors.push("最多只能上传 5 张截图")
+        break
+      }
+
+      const error = validateScreenshot(file)
+      if (error) {
+        errors.push(error)
+        continue
+      }
+
+      nextScreenshots.push(file)
+    }
+
+    for (const error of errors) {
       showErrorToast(error)
-      clearScreenshot()
-      return
     }
 
-    setScreenshot(file)
+    setScreenshots(nextScreenshots)
+  }
+
+  const removeScreenshot = (index: number) => {
+    setScreenshots((current) =>
+      current.filter((_, currentIndex) => currentIndex !== index),
+    )
+    clearScreenshotInput()
   }
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setValidatedScreenshot(event.target.files?.[0] ?? null)
+    appendScreenshots(Array.from(event.target.files ?? []))
+    clearScreenshotInput()
   }
 
   const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const imageItem = Array.from(event.clipboardData.items).find((item) =>
-      ACCEPTED_IMAGE_TYPES.includes(item.type),
-    )
-    const file = imageItem?.getAsFile()
+    const pastedScreenshots = Array.from(event.clipboardData.items)
+      .filter((item) => ACCEPTED_IMAGE_TYPES.includes(item.type))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null)
 
-    if (file) {
-      setValidatedScreenshot(file)
+    if (pastedScreenshots.length > 0) {
+      appendScreenshots(pastedScreenshots)
     }
   }
 
@@ -197,12 +226,20 @@ export function SubmitFeedbackDialog({
 
     mutation.mutate({
       description: trimmedDescription,
-      screenshot,
+      screenshots,
     })
   }
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen)
+
+    if (!nextOpen) {
+      resetForm()
+    }
+  }
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button type="button">
           <MessageSquarePlus />
@@ -213,7 +250,7 @@ export function SubmitFeedbackDialog({
         <DialogHeader>
           <DialogTitle>提交意见</DialogTitle>
           <DialogDescription>
-            描述你遇到的问题，也可以选择或粘贴一张截图。
+            描述你遇到的问题，也可以选择或粘贴最多 5 张截图。
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
@@ -237,43 +274,53 @@ export function SubmitFeedbackDialog({
               ref={inputRef}
               type="file"
               accept={ACCEPTED_IMAGE_TYPES.join(",")}
+              multiple
               onChange={handleFileChange}
             />
             <p className="text-xs text-muted-foreground">
-              支持 PNG、JPEG、WebP，最大 5MB。也可以在问题描述框中粘贴截图。
+              支持 PNG、JPEG、WebP，每张最大
+              5MB。也可以在问题描述框中粘贴截图，还可添加{" "}
+              {remainingScreenshotCount} 张。
             </p>
           </div>
 
-          {screenshot && (
-            <div className="flex items-center gap-3 rounded-md border p-3">
-              {previewUrl ? (
-                <img
-                  src={previewUrl}
-                  alt="已选择截图预览"
-                  className="size-16 rounded border object-cover"
-                />
-              ) : (
-                <div className="flex size-16 items-center justify-center rounded border">
-                  <ImagePlus className="text-muted-foreground" />
+          {screenshots.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {screenshots.map((screenshot, index) => (
+                <div
+                  key={`${screenshot.name}-${screenshot.size}-${screenshot.lastModified}-${index}`}
+                  className="flex items-center gap-3 rounded-md border p-3"
+                >
+                  {previewUrls[index] ? (
+                    <img
+                      src={previewUrls[index]}
+                      alt={`已选择截图 ${index + 1} 预览`}
+                      className="size-16 rounded border object-cover"
+                    />
+                  ) : (
+                    <div className="flex size-16 items-center justify-center rounded border">
+                      <ImagePlus className="text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">
+                      {screenshot.name || `粘贴的截图 ${index + 1}`}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatFileSize(screenshot.size)}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`移除截图 ${index + 1}`}
+                    onClick={() => removeScreenshot(index)}
+                  >
+                    <Trash2 />
+                  </Button>
                 </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">
-                  {screenshot.name || "粘贴的截图"}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {formatFileSize(screenshot.size)}
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="移除截图"
-                onClick={clearScreenshot}
-              >
-                <Trash2 />
-              </Button>
+              ))}
             </div>
           )}
 
@@ -282,7 +329,7 @@ export function SubmitFeedbackDialog({
               type="button"
               variant="outline"
               disabled={mutation.isPending}
-              onClick={() => setOpen(false)}
+              onClick={() => handleOpenChange(false)}
             >
               取消
             </Button>

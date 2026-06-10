@@ -189,6 +189,33 @@ class Feedback(SQLModel, table=True):
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
     )
+    screenshots: list["FeedbackScreenshot"] = Relationship(
+        back_populates="feedback",
+        cascade_delete=True,
+    )
+
+
+class FeedbackScreenshot(SQLModel, table=True):
+    __tablename__ = "feedback_screenshot"
+    __table_args__ = (
+        Index("ix_feedback_screenshot_feedback_order", "feedback_id", "sort_order"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    feedback_id: uuid.UUID = Field(
+        foreign_key="feedback.id", nullable=False, index=True, ondelete="CASCADE"
+    )
+    file_path: str = Field(max_length=2048)
+    file_name: str = Field(max_length=255)
+    content_type: str = Field(max_length=128)
+    file_size: int
+    sort_order: int = Field(default=0)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+    feedback: "Feedback" = Relationship(back_populates="screenshots")
 
 
 class ReviewTaskCreate(SQLModel):
@@ -247,6 +274,15 @@ class ReviewTaskStatsPublic(SQLModel):
     reports_by_user: list[ReviewTaskReportUserStatsPublic] = Field(default_factory=list)
 
 
+class FeedbackScreenshotPublic(SQLModel):
+    id: uuid.UUID
+    file_name: str
+    content_type: str
+    file_size: int
+    sort_order: int
+    created_at: datetime | None = None
+
+
 class FeedbackPublic(SQLModel):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -254,6 +290,8 @@ class FeedbackPublic(SQLModel):
     svn_username: str | None = None
     description: str
     has_screenshot: bool = False
+    screenshot_count: int = 0
+    screenshots: list[FeedbackScreenshotPublic] = Field(default_factory=list)
     screenshot_name: str | None = None
     screenshot_content_type: str | None = None
     screenshot_size: int | None = None

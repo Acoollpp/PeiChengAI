@@ -399,13 +399,16 @@ describe('ApiClient', () => {
       })
     )
     const client = new ApiClient('https://server.example', fetchMock)
-    const screenshot = new File(['png-bytes'], 'screen.png', {
+    const firstScreenshot = new File(['png-bytes'], 'screen.png', {
       type: 'image/png'
+    }) as unknown as globalThis.File
+    const secondScreenshot = new File(['jpeg-bytes'], 'screen-2.jpg', {
+      type: 'image/jpeg'
     }) as unknown as globalThis.File
 
     const result = await client.submitFeedback('token-123', {
       description: '按钮点击后没有响应',
-      screenshot
+      screenshots: [firstScreenshot, secondScreenshot]
     })
 
     const [, init] = fetchMock.mock.calls[0]
@@ -422,11 +425,17 @@ describe('ApiClient', () => {
     expect(init.body).toBeInstanceOf(FormData)
     expect(init.body.get('description')).toBe('按钮点击后没有响应')
 
-    const uploadedScreenshot = init.body.get('screenshot')
-    expect(uploadedScreenshot).toBeInstanceOf(File)
-    expect((uploadedScreenshot as File).name).toBe('screen.png')
-    expect((uploadedScreenshot as File).type).toBe('image/png')
-    await expect((uploadedScreenshot as File).text()).resolves.toBe('png-bytes')
+    const uploadedScreenshots = init.body.getAll('screenshots')
+    expect(uploadedScreenshots).toHaveLength(2)
+    expect(init.body.get('screenshot')).toBeNull()
+    expect(uploadedScreenshots[0]).toBeInstanceOf(File)
+    expect((uploadedScreenshots[0] as File).name).toBe('screen.png')
+    expect((uploadedScreenshots[0] as File).type).toBe('image/png')
+    await expect((uploadedScreenshots[0] as File).text()).resolves.toBe('png-bytes')
+    expect(uploadedScreenshots[1]).toBeInstanceOf(File)
+    expect((uploadedScreenshots[1] as File).name).toBe('screen-2.jpg')
+    expect((uploadedScreenshots[1] as File).type).toBe('image/jpeg')
+    await expect((uploadedScreenshots[1] as File).text()).resolves.toBe('jpeg-bytes')
   })
 
   it('throws an ApiError containing http status for failed responses', async () => {

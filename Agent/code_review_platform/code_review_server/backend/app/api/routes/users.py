@@ -1,8 +1,9 @@
+import logging
 import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import col, delete, func, or_, select
+from sqlmodel import col, delete, func, or_, select, update
 
 from app import crud
 from app.api.deps import (
@@ -12,19 +13,27 @@ from app.api.deps import (
     has_admin_privileges,
 )
 from app.models import (
+    AuditLog,
+    ClientRelease,
     Feedback,
     Item,
     Message,
+    ReviewTask,
+    SkillPackage,
     User,
+    UserApiKey,
     UserCreate,
     UserPublic,
     UserRole,
+    UserSvnCredential,
     UsersPublic,
     UserUpdate,
     UserUpdateMe,
 )
+from app.services import feedback_service
 
 router = APIRouter(prefix="/users", tags=["users"])
+logger = logging.getLogger(__name__)
 
 
 def _ensure_svn_username_available(
@@ -39,6 +48,59 @@ def _ensure_svn_username_available(
         raise HTTPException(
             status_code=409, detail="User with this SVN username already exists"
         )
+
+
+def _delete_user_with_related_data(*, session: SessionDep, user: User) -> None:
+    feedback_ids = session.exec(
+        select(Feedback.id).where(col(Feedback.user_id) == user.id)
+    ).all()
+    audit_actor_statement = (
+        update(AuditLog)
+        .where(col(AuditLog.actor_user_id) == user.id)
+        .values(actor_user_id=None)
+    )
+    session.exec(audit_actor_statement)
+    audit_target_statement = (
+        update(AuditLog)
+        .where(col(AuditLog.target_user_id) == user.id)
+        .values(target_user_id=None)
+    )
+    session.exec(audit_target_statement)
+    skill_package_statement = (
+        update(SkillPackage)
+        .where(col(SkillPackage.created_by_user_id) == user.id)
+        .values(created_by_user_id=None)
+    )
+    session.exec(skill_package_statement)
+    client_release_statement = (
+        update(ClientRelease)
+        .where(col(ClientRelease.created_by_user_id) == user.id)
+        .values(created_by_user_id=None)
+    )
+    session.exec(client_release_statement)
+    feedback_statement = delete(Feedback).where(col(Feedback.user_id) == user.id)
+    session.exec(feedback_statement)
+    review_task_statement = delete(ReviewTask).where(col(ReviewTask.user_id) == user.id)
+    session.exec(review_task_statement)
+    credential_statement = delete(UserSvnCredential).where(
+        col(UserSvnCredential.user_id) == user.id
+    )
+    session.exec(credential_statement)
+    api_key_statement = delete(UserApiKey).where(col(UserApiKey.user_id) == user.id)
+    session.exec(api_key_statement)
+    item_statement = delete(Item).where(col(Item.owner_id) == user.id)
+    session.exec(item_statement)
+    session.delete(user)
+    session.commit()
+    for feedback_id in feedback_ids:
+        try:
+            feedback_service.remove_feedback_files(feedback_id)
+        except Exception as error:
+            logger.warning(
+                "Failed to remove feedback files for %s",
+                feedback_id,
+                exc_info=error,
+            )
 
 
 @router.get(
@@ -127,8 +189,7 @@ def delete_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
         raise HTTPException(
             status_code=403, detail="Admins are not allowed to delete themselves"
         )
-    session.delete(current_user)
-    session.commit()
+    _delete_user_with_related_data(session=session, user=current_user)
     return Message(message="User deleted successfully")
 
 
@@ -197,10 +258,5 @@ def delete_user(
         raise HTTPException(
             status_code=403, detail="Admins are not allowed to delete themselves"
         )
-    feedback_statement = delete(Feedback).where(col(Feedback.user_id) == user_id)
-    session.exec(feedback_statement)
-    statement = delete(Item).where(col(Item.owner_id) == user_id)
-    session.exec(statement)
-    session.delete(user)
-    session.commit()
+    _delete_user_with_related_data(session=session, user=user)
     return Message(message="User deleted successfully")

@@ -40,7 +40,7 @@ interface SerializedFeedbackScreenshot {
 
 interface SubmitFeedbackIpcPayload {
   description: string
-  screenshot?: SerializedFeedbackScreenshot | null
+  screenshots?: SerializedFeedbackScreenshot[]
 }
 
 export interface IpcHandlerDependencies {
@@ -77,10 +77,10 @@ interface ReadReportAssetResult {
 
 const toSubmitFeedbackRequest = (payload: SubmitFeedbackIpcPayload): SubmitFeedbackRequest => ({
   description: payload.description,
-  screenshot: payload.screenshot
-    ? new Blob([payload.screenshot.bytes], { type: payload.screenshot.type })
-    : null,
-  screenshotName: payload.screenshot?.name ?? null
+  screenshots: (payload.screenshots ?? []).map(
+    (screenshot) => new Blob([screenshot.bytes], { type: screenshot.type })
+  ),
+  screenshotNames: (payload.screenshots ?? []).map((screenshot) => screenshot.name)
 })
 
 const imageContentTypes: Record<string, string> = {

@@ -18,6 +18,14 @@ import {
   formatFeedbackFileSize,
 } from "./columns"
 
+type ScreenshotPreview = {
+  id: string
+  fileName?: string | null
+  fileSize?: number | null
+  sortOrder?: number | null
+  url: string
+}
+
 function authHeaders(): HeadersInit {
   const token = localStorage.getItem("access_token")
   const headers = new Headers()
@@ -29,9 +37,9 @@ function authHeaders(): HeadersInit {
   return headers
 }
 
-async function fetchScreenshot(feedbackId: string) {
+async function fetchScreenshot(feedbackId: string, screenshotId: string) {
   const response = await fetch(
-    `${OpenAPI.BASE}/api/v1/feedback/${feedbackId}/screenshot`,
+    `${OpenAPI.BASE}/api/v1/feedback/${feedbackId}/screenshots/${screenshotId}`,
     { headers: authHeaders() },
   )
 
@@ -51,35 +59,62 @@ export function FeedbackDetailDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null)
+  const [screenshotPreviews, setScreenshotPreviews] = useState<
+    ScreenshotPreview[]
+  >([])
   const [isLoadingScreenshot, setIsLoadingScreenshot] = useState(false)
   const [screenshotError, setScreenshotError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!open || !feedback?.has_screenshot) {
-      setScreenshotUrl(null)
+    const feedbackId = feedback?.id
+    const sortedScreenshots = [...(feedback?.screenshots ?? [])].sort(
+      (left, right) =>
+        (left.sort_order ?? 0) - (right.sort_order ?? 0) ||
+        left.id.localeCompare(right.id),
+    )
+
+    if (!open || !feedbackId || sortedScreenshots.length === 0) {
+      setScreenshotPreviews([])
       setScreenshotError(null)
+      setIsLoadingScreenshot(false)
       return
     }
 
     let isMounted = true
-    let objectUrl: string | null = null
+    const objectUrls: string[] = []
     setIsLoadingScreenshot(true)
-    setScreenshotUrl(null)
+    setScreenshotPreviews([])
     setScreenshotError(null)
 
-    fetchScreenshot(feedback.id)
-      .then((blob) => {
+    Promise.all(
+      sortedScreenshots.map(async (screenshot) => {
+        const blob = await fetchScreenshot(feedbackId, screenshot.id)
+        if (!isMounted) {
+          return null
+        }
+
+        const url = URL.createObjectURL(blob)
+        objectUrls.push(url)
+
+        return {
+          id: screenshot.id,
+          fileName: screenshot.file_name,
+          fileSize: screenshot.file_size,
+          sortOrder: screenshot.sort_order,
+          url,
+        }
+      }),
+    )
+      .then((previews) => {
         if (!isMounted) {
           return
         }
 
-        objectUrl = URL.createObjectURL(blob)
-        setScreenshotUrl(objectUrl)
+        setScreenshotPreviews(previews.filter((preview) => preview !== null))
       })
       .catch((error) => {
         if (isMounted) {
-          setScreenshotUrl(null)
+          setScreenshotPreviews([])
           setScreenshotError(
             error instanceof Error ? error.message : "加载截图失败",
           )
@@ -93,11 +128,14 @@ export function FeedbackDetailDialog({
 
     return () => {
       isMounted = false
-      if (objectUrl) {
+      for (const objectUrl of objectUrls) {
         URL.revokeObjectURL(objectUrl)
       }
     }
-  }, [feedback?.id, feedback?.has_screenshot, open])
+  }, [feedback?.id, feedback?.screenshots, open])
+
+  const screenshotCount =
+    feedback?.screenshot_count ?? feedback?.screenshots?.length ?? 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -153,18 +191,12 @@ export function FeedbackDetailDialog({
 
             <div className="flex flex-col gap-2">
               <div className="text-sm font-medium">截图</div>
-              {!feedback.has_screenshot ? (
+              {screenshotCount === 0 ? (
                 <div className="rounded-md border p-4 text-sm text-muted-foreground">
                   未上传截图
                 </div>
               ) : (
                 <div className="rounded-md border p-3">
-                  <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span>{feedback.screenshot_name || "截图"}</span>
-                    <span>
-                      {formatFeedbackFileSize(feedback.screenshot_size)}
-                    </span>
-                  </div>
                   {isLoadingScreenshot && (
                     <div className="flex h-48 items-center justify-center text-muted-foreground">
                       <Loader2 className="mr-2 animate-spin" />
@@ -176,12 +208,29 @@ export function FeedbackDetailDialog({
                       {screenshotError}
                     </div>
                   )}
-                  {screenshotUrl && !isLoadingScreenshot && (
-                    <img
-                      src={screenshotUrl}
-                      alt="意见截图预览"
-                      className="max-h-[60vh] w-full rounded border object-contain"
-                    />
+                  {screenshotPreviews.length > 0 && !isLoadingScreenshot && (
+                    <div className="flex flex-col gap-4">
+                      {screenshotPreviews.map((preview, index) => (
+                        <div
+                          key={preview.id}
+                          className="flex flex-col gap-2 rounded-md border p-3"
+                        >
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <span>
+                              {preview.fileName || `截图 ${index + 1}`}
+                            </span>
+                            <span>
+                              {formatFeedbackFileSize(preview.fileSize)}
+                            </span>
+                          </div>
+                          <img
+                            src={preview.url}
+                            alt={`意见截图 ${index + 1} 预览`}
+                            className="max-h-[60vh] w-full rounded border object-contain"
+                          />
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}

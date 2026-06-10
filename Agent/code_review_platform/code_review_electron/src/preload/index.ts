@@ -35,16 +35,20 @@ const listen = <T>(channel: string, callback: (event: T) => void): (() => void) 
 
 const serializeFeedbackPayload = async (
   payload: SubmitFeedbackPayload
-): Promise<SubmitFeedbackIpcPayload> => ({
-  description: payload.description,
-  screenshot: payload.screenshot
-    ? {
-        name: payload.screenshot.name,
-        type: payload.screenshot.type,
-        bytes: await payload.screenshot.arrayBuffer()
-      }
-    : null
-})
+): Promise<SubmitFeedbackIpcPayload> => {
+  const screenshots = payload.screenshots ?? (payload.screenshot ? [payload.screenshot] : [])
+
+  return {
+    description: payload.description,
+    screenshots: await Promise.all(
+      screenshots.map(async (screenshot) => ({
+        name: screenshot.name,
+        type: screenshot.type,
+        bytes: await screenshot.arrayBuffer()
+      }))
+    )
+  }
+}
 
 contextBridge.exposeInMainWorld('codeReview', {
   keyLogin: (payload: KeyLoginRequest): Promise<KeyLoginResult> =>

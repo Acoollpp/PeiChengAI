@@ -14,7 +14,7 @@ export type Body_review_tasks_upload_review_task_report = {
 
 export type Body_feedback_create_feedback = {
     description: string;
-    screenshot?: (Blob | File | null);
+    screenshots?: (Array<Blob | File> | null);
 };
 
 export type Body_skills_upload_skill = {
@@ -49,6 +49,8 @@ export type FeedbackPublic = {
     screenshot_name?: (string | null);
     screenshot_content_type?: (string | null);
     screenshot_size?: (number | null);
+    screenshot_count?: number;
+    screenshots?: Array<FeedbackScreenshotPublic>;
     status: FeedbackStatus;
     created_at?: (string | null);
     updated_at?: (string | null);
@@ -57,6 +59,15 @@ export type FeedbackPublic = {
 export type FeedbacksPublic = {
     data: Array<FeedbackPublic>;
     count: number;
+};
+
+export type FeedbackScreenshotPublic = {
+    id: string;
+    file_name: string;
+    content_type: string;
+    file_size: number;
+    sort_order: number;
+    created_at?: (string | null);
 };
 
 export type FeedbackStatus = 'pending' | 'processing' | 'resolved';
@@ -260,6 +271,13 @@ export type FeedbackReadFeedbackScreenshotData = {
 };
 
 export type FeedbackReadFeedbackScreenshotResponse = (unknown);
+
+export type FeedbackReadFeedbackScreenshotByIdData = {
+    feedbackId: string;
+    screenshotId: string;
+};
+
+export type FeedbackReadFeedbackScreenshotByIdResponse = (unknown);
 
 export type FeedbackUpdateFeedbackStatusData = {
     feedbackId: string;

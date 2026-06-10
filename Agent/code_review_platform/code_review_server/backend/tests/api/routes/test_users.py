@@ -1,12 +1,27 @@
 import uuid
+from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from app import crud
+from app.api.routes import users as users_route
 from app.core.config import settings
 from app.core.db import DEFAULT_LOCAL_ADMIN_NAME
-from app.models import AuthSource, Feedback, User, UserCreate, UserRole
+from app.models import (
+    AuditLog,
+    AuthSource,
+    ClientRelease,
+    Feedback,
+    FeedbackScreenshot,
+    ReviewTask,
+    SkillPackage,
+    User,
+    UserCreate,
+    UserRole,
+    UserSvnCredential,
+)
 from tests.utils.user import create_random_user
 from tests.utils.utils import auth_headers_for_user_id, random_lower_string
 
@@ -386,6 +401,128 @@ def test_delete_user_me(client: TestClient, db: Session) -> None:
     assert deleted_user["message"] == "User deleted successfully"
     result = db.exec(select(User).where(User.id == user_id)).first()
     assert result is None
+
+
+def test_delete_user_me_removes_feedback_screenshot_files(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEEDBACK_STORAGE_DIR", str(tmp_path))
+    user = create_random_user(db)
+    user_id = user.id
+    credential = UserSvnCredential(
+        user_id=user_id,
+        encrypted_password="encrypted-password",
+        encryption_version="v1",
+    )
+    task = ReviewTask(
+        user_id=user_id,
+        svn_url="svn://example.com/project",
+        old_revision="1",
+        new_revision="2",
+    )
+    audit_log = AuditLog(
+        actor_user_id=user_id,
+        action="delete-user-test",
+        target_user_id=user_id,
+        metadata_json={"source": "test"},
+    )
+    skill_package = SkillPackage(
+        name=f"skill-{random_lower_string()}",
+        version="1.0.0",
+        content_hash=random_lower_string(),
+        file_path="/tmp/skill.zip",
+        created_by_user_id=user_id,
+    )
+    client_release = ClientRelease(
+        version=f"1.0.{random_lower_string()}",
+        platform="win32",
+        arch="x64",
+        artifact_name="app.exe",
+        artifact_path="/tmp/app.exe",
+        artifact_sha512=random_lower_string(),
+        latest_yml_name="latest.yml",
+        latest_yml_path="/tmp/latest.yml",
+        created_by_user_id=user_id,
+    )
+    db.add(credential)
+    db.add(task)
+    db.add(audit_log)
+    db.add(skill_package)
+    db.add(client_release)
+    db.commit()
+    credential_id = credential.id
+    task_id = task.id
+    audit_log_id = audit_log.id
+    skill_package_id = skill_package.id
+    client_release_id = client_release.id
+    headers = auth_headers_for_user_id(user_id)
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/feedback",
+        headers=headers,
+        data={"description": "自删前提交的截图意见"},
+        files={"screenshots": ("screen.png", b"png-bytes", "image/png")},
+    )
+    assert upload_response.status_code == 200
+    feedback = upload_response.json()
+    feedback_id = feedback["id"]
+    screenshot_id = feedback["screenshots"][0]["id"]
+    assert (tmp_path / feedback_id).is_dir()
+
+    response = client.delete(f"{settings.API_V1_STR}/users/me", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "User deleted successfully"
+    assert not (tmp_path / feedback_id).exists()
+    db.expire_all()
+    assert db.get(User, user_id) is None
+    assert db.get(Feedback, feedback_id) is None
+    assert db.get(FeedbackScreenshot, screenshot_id) is None
+    assert db.get(UserSvnCredential, credential_id) is None
+    assert db.get(ReviewTask, task_id) is None
+    saved_audit_log = db.get(AuditLog, audit_log_id)
+    assert saved_audit_log
+    assert saved_audit_log.actor_user_id is None
+    assert saved_audit_log.target_user_id is None
+    saved_skill_package = db.get(SkillPackage, skill_package_id)
+    assert saved_skill_package
+    assert saved_skill_package.created_by_user_id is None
+    saved_client_release = db.get(ClientRelease, client_release_id)
+    assert saved_client_release
+    assert saved_client_release.created_by_user_id is None
+
+
+def test_delete_user_me_ignores_feedback_file_cleanup_errors(
+    client: TestClient,
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = create_random_user(db)
+    user_id = user.id
+    feedback = Feedback(user_id=user_id, description="清理文件失败仍删除用户")
+    db.add(feedback)
+    db.commit()
+    feedback_id = feedback.id
+    headers = auth_headers_for_user_id(user_id)
+
+    def fail_remove_feedback_files(_feedback_id: uuid.UUID) -> None:
+        raise RuntimeError("cleanup failed")
+
+    monkeypatch.setattr(
+        users_route.feedback_service,
+        "remove_feedback_files",
+        fail_remove_feedback_files,
+    )
+
+    response = client.delete(f"{settings.API_V1_STR}/users/me", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "User deleted successfully"
+    db.expire_all()
+    assert db.get(User, user_id) is None
+    assert db.get(Feedback, feedback_id) is None
 
 
 def test_delete_user_me_as_superuser(
