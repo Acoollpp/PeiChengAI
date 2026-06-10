@@ -1559,7 +1559,7 @@ git commit -m "记录并发任务队列验证结果"
 
 ## 验证记录
 
-- `npm test`：通过，26 个测试文件、182 个测试全部通过。
+- `npm test`：通过，26 个测试文件、187 个测试全部通过。
 - `npm run typecheck`：通过，`tsc --noEmit` 退出码 0。
 - `npm run build`：通过，Electron main、preload、renderer 均完成生产构建。
 - 手动验证：未在本轮执行真实 SVN/Codex 三任务端到端验证；需要在可登录并可访问 SVN 的客户端环境中确认连续提交 3 个任务时最多 2 个运行、第 3 个等待、运行完成后自动调度，以及报告预览和报告位置均按选中任务打开。
