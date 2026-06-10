@@ -85,27 +85,41 @@ afterEach(() => {
 })
 
 describe('TaskBoard', () => {
-  it('展示运行中、等待中、历史任务三分区', () => {
+  it('默认显示运行中任务并保留原有切换式看板', () => {
     renderTaskBoard()
 
     expect(screen.queryByRole('tab', { name: '当前任务' })).not.toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '运行中' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '等待中' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '历史任务' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '运行中 1' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: '等待中 1' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('tab', { name: '历史任务 1' })).toHaveAttribute('aria-selected', 'false')
     expect(screen.getByText('task-current')).toBeInTheDocument()
-    expect(screen.getByText('local-queued-1')).toBeInTheDocument()
-    expect(screen.getByText('task-history')).toBeInTheDocument()
-    expect(screen.getByText('排队第 1 位')).toBeInTheDocument()
+    expect(screen.queryByText('local-queued-1')).not.toBeInTheDocument()
+    expect(screen.queryByText('task-history')).not.toBeInTheDocument()
   })
 
-  it('只在运行中任务显示 Codex 日志', () => {
+  it('切换到等待中任务后显示排队序号', async () => {
+    const user = userEvent.setup()
     renderTaskBoard()
 
-    const runningRegion = screen.getByRole('region', { name: '运行中' })
-    const historyRegion = screen.getByRole('region', { name: '历史任务' })
+    await user.click(screen.getByRole('tab', { name: '等待中 1' }))
 
-    expect(within(runningRegion).getByText('analyzing src/current.c')).toBeInTheDocument()
-    expect(within(historyRegion).queryByText('old noisy output')).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '等待中 1' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('local-queued-1')).toBeInTheDocument()
+    expect(screen.getByText('排队第 1 位')).toBeInTheDocument()
+    expect(screen.queryByText('task-current')).not.toBeInTheDocument()
+  })
+
+  it('只在运行中任务显示 Codex 日志，历史任务隐藏日志', async () => {
+    const user = userEvent.setup()
+    renderTaskBoard()
+
+    expect(screen.getByText('analyzing src/current.c')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: '历史任务 1' }))
+
+    expect(screen.getByText('task-history')).toBeInTheDocument()
+    expect(screen.queryByText('old noisy output')).not.toBeInTheDocument()
+    expect(screen.queryByText('analyzing src/current.c')).not.toBeInTheDocument()
   })
 
   it('历史任务成功时可以查看报告', async () => {
@@ -113,17 +127,22 @@ describe('TaskBoard', () => {
     const onViewReport = vi.fn()
     renderTaskBoard({ onViewReport })
 
-    const historyRegion = screen.getByRole('region', { name: '历史任务' })
-    await user.click(within(historyRegion).getByRole('button', { name: '查看报告' }))
+    await user.click(screen.getByRole('tab', { name: '历史任务 1' }))
+    await user.click(screen.getByRole('button', { name: '查看报告' }))
 
     expect(onViewReport).toHaveBeenCalledWith(historyTasks[0])
   })
 
-  it('三分区为空时分别显示空状态', () => {
+  it('空列表切换后显示对应空状态', async () => {
+    const user = userEvent.setup()
     renderTaskBoard({ runningTasks: [], queuedTasks: [], historyTasks: [] })
 
     expect(screen.getByText('暂无运行中任务。')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: '等待中 0' }))
     expect(screen.getByText('暂无等待中的任务。')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: '历史任务 0' }))
     expect(screen.getByText('暂无历史任务。')).toBeInTheDocument()
   })
 
@@ -139,8 +158,8 @@ describe('TaskBoard', () => {
     const successTasks: TaskViewItem[] = [{ ...runningTasks[0], status: 'success' }]
     renderTaskBoard({ runningTasks: successTasks, queuedTasks: [], historyTasks: [], onViewReport })
 
-    const runningRegion = screen.getByRole('region', { name: '运行中' })
-    await user.click(within(runningRegion).getByRole('button', { name: '查看报告' }))
+    const runningPanel = screen.getByRole('tabpanel', { name: '运行中' })
+    await user.click(within(runningPanel).getByRole('button', { name: '查看报告' }))
 
     expect(onViewReport).toHaveBeenCalledWith(successTasks[0])
   })

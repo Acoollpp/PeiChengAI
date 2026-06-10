@@ -80,6 +80,11 @@ const fillTaskForm = async (
   await user.type(screen.getByLabelText('新版本号'), `${suffix}1`)
 }
 
+const openHistoryTasks = async (user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> => {
+  await user.click(await screen.findByRole('tab', { name: /历史任务/ }))
+  return screen.getByRole('tabpanel', { name: '历史任务' })
+}
+
 beforeEach(() => {
   setupCodeReviewApi()
 })
@@ -193,8 +198,8 @@ describe('TaskPage', () => {
 
     renderReadyTaskPage()
 
-    const historyRegion = await screen.findByRole('region', { name: '历史任务' })
-    await user.click(within(historyRegion).getAllByRole('button', { name: '查看报告' })[1])
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getAllByRole('button', { name: '查看报告' })[1])
     await screen.findByText('历史报告 2')
     await user.click(screen.getByRole('button', { name: '查看报告位置' }))
 
@@ -222,8 +227,8 @@ describe('TaskPage', () => {
 
     renderReadyTaskPage()
 
-    const historyRegion = await screen.findByRole('region', { name: '历史任务' })
-    await user.click(within(historyRegion).getByRole('button', { name: '查看报告' }))
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
     await screen.findByText('手动选择报告')
 
     await fillTaskForm(user, '5')
@@ -404,8 +409,8 @@ describe('TaskPage', () => {
     )
 
     await screen.findByText('svn://repo/current')
-    const historyRegion = screen.getByRole('region', { name: '历史任务' })
-    await user.click(within(historyRegion).getByRole('button', { name: '查看报告' }))
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
 
     await screen.findByRole('img', { name: '流程图' })
     expect(window.codeReview.readTaskReport).toHaveBeenCalledWith('task-history')
@@ -429,8 +434,8 @@ describe('TaskPage', () => {
     await user.type(screen.getByLabelText('新版本号'), '11')
     await user.click(screen.getByRole('button', { name: '开始审查' }))
 
-    const historyRegion = await screen.findByRole('region', { name: '历史任务' })
-    await user.click(within(historyRegion).getByRole('button', { name: '查看报告' }))
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
 
     await waitFor(() =>
       expect(window.codeReview.readReportAsset).toHaveBeenCalledWith({

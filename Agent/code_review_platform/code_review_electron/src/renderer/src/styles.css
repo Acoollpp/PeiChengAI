@@ -670,41 +670,44 @@ h2 {
   min-width: 0;
 }
 
-.task-board-section {
-  display: grid;
-  gap: 10px;
+.task-board [role='tablist'] {
+  display: flex;
+  width: 100%;
   min-width: 0;
   border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 8px;
-  padding: 12px;
+  padding: 3px;
   background: rgb(255 255 255 / 4%);
 }
 
-.task-section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+.task-board [role='tab'] {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 8px;
+  color: rgb(245 247 251 / 62%);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 800;
 }
 
-.task-section-header h3 {
-  margin: 0;
+.task-board [role='tab'][aria-selected='true'] {
   color: #f5f7fb;
-  font-size: 14px;
-  line-height: 1.35;
+  background: rgb(255 255 255 / 10%);
 }
 
-.task-section-count {
+.task-board [role='tab'] span {
   display: inline-grid;
   place-items: center;
-  min-width: 24px;
-  min-height: 22px;
+  min-width: 20px;
+  min-height: 20px;
+  margin-left: 6px;
   border-radius: 999px;
-  padding: 0 8px;
-  color: rgb(245 247 251 / 72%);
-  background: rgb(255 255 255 / 10%);
-  font-size: 12px;
-  font-weight: 800;
+  color: rgb(245 247 251 / 70%);
+  background: rgb(0 0 0 / 22%);
+  font-size: 11px;
 }
 
 .empty-state,
@@ -731,6 +734,14 @@ h2 {
   border-radius: 8px;
   padding: 13px;
   background: #0b0f13;
+}
+
+.task-board [role='tabpanel'] .task-card {
+  min-height: 0;
+}
+
+.task-board [role='tabpanel'][aria-label='运行中'] .task-card {
+  min-height: 250px;
 }
 
 .task-card.is-selected {

@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import type { ReviewTask } from '../../../shared/types'
 import type { TaskViewItem } from '../hooks/useTaskQueue'
 
@@ -82,52 +84,12 @@ function TaskCard({
   )
 }
 
-type TaskSectionProps = {
-  title: string
-  emptyText: string
-  tasks: TaskViewItem[]
-  selectedTaskId?: string
-  loadingReportTaskId?: string
-  showCodexLog?: boolean
-  showQueueIndex?: boolean
-  onViewReport?: (task: TaskViewItem) => void
-}
+type TaskBoardView = 'running' | 'queued' | 'history'
 
-function TaskSection({
-  title,
-  emptyText,
-  tasks,
-  selectedTaskId,
-  loadingReportTaskId,
-  showCodexLog = false,
-  showQueueIndex = false,
-  onViewReport
-}: TaskSectionProps): React.JSX.Element {
-  return (
-    <section className="task-board-section" aria-label={title}>
-      <div className="task-section-header">
-        <h3>{title}</h3>
-        <span className="task-section-count">{tasks.length}</span>
-      </div>
-      {tasks.length === 0 ? (
-        <p className="empty-state">{emptyText}</p>
-      ) : (
-        <div className="task-list" aria-label={`${title}列表`}>
-          {tasks.map((task) => (
-            <TaskCard
-              key={task.localTaskId}
-              task={task}
-              selectedTaskId={selectedTaskId}
-              loadingReportTaskId={loadingReportTaskId}
-              showCodexLog={showCodexLog}
-              showQueueIndex={showQueueIndex}
-              onViewReport={onViewReport}
-            />
-          ))}
-        </div>
-      )}
-    </section>
-  )
+const viewLabels: Record<TaskBoardView, string> = {
+  running: '运行中',
+  queued: '等待中',
+  history: '历史任务'
 }
 
 export function TaskBoard({
@@ -139,6 +101,22 @@ export function TaskBoard({
   loadingReportTaskId,
   onViewReport
 }: TaskBoardProps): React.JSX.Element {
+  const [activeView, setActiveView] = useState<TaskBoardView>('running')
+  const viewTasks: Record<TaskBoardView, TaskViewItem[]> = {
+    running: runningTasks,
+    queued: queuedTasks,
+    history: historyTasks
+  }
+  const emptyText: Record<TaskBoardView, string> = {
+    running: '暂无运行中任务。',
+    queued: '暂无等待中的任务。',
+    history: '暂无历史任务。'
+  }
+  const isRunningView = activeView === 'running'
+  const isQueuedView = activeView === 'queued'
+  const activeTasks = viewTasks[activeView]
+  const activeLabel = viewLabels[activeView]
+
   if (isLoading) {
     return (
       <div className="task-board">
@@ -149,32 +127,38 @@ export function TaskBoard({
 
   return (
     <div className="task-board">
-      <TaskSection
-        title="运行中"
-        emptyText="暂无运行中任务。"
-        tasks={runningTasks}
-        selectedTaskId={selectedTaskId}
-        loadingReportTaskId={loadingReportTaskId}
-        showCodexLog
-        onViewReport={onViewReport}
-      />
-      <TaskSection
-        title="等待中"
-        emptyText="暂无等待中的任务。"
-        tasks={queuedTasks}
-        selectedTaskId={selectedTaskId}
-        loadingReportTaskId={loadingReportTaskId}
-        showQueueIndex
-        onViewReport={onViewReport}
-      />
-      <TaskSection
-        title="历史任务"
-        emptyText="暂无历史任务。"
-        tasks={historyTasks}
-        selectedTaskId={selectedTaskId}
-        loadingReportTaskId={loadingReportTaskId}
-        onViewReport={onViewReport}
-      />
+      <div role="tablist" aria-label="任务看板">
+        {(['running', 'queued', 'history'] as const).map((view) => (
+          <button
+            key={view}
+            type="button"
+            role="tab"
+            aria-selected={activeView === view}
+            onClick={() => setActiveView(view)}
+          >
+            {viewLabels[view]} <span>{viewTasks[view].length}</span>
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" aria-label={activeLabel}>
+        {activeTasks.length === 0 ? (
+          <p className="empty-state">{emptyText[activeView]}</p>
+        ) : (
+          <div className="task-list" aria-label={`${activeLabel}列表`}>
+            {activeTasks.map((task) => (
+              <TaskCard
+                key={task.localTaskId ?? task.id}
+                task={task}
+                selectedTaskId={selectedTaskId}
+                loadingReportTaskId={loadingReportTaskId}
+                showCodexLog={isRunningView}
+                showQueueIndex={isQueuedView}
+                onViewReport={onViewReport}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
