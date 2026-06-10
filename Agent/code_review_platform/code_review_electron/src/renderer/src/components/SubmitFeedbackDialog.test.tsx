@@ -162,6 +162,27 @@ describe('SubmitFeedbackDialog', () => {
     expect(screen.queryByText('feedback-6.png')).not.toBeInTheDocument()
   })
 
+  it('多张截图时内容区可滚动且提交按钮保留在底部操作区', async () => {
+    const user = userEvent.setup()
+    const files = Array.from(
+      { length: 5 },
+      (_, index) => new File([`image-${index}`], `feedback-${index + 1}.png`, { type: 'image/png' })
+    )
+
+    render(<SubmitFeedbackDialog open={true} onClose={vi.fn()} />)
+
+    await user.upload(screen.getByLabelText('选择截图'), files)
+
+    const dialog = screen.getByRole('dialog')
+    const scrollArea = dialog.querySelector('.submit-feedback-scroll')
+    const actions = dialog.querySelector('.dialog-actions')
+    const submitButton = screen.getByRole('button', { name: '提交意见' })
+
+    expect(scrollArea).toBeInTheDocument()
+    expect(actions).toContainElement(submitButton)
+    expect(scrollArea).toContainElement(screen.getByLabelText('已选择截图'))
+  })
+
   it('一次选择 6 张且第 6 张非法时保留前 5 张合法截图', async () => {
     const user = userEvent.setup({ applyAccept: false })
     const validFiles = Array.from(

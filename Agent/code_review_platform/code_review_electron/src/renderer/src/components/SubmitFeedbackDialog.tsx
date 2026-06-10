@@ -164,62 +164,64 @@ export function SubmitFeedbackDialog({
         <button className="dialog-close" type="button" aria-label="关闭" onClick={handleClose}>
           ×
         </button>
-        <h2 id="submit-feedback-title">提交意见</h2>
-        <p className="dialog-desc">描述你遇到的问题，截图可通过选择文件或粘贴添加。</p>
+        <div className="submit-feedback-scroll">
+          <h2 id="submit-feedback-title">提交意见</h2>
+          <p className="dialog-desc">描述你遇到的问题，截图可通过选择文件或粘贴添加。</p>
 
-        <label className="field submit-feedback-field">
-          问题描述
-          <textarea
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            onPaste={handlePaste}
-            rows={6}
-            placeholder="请描述问题现象、操作步骤或期望结果"
-          />
-        </label>
-
-        <div className="feedback-screenshot-block">
-          <label className="feedback-screenshot-picker">
-            <span>选择截图</span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              aria-label="选择截图"
-              multiple
-              onChange={handleFileChange}
+          <label className="field submit-feedback-field">
+            问题描述
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              onPaste={handlePaste}
+              rows={6}
+              placeholder="请描述问题现象、操作步骤或期望结果"
             />
           </label>
-          <p className="feedback-paste-hint">
-            支持 PNG、JPG、WEBP，最多 {MAX_SCREENSHOTS} 张，每张最大 5MB；可直接在描述框粘贴截图。
-          </p>
 
-          {screenshots.length > 0 && (
-            <div className="feedback-screenshot-grid" aria-label="已选择截图">
-              {screenshots.map((screenshot, index) => (
-                <div className="feedback-screenshot-preview" key={screenshot.id}>
-                  {screenshot.previewUrl && (
-                    <img src={screenshot.previewUrl} alt={`${screenshot.file.name} 预览`} />
-                  )}
-                  <div className="feedback-screenshot-meta">
-                    <strong title={screenshot.file.name}>{screenshot.file.name}</strong>
-                    <span>{formatFileSize(screenshot.file.size)}</span>
+          <div className="feedback-screenshot-block">
+            <label className="feedback-screenshot-picker">
+              <span>选择截图</span>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                aria-label="选择截图"
+                multiple
+                onChange={handleFileChange}
+              />
+            </label>
+            <p className="feedback-paste-hint">
+              支持 PNG、JPG、WEBP，最多 {MAX_SCREENSHOTS} 张，每张最大 5MB；可直接在描述框粘贴截图。
+            </p>
+
+            {screenshots.length > 0 && (
+              <div className="feedback-screenshot-grid" aria-label="已选择截图">
+                {screenshots.map((screenshot, index) => (
+                  <div className="feedback-screenshot-preview" key={screenshot.id}>
+                    {screenshot.previewUrl && (
+                      <img src={screenshot.previewUrl} alt={`${screenshot.file.name} 预览`} />
+                    )}
+                    <div className="feedback-screenshot-meta">
+                      <strong title={screenshot.file.name}>{screenshot.file.name}</strong>
+                      <span>{formatFileSize(screenshot.file.size)}</span>
+                    </div>
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      aria-label={`移除 ${screenshot.file.name}`}
+                      onClick={() => handleRemoveScreenshot(index)}
+                    >
+                      移除
+                    </button>
                   </div>
-                  <button
-                    className="ghost-button"
-                    type="button"
-                    aria-label={`移除 ${screenshot.file.name}`}
-                    onClick={() => handleRemoveScreenshot(index)}
-                  >
-                    移除
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-        {error && <p className="form-error feedback-error">{error}</p>}
+          {error && <p className="form-error feedback-error">{error}</p>}
+        </div>
 
         <div className="dialog-actions">
           <button className="secondary-button" type="button" onClick={handleClose} disabled={isSubmitting}>

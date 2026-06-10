@@ -1120,8 +1120,31 @@ h2 {
 }
 
 .submit-feedback-dialog {
+  display: flex;
+  flex-direction: column;
   width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
   padding: 30px;
+  overflow: hidden;
+}
+
+.submit-feedback-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.submit-feedback-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.submit-feedback-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(255 255 255 / 18%);
+}
+
+.submit-feedback-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .submit-feedback-field {
@@ -1255,6 +1278,14 @@ h2 {
 
 .feedback-error {
   margin-bottom: 14px;
+}
+
+.submit-feedback-dialog .dialog-actions {
+  flex: 0 0 auto;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgb(255 255 255 / 10%);
+  background: rgb(26 27 32 / 96%);
 }
 
 .modal-backdrop {
