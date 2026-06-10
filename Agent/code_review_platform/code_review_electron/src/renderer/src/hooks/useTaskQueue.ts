@@ -80,9 +80,7 @@ const isMatchingUnboundLocalTask = (
 ): boolean =>
   Boolean(localTask.localTaskId) &&
   localTask.id === localTask.localTaskId &&
-  (localTask.localQueueState === 'starting' ||
-    localTask.localQueueState === 'running' ||
-    localTask.status === 'created') &&
+  (localTask.localQueueState === 'starting' || localTask.localQueueState === 'running') &&
   localTask.svn_url === serverTask.svn_url &&
   localTask.old_revision === serverTask.old_revision &&
   localTask.new_revision === serverTask.new_revision &&
@@ -280,13 +278,22 @@ export function useTaskQueue({
   const setServerTasks = useCallback((serverTasks: ReviewTask[]): void => {
     setTasks((current) => {
       const serverIds = new Set(serverTasks.map((task) => task.id))
+      const matchedLocalTaskIds = new Set<string>()
       const serverViewItems = serverTasks.map((task) => {
         const existing =
           current.find((currentTask) => currentTask.id === task.id) ??
-          current.find((currentTask) => isMatchingUnboundLocalTask(currentTask, task))
+          current.find(
+            (currentTask) =>
+              !matchedLocalTaskIds.has(currentTask.localTaskId) &&
+              isMatchingUnboundLocalTask(currentTask, task)
+          )
         const localQueueState: LocalTaskQueueState = isTerminalStatus(task.status)
           ? 'finished'
           : 'running'
+
+        if (existing) {
+          matchedLocalTaskIds.add(existing.localTaskId)
+        }
 
         return {
           ...toTaskViewItem(task, existing?.createdAtMs ?? Date.now()),
@@ -299,7 +306,7 @@ export function useTaskQueue({
           codex_log: existing?.codex_log
         }
       })
-      const matchedLocalTaskIds = new Set(serverViewItems.map((task) => task.localTaskId))
+      serverViewItems.forEach((task) => matchedLocalTaskIds.add(task.localTaskId))
       const localOnlyTasks = current.filter(
         (task) => !serverIds.has(task.id) && !matchedLocalTaskIds.has(task.localTaskId)
       )
