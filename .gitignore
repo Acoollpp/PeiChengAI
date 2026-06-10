@@ -4,3 +4,5 @@ logs/
 *.log
 .worktrees/
 AIsoftware_website/frontend/assets/downloads/*.rar
+AIsoftware_website/frontend/download/*.rar
+AIsoftware_website/frontend/download/*.zip
