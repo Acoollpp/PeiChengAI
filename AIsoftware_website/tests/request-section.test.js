@@ -12,7 +12,8 @@ assert.ok(!html.includes("系统集成等。"), "request service copy should avo
 assert.ok(!html.includes("把业务想法转成可评估、可排期的 AI 需求"), "request section should not use casual headline");
 assert.ok(html.includes("request-contact-card"), "request section should include refined contact card");
 assert.ok(html.includes('href="contact.html"'), "request section should link to contact detail page");
-assert.ok(html.includes("查看对接人名片"), "request section should show a contact detail entry");
+assert.ok(html.includes(">需求对接</a>"), "request section should show demand docking entry");
+assert.ok(!html.includes("查看对接人名片"), "request section should not use contact-card wording");
 assert.ok(!html.includes('src="assets/contact-card.jpeg"'), "home page should not show DingTalk contact card image directly");
 
 const contactHtml = fs.readFileSync(path.join(frontendDir, "contact.html"), "utf8");

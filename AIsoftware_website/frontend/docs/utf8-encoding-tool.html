@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>文件编码格式转UTF-8工具</title>
+    <link rel="stylesheet" href="../styles.css?v=20260610-recent-updates-1" />
+  </head>
+  <body class="doc-page docs-page-light">
+    <header class="doc-header docs-topbar">
+      <div class="container doc-header-inner">
+        <a class="doc-back" href="../tools.html">返回提效工具库</a>
+        <strong>文件编码格式转UTF-8工具</strong>
+      </div>
+    </header>
+
+    <main class="docs-shell">
+      <aside class="docs-sidebar" aria-label="文档导航">
+        <a class="docs-logo" href="#overview">UTF-8 转换</a>
+        <nav>
+          <a href="#overview">概览</a>
+          <a href="#steps">具体流程</a>
+          <a href="#compare">效果对比</a>
+          <a href="#control">控制点</a>
+          <a href="#risk">风险提示</a>
+        </nav>
+      </aside>
+
+      <article class="docs-content">
+        <section class="docs-hero" id="overview">
+          <p class="section-kicker">提效工具</p>
+          <h1>文件编码格式转UTF-8工具</h1>
+          <p>
+            文件编码格式转UTF-8工具用于批量将项目目录下的 .c 与 .h 文件转换为 UTF-8 编码，减少乱码、注释异常和编辑器显示错误。
+          </p>
+          <div class="doc-action-row">
+            <a class="button primary" href="../download/文件编码格式转UTF-8工具.rar" download>下载工具包</a>
+            <a class="button secondary" href="#steps">查看使用流程</a>
+          </div>
+        </section>
+
+        <section class="doc-grid-3" aria-label="工具作用">
+          <article>
+            <span>01</span>
+            <strong>处理范围明确</strong>
+            <p>仅扫描并处理目标目录下的 .c 与 .h 文件，不扩展到其他文件类型。</p>
+          </article>
+          <article>
+            <span>02</span>
+            <strong>支持备份选择</strong>
+            <p>执行前可选择是否生成 .bak 备份文件，正式项目建议优先备份。</p>
+          </article>
+          <article>
+            <span>03</span>
+            <strong>可检查结果</strong>
+            <p>控制台输出 [CONVERT]、[SKIP] 和 Done. Converted 结果汇总，便于确认执行情况。</p>
+          </article>
+        </section>
+
+        <section id="steps">
+          <h2>具体流程</h2>
+          <div class="tool-step-list">
+            <article>
+              <div class="tool-step-copy">
+                <span>阶段 1</span>
+                <h3>准备文件与脚本</h3>
+                <p>确认编码转换脚本与启动用 .cmd 文件位于同一文件夹下，确保可以直接双击启动。</p>
+              </div>
+              <a href="../assets/utf8-encoding-tool-step-1.png" target="_blank" rel="noopener noreferrer">
+                <img src="../assets/utf8-encoding-tool-step-1.png" alt="文件编码格式转UTF-8工具文件夹内容截图" loading="lazy" />
+              </a>
+            </article>
+            <article>
+              <div class="tool-step-copy">
+                <span>阶段 2</span>
+                <h3>启动转换并选择是否备份</h3>
+                <p>双击打开 .cmd 启动文件，进入命令行交互界面。根据项目要求输入 <code>y</code> 或 <code>n</code>：输入 <code>y</code> 会生成 .bak 备份，输入 <code>n</code> 会直接执行转换。</p>
+              </div>
+              <a href="../assets/utf8-encoding-tool-step-2.png" target="_blank" rel="noopener noreferrer">
+                <img src="../assets/utf8-encoding-tool-step-2.png" alt="文件编码格式转UTF-8工具是否备份原文件截图" loading="lazy" />
+              </a>
+            </article>
+            <article>
+              <div class="tool-step-copy">
+                <span>阶段 3</span>
+                <h3>选择目标文件夹</h3>
+                <p>在弹出的文件夹选择窗口中，定位并选择需要转换的项目目录。程序会自动扫描该路径下所有 .c 和 .h 文件。</p>
+              </div>
+              <a href="../assets/utf8-encoding-tool-step-3.png" target="_blank" rel="noopener noreferrer">
+                <img src="../assets/utf8-encoding-tool-step-3.png" alt="选择需要转换的目标项目文件夹截图" loading="lazy" />
+              </a>
+            </article>
+            <article>
+              <div class="tool-step-copy">
+                <span>阶段 4</span>
+                <h3>执行批量转换</h3>
+                <p>点击确认后等待程序自动扫描并转换文件。关注控制台中的 <code>[CONVERT]</code>、<code>[SKIP]</code> 和 <code>Done. Converted XX file(s).</code> 汇总信息。</p>
+              </div>
+              <a href="../assets/utf8-encoding-tool-step-4.png" target="_blank" rel="noopener noreferrer">
+                <img src="../assets/utf8-encoding-tool-step-4.png" alt="文件编码格式转UTF-8工具执行批量转换日志截图" loading="lazy" />
+              </a>
+            </article>
+            <article>
+              <div class="tool-step-copy">
+                <span>阶段 5</span>
+                <h3>验证转换效果</h3>
+                <p>使用 VS Code 或其他代码编辑器打开已转换文件，确认中文注释、字符串内容和文件编码状态均正常。</p>
+              </div>
+              <a href="../assets/utf8-encoding-tool-after.png" target="_blank" rel="noopener noreferrer">
+                <img src="../assets/utf8-encoding-tool-after.png" alt="文件编码转换后中文正常显示截图" loading="lazy" />
+              </a>
+            </article>
+          </div>
+        </section>
+
+        <section id="compare">
+          <h2>转换效果对比</h2>
+          <div class="doc-screenshot-grid">
+            <figure>
+              <a href="../assets/utf8-encoding-tool-before.png" target="_blank" rel="noopener noreferrer">
+                <img src="../assets/utf8-encoding-tool-before.png" alt="修改前 utf-8 乱码截图" loading="lazy" />
+              </a>
+              <figcaption>
+                <strong>修改前</strong>
+                <span>中文注释出现乱码，影响阅读和维护。</span>
+              </figcaption>
+            </figure>
+            <figure>
+              <a href="../assets/utf8-encoding-tool-after.png" target="_blank" rel="noopener noreferrer">
+                <img src="../assets/utf8-encoding-tool-after.png" alt="修改后中文正常显示截图" loading="lazy" />
+              </a>
+              <figcaption>
+                <strong>修改后</strong>
+                <span>转换后中文注释正常显示，文件可继续编辑维护。</span>
+              </figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section id="control">
+          <h2>关键控制点</h2>
+          <div class="doc-table-wrap">
+            <table class="doc-table">
+              <tbody>
+                <tr>
+                  <td>执行前</td>
+                  <td>确认脚本文件与 .cmd 启动文件位于同一目录，并核对目标项目路径。</td>
+                </tr>
+                <tr>
+                  <td>备份策略</td>
+                  <td>正式项目优先输入 <code>y</code> 生成 .bak 备份文件，降低批量修改风险。</td>
+                </tr>
+                <tr>
+                  <td>执行中</td>
+                  <td>关注控制台 [CONVERT]、[SKIP] 和最终汇总信息，确认程序没有异常终止。</td>
+                </tr>
+                <tr>
+                  <td>执行后</td>
+                  <td>至少抽查核心模块文件，确认中文显示正常且代码内容未被破坏。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="risk">
+          <h2>风险提示</h2>
+          <div class="doc-flow">
+            <article>
+              <span>1</span>
+              <strong>不要选错目录</strong>
+              <p>禁止在未确认目标路径的情况下直接执行批量转换，避免误修改其他工程文件。</p>
+            </article>
+            <article>
+              <span>2</span>
+              <strong>不要跳过验证</strong>
+              <p>正式代码库转换完成后，必须抽查关键文件，确认中文注释和编码状态正常后再提交。</p>
+            </article>
+            <article>
+              <span>3</span>
+              <strong>不要扩展理解</strong>
+              <p>该工具仅扫描 .c、.h 文件，不要默认认为其他文件类型也会被转换。</p>
+            </article>
+          </div>
+        </section>
+      </article>
+    </main>
+  </body>
+</html>
