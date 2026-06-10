@@ -397,6 +397,69 @@ describe('registerIpcHandlers', () => {
     )
   })
 
+  it('ignores task progress events after the renderer sender has been destroyed', async () => {
+    const api = {
+      createTask: vi.fn(async () => ({
+        id: 'task-1',
+        svn_url: 'svn://repo/project',
+        old_revision: '1',
+        new_revision: '2',
+        status: 'created'
+      })),
+      updateTaskStatus: vi.fn(async () => undefined),
+      uploadReport: vi.fn(async () => undefined)
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123' })),
+      save: vi.fn()
+    }
+    const cwd = await mkdtemp(join(tmpdir(), 'ipc-destroyed-sender-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '代码审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    const sender = {
+      isDestroyed: vi.fn(() => true),
+      send: vi.fn(() => {
+        throw new TypeError('Object has been destroyed')
+      })
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      runCodex: vi.fn(async ({ onProgress }) => {
+        onProgress?.({
+          taskId: 'task-1',
+          type: 'codex_output',
+          stream: 'stdout',
+          message: '审查中'
+        })
+        await writeFile(reportPath, '# report\n')
+      })
+    })
+
+    const executeHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:execute')?.[1]
+
+    await expect(
+      executeHandler({ sender }, {
+        client_task_id: 'local-task-1',
+        svn_url: 'svn://repo/project',
+        old_revision: '1',
+        new_revision: '2',
+        template_key: 'template_1',
+        skill_name: '通用-代码审查-模版一'
+      })
+    ).resolves.toMatchObject({
+      taskId: 'task-1',
+      status: 'success'
+    })
+    expect(sender.send).not.toHaveBeenCalled()
+  })
+
   it('downloads a historical task report into the local runtime workspace before opening it', async () => {
     const api = {
       readTaskReport: vi.fn(async () => '# historical report\n')
