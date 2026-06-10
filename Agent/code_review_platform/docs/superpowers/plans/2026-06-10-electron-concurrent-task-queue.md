@@ -1556,3 +1556,10 @@ git commit -m "记录并发任务队列验证结果"
 - 范围控制：第一版不实现取消等待、优先级、暂停恢复、服务端 queued 状态和重启恢复。
 - 类型一致性：本地关联字段在 renderer payload 使用 `client_task_id`，进度事件使用 `clientTaskId`，本地展示任务使用 `localTaskId`。
 - 测试路径：主进程测试覆盖 IPC 和进度事件，渲染层测试覆盖队列调度、页面集成和看板三分区。
+
+## 验证记录
+
+- `npm test`：通过，26 个测试文件、182 个测试全部通过。
+- `npm run typecheck`：通过，`tsc --noEmit` 退出码 0。
+- `npm run build`：通过，Electron main、preload、renderer 均完成生产构建。
+- 手动验证：未在本轮执行真实 SVN/Codex 三任务端到端验证；需要在可登录并可访问 SVN 的客户端环境中确认连续提交 3 个任务时最多 2 个运行、第 3 个等待、运行完成后自动调度，以及报告预览和报告位置均按选中任务打开。
