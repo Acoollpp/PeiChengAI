@@ -13,6 +13,7 @@ export type TaskViewItem = ReviewTask & {
   queueIndex: number
   createdAtMs: number
   reportMarkdown?: string
+  isLocalOnly?: boolean
 }
 
 type UseTaskQueueOptions = {
@@ -102,7 +103,8 @@ export function useTaskQueue({
             report_path: result.reportPath,
             reportMarkdown: result.reportMarkdown,
             progress_message: result.status === 'success' ? '审查完成' : task.progress_message,
-            localQueueState: 'finished'
+            localQueueState: 'finished',
+            isLocalOnly: false
           }
 
           setTasks((current) =>
@@ -199,7 +201,8 @@ export function useTaskQueue({
       status: 'created',
       localQueueState: 'queued',
       queueIndex: 0,
-      createdAtMs
+      createdAtMs,
+      isLocalOnly: true
     }
 
     setTasks((current) => normalizeQueueIndexes([...current, task]))
@@ -213,7 +216,7 @@ export function useTaskQueue({
           return true
         }
 
-        const isUnboundLocalTask = task.id === task.localTaskId && task.id.startsWith('local-')
+        const isUnboundLocalTask = Boolean(task.isLocalOnly && task.id === task.localTaskId)
         return task.id === event.taskId && !isUnboundLocalTask
       })
 
@@ -237,6 +240,7 @@ export function useTaskQueue({
           return {
             ...task,
             id: event.taskId,
+            isLocalOnly: false,
             status,
             progress_message: event.message,
             codex_log: codexLog,
