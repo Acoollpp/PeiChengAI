@@ -8,6 +8,11 @@ import { MarkdownPreview } from './MarkdownPreview'
 import { TaskBoard } from './TaskBoard'
 import { TaskForm } from './TaskForm'
 import { SubmitFeedbackDialog } from './SubmitFeedbackDialog'
+import {
+  DEFAULT_REVIEW_TEMPLATE_KEY,
+  type ReviewTemplateKey
+} from '../../../shared/review-templates'
+import { REVIEW_TEMPLATE_PREVIEWS } from '../../../shared/review-template-previews'
 
 type TaskPageProps = {
   environment: EnvironmentCheckResult | null
@@ -34,7 +39,9 @@ export function TaskPage({
   onInstallSvn,
   onInstallSkill
 }: TaskPageProps): React.JSX.Element {
-  const [markdown, setMarkdown] = useState('')
+  const [selectedTemplateKey, setSelectedTemplateKey] =
+    useState<ReviewTemplateKey>(DEFAULT_REVIEW_TEMPLATE_KEY)
+  const [markdown, setMarkdown] = useState(() => REVIEW_TEMPLATE_PREVIEWS[DEFAULT_REVIEW_TEMPLATE_KEY])
   const [error, setError] = useState('')
   const [reportMessage, setReportMessage] = useState('')
   const [currentReportPath, setCurrentReportPath] = useState<string>()
@@ -43,10 +50,15 @@ export function TaskPage({
   const [loadingReportTaskId, setLoadingReportTaskId] = useState<string>()
   const [showSubmitFeedback, setShowSubmitFeedback] = useState(false)
   const selectedTaskIdRef = useRef<string | undefined>(undefined)
+  const isMountedRef = useRef(true)
 
   const canRunTask = environment?.status === 'ready' && !environment.skillError
   const activeSkillNames = environment?.skills?.map((skill) => skill.name)
   const handleTaskSuccess = useCallback((task: TaskViewItem): void => {
+    if (!isMountedRef.current) {
+      return
+    }
+
     if (selectedTaskIdRef.current) {
       return
     }
@@ -78,8 +90,23 @@ export function TaskPage({
     setSelectedTaskId(taskId)
   }, [])
 
+  const handleTemplateChange = useCallback(
+    (templateKey: ReviewTemplateKey): void => {
+      setSelectedTemplateKey(templateKey)
+      setMarkdown(REVIEW_TEMPLATE_PREVIEWS[templateKey])
+      setCurrentReportPath(undefined)
+      setReportMessage('')
+      selectedTaskIdRef.current = undefined
+      setSelectedTaskId(undefined)
+      setLoadingReportTaskId(undefined)
+      setError('')
+    },
+    []
+  )
+
   useEffect(() => {
     let isMounted = true
+    isMountedRef.current = true
 
     const loadTasks = async (): Promise<void> => {
       setIsLoadingTasks(true)
@@ -105,6 +132,7 @@ export function TaskPage({
 
     return () => {
       isMounted = false
+      isMountedRef.current = false
     }
   }, [setServerTasks])
 
@@ -115,12 +143,20 @@ export function TaskPage({
   }, [applyProgressEvent])
 
   const handleTaskSubmit = async (payload: ExecuteTaskRequest): Promise<void> => {
+    if (!isMountedRef.current) {
+      return
+    }
+
     setError('')
     setReportMessage('')
     await submitTask(payload)
   }
 
   const handleViewReport = async (task: TaskViewItem): Promise<void> => {
+    if (!isMountedRef.current) {
+      return
+    }
+
     setError('')
     setReportMessage('')
     updateSelectedTaskId(task.id)
@@ -135,21 +171,41 @@ export function TaskPage({
 
     try {
       const reportMarkdown = await window.codeReview.readTaskReport(task.id)
+      if (!isMountedRef.current) {
+        return
+      }
       setMarkdown(reportMarkdown)
       setCurrentReportPath(undefined)
     } catch (reportError) {
+      if (!isMountedRef.current) {
+        return
+      }
       setError(reportError instanceof Error ? reportError.message : '历史报告加载失败。')
     } finally {
-      setLoadingReportTaskId(undefined)
+      if (isMountedRef.current) {
+        setLoadingReportTaskId(undefined)
+      }
     }
   }
 
   const handleDownload = async (): Promise<void> => {
+    if (!isMountedRef.current) {
+      return
+    }
+
     setError('')
     setReportMessage('')
 
+    if (!selectedTaskId) {
+      setError('请先选择一个已完成任务报告。')
+      return
+    }
+
     try {
       const result = await window.codeReview.downloadCurrentReport(selectedTaskId)
+      if (!isMountedRef.current) {
+        return
+      }
       if (result.status !== 'ready' || !result.reportPath) {
         setError('暂无可查看位置的成功审查报告。')
         return
@@ -158,6 +214,9 @@ export function TaskPage({
       setReportMessage(`报告位置：${result.reportPath}`)
       setCurrentReportPath(result.reportPath)
     } catch (downloadError) {
+      if (!isMountedRef.current) {
+        return
+      }
       setError(downloadError instanceof Error ? downloadError.message : '报告位置打开失败。')
     }
   }
@@ -200,6 +259,8 @@ export function TaskPage({
           <TaskForm
             disabled={!canRunTask}
             activeSkillNames={activeSkillNames}
+            selectedTemplateKey={selectedTemplateKey}
+            onTemplateChange={handleTemplateChange}
             onSubmit={handleTaskSubmit}
           />
           {!canRunTask && <p className="hint">本地环境就绪后才可发起审查。</p>}

@@ -11,15 +11,25 @@ import type { ExecuteTaskRequest } from '../code-review-api'
 type TaskFormProps = {
   disabled: boolean
   activeSkillNames?: string[]
+  selectedTemplateKey?: ReviewTemplateKey
+  onTemplateChange?: (templateKey: ReviewTemplateKey) => void
   onSubmit: (payload: ExecuteTaskRequest) => Promise<void>
 }
 
-export function TaskForm({ disabled, activeSkillNames, onSubmit }: TaskFormProps): React.JSX.Element {
+export function TaskForm({
+  disabled,
+  activeSkillNames,
+  selectedTemplateKey,
+  onTemplateChange,
+  onSubmit
+}: TaskFormProps): React.JSX.Element {
   const [svnUrl, setSvnUrl] = useState('')
   const [oldRevision, setOldRevision] = useState('')
   const [newRevision, setNewRevision] = useState('')
-  const [templateKey, setTemplateKey] = useState<ReviewTemplateKey>(DEFAULT_REVIEW_TEMPLATE_KEY)
+  const [uncontrolledTemplateKey, setUncontrolledTemplateKey] =
+    useState<ReviewTemplateKey>(DEFAULT_REVIEW_TEMPLATE_KEY)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const templateKey = selectedTemplateKey ?? uncontrolledTemplateKey
   const activeSkillNameSet = useMemo(
     () => (activeSkillNames ? new Set(activeSkillNames) : null),
     [activeSkillNames]
@@ -37,9 +47,19 @@ export function TaskForm({ disabled, activeSkillNames, onSubmit }: TaskFormProps
       activeSkillNameSet.has(template.skillName)
     )
     if (firstAvailableTemplate) {
-      setTemplateKey(firstAvailableTemplate.key)
+      if (selectedTemplateKey === undefined) {
+        setUncontrolledTemplateKey(firstAvailableTemplate.key)
+      }
+      onTemplateChange?.(firstAvailableTemplate.key)
     }
-  }, [activeSkillNameSet, selectedTemplate.skillName])
+  }, [activeSkillNameSet, onTemplateChange, selectedTemplate.skillName, selectedTemplateKey])
+
+  const updateTemplateKey = (nextTemplateKey: ReviewTemplateKey): void => {
+    if (selectedTemplateKey === undefined) {
+      setUncontrolledTemplateKey(nextTemplateKey)
+    }
+    onTemplateChange?.(nextTemplateKey)
+  }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
@@ -107,7 +127,7 @@ export function TaskForm({ disabled, activeSkillNames, onSubmit }: TaskFormProps
                 value={template.key}
                 disabled={Boolean(activeSkillNameSet && !activeSkillNameSet.has(template.skillName))}
                 checked={templateKey === template.key}
-                onChange={() => setTemplateKey(template.key)}
+                onChange={() => updateTemplateKey(template.key)}
               />
               <span>{template.label}</span>
             </label>

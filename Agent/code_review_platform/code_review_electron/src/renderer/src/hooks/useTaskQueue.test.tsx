@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ExecuteTaskRequest, ExecuteTaskResult } from '../code-review-api'
 import { useTaskQueue } from './useTaskQueue'
@@ -30,6 +30,15 @@ const createDeferred = <T,>(): Deferred<T> => {
 
   return { promise, resolve, reject }
 }
+
+const flushMicrotasks = async (): Promise<void> => {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 describe('useTaskQueue', () => {
   it('初始加载 2 个服务端运行任务时新提交任务仍按本地并发上限执行', async () => {
@@ -203,7 +212,7 @@ describe('useTaskQueue', () => {
       })
     })
 
-    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(3))
+    expect(executeTask).toHaveBeenCalledTimes(3)
     expect(result.current.runningTasks.map((task) => task.svn_url)).toContain('svn://repo/project-3')
     expect(result.current.queuedTasks).toHaveLength(0)
     expect(result.current.historyTasks).toEqual(
@@ -601,7 +610,7 @@ describe('useTaskQueue', () => {
       deferreds[0].reject(new Error('执行失败'))
     })
 
-    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(3))
+    expect(executeTask).toHaveBeenCalledTimes(3)
     expect(result.current.historyTasks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -613,5 +622,161 @@ describe('useTaskQueue', () => {
     )
     expect(result.current.runningTasks.map((task) => task.svn_url)).toContain('svn://repo/project-3')
     expect(result.current.queuedTasks).toHaveLength(0)
+  })
+
+  it('任务执行超过 30 分钟后标记失败并继续调度下一条', async () => {
+    vi.useFakeTimers()
+    const deferreds = [
+      createDeferred<ExecuteTaskResult>(),
+      createDeferred<ExecuteTaskResult>(),
+      createDeferred<ExecuteTaskResult>()
+    ]
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => {
+      const deferred = deferreds[executeTask.mock.calls.length - 1]
+      return deferred.promise
+    })
+
+    const { result } = renderHook(() => useTaskQueue({ executeTask, taskTimeoutMs: 30 * 60 * 1000 }))
+
+    await act(async () => {
+      await result.current.submitTask(basePayload(1))
+      await result.current.submitTask(basePayload(2))
+      await result.current.submitTask(basePayload(3))
+    })
+
+    expect(executeTask).toHaveBeenCalledTimes(2)
+
+    act(() => {
+      vi.advanceTimersByTime(30 * 60 * 1000)
+    })
+    await act(async () => {
+      await flushMicrotasks()
+    })
+
+    expect(executeTask).toHaveBeenCalledTimes(3)
+    expect(result.current.historyTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          svn_url: 'svn://repo/project-1',
+          status: 'failed',
+          error_message: '任务执行超时，请联系管理员处理。',
+          progress_message: '任务执行超时，请联系管理员处理。',
+          localQueueState: 'finished',
+          isLocallyExecuting: false
+        }),
+        expect.objectContaining({
+          svn_url: 'svn://repo/project-2',
+          status: 'failed',
+          error_message: '任务执行超时，请联系管理员处理。',
+          progress_message: '任务执行超时，请联系管理员处理。',
+          localQueueState: 'finished',
+          isLocallyExecuting: false
+        })
+      ])
+    )
+    expect(result.current.runningTasks.map((task) => task.svn_url)).toContain('svn://repo/project-3')
+    expect(result.current.queuedTasks).toHaveLength(0)
+  })
+
+  it('超时后的迟到成功结果不会覆盖失败状态', async () => {
+    vi.useFakeTimers()
+    const deferred = createDeferred<ExecuteTaskResult>()
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)
+
+    const { result } = renderHook(() => useTaskQueue({ executeTask, taskTimeoutMs: 30 * 60 * 1000 }))
+
+    await act(async () => {
+      await result.current.submitTask(basePayload(1))
+    })
+
+    expect(executeTask).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      vi.advanceTimersByTime(30 * 60 * 1000)
+    })
+    await act(async () => {
+      await flushMicrotasks()
+    })
+
+    expect(result.current.historyTasks[0]).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        error_message: '任务执行超时，请联系管理员处理。'
+      })
+    )
+
+    await act(async () => {
+      deferred.resolve({
+        taskId: 'task-late-success',
+        status: 'success',
+        reportMarkdown: '# late report',
+        reportPath: '/tmp/late.md'
+      })
+      await Promise.resolve()
+    })
+
+    expect(result.current.historyTasks[0]).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        error_message: '任务执行超时，请联系管理员处理。'
+      })
+    )
+    expect(result.current.historyTasks[0].reportMarkdown).toBeUndefined()
+  })
+
+  it('任务成功回调使用包含最新日志的任务状态', async () => {
+    const deferred = createDeferred<ExecuteTaskResult>()
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)
+    const onTaskSuccess = vi.fn()
+
+    const { result } = renderHook(() => useTaskQueue({ executeTask, onTaskSuccess }))
+
+    await act(async () => {
+      await result.current.submitTask(basePayload(1))
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
+    const clientTaskId = executeTask.mock.calls[0][0].client_task_id
+
+    await act(async () => {
+      result.current.applyProgressEvent({
+        taskId: 'task-1',
+        clientTaskId,
+        type: 'codex_output',
+        stream: 'stdout',
+        message: '实时日志'
+      })
+      result.current.applyProgressEvent({
+        taskId: 'task-1',
+        clientTaskId,
+        type: 'stage',
+        stage: 'running_codex',
+        message: '正在执行'
+      })
+    })
+
+    await act(async () => {
+      deferred.resolve({
+        taskId: 'task-1',
+        status: 'success',
+        reportMarkdown: '# report',
+        reportPath: '/tmp/report.md'
+      })
+    })
+
+    await waitFor(() => expect(onTaskSuccess).toHaveBeenCalledTimes(1))
+    expect(onTaskSuccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'task-1',
+        status: 'success',
+        codex_log: [
+          expect.objectContaining({
+            type: 'codex_output',
+            message: '实时日志'
+          })
+        ]
+      }),
+      expect.objectContaining({ taskId: 'task-1', status: 'success' })
+    )
   })
 })

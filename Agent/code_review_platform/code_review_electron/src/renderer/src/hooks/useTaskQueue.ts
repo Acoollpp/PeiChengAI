@@ -4,6 +4,8 @@ import type { ReviewTask, TaskProgressEvent } from '../../../shared/types'
 import type { ExecuteTaskRequest, ExecuteTaskResult } from '../code-review-api'
 
 export const MAX_CONCURRENT_REVIEW_TASKS = 2
+export const REVIEW_TASK_TIMEOUT_MS = 30 * 60 * 1000
+export const REVIEW_TASK_TIMEOUT_MESSAGE = '任务执行超时，请联系管理员处理。'
 
 export type LocalTaskQueueState = 'queued' | 'starting' | 'running' | 'finished'
 
@@ -21,6 +23,7 @@ type UseTaskQueueOptions = {
   executeTask: (payload: ExecuteTaskRequest) => Promise<ExecuteTaskResult>
   initialTasks?: ReviewTask[]
   onTaskSuccess?: (task: TaskViewItem, result: ExecuteTaskResult) => void
+  taskTimeoutMs?: number
 }
 
 type UseTaskQueueResult = {
@@ -91,18 +94,69 @@ const isMatchingUnboundLocalTask = (
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : '审查任务执行失败。'
 
+type ActiveTaskRun = {
+  runId: symbol
+  timeoutId: ReturnType<typeof setTimeout>
+}
+
 export function useTaskQueue({
   executeTask,
   initialTasks = [],
-  onTaskSuccess
+  onTaskSuccess,
+  taskTimeoutMs = REVIEW_TASK_TIMEOUT_MS
 }: UseTaskQueueOptions): UseTaskQueueResult {
   const localTaskSequence = useRef(0)
+  const activeTaskRuns = useRef(new Map<string, ActiveTaskRun>())
+  const isMountedRef = useRef(true)
   const [tasks, setTasks] = useState<TaskViewItem[]>(() =>
     normalizeQueueIndexes(initialTasks.map((task) => toTaskViewItem(task)))
   )
+  const tasksRef = useRef(tasks)
+
+  useEffect(() => {
+    isMountedRef.current = true
+
+    return () => {
+      isMountedRef.current = false
+      activeTaskRuns.current.forEach(({ timeoutId }) => clearTimeout(timeoutId))
+      activeTaskRuns.current.clear()
+    }
+  }, [])
+
+  useEffect(() => {
+    tasksRef.current = tasks
+  }, [tasks])
 
   const startTask = useCallback(
     (task: TaskViewItem): void => {
+      const runId = Symbol(task.localTaskId)
+      const timeoutId = setTimeout(() => {
+        const activeRun = activeTaskRuns.current.get(task.localTaskId)
+        if (activeRun?.runId !== runId || !isMountedRef.current) {
+          return
+        }
+
+        activeTaskRuns.current.delete(task.localTaskId)
+        setTasks((current) =>
+          normalizeQueueIndexes(
+            current.map((currentTask) =>
+              currentTask.localTaskId === task.localTaskId
+                ? {
+                    ...currentTask,
+                    status: 'failed',
+                    error_message: REVIEW_TASK_TIMEOUT_MESSAGE,
+                    progress_message: REVIEW_TASK_TIMEOUT_MESSAGE,
+                    localQueueState: 'finished',
+                    isLocallyExecuting: false
+                  }
+                : currentTask
+            )
+          )
+        )
+      }, taskTimeoutMs)
+
+      activeTaskRuns.current.set(task.localTaskId, { runId, timeoutId })
+
       void executeTask({
         svn_url: task.svn_url,
         old_revision: task.old_revision,
@@ -112,13 +166,24 @@ export function useTaskQueue({
         client_task_id: task.localTaskId
       })
         .then((result) => {
+          const activeRun = activeTaskRuns.current.get(task.localTaskId)
+          if (activeRun?.runId !== runId || !isMountedRef.current) {
+            return
+          }
+
+          clearTimeout(activeRun.timeoutId)
+          activeTaskRuns.current.delete(task.localTaskId)
+          const latestTask =
+            tasksRef.current.find((currentTask) => currentTask.localTaskId === task.localTaskId) ??
+            task
           const completedTask: TaskViewItem = {
-            ...task,
+            ...latestTask,
             id: result.taskId,
             status: result.status,
             report_path: result.reportPath,
             reportMarkdown: result.reportMarkdown,
-            progress_message: result.status === 'success' ? '审查完成' : task.progress_message,
+            progress_message:
+              result.status === 'success' ? '审查完成' : latestTask.progress_message,
             localQueueState: 'finished',
             isLocalOnly: false,
             isLocallyExecuting: false
@@ -127,19 +192,7 @@ export function useTaskQueue({
           setTasks((current) =>
             normalizeQueueIndexes(
               current.map((currentTask) =>
-                currentTask.localTaskId === task.localTaskId
-                  ? {
-                      ...completedTask,
-                      codex_log: currentTask.codex_log,
-                      createdAtMs: currentTask.createdAtMs,
-                      error_message: currentTask.error_message,
-                      progress_message:
-                        result.status === 'success'
-                          ? '审查完成'
-                          : currentTask.progress_message,
-                      isLocallyExecuting: false
-                    }
-                  : currentTask
+                currentTask.localTaskId === task.localTaskId ? completedTask : currentTask
               )
             )
           )
@@ -149,6 +202,13 @@ export function useTaskQueue({
           }
         })
         .catch((error: unknown) => {
+          const activeRun = activeTaskRuns.current.get(task.localTaskId)
+          if (activeRun?.runId !== runId || !isMountedRef.current) {
+            return
+          }
+
+          clearTimeout(activeRun.timeoutId)
+          activeTaskRuns.current.delete(task.localTaskId)
           const message = getErrorMessage(error)
 
           setTasks((current) =>
@@ -169,7 +229,7 @@ export function useTaskQueue({
           )
         })
     },
-    [executeTask, onTaskSuccess]
+    [executeTask, onTaskSuccess, taskTimeoutMs]
   )
 
   useEffect(() => {

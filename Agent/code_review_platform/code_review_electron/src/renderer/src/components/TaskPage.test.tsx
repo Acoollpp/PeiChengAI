@@ -206,6 +206,60 @@ describe('TaskPage', () => {
     expect(window.codeReview.downloadCurrentReport).toHaveBeenCalledWith('task-history-2')
   })
 
+  it('未选中任务时右侧显示当前审查模板，切换模板后不打开最新报告位置', async () => {
+    const user = userEvent.setup()
+    window.codeReview.downloadCurrentReport = vi.fn(async () => ({
+      status: 'ready' as const,
+      taskId: 'task-latest',
+      reportPath: '/tmp/latest.md'
+    }))
+
+    renderReadyTaskPage()
+
+    expect(await screen.findByRole('heading', { name: '代码审查报告-模版一' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '代码审查报告模板二' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByLabelText('模板二'))
+
+    expect(screen.getByRole('heading', { name: '代码审查报告模板二' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '代码审查报告-模版一' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '查看报告位置' }))
+
+    expect(window.codeReview.downloadCurrentReport).not.toHaveBeenCalled()
+    expect(screen.getByText('请先选择一个已完成任务报告。')).toBeInTheDocument()
+  })
+
+  it('选择任务报告后再切换模板会回到模板预览', async () => {
+    const user = userEvent.setup()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-history',
+          svn_url: 'svn://repo/history',
+          old_revision: '1',
+          new_revision: '2',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history.md'
+        }
+      ],
+      count: 1
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () => '# 历史报告')
+
+    renderReadyTaskPage()
+
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
+    expect(await screen.findByRole('heading', { name: '历史报告' })).toBeInTheDocument()
+
+    await user.click(screen.getByLabelText('模板二'))
+
+    expect(screen.getByRole('heading', { name: '代码审查报告模板二' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '历史报告' })).not.toBeInTheDocument()
+    expect(within(historyPanel).getByRole('button', { name: '查看报告' })).toBeEnabled()
+  })
+
   it('已有手动选择报告时，成功任务不会覆盖右侧预览', async () => {
     const user = userEvent.setup()
     const runningTask = createDeferred<Awaited<ReturnType<CodeReviewApi['executeTask']>>>()
