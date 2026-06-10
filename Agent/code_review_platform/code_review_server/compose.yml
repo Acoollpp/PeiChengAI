@@ -93,6 +93,7 @@ services:
     volumes:
       - app-skill-data:/app/skills
       - app-report-data:/app/reports
+      - app-feedback-data:/app/feedback-screenshots
     environment:
       - DOMAIN=${DOMAIN}
       - FRONTEND_HOST=${FRONTEND_HOST?Variable not set}
@@ -175,6 +176,8 @@ volumes:
     name: code_review_server_app-skill-data
   app-report-data:
     name: code_review_server_app-report-data
+  app-feedback-data:
+    name: code_review_server_app-feedback-data
 
 networks:
   traefik-public:
