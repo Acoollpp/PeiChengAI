@@ -124,6 +124,13 @@ export function TaskPage({
     setError('')
     setReportMessage('')
     updateSelectedTaskId(task.id)
+
+    if (task.reportMarkdown && task.report_path) {
+      setMarkdown(task.reportMarkdown)
+      setCurrentReportPath(task.report_path)
+      return
+    }
+
     setLoadingReportTaskId(task.id)
 
     try {

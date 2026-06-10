@@ -411,4 +411,33 @@ describe('TaskPage', () => {
     expect(window.codeReview.readTaskReport).toHaveBeenCalledWith('task-history')
     expect(window.codeReview.readReportAsset).not.toHaveBeenCalled()
   })
+
+  it('查看本地完成报告时保留 reportPath 解析相对图片', async () => {
+    const user = userEvent.setup()
+    window.codeReview.executeTask = vi.fn(async () => ({
+      taskId: 'task-local-success',
+      status: 'success' as const,
+      reportMarkdown: '![流程图](images/diagram.png)',
+      reportPath: '/tmp/reports/task-local-success.md'
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () => '# 不应加载服务端报告')
+
+    renderReadyTaskPage()
+
+    await user.type(screen.getByLabelText('SVN 地址'), 'svn://repo/local')
+    await user.type(screen.getByLabelText('旧版本号'), '10')
+    await user.type(screen.getByLabelText('新版本号'), '11')
+    await user.click(screen.getByRole('button', { name: '开始审查' }))
+
+    const historyRegion = await screen.findByRole('region', { name: '历史任务' })
+    await user.click(within(historyRegion).getByRole('button', { name: '查看报告' }))
+
+    await waitFor(() =>
+      expect(window.codeReview.readReportAsset).toHaveBeenCalledWith({
+        reportPath: '/tmp/reports/task-local-success.md',
+        assetPath: 'images/diagram.png'
+      })
+    )
+    expect(window.codeReview.readTaskReport).not.toHaveBeenCalled()
+  })
 })
