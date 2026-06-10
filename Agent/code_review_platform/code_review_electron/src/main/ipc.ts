@@ -277,7 +277,10 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
   ipcMain.handle(
     'task:execute',
-    async (event, payload: CreateTaskRequest): Promise<ExecuteReviewTaskResult> => {
+    async (
+      event,
+      payload: CreateTaskRequest & { client_task_id?: string }
+    ): Promise<ExecuteReviewTaskResult> => {
       const tokens = await authStore.load()
 
       if (!tokens) {
@@ -290,10 +293,12 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       }
 
       const taskApi = await createApiClient()
+      const { client_task_id: clientTaskId, ...createTaskPayload } = payload
       const result = await executeReviewTask(
         {
           token: tokens.access_token,
-          request: payload
+          request: createTaskPayload,
+          clientTaskId
         },
         {
           api: taskApi,

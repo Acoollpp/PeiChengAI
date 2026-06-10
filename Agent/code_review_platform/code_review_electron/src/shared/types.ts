@@ -58,12 +58,14 @@ export type TaskProgressStage =
 export type TaskProgressEvent =
   | {
       taskId: string
+      clientTaskId?: string
       type: 'stage'
       stage: TaskProgressStage
       message: string
     }
   | {
       taskId: string
+      clientTaskId?: string
       type: 'codex_output'
       stream: 'stdout' | 'stderr'
       message: string
