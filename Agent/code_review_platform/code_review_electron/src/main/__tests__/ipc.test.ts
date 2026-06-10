@@ -439,6 +439,79 @@ describe('registerIpcHandlers', () => {
     expect(showItemInFolderMock).toHaveBeenCalledWith(reportPath)
   })
 
+  it('opens the selected historical report even when another task was the latest success', async () => {
+    const api = {
+      createTask: vi.fn(async () => ({
+        id: 'task-latest',
+        svn_url: 'svn://repo/latest',
+        old_revision: '1',
+        new_revision: '2',
+        status: 'created'
+      })),
+      updateTaskStatus: vi.fn(async () => undefined),
+      uploadReport: vi.fn(async () => undefined),
+      readTaskReport: vi.fn(async () => '# selected report\n')
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123' })),
+      save: vi.fn()
+    }
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-selected-report-'))
+    tempDirs.push(runtimeRoot)
+    const latestWorkspace = join(runtimeRoot, 'workspaces', 'task-latest')
+    const latestReportPath = join(latestWorkspace, '代码审查报告.md')
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      prepareWorkspace: vi.fn(async () => ({
+        cwd: latestWorkspace,
+        reportPath: latestReportPath,
+        imagesDir: join(latestWorkspace, 'images')
+      })),
+      runCodex: vi.fn(async () => {
+        await mkdir(latestWorkspace, { recursive: true })
+        await writeFile(latestReportPath, '# latest report\n')
+      }),
+      runtimePaths: {
+        runtimeRoot,
+        skillPackagesDir: join(runtimeRoot, 'skill-packages'),
+        skillManifestPath: join(runtimeRoot, 'skill-packages', 'manifest.json'),
+        workspacesDir: join(runtimeRoot, 'workspaces'),
+        workspaceForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId),
+        reportPathForTask: (taskId: string) =>
+          join(runtimeRoot, 'workspaces', taskId, '代码审查报告.md'),
+        imagesDirForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'images')
+      }
+    })
+
+    const executeHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:execute')?.[1]
+    const downloadHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report:download-current'
+    )?.[1]
+
+    await executeHandler({}, {
+      svn_url: 'svn://repo/latest',
+      old_revision: '1',
+      new_revision: '2',
+      template_key: 'template_1',
+      skill_name: '通用-代码审查-模版一'
+    })
+
+    const selectedReportPath = join(runtimeRoot, 'workspaces', 'task-selected', '代码审查报告.md')
+    await expect(downloadHandler({}, 'task-selected')).resolves.toEqual({
+      status: 'ready',
+      taskId: 'task-selected',
+      reportPath: selectedReportPath
+    })
+    await expect(readFile(selectedReportPath, 'utf8')).resolves.toBe('# selected report\n')
+    expect(api.readTaskReport).toHaveBeenCalledWith('token-123', 'task-selected')
+    expect(showItemInFolderMock).toHaveBeenLastCalledWith(selectedReportPath)
+  })
+
   it('reads report image assets relative to a Chinese-named report file', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'ipc-report-asset-'))
     tempDirs.push(cwd)
