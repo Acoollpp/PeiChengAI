@@ -135,7 +135,7 @@ assert.ok(scriptSource.includes("style.minHeight"), "skills directory should set
 
 const skills = context.window.siteData.skillsCatalog;
 assert.ok(Array.isArray(skills), "skills catalog should be a dedicated secondary-page data set");
-assert.equal(skills.length, 25, "skills catalog should include all 25 listed Skills");
+assert.equal(skills.length, 26, "skills catalog should include all 26 listed Skills");
 
 [
   "通用-svn拉取",

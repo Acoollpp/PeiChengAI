@@ -1,5 +1,7 @@
 (function () {
   var data = window.siteData || {
+    recentUpdates: [],
+    efficiencyTools: [],
     projects: [],
     services: [],
   };
@@ -86,6 +88,20 @@
     },
   };
 
+  var githubOpenSkills = {
+    "ppt-master（PPT生成）": {
+      officialUrl: "https://github.com/hugohe3/ppt-master",
+      sourceLabel: "GitHub 开源",
+      kicker: "GitHub 开源 Skill",
+      actionLabel: "查看项目仓库",
+      feature: "基于文本内容生成可编辑 PPTX 初稿，辅助快速搭建汇报材料结构。",
+      usageNotice:
+        "该 Skill 只能作为初稿参考，生成内容仍需人工调整、排版润色和业务复核后再正式使用。",
+      installLead:
+        '该 Skill 来源于 GitHub 开源项目：<a href="https://github.com/hugohe3/ppt-master" target="_blank" rel="noopener noreferrer">hugohe3/ppt-master</a>，可先查看项目仓库了解安装、运行和使用方式。',
+    },
+  };
+
   var statusOrder = ["已上线", "试点中", "开发中", "规划中"];
 
   function slugify(value) {
@@ -103,6 +119,10 @@
 
   function getSuperpowerInfo(item) {
     return superpowerSkills[item.title] || null;
+  }
+
+  function getGithubOpenInfo(item) {
+    return githubOpenSkills[item.title] || null;
   }
 
   function getStatusClass(status) {
@@ -145,6 +165,22 @@
     });
   }
 
+  function getHomePlatformItems(items) {
+    var preferredTitles = ["API 管理平台", "代码审查平台"];
+    var preferred = [];
+
+    preferredTitles.forEach(function (title) {
+      var item = items.find(function (project) {
+        return project.title === title;
+      });
+      if (item) {
+        preferred.push(item);
+      }
+    });
+
+    return preferred.length ? preferred : items.slice(0, 2);
+  }
+
   function getUniqueCategories(items) {
     var seen = {};
     var categories = [];
@@ -179,27 +215,11 @@
     var actionsHtml = "";
     var primaryLabel = status === "platform" ? "访问平台" : "查看详情";
     var hasSplitLinks = item.links && item.links.length;
-    var hasCustomActions = item.actions && item.actions.length;
 
-    if (item.link || item.docLink || hasCustomActions) {
-      actionsHtml = '<div class="project-actions' + (hasSplitLinks || hasCustomActions ? " split-actions" : "") + '">';
+    if (item.link || item.docLink) {
+      actionsHtml = '<div class="project-actions' + (hasSplitLinks ? " split-actions" : "") + '">';
 
-      if (hasCustomActions) {
-        actionsHtml += '<div class="project-action-group" aria-label="' + escapeHtml(item.title) + '操作入口">';
-        item.actions.forEach(function (action) {
-          var href = action.url || "";
-          actionsHtml +=
-            '<a href="' +
-            escapeHtml(href) +
-            '" class="project-action-button" ' +
-            (action.download ? 'download="' + escapeHtml(action.download) + '" ' : "") +
-            (action.external ? 'target="_blank" rel="noopener noreferrer" ' : "") +
-            ">" +
-            escapeHtml(action.label) +
-            "</a>";
-        });
-        actionsHtml += "</div>";
-      } else if (hasSplitLinks) {
+      if (hasSplitLinks) {
         actionsHtml += '<div class="project-action-group" aria-label="' + escapeHtml(item.title) + '访问入口">';
         item.links.forEach(function (linkItem) {
           actionsHtml +=
@@ -224,7 +244,7 @@
           '<a href="' +
           escapeHtml(item.docLink) +
           '" class="' +
-          (hasSplitLinks || hasCustomActions ? "project-doc-link" : "") +
+          (hasSplitLinks ? "project-doc-link" : "") +
           '" target="_blank" rel="noopener noreferrer">使用文档</a>';
       }
 
@@ -330,6 +350,7 @@
     var packageName = getSkillPackageName(item);
     var isLocalPackage = !!packageName;
     var superpowerInfo = getSuperpowerInfo(item);
+    var githubOpenInfo = getGithubOpenInfo(item);
     var detailUrl = "skill-detail.html?skill=" + slugify(item.title);
     var searchText = [
       item.title,
@@ -349,6 +370,13 @@
       .join(" ")
       .toLowerCase();
     var stage = item.stage || "已上线";
+    var sourceLabel = isLocalPackage
+      ? "本地安装包"
+      : githubOpenInfo
+        ? githubOpenInfo.sourceLabel
+        : superpowerInfo
+          ? "Superpowers 官方"
+          : "Superpowers";
 
     return (
       '<a href="' +
@@ -386,7 +414,7 @@
       "</p>" +
       '<div class="skill-card-foot">' +
       '<span class="skill-source-badge">' +
-      (isLocalPackage ? "本地安装包" : superpowerInfo ? "Superpowers 官方" : "Superpowers") +
+      escapeHtml(sourceLabel) +
       "</span>" +
       '<span class="skill-download-text">' +
       (isLocalPackage ? "查看安装教程" : "查看使用说明") +
@@ -394,6 +422,151 @@
       "</div>" +
       "</a>"
     );
+  }
+
+  function buildToolCard(item, isCompact) {
+    var tags = item.tags || [];
+    var searchText = [
+      item.title,
+      item.category,
+      item.stage,
+      item.format,
+      item.description,
+      item.users,
+      item.usage,
+      tags.join(" "),
+    ]
+      .join(" ")
+      .toLowerCase();
+    var toolAction = item.toolUrl
+      ? '<a href="' + escapeHtml(item.toolUrl) + '" download>工具链接</a>'
+      : '<span class="tool-action-disabled">工具链接待补充</span>';
+    var docAction = item.docUrl
+      ? '<a href="' + escapeHtml(item.docUrl) + '">使用文档</a>'
+      : '<span class="tool-action-disabled">使用文档待补充</span>';
+
+    return (
+      '<article class="tool-card' +
+      (isCompact ? " is-compact" : "") +
+      '" data-category="' +
+      escapeHtml(item.category || "其他") +
+      '" data-search="' +
+      escapeHtml(searchText) +
+      '">' +
+      '<div class="tool-card-rail" aria-hidden="true"></div>' +
+      '<div class="tool-card-head">' +
+      '<span class="tool-category">' +
+      escapeHtml(item.category || "提效工具") +
+      "</span>" +
+      '<span class="tool-stage ' +
+      (item.stage === "已上线" ? "verified" : "") +
+      '">' +
+      escapeHtml(item.stage || "规划中") +
+      "</span>" +
+      "</div>" +
+      "<h3>" +
+      escapeHtml(item.title) +
+      "</h3>" +
+      "<p>" +
+      escapeHtml(item.description) +
+      "</p>" +
+      '<div class="tool-usage">' +
+      escapeHtml(item.usage || "按工具说明使用。") +
+      "</div>" +
+      '<div class="tool-meta">' +
+      '<span>格式：' +
+      escapeHtml(item.format || "工具包") +
+      "</span>" +
+      '<span>适用：' +
+      escapeHtml(item.users || "内部同事") +
+      "</span>" +
+      "</div>" +
+      '<div class="tool-tags">' +
+      tags
+        .slice(0, 3)
+        .map(function (tag) {
+          return "<span>" + escapeHtml(tag) + "</span>";
+        })
+        .join("") +
+      "</div>" +
+      '<div class="tool-card-actions">' +
+      '<div class="tool-action-group">' +
+      toolAction +
+      docAction +
+      "</div>" +
+      "</div>" +
+      "</article>"
+    );
+  }
+
+  function isDownloadUrl(url) {
+    var normalized = String(url || "").split("?")[0].split("#")[0].toLowerCase();
+    return normalized.endsWith(".rar") || normalized.endsWith(".zip");
+  }
+
+  function buildUpdateAction(url, label) {
+    if (!url) {
+      return "";
+    }
+
+    return (
+      '<a href="' +
+      escapeHtml(url) +
+      '"' +
+      (isDownloadUrl(url) ? " download" : "") +
+      (isDownloadUrl(url) ? "" : ' target="_blank" rel="noopener noreferrer"') +
+      ">" +
+      escapeHtml(label || "查看") +
+      "</a>"
+    );
+  }
+
+  function buildRecentUpdateItem(item) {
+    return (
+      '<article class="update-ledger-item">' +
+      '<div class="update-date">' +
+      '<span>' +
+      escapeHtml(item.date) +
+      "</span>" +
+      '<strong>' +
+      escapeHtml(item.type || "文件") +
+      "</strong>" +
+      "</div>" +
+      '<div class="update-main">' +
+      '<div class="update-title-row">' +
+      "<h3>" +
+      escapeHtml(item.title) +
+      "</h3>" +
+      '<span class="update-version">' +
+      escapeHtml(item.version || "当前版本") +
+      "</span>" +
+      "</div>" +
+      "<p>" +
+      escapeHtml(item.summary) +
+      "</p>" +
+      '<div class="update-actions">' +
+      buildUpdateAction(item.fileUrl, item.fileLabel) +
+      buildUpdateAction(item.docUrl, item.docLabel) +
+      "</div>" +
+      "</div>" +
+      "</article>"
+    );
+  }
+
+  function renderRecentUpdates() {
+    var container = document.querySelector("#recentUpdatesList");
+    var count = document.querySelector("#recentUpdatesCount");
+    var items = (data.recentUpdates || []).slice(0, 10);
+
+    if (!container) {
+      return;
+    }
+
+    container.innerHTML = items.map(buildRecentUpdateItem).join("");
+
+    if (count) {
+      count.textContent = items.length + " 条更新";
+    }
   }
 
   function getCurrentSkill() {
@@ -428,7 +601,13 @@
     var packageName;
     var packageUrl;
     var superpowerInfo;
+    var githubOpenInfo;
     var isSuperpower;
+    var detailSource;
+    var actionUrl;
+    var actionLabel;
+    var featureText;
+    var installIntro;
 
     if (!container) {
       return;
@@ -448,7 +627,29 @@
     packageName = getSkillPackageName(skill);
     packageUrl = getSkillPackageUrl(skill, "");
     superpowerInfo = getSuperpowerInfo(skill);
+    githubOpenInfo = getGithubOpenInfo(skill);
     isSuperpower = !packageName && !!superpowerInfo;
+    detailSource = packageName
+      ? "公司内部开发 Skill"
+      : githubOpenInfo
+        ? githubOpenInfo.kicker
+        : "Superpowers 官方 Skill";
+    actionUrl = githubOpenInfo
+      ? githubOpenInfo.officialUrl
+      : superpowerInfo
+        ? superpowerInfo.officialUrl
+        : "https://github.com/obra/superpowers";
+    actionLabel = githubOpenInfo ? githubOpenInfo.actionLabel : "访问官方来源";
+    featureText = githubOpenInfo
+      ? githubOpenInfo.feature
+      : isSuperpower
+        ? superpowerInfo.feature
+        : skill.purpose || "能力复用";
+    installIntro = githubOpenInfo
+      ? githubOpenInfo.installLead
+      : '该 Skill 来源于 Superpowers 官方仓库：<a href="https://github.com/obra/superpowers" target="_blank" rel="noopener noreferrer">下载完整仓库</a>，也可以<a href="' +
+        escapeHtml(superpowerInfo ? superpowerInfo.officialUrl : "https://github.com/obra/superpowers") +
+        '" target="_blank" rel="noopener noreferrer">查看当前 Skill 页面</a>。';
 
     if (headerTitle) {
       headerTitle.textContent = skill.title + " 使用说明";
@@ -463,11 +664,16 @@
     container.innerHTML =
       '<section class="docs-hero" id="overview">' +
       '<p class="section-kicker">' +
-      escapeHtml(packageName ? "公司内部开发 Skill" : "Superpowers 官方 Skill") +
+      escapeHtml(detailSource) +
       "</p>" +
       "<h1>" +
       escapeHtml(skill.title) +
       "</h1>" +
+      (githubOpenInfo
+        ? '<div class="doc-callout warning"><strong>使用提示</strong><p>' +
+          escapeHtml(githubOpenInfo.usageNotice) +
+          "</p></div>"
+        : "") +
       "<p>" +
       escapeHtml(skill.description) +
       "</p>" +
@@ -479,14 +685,16 @@
           escapeHtml(packageName) +
           '">下载安装包</a>'
         : '<a class="button primary" href="' +
-          escapeHtml(superpowerInfo ? superpowerInfo.officialUrl : "https://github.com/obra/superpowers") +
-          '" target="_blank" rel="noopener noreferrer">访问官方来源</a>') +
+          escapeHtml(actionUrl) +
+          '" target="_blank" rel="noopener noreferrer">' +
+          escapeHtml(actionLabel) +
+          "</a>") +
       '<a class="button secondary" href="skills.html">返回 Skills 库</a>' +
       "</div>" +
       "</section>" +
       '<section class="doc-grid-3" id="features" aria-label="功能概览">' +
       '<article><span>01</span><strong>能力定位</strong><p>' +
-      escapeHtml(isSuperpower ? superpowerInfo.feature : skill.purpose || "能力复用") +
+      escapeHtml(featureText) +
       "</p></article>" +
       '<article><span>02</span><strong>适用对象</strong><p>' +
       escapeHtml(skill.users || "公司内部相关团队") +
@@ -510,9 +718,7 @@
           '">' +
           escapeHtml(packageName) +
           "</a>。"
-        : '该 Skill 来源于 Superpowers 官方仓库：<a href="https://github.com/obra/superpowers" target="_blank" rel="noopener noreferrer">下载完整仓库</a>，也可以<a href="' +
-          escapeHtml(superpowerInfo ? superpowerInfo.officialUrl : "https://github.com/obra/superpowers") +
-          '" target="_blank" rel="noopener noreferrer">查看当前 Skill 页面</a>。') +
+        : installIntro) +
       "</p>" +
       "</div>" +
       '<div class="doc-flow">' +
@@ -738,7 +944,7 @@
     var html = "";
     var isIndexPage = !!document.querySelector(".hero");
     var items = status === "skills" && data.skillsCatalog ? data.skillsCatalog : getProjectsByStatus(status);
-    var renderedItems = limit ? items.slice(0, limit) : items;
+    var renderedItems = isIndexPage && status === "platform" ? getHomePlatformItems(items) : limit ? items.slice(0, limit) : items;
 
     if (!projectGrid) {
       return;
@@ -1079,6 +1285,55 @@
     apply();
   }
 
+  function renderToolFilters(containerId, items) {
+    var container = document.querySelector(containerId);
+    var categories;
+    var html = '<button class="filter-chip active" type="button" data-filter="all">全部</button>';
+
+    if (!container) {
+      return;
+    }
+
+    categories = getUniqueCategories(items);
+    categories.forEach(function (category) {
+      html +=
+        '<button class="filter-chip" type="button" data-filter="' +
+        escapeHtml(category) +
+        '">' +
+        escapeHtml(category) +
+        "</button>";
+    });
+    container.innerHTML = html;
+  }
+
+  function renderEfficiencyTools() {
+    var tools = data.efficiencyTools || [];
+    var homeGrid = document.querySelector("#toolsHomeGrid");
+    var directoryGrid = document.querySelector("#toolsGrid");
+    var count = document.querySelector("#toolsCount");
+
+    if (homeGrid) {
+      homeGrid.innerHTML = tools
+        .slice(0, 3)
+        .map(function (item) {
+          return buildToolCard(item, true);
+        })
+        .join("");
+    }
+
+    if (directoryGrid) {
+      directoryGrid.innerHTML = tools.map(function (item) {
+        return buildToolCard(item, false);
+      }).join("");
+      renderToolFilters("#toolsFilters", tools);
+      bindDirectory("#toolsGrid", "#toolsFilters", "#toolsSearch", "#toolsEmpty");
+    }
+
+    if (count) {
+      count.innerHTML = tools.length + " 个工具";
+    }
+  }
+
   function renderSkillsCategoryMap() {
     var container = document.querySelector("#skillsCategoryMap");
     var items = getProjectsByStatus("skills");
@@ -1185,9 +1440,97 @@
     serviceGrid.innerHTML = html;
   }
 
+  function isDownloadLink(link) {
+    var href = link && link.getAttribute ? link.getAttribute("href") || "" : "";
+    var normalized = href.split("?")[0].split("#")[0].toLowerCase();
+
+    return !!(link && (link.hasAttribute("download") || normalized.endsWith(".rar") || normalized.endsWith(".zip")));
+  }
+
+  function buildDownloadConfirmModal() {
+    var backdrop = document.createElement("div");
+    backdrop.className = "download-confirm-backdrop download-confirm-modal";
+    backdrop.innerHTML =
+      '<div class="download-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="downloadConfirmTitle">' +
+      '<h2 id="downloadConfirmTitle">是否下载</h2>' +
+      "<p>即将下载所选工具包，请确认是否继续。</p>" +
+      '<div class="download-confirm-actions">' +
+      '<button type="button" class="download-confirm-cancel">取消</button>' +
+      '<button type="button" class="download-confirm-confirm">确认</button>' +
+      "</div>" +
+      "</div>";
+    document.body.appendChild(backdrop);
+    return backdrop;
+  }
+
+  function triggerConfirmedDownload(sourceLink) {
+    var confirmDownloadLink = document.createElement("a");
+    confirmDownloadLink.href = sourceLink.href;
+    confirmDownloadLink.setAttribute("download", sourceLink.getAttribute("download") || "");
+    confirmDownloadLink.setAttribute("data-download-confirmed", "true");
+    document.body.appendChild(confirmDownloadLink);
+    confirmDownloadLink.click();
+    confirmDownloadLink.remove();
+  }
+
+  function bindDownloadConfirmations() {
+    var activeModal = null;
+    var activeLink = null;
+
+    if (!document.addEventListener || !document.body) {
+      return;
+    }
+
+    document.addEventListener("click", function (event) {
+      var link = event.target.closest ? event.target.closest("a") : null;
+
+      if (!link || !isDownloadLink(link) || link.getAttribute("data-download-confirmed") === "true") {
+        return;
+      }
+
+      event.preventDefault();
+      activeLink = link;
+
+      if (!activeModal) {
+        activeModal = buildDownloadConfirmModal();
+      }
+
+      activeModal.classList.add("visible");
+      activeModal.querySelector(".download-confirm-confirm").focus();
+    });
+
+    document.addEventListener("click", function (event) {
+      if (!activeModal || !activeModal.classList.contains("visible")) {
+        return;
+      }
+
+      if (event.target.closest(".download-confirm-cancel") || event.target === activeModal) {
+        activeModal.classList.remove("visible");
+        activeLink = null;
+        return;
+      }
+
+      if (event.target.closest(".download-confirm-confirm") && activeLink) {
+        activeModal.classList.remove("visible");
+        triggerConfirmedDownload(activeLink);
+        activeLink = null;
+      }
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && activeModal && activeModal.classList.contains("visible")) {
+        activeModal.classList.remove("visible");
+        activeLink = null;
+      }
+    });
+  }
+
   renderProjects();
+  renderRecentUpdates();
+  renderEfficiencyTools();
   renderServices();
   renderSkillDetail();
   hydratePlatformUrls();
   bindCarousels();
+  bindDownloadConfirmations();
 })();

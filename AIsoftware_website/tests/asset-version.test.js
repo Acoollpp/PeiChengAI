@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const frontendDir = path.join(__dirname, "../frontend");
-const version = "20260602-code-review-actions-2";
+const version = "20260610-recent-updates-1";
 const htmlFiles = ["index.html", "platform.html", "skills.html"];
 
 htmlFiles.forEach((fileName) => {

@@ -61,7 +61,7 @@ const codeReviewStart = directoryHtml.indexOf("<h3>代码审查平台</h3>");
 const nextCardStart = directoryHtml.indexOf("<article", codeReviewStart + 1);
 const codeReviewCardHtml = directoryHtml.slice(codeReviewStart, nextCardStart > -1 ? nextCardStart : undefined);
 
-[homeHtml, directoryHtml].forEach((html) => {
+[directoryHtml].forEach((html) => {
   assert.ok(html.includes('class="project-actions split-actions"'), "Openclaw links should render as split actions");
   assert.ok(html.includes('class="project-action-group"'), "Openclaw links should have a grouped access area");
   assert.ok(html.includes(">开发专用平台</a>"), "Openclaw should render development platform action");
@@ -81,11 +81,10 @@ assert.ok(!homeHtml.includes("assets/agent-app-overview.svg"), "home carousel sh
 assert.ok(!homeHtml.includes("assets/agent-api-governance.svg"), "home carousel should not use old api svg");
 assert.ok(!homeHtml.includes("assets/agent-monitoring.svg"), "home carousel should not use old monitoring svg");
 assert.ok(directoryHtml.includes("directory-card"), "directory page should render directory cards");
-assert.ok(directoryHtml.includes(">访问代码审查看板</a>"), "code review should render dashboard action");
-assert.ok(directoryHtml.includes(">下载客户端</a>"), "code review should render client download action");
-assert.ok(directoryHtml.includes('href="/docs/code-review-platform.html#dashboard"'), "code review dashboard action should point to doc placeholder");
-assert.ok(directoryHtml.includes('href="assets/downloads/code-review-v1.0.0-beta2.rar"'), "code review download action should point to package");
-assert.ok(directoryHtml.includes('download="code-review-v1.0.0-beta2.rar"'), "code review package action should download the rar");
+assert.ok(directoryHtml.includes(">看板平台</a>"), "code review should render dashboard action");
+assert.ok(directoryHtml.includes(">客户端下载</a>"), "code review should render client download action");
+assert.ok(directoryHtml.includes('href="http://172.23.17.242:5174/"'), "code review dashboard action should point to current dashboard");
+assert.ok(directoryHtml.includes('href="download/AI代码审查客户端-v1.3.4.exe.zip"'), "code review download action should point to package");
 assert.ok(directoryHtml.includes('href="docs/code-review-platform.html"'), "code review should render document action");
 assert.ok(
   codeReviewCardHtml.includes('class="project-doc-link" target="_blank" rel="noopener noreferrer">使用文档</a>'),

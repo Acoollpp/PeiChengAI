@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const frontendDir = path.join(__dirname, "../frontend");
-const version = "20260602-code-review-actions-2";
+const version = "20260610-recent-updates-1";
 const docs = [
   {
     file: "docs/ai-account-platform.html",
@@ -27,7 +27,7 @@ const docs = [
   },
   {
     file: "docs/code-review-platform.html",
-    keys: ["codeReviewDashboard"],
+    keys: ["codeReview"],
     urls: [],
   },
 ];

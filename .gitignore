@@ -3,4 +3,8 @@ __MACOSX/
 logs/
 *.log
 .worktrees/
+software_website/backups/
+software_website/logs/
 AIsoftware_website/frontend/assets/downloads/*.rar
+AIsoftware_website/frontend/download/*.rar
+AIsoftware_website/frontend/download/*.zip

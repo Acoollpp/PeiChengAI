@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>代码审查平台使用文档</title>
-    <link rel="stylesheet" href="../styles.css?v=20260602-code-review-actions-2" />
+    <link rel="stylesheet" href="../styles.css?v=20260610-recent-updates-1" />
   </head>
   <body class="doc-page docs-page-light">
     <header class="doc-header docs-topbar">
@@ -16,14 +16,13 @@
 
     <main class="docs-shell">
       <aside class="docs-sidebar" aria-label="文档导航">
-        <a class="docs-logo" href="#overview">代码审查平台</a>
+        <a class="docs-logo" href="#overview">代码审查</a>
         <nav>
           <a href="#overview">概览</a>
           <a href="#outcome">平台实际效果</a>
           <a href="#audience">适用对象</a>
           <a href="#features">功能展示</a>
           <a href="#use">访问与使用</a>
-          <a href="#dashboard">看板入口</a>
           <a href="#faq">常见问题</a>
           <a href="#source">建设说明</a>
         </nav>
@@ -34,35 +33,35 @@
           <p class="section-kicker">试点中内部平台</p>
           <h1>代码审查平台</h1>
           <p>
-            代码审查平台是软件部面向研发场景建设的内部辅助审查工具，用于在代码提交、合并或评审前，对代码变更进行初步检查和风险提示，帮助研发人员提升代码自查效率，减少明显规范问题、潜在缺陷和测试遗漏。
+            代码审查平台是软件部试点中的内部代码审查辅助平台，用于在代码提交、合并或评审前，对代码变更进行初步检查和风险提示。平台帮助研发人员提升自查效率，减少明显规范问题、潜在缺陷和测试遗漏。后续代码审查平台会根据试点反馈进行更新推送。
           </p>
           <div class="doc-action-row">
-            <a class="button primary" href="../assets/downloads/code-review-v1.0.0-beta2.rar" download="code-review-v1.0.0-beta2.rar">下载客户端压缩包</a>
-            <a class="button secondary" href="#" data-platform-url="codeReviewDashboard">访问代码审查看板</a>
+            <a class="button primary" href="#" data-platform-url="codeReview" target="_blank" rel="noopener noreferrer">访问代码审查看板</a>
+            <a class="button" href="../download/AI代码审查客户端-v1.3.4.exe.zip" download>下载客户端</a>
           </div>
         </section>
 
         <section class="doc-grid-3" id="outcome" aria-label="平台实际效果">
           <article>
             <span>01</span>
-            <strong>代码提交前自查</strong>
-            <p>研发人员可在提交前进行辅助检查，提前发现代码规范、逻辑风险、异常处理和边界条件等问题。</p>
+            <strong>提交前风险提示</strong>
+            <p>在提交或合并前识别代码规范、逻辑风险、异常处理和边界条件问题。</p>
           </article>
           <article>
             <span>02</span>
             <strong>审查建议辅助修改</strong>
-            <p>平台会输出问题说明和修改建议，帮助研发人员快速定位需要关注的代码位置。</p>
+            <p>输出问题说明和修改建议，帮助研发人员快速定位需要关注的代码位置。</p>
           </article>
           <article>
             <span>03</span>
             <strong>使用情况可统计</strong>
-            <p>配套统计看板可查看人员、次数、时间和活跃情况，支撑推广效果跟踪和运营分析。</p>
+            <p>通过看板查看用户、任务和使用情况，支撑试点推广和平台运营分析。</p>
           </article>
         </section>
 
         <section id="audience">
           <h2>适用对象</h2>
-          <p>平台面向公司内部研发协作场景使用，普通用户不需要自行部署服务，下载本地客户端后即可按需发起审查。</p>
+          <p>平台面向研发提效和代码质量提升场景建设，不要求普通用户自行部署服务。</p>
           <div class="doc-table-wrap">
             <table class="doc-table">
               <thead>
@@ -90,7 +89,7 @@
                 </tr>
                 <tr>
                   <td>平台管理员</td>
-                  <td>使用人员、使用次数、使用趋势</td>
+                  <td>使用人员、使用次数、任务记录</td>
                   <td>支撑平台运营、推广和维护</td>
                 </tr>
               </tbody>
@@ -104,22 +103,22 @@
             <article>
               <span>1</span>
               <strong>本地客户端使用</strong>
-              <p>用户安装 exe 客户端后，可选择项目目录、代码文件或代码变更内容发起审查。</p>
+              <p>用户打开代码审查客户端后，选择项目目录、代码文件或代码变更内容发起审查。</p>
             </article>
             <article>
               <span>2</span>
               <strong>代码审查结果</strong>
-              <p>平台展示识别出的主要问题、风险说明和修改建议，用户结合业务场景判断是否采纳。</p>
+              <p>平台展示识别出的主要问题、风险说明和修改建议，用户可结合项目实际判断是否采纳。</p>
             </article>
             <article>
               <span>3</span>
               <strong>提交前辅助检查</strong>
-              <p>在提交、合并或评审前进行一次辅助检查，重点关注规范、缺陷、异常处理和可维护性。</p>
+              <p>在提交、合并或评审前进行辅助检查，重点关注代码规范、潜在缺陷和可维护性问题。</p>
             </article>
             <article>
               <span>4</span>
               <strong>统计看板查看</strong>
-              <p>管理员通过统计看板查看使用人员、使用次数、使用时间和整体趋势。</p>
+              <p>代码审查看板用于查看用户管理、审查任务和使用情况，支撑试点推广复盘。</p>
             </article>
           </div>
 
@@ -134,8 +133,8 @@
                   <img src="../assets/code-review-client-login.png" alt="代码审查平台客户端登录界面截图" loading="lazy" />
                 </a>
                 <figcaption>
-                  <strong>客户端登录界面</strong>
-                  <span>研发人员通过客户端进入代码审查平台。</span>
+                  <strong>客户端登录</strong>
+                  <span>进入代码审查客户端前完成账号登录。</span>
                 </figcaption>
               </figure>
               <figure>
@@ -144,7 +143,7 @@
                 </a>
                 <figcaption>
                   <strong>客户端审查界面</strong>
-                  <span>选择项目或代码内容后发起审查并查看建议。</span>
+                  <span>选择代码内容并查看审查结果和建议。</span>
                 </figcaption>
               </figure>
               <figure>
@@ -153,7 +152,7 @@
                 </a>
                 <figcaption>
                   <strong>统计平台用户管理</strong>
-                  <span>查看试点用户、账号状态和使用覆盖情况。</span>
+                  <span>查看用户信息和平台使用覆盖情况。</span>
                 </figcaption>
               </figure>
               <figure>
@@ -162,7 +161,7 @@
                 </a>
                 <figcaption>
                   <strong>统计平台任务管理</strong>
-                  <span>查看审查任务、执行状态和使用记录。</span>
+                  <span>查看审查任务记录、状态和使用明细。</span>
                 </figcaption>
               </figure>
             </div>
@@ -172,59 +171,39 @@
         <section id="use">
           <h2>访问与使用</h2>
           <div class="doc-callout">
-            <strong>客户端安装包</strong>
-            <p>当前版本：<a href="../assets/downloads/code-review-v1.0.0-beta2.rar" download="code-review-v1.0.0-beta2.rar">下载客户端压缩包</a>。下载后解压并运行安装程序，按页面提示完成安装。</p>
+            <strong>访问地址</strong>
+            <p>公司内网访问：<a href="#" data-platform-url="codeReview" data-platform-url-label="url" target="_blank" rel="noopener noreferrer">代码审查看板</a>。客户端入口：<a href="../download/AI代码审查客户端-v1.3.4.exe.zip" download>AI代码审查客户端-v1.3.4.exe.zip</a>。</p>
           </div>
           <div class="doc-flow">
             <article>
               <span>1</span>
-              <strong>获取安装包</strong>
-              <p>从本站下载代码审查平台 exe 文件压缩包，保存到本机后解压。</p>
+              <strong>下载客户端</strong>
+              <p>从网站中的客户端入口获取当前试点版本，下载后在本机解压安装。</p>
             </article>
             <article>
               <span>2</span>
-              <strong>安装客户端</strong>
-              <p>执行解压后的安装程序，安装完成后从桌面快捷方式或开始菜单打开平台。</p>
-            </article>
-            <article>
-              <span>3</span>
               <strong>发起代码审查</strong>
-              <p>选择需要审查的项目目录、代码文件或变更内容，点击审查按钮发起检查。</p>
-            </article>
-            <article>
-              <span>4</span>
-              <strong>查看审查结果</strong>
-              <p>审查完成后查看问题说明和修改建议，优先处理高风险问题。</p>
-            </article>
-          </div>
-        </section>
-
-        <section id="dashboard">
-          <h2>看板入口</h2>
-          <div class="doc-callout warning">
-            <strong>看板地址待补充</strong>
-            <p>当前看板尚未部署，已先在网站中保留访问入口。后续统计看板部署完成后，会将这里的入口替换为正式内网地址。</p>
-          </div>
-          <div class="doc-flow">
-            <article>
-              <span>1</span>
-              <strong>访问代码审查看板</strong>
-              <p>看板上线后，可从本页或智能体应用页进入，查看代码审查平台使用情况。</p>
-            </article>
-            <article>
-              <span>2</span>
-              <strong>查看使用人员</strong>
-              <p>管理员可查看试点用户、部门覆盖、账号状态和活跃情况。</p>
+              <p>打开客户端后选择项目目录、代码文件或代码变更内容，发起辅助审查。</p>
             </article>
             <article>
               <span>3</span>
-              <strong>查看审查任务</strong>
-              <p>按时间、用户和任务状态查看审查记录，跟踪平台使用趋势。</p>
+              <strong>打开代码审查看板</strong>
+              <p>在公司内网环境打开看板地址，进入代码审查统计平台。</p>
             </article>
             <article>
               <span>4</span>
-              <strong>反馈运营问题</strong>
-              <p>如果统计数据不准确或需要补充维度，可联系软件部 AI 对接人确认。</p>
+              <strong>查看用户管理</strong>
+              <p>查看已接入用户、账号信息和平台使用覆盖情况。</p>
+            </article>
+            <article>
+              <span>5</span>
+              <strong>查看任务管理</strong>
+              <p>查看审查任务记录、任务状态、使用时间和结果明细。</p>
+            </article>
+            <article>
+              <span>6</span>
+              <strong>反馈试点问题</strong>
+              <p>如发现审查结果异常、统计数据不准确或规则需要补充，可联系软件部 AI 对接人。</p>
             </article>
           </div>
         </section>
@@ -241,12 +220,8 @@
               </thead>
               <tbody>
                 <tr>
-                  <td>安装包从哪里获取</td>
-                  <td>从本页“下载客户端压缩包”入口获取当前试点版本。</td>
-                </tr>
-                <tr>
-                  <td>是否需要部署服务</td>
-                  <td>普通用户不需要部署服务，安装本地 exe 后即可使用。</td>
+                  <td>无法访问看板</td>
+                  <td>请确认是否处于公司内网环境，访问地址是否正确。</td>
                 </tr>
                 <tr>
                   <td>审查结果是否必须全部修改</td>
@@ -254,11 +229,11 @@
                 </tr>
                 <tr>
                   <td>统计看板能看到什么</td>
-                  <td>主要查看使用人员、使用次数、使用时间和整体趋势。</td>
+                  <td>主要查看用户管理、审查任务、使用时间和整体使用情况。</td>
                 </tr>
                 <tr>
-                  <td>客户端无法启动怎么办</td>
-                  <td>先确认压缩包是否完整、系统环境是否支持，再联系软件部 AI 对接人处理。</td>
+                  <td>需要补充审查规则怎么办</td>
+                  <td>联系软件部 AI 对接人说明项目场景、规则诉求和示例代码。</td>
                 </tr>
               </tbody>
             </table>
@@ -269,31 +244,7 @@
           <h2>建设说明</h2>
           <div class="doc-callout">
             <strong>建设背景</strong>
-            <p>代码审查平台面向研发提效和代码质量提升场景建设，当前以本地 exe 客户端为主要使用方式，并配套统计看板进行使用数据跟踪。后续可根据试点反馈持续优化审查规则、结果展示、统计维度和平台接入方式。</p>
-          </div>
-          <div class="doc-table-wrap">
-            <table class="doc-table">
-              <thead>
-                <tr>
-                  <th>建设内容</th>
-                  <th>说明</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>本地客户端</td>
-                  <td>面向研发人员提供本机代码审查入口。</td>
-                </tr>
-                <tr>
-                  <td>审查结果展示</td>
-                  <td>展示问题说明、风险提示和修改建议。</td>
-                </tr>
-                <tr>
-                  <td>统计看板</td>
-                  <td>沉淀使用数据，为试点推广和平台运营提供依据。</td>
-                </tr>
-              </tbody>
-            </table>
+            <p>代码审查平台面向研发提效和代码质量提升场景建设，当前以本地客户端和统计看板配合使用。后续可根据试点反馈持续优化审查规则、结果展示、统计维度和平台接入方式。</p>
           </div>
         </section>
       </article>
@@ -305,12 +256,11 @@
         <a href="#audience">适用对象</a>
         <a href="#features">功能展示</a>
         <a href="#use">访问与使用</a>
-        <a href="#dashboard">看板入口</a>
         <a href="#faq">常见问题</a>
         <a href="#source">建设说明</a>
       </aside>
     </main>
-    <script src="../data/platform-urls.js?v=20260602-code-review-actions-2"></script>
-    <script src="../script.js?v=20260602-code-review-actions-2"></script>
+    <script src="../data/platform-urls.js?v=20260610-recent-updates-1"></script>
+    <script src="../script.js?v=20260610-recent-updates-1"></script>
   </body>
 </html>
