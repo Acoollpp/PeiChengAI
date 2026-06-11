@@ -41,7 +41,7 @@ export class ClientReleasesService {
             }
         });
     }
-    
+
     /**
      * Upload Client Release
      * @param data The data for the request.
@@ -60,7 +60,7 @@ export class ClientReleasesService {
             }
         });
     }
-    
+
     /**
      * Activate Client Release
      * @param data The data for the request.
@@ -80,7 +80,7 @@ export class ClientReleasesService {
             }
         });
     }
-    
+
     /**
      * Download Latest Yml
      * @param data The data for the request.
@@ -102,7 +102,7 @@ export class ClientReleasesService {
             }
         });
     }
-    
+
     /**
      * Download Release File
      * @param data The data for the request.
@@ -140,7 +140,7 @@ export class CredentialsService {
             url: '/api/v1/me/svn-credential'
         });
     }
-    
+
     /**
      * Update My Svn Credential
      * @param data The data for the request.
@@ -180,7 +180,7 @@ export class FeedbackService {
             }
         });
     }
-    
+
     /**
      * Read Feedback
      * @param data The data for the request.
@@ -208,7 +208,7 @@ export class FeedbackService {
             }
         });
     }
-    
+
     /**
      * Read Feedback Stats
      * @param data The data for the request.
@@ -228,7 +228,7 @@ export class FeedbackService {
             }
         });
     }
-    
+
     /**
      * Read Feedback By Id
      * @param data The data for the request.
@@ -248,7 +248,7 @@ export class FeedbackService {
             }
         });
     }
-    
+
     /**
      * Read Feedback Screenshot
      * @param data The data for the request.
@@ -268,7 +268,7 @@ export class FeedbackService {
             }
         });
     }
-    
+
     /**
      * Read Feedback Screenshot By Id
      * @param data The data for the request.
@@ -290,7 +290,7 @@ export class FeedbackService {
             }
         });
     }
-    
+
     /**
      * Update Feedback Status
      * @param data The data for the request.
@@ -338,7 +338,7 @@ export class ItemsService {
             }
         });
     }
-    
+
     /**
      * Create Item
      * Create new item.
@@ -358,7 +358,7 @@ export class ItemsService {
             }
         });
     }
-    
+
     /**
      * Read Item
      * Get item by ID.
@@ -379,7 +379,7 @@ export class ItemsService {
             }
         });
     }
-    
+
     /**
      * Update Item
      * Update an item.
@@ -403,7 +403,7 @@ export class ItemsService {
             }
         });
     }
-    
+
     /**
      * Delete Item
      * Delete an item.
@@ -446,7 +446,7 @@ export class LoginService {
             }
         });
     }
-    
+
     /**
      * Login With Key
      * Authenticate with a locally stored API key.
@@ -466,7 +466,7 @@ export class LoginService {
             }
         });
     }
-    
+
     /**
      * Test Token
      * Test access token.
@@ -522,7 +522,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Read Review Tasks
      * @param data The data for the request.
@@ -548,7 +548,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Read Review Task Stats
      * @returns ReviewTaskStatsPublic Successful Response
@@ -560,7 +560,7 @@ export class ReviewTasksService {
             url: '/api/v1/review-tasks/stats'
         });
     }
-    
+
     /**
      * Read Review Task
      * @param data The data for the request.
@@ -580,7 +580,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Delete Review Task
      * @param data The data for the request.
@@ -600,7 +600,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Update Review Task Status
      * @param data The data for the request.
@@ -623,7 +623,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Upload Review Task Report
      * @param data The data for the request.
@@ -646,7 +646,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Read Review Task Report
      * @param data The data for the request.
@@ -666,7 +666,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Download Review Task Report
      * @param data The data for the request.
@@ -710,7 +710,7 @@ export class SkillsService {
             }
         });
     }
-    
+
     /**
      * Upload Skill
      * @param data The data for the request.
@@ -729,7 +729,7 @@ export class SkillsService {
             }
         });
     }
-    
+
     /**
      * Activate Skill
      * @param data The data for the request.
@@ -749,7 +749,7 @@ export class SkillsService {
             }
         });
     }
-    
+
     /**
      * Deactivate Skill
      * @param data The data for the request.
@@ -769,7 +769,7 @@ export class SkillsService {
             }
         });
     }
-    
+
     /**
      * Read Active Skills
      * @returns SkillPackagesPublic Successful Response
@@ -781,7 +781,7 @@ export class SkillsService {
             url: '/api/v1/skills/active'
         });
     }
-    
+
     /**
      * Download Active Skill
      * @returns unknown Successful Response
@@ -793,7 +793,7 @@ export class SkillsService {
             url: '/api/v1/skills/active/download'
         });
     }
-    
+
     /**
      * Download Skill
      * @param data The data for the request.
@@ -840,7 +840,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Create User
      * Create new user.
@@ -860,7 +860,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Read User Me
      * Get current user.
@@ -873,7 +873,7 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-    
+
     /**
      * Delete User Me
      * Delete own user.
@@ -886,7 +886,7 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-    
+
     /**
      * Update User Me
      * Update own user.
@@ -906,7 +906,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Read User By Id
      * Get a specific user by id.
@@ -927,7 +927,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Update User
      * Update a user.
@@ -951,7 +951,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Delete User
      * Delete a user.
@@ -995,7 +995,7 @@ export class UtilsService {
             }
         });
     }
-    
+
     /**
      * Health Check
      * @returns boolean Successful Response
