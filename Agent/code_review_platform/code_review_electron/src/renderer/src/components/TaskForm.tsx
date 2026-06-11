@@ -78,6 +78,11 @@ export function TaskForm({
         template_key: template.key,
         skill_name: template.skillName
       })
+      setSvnUrl('')
+      setOldRevision('')
+      setNewRevision('')
+    } catch {
+      return
     } finally {
       setIsSubmitting(false)
     }
