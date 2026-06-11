@@ -143,7 +143,11 @@ function sendJson(socket: WebSocket, payload: Record<string, unknown>) {
 
 function rawDataToInt16(data: RawData): Int16Array {
   const buffer = Buffer.isBuffer(data) ? data : Buffer.concat(Array.isArray(data) ? data : [Buffer.from(data as ArrayBuffer)]);
-  return new Int16Array(buffer.buffer, buffer.byteOffset, Math.floor(buffer.byteLength / 2));
+  const samples = new Int16Array(Math.floor(buffer.byteLength / 2));
+  for (let index = 0; index < samples.length; index += 1) {
+    samples[index] = buffer.readInt16LE(index * 2);
+  }
+  return samples;
 }
 
 async function transcribeUtterance(samples: Int16Array, sampleRate: number) {
@@ -173,9 +177,12 @@ export function attachLiveTranscriptionWebSocket(server: LiveServer) {
     let sampleRate = defaultLiveConfig.sampleRate;
     let vad = createEnergyVad({ ...defaultLiveConfig, sampleRate });
     let started = false;
+    let acceptingAudio = false;
     let closed = false;
     let pending = 0;
     let utteranceIndex = 0;
+    let stopInProgress: Promise<void> | null = null;
+    const activeTranscriptions = new Set<Promise<void>>();
 
     async function handleEmission(emission: VadEmission) {
       if (pending >= 2) {
@@ -194,12 +201,26 @@ export function attachLiveTranscriptionWebSocket(server: LiveServer) {
         sendJson(socket, { type: "error", message });
       } finally {
         pending = Math.max(0, pending - 1);
-        if (!closed) sendJson(socket, { type: "status", status: "listening" });
+        if (!closed && acceptingAudio) sendJson(socket, { type: "status", status: "listening" });
       }
     }
 
-    function flush() {
-      for (const emission of vad.flush()) void handleEmission(emission);
+    function queueEmission(emission: VadEmission): Promise<void> {
+      const transcription = handleEmission(emission);
+      activeTranscriptions.add(transcription);
+      void transcription.finally(() => activeTranscriptions.delete(transcription));
+      return transcription;
+    }
+
+    async function flushAndIdle() {
+      if (stopInProgress) return stopInProgress;
+      acceptingAudio = false;
+      stopInProgress = (async () => {
+        const flushed = vad.flush().map((emission) => queueEmission(emission));
+        await Promise.all([...activeTranscriptions, ...flushed]);
+        if (!closed) sendJson(socket, { type: "status", status: "idle" });
+      })();
+      return stopInProgress;
     }
 
     socket.on("message", (data, isBinary) => {
@@ -216,12 +237,13 @@ export function attachLiveTranscriptionWebSocket(server: LiveServer) {
           sampleRate = Number.isFinite(requestedSampleRate) && requestedSampleRate > 0 ? requestedSampleRate : defaultLiveConfig.sampleRate;
           vad = createEnergyVad({ ...defaultLiveConfig, sampleRate });
           started = true;
+          acceptingAudio = true;
+          stopInProgress = null;
           sendJson(socket, { type: "status", status: "listening", timeoutMs: transcribeTimeoutMs() });
           return;
         }
         if (message.type === "stop") {
-          flush();
-          sendJson(socket, { type: "status", status: "idle" });
+          void flushAndIdle();
           return;
         }
         return;
@@ -231,18 +253,20 @@ export function attachLiveTranscriptionWebSocket(server: LiveServer) {
         sendJson(socket, { type: "error", message: "实时语音连接尚未初始化。" });
         return;
       }
+      if (!acceptingAudio) return;
       const samples = rawDataToInt16(data);
       const emissions = vad.push(new Int16Array(samples));
       if (emissions.length === 0) {
         sendJson(socket, { type: "status", status: "listening" });
         return;
       }
-      for (const emission of emissions) void handleEmission(emission);
+      for (const emission of emissions) void queueEmission(emission);
     });
 
     socket.on("close", () => {
       closed = true;
-      flush();
+      acceptingAudio = false;
+      void Promise.all(vad.flush().map((emission) => queueEmission(emission)));
     });
 
     sendJson(socket, { type: "status", status: "connected" });
