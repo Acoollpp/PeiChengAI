@@ -94,6 +94,36 @@ afterEach(() => {
 })
 
 describe('TaskPage', () => {
+  it('环境检查通过且无安装任务时隐藏环境状态卡片', () => {
+    renderReadyTaskPage()
+
+    expect(screen.queryByLabelText('本地环境状态')).not.toBeInTheDocument()
+    expect(screen.queryByText('环境就绪')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '开始审查' })).toBeEnabled()
+  })
+
+  it('环境异常时仍显示环境状态卡片和处理入口', () => {
+    render(
+      <TaskPage
+        environment={{ status: 'missing_svn' }}
+        isCheckingEnvironment={false}
+        isInstallingSkillDuringCheck={false}
+        isInstallingCodex={false}
+        isInstallingSvn={false}
+        svnUsername="Key 用户"
+        onRefreshEnvironment={vi.fn()}
+        onInstallCodex={vi.fn()}
+        onInstallSvn={vi.fn()}
+        onInstallSkill={vi.fn()}
+      />
+    )
+
+    expect(screen.getByLabelText('本地环境状态')).toBeInTheDocument()
+    expect(screen.getByText('缺少 SVN CLI')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重新检查' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '开始审查' })).toBeDisabled()
+  })
+
   it('提交任务时 executeTask payload 包含默认模板字段', async () => {
     const user = userEvent.setup()
     window.codeReview.executeTask = vi.fn(async () => ({

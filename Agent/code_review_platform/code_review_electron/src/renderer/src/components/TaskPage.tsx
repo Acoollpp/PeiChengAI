@@ -53,6 +53,12 @@ export function TaskPage({
   const isMountedRef = useRef(true)
 
   const canRunTask = environment?.status === 'ready' && !environment.skillError
+  const shouldShowEnvironmentStatus =
+    !canRunTask ||
+    isCheckingEnvironment ||
+    isInstallingSkillDuringCheck ||
+    isInstallingCodex ||
+    isInstallingSvn
   const activeSkillNames = environment?.skills?.map((skill) => skill.name)
   const handleTaskSuccess = useCallback((task: TaskViewItem): void => {
     if (!isMountedRef.current) {
@@ -242,17 +248,19 @@ export function TaskPage({
           </div>
         </div>
 
-        <EnvironmentStatus
-          result={environment}
-          isChecking={isCheckingEnvironment}
-          isInstallingSkillDuringCheck={isInstallingSkillDuringCheck}
-          isInstallingCodex={isInstallingCodex}
-          isInstallingSvn={isInstallingSvn}
-          onRefresh={onRefreshEnvironment}
-          onInstallCodex={onInstallCodex}
-          onInstallSvn={onInstallSvn}
-          onInstallSkill={onInstallSkill}
-        />
+        {shouldShowEnvironmentStatus && (
+          <EnvironmentStatus
+            result={environment}
+            isChecking={isCheckingEnvironment}
+            isInstallingSkillDuringCheck={isInstallingSkillDuringCheck}
+            isInstallingCodex={isInstallingCodex}
+            isInstallingSvn={isInstallingSvn}
+            onRefresh={onRefreshEnvironment}
+            onInstallCodex={onInstallCodex}
+            onInstallSvn={onInstallSvn}
+            onInstallSkill={onInstallSkill}
+          />
+        )}
 
         <section className="panel">
           <h2>新建任务</h2>
