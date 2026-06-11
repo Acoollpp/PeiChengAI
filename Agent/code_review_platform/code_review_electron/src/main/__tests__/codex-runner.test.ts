@@ -69,6 +69,35 @@ describe('runCodexReview', () => {
     )
     expect(child.stdin.end).toHaveBeenCalledWith()
   })
+
+  it('kills Codex and rejects when the abort signal is triggered', async () => {
+    const { EventEmitter } = await import('node:events')
+    const { runCodexReview } = await import('../codex-runner')
+    const child = new EventEmitter() as EventEmitterType & {
+      stdout: EventEmitterType
+      stderr: EventEmitterType
+      stdin: { end: ReturnType<typeof vi.fn> }
+      kill: ReturnType<typeof vi.fn>
+    }
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.stdin = { end: vi.fn() }
+    child.kill = vi.fn()
+    spawnMock.mockReturnValue(child)
+    const controller = new AbortController()
+
+    const resultPromise = runCodexReview({
+      cwd: '/tmp/workspace',
+      prompt: 'prompt text',
+      timeoutMs: 1000,
+      signal: controller.signal
+    })
+
+    controller.abort()
+
+    await expect(resultPromise).rejects.toThrow('任务已取消')
+    expect(child.kill).toHaveBeenCalledWith()
+  })
 })
 
 import {

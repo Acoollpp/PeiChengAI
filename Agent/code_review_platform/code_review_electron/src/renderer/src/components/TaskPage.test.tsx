@@ -23,6 +23,7 @@ const setupCodeReviewApi = (): void => {
       contentType: 'image/png'
     })),
     executeTask: vi.fn(),
+    cancelTask: vi.fn(async () => ({ status: 'cancelled' })),
     onTaskProgress: vi.fn(() => vi.fn()),
     downloadCurrentReport: vi.fn(),
     installCodex: vi.fn(),
@@ -195,6 +196,32 @@ describe('TaskPage', () => {
       expect.objectContaining({ svn_url: 'svn://repo/project-2' })
     )
     expect(screen.getByRole('button', { name: '开始审查' })).toBeEnabled()
+  })
+
+  it('取消运行中任务时调用取消接口并在历史任务显示已取消', async () => {
+    const user = userEvent.setup()
+    const runningTask = createDeferred<Awaited<ReturnType<CodeReviewApi['executeTask']>>>()
+    const executeTask = vi.fn<CodeReviewApi['executeTask']>(() => runningTask.promise)
+    window.codeReview.executeTask = executeTask
+    window.codeReview.cancelTask = vi.fn(async () => ({ status: 'cancelled' as const }))
+
+    renderReadyTaskPage()
+
+    await fillTaskForm(user, '1')
+    await user.click(screen.getByRole('button', { name: '开始审查' }))
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(1))
+
+    const clientTaskId = executeTask.mock.calls[0][0].client_task_id
+    await user.click(screen.getByRole('button', { name: '取消任务' }))
+
+    expect(window.codeReview.cancelTask).toHaveBeenCalledWith({
+      client_task_id: clientTaskId,
+      task_id: clientTaskId
+    })
+
+    const historyPanel = await openHistoryTasks(user)
+    expect(within(historyPanel).getByText('已取消')).toBeInTheDocument()
+    expect(within(historyPanel).queryByRole('button', { name: '查看报告' })).not.toBeInTheDocument()
   })
 
   it('查看报告位置时传入当前选中的 taskId', async () => {

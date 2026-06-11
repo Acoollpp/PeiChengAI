@@ -62,6 +62,15 @@ export interface ExecuteTaskResult {
   reportPath?: string
 }
 
+export interface CancelTaskRequest {
+  client_task_id?: string
+  task_id?: string
+}
+
+export interface CancelTaskResult {
+  status: 'cancelled' | 'not_found'
+}
+
 export interface SubmitFeedbackPayload {
   description: string
   screenshots?: File[]
@@ -146,6 +155,7 @@ export interface CodeReviewApi {
   listTasks(): Promise<ReviewTasksResponse>
   readTaskReport(taskId: string): Promise<string>
   executeTask(payload: ExecuteTaskRequest): Promise<ExecuteTaskResult>
+  cancelTask(payload: CancelTaskRequest): Promise<CancelTaskResult>
   onTaskProgress(callback: (event: TaskProgressEvent) => void): () => void
   downloadCurrentReport(taskId?: string): Promise<DownloadCurrentReportResult>
   readReportAsset(payload: ReadReportAssetRequest): Promise<ReadReportAssetResult>

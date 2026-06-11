@@ -2,7 +2,7 @@ import { app, BrowserWindow, Menu } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { registerIpcHandlers } from './ipc'
+import { cancelAllActiveReviewTasks, registerIpcHandlers } from './ipc'
 import { configureExternalLinkHandling } from './window-security'
 
 const resolvePreloadPath = (): string => {
@@ -50,7 +50,23 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
+  void cancelAllActiveReviewTasks().finally(() => {
+    if (process.platform !== 'darwin') {
+      app.quit()
+    }
+  })
+})
+
+let isQuittingAfterTaskCleanup = false
+
+app.on('before-quit', (event) => {
+  if (isQuittingAfterTaskCleanup) {
+    return
   }
+
+  event.preventDefault()
+  void cancelAllActiveReviewTasks().finally(() => {
+    isQuittingAfterTaskCleanup = true
+    app.quit()
+  })
 })

@@ -55,6 +55,7 @@ describe('registerIpcHandlers', () => {
       'skill:install',
       'environment:check',
       'task:execute',
+      'task:cancel',
       'feedback:submit',
       'report:asset',
       'report:download-current'
@@ -460,6 +461,141 @@ describe('registerIpcHandlers', () => {
       status: 'success'
     })
     expect(sender.send).not.toHaveBeenCalled()
+  })
+
+  it('取消运行中的任务时更新服务端状态并删除任务工作区', async () => {
+    const api = {
+      createTask: vi.fn(async () => ({
+        id: 'task-cancel',
+        svn_url: 'svn://repo/project',
+        old_revision: '1',
+        new_revision: '2',
+        status: 'created'
+      })),
+      updateTaskStatus: vi.fn(async () => undefined),
+      uploadReport: vi.fn(async () => undefined)
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123' })),
+      save: vi.fn()
+    }
+    const cwd = await mkdtemp(join(tmpdir(), 'ipc-cancel-workspace-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '代码审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    let resolveRunCodex!: () => void
+    const runCodexPromise = new Promise<void>((resolve) => {
+      resolveRunCodex = resolve
+    })
+    const runCodex = vi.fn(async ({ signal }: { signal?: AbortSignal }) => {
+      await mkdir(imagesDir, { recursive: true })
+      await writeFile(reportPath, '# partial\n')
+      await new Promise<void>((resolve) => {
+        signal?.addEventListener('abort', () => resolve(), { once: true })
+      })
+      resolveRunCodex()
+    })
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      runCodex: runCodex as never
+    })
+
+    const executeHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:execute')?.[1]
+    const cancelHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:cancel')?.[1]
+
+    const executePromise = executeHandler({ sender: { send: vi.fn() } }, {
+      client_task_id: 'local-cancel',
+      svn_url: 'svn://repo/project',
+      old_revision: '1',
+      new_revision: '2',
+      template_key: 'template_1',
+      skill_name: '通用-代码审查-模版一'
+    })
+    await vi.waitFor(() => expect(runCodex).toHaveBeenCalledTimes(1))
+
+    await expect(
+      cancelHandler({}, { client_task_id: 'local-cancel', task_id: 'task-cancel' })
+    ).resolves.toEqual({ status: 'cancelled' })
+    await runCodexPromise
+    await expect(executePromise).resolves.toMatchObject({
+      taskId: 'task-cancel',
+      status: 'cancelled'
+    })
+
+    expect(api.updateTaskStatus).toHaveBeenLastCalledWith('token-123', 'task-cancel', {
+      status: 'cancelled',
+      error_message: '任务已取消'
+    })
+    await expect(readFile(reportPath, 'utf8')).rejects.toThrow()
+  })
+
+  it('正常关闭客户端时取消所有运行中的任务', async () => {
+    const api = {
+      createTask: vi.fn(async () => ({
+        id: 'task-close',
+        svn_url: 'svn://repo/project',
+        old_revision: '1',
+        new_revision: '2',
+        status: 'created'
+      })),
+      updateTaskStatus: vi.fn(async () => undefined),
+      uploadReport: vi.fn(async () => undefined)
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123' })),
+      save: vi.fn()
+    }
+    const cwd = await mkdtemp(join(tmpdir(), 'ipc-close-workspace-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '代码审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    const runCodex = vi.fn(async ({ signal }: { signal?: AbortSignal }) => {
+      await mkdir(imagesDir, { recursive: true })
+      await writeFile(reportPath, '# partial\n')
+      await new Promise<void>((resolve) => {
+        signal?.addEventListener('abort', () => resolve(), { once: true })
+      })
+    })
+    const { cancelAllActiveReviewTasks, registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      runCodex: runCodex as never
+    })
+
+    const executeHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:execute')?.[1]
+
+    const executePromise = executeHandler({ sender: { send: vi.fn() } }, {
+      client_task_id: 'local-close',
+      svn_url: 'svn://repo/project',
+      old_revision: '1',
+      new_revision: '2',
+      template_key: 'template_1',
+      skill_name: '通用-代码审查-模版一'
+    })
+    await vi.waitFor(() => expect(runCodex).toHaveBeenCalledTimes(1))
+
+    await cancelAllActiveReviewTasks()
+    await expect(executePromise).resolves.toMatchObject({
+      taskId: 'task-close',
+      status: 'cancelled'
+    })
+
+    expect(api.updateTaskStatus).toHaveBeenLastCalledWith('token-123', 'task-close', {
+      status: 'cancelled',
+      error_message: '任务已取消'
+    })
+    await expect(readFile(reportPath, 'utf8')).rejects.toThrow()
   })
 
   it('downloads a historical task report into the local runtime workspace before opening it', async () => {

@@ -18,6 +18,7 @@ export interface RunCodexReviewOptions {
   cwd: string
   prompt: string
   timeoutMs: number
+  signal?: AbortSignal
   onOutput?: (event: CodexOutputEvent) => void
 }
 
@@ -177,9 +178,15 @@ export const runCodexReview = ({
   cwd,
   prompt,
   timeoutMs,
+  signal,
   onOutput
 }: RunCodexReviewOptions): Promise<CodexReviewResult> =>
   new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('任务已取消'))
+      return
+    }
+
     const commandOptions = buildVersionCommandOptions()
     const command = buildCodexCommand(process.platform, commandOptions.env)
     const child = spawn(command, buildCodexExecArgs(prompt), {
@@ -200,8 +207,16 @@ export const runCodexReview = ({
       if (!settled) {
         settled = true
         clearTimeout(timeout)
+        signal?.removeEventListener('abort', handleAbort)
         callback()
       }
+    }
+
+    const handleAbort = (): void => {
+      settle(() => {
+        child.kill()
+        reject(new Error('任务已取消'))
+      })
     }
 
     const timeout = setTimeout(() => {
@@ -210,6 +225,8 @@ export const runCodexReview = ({
         reject(new Error(`Codex review timed out after ${timeoutMs}ms`))
       })
     }, timeoutMs)
+
+    signal?.addEventListener('abort', handleAbort, { once: true })
 
     child.stdout.on('data', (chunk: Buffer) => {
       stdoutChunks.push(chunk)

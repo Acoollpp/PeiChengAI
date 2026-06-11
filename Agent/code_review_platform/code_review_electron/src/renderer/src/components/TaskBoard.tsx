@@ -11,6 +11,7 @@ type TaskBoardProps = {
   selectedTaskId?: string
   loadingReportTaskId?: string
   onViewReport?: (task: TaskViewItem) => void
+  onCancelTask?: (task: TaskViewItem) => void
 }
 
 const statusText: Record<ReviewTask['status'], string> = {
@@ -31,6 +32,7 @@ type TaskCardProps = {
   showCodexLog?: boolean
   showQueueIndex?: boolean
   onViewReport?: (task: TaskViewItem) => void
+  onCancelTask?: (task: TaskViewItem) => void
 }
 
 function TaskCard({
@@ -39,8 +41,14 @@ function TaskCard({
   loadingReportTaskId,
   showCodexLog = false,
   showQueueIndex = false,
-  onViewReport
+  onViewReport,
+  onCancelTask
 }: TaskCardProps): React.JSX.Element {
+  const canCancel =
+    task.localQueueState === 'starting' ||
+    task.localQueueState === 'running' ||
+    task.localQueueState === 'queued'
+
   return (
     <article className={`task-card${task.id === selectedTaskId ? ' is-selected' : ''}`}>
       <div className="task-card-header">
@@ -67,6 +75,15 @@ function TaskCard({
           onClick={() => onViewReport?.(task)}
         >
           {loadingReportTaskId === task.id ? '加载中...' : '查看报告'}
+        </button>
+      )}
+      {canCancel && (
+        <button
+          className="task-action-button task-cancel-button"
+          type="button"
+          onClick={() => onCancelTask?.(task)}
+        >
+          取消任务
         </button>
       )}
       {task.progress_message && <p className="task-progress">{task.progress_message}</p>}
@@ -99,7 +116,8 @@ export function TaskBoard({
   isLoading = false,
   selectedTaskId,
   loadingReportTaskId,
-  onViewReport
+  onViewReport,
+  onCancelTask
 }: TaskBoardProps): React.JSX.Element {
   const [activeView, setActiveView] = useState<TaskBoardView>('running')
   const viewTasks: Record<TaskBoardView, TaskViewItem[]> = {
@@ -154,6 +172,7 @@ export function TaskBoard({
                 showCodexLog={isRunningView}
                 showQueueIndex={isQueuedView}
                 onViewReport={onViewReport}
+                onCancelTask={onCancelTask}
               />
             ))}
           </div>

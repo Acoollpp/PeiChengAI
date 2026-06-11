@@ -811,6 +811,17 @@ h2 {
   background: rgb(18 185 120 / 18%);
 }
 
+.task-cancel-button {
+  color: #ffcbc4;
+  border-color: rgb(255 112 92 / 30%);
+  background: rgb(255 112 92 / 10%);
+}
+
+.task-cancel-button:hover:not(:disabled) {
+  border-color: rgb(255 112 92 / 54%);
+  background: rgb(255 112 92 / 18%);
+}
+
 .task-error {
   margin: 10px 0 0;
   color: #a33b32;

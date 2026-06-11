@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ReviewTask, TaskProgressEvent } from '../../../shared/types'
-import type { ExecuteTaskRequest, ExecuteTaskResult } from '../code-review-api'
+import type {
+  CancelTaskRequest,
+  CancelTaskResult,
+  ExecuteTaskRequest,
+  ExecuteTaskResult
+} from '../code-review-api'
 
 export const MAX_CONCURRENT_REVIEW_TASKS = 2
 export const REVIEW_TASK_TIMEOUT_MS = 30 * 60 * 1000
@@ -21,6 +26,7 @@ export type TaskViewItem = ReviewTask & {
 
 type UseTaskQueueOptions = {
   executeTask: (payload: ExecuteTaskRequest) => Promise<ExecuteTaskResult>
+  cancelTask?: (payload: CancelTaskRequest) => Promise<CancelTaskResult>
   initialTasks?: ReviewTask[]
   onTaskSuccess?: (task: TaskViewItem, result: ExecuteTaskResult) => void
   taskTimeoutMs?: number
@@ -32,6 +38,7 @@ type UseTaskQueueResult = {
   queuedTasks: TaskViewItem[]
   historyTasks: TaskViewItem[]
   submitTask: (payload: ExecuteTaskRequest) => Promise<void>
+  cancelTask: (task: TaskViewItem) => Promise<void>
   applyProgressEvent: (event: TaskProgressEvent) => void
   setServerTasks: (serverTasks: ReviewTask[]) => void
 }
@@ -101,6 +108,7 @@ type ActiveTaskRun = {
 
 export function useTaskQueue({
   executeTask,
+  cancelTask: cancelTaskRequest,
   initialTasks = [],
   onTaskSuccess,
   taskTimeoutMs = REVIEW_TASK_TIMEOUT_MS
@@ -291,6 +299,50 @@ export function useTaskQueue({
     return Promise.resolve()
   }, [])
 
+  const cancelTask = useCallback(
+    async (task: TaskViewItem): Promise<void> => {
+      const activeRun = activeTaskRuns.current.get(task.localTaskId)
+      if (activeRun) {
+        clearTimeout(activeRun.timeoutId)
+        activeTaskRuns.current.delete(task.localTaskId)
+      }
+
+      setTasks((current) =>
+        normalizeQueueIndexes(
+          current.map((currentTask) =>
+            currentTask.localTaskId === task.localTaskId
+              ? {
+                  ...currentTask,
+                  status: 'cancelled',
+                  progress_message: '任务已取消',
+                  error_message: undefined,
+                  localQueueState: 'finished',
+                  isLocallyExecuting: false
+                }
+              : currentTask
+          )
+        )
+      )
+
+      const shouldCancelRemote =
+        task.localQueueState === 'starting' || task.localQueueState === 'running' || activeRun
+
+      if (!shouldCancelRemote) {
+        return
+      }
+
+      try {
+        await cancelTaskRequest?.({
+          client_task_id: task.localTaskId,
+          task_id: task.id
+        })
+      } catch {
+        // 本地已取消并释放队列；后台取消失败时保留本地终态，避免迟到结果覆盖用户操作。
+      }
+    },
+    [cancelTaskRequest]
+  )
+
   const applyProgressEvent = useCallback((event: TaskProgressEvent): void => {
     setTasks((current) => {
       const targetIndex = current.findIndex((task) => {
@@ -309,6 +361,10 @@ export function useTaskQueue({
       return normalizeQueueIndexes(
         current.map((task, index) => {
           if (index !== targetIndex) {
+            return task
+          }
+
+          if (task.status === 'cancelled') {
             return task
           }
 
@@ -398,6 +454,7 @@ export function useTaskQueue({
     queuedTasks,
     historyTasks,
     submitTask,
+    cancelTask,
     applyProgressEvent,
     setServerTasks
   }

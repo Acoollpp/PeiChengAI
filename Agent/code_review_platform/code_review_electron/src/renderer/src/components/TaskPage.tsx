@@ -84,10 +84,12 @@ export function TaskPage({
     queuedTasks,
     historyTasks,
     submitTask,
+    cancelTask,
     applyProgressEvent,
     setServerTasks
   } = useTaskQueue({
     executeTask: window.codeReview.executeTask,
+    cancelTask: window.codeReview.cancelTask,
     onTaskSuccess: handleTaskSuccess
   })
 
@@ -286,6 +288,7 @@ export function TaskPage({
             selectedTaskId={selectedTaskId}
             loadingReportTaskId={loadingReportTaskId}
             onViewReport={(task) => void handleViewReport(task)}
+            onCancelTask={(task) => void cancelTask(task)}
           />
         </section>
       </aside>

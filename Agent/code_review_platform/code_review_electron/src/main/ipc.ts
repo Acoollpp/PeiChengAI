@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, resolve, sep } from 'node:path'
 
 import { ipcMain, shell } from 'electron'
@@ -73,6 +73,110 @@ interface ReadReportAssetRequest {
 interface ReadReportAssetResult {
   dataUrl: string
   contentType: string
+}
+
+interface CancelTaskRequest {
+  client_task_id?: string
+  task_id?: string
+}
+
+interface CancelTaskResult {
+  status: 'cancelled' | 'not_found'
+}
+
+interface ActiveReviewTask {
+  clientTaskId?: string
+  taskId?: string
+  token: string
+  api: TaskAgentDependencies['api']
+  abortController: AbortController
+  workspaceDir?: string
+  cancelPromise?: Promise<CancelTaskResult>
+}
+
+const activeReviewTasks = new Map<string, ActiveReviewTask>()
+
+const registerActiveTask = (task: ActiveReviewTask): void => {
+  if (task.clientTaskId) {
+    activeReviewTasks.set(task.clientTaskId, task)
+  }
+
+  if (task.taskId) {
+    activeReviewTasks.set(task.taskId, task)
+  }
+}
+
+const unregisterActiveTask = (task: ActiveReviewTask): void => {
+  if (task.clientTaskId) {
+    activeReviewTasks.delete(task.clientTaskId)
+  }
+
+  if (task.taskId) {
+    activeReviewTasks.delete(task.taskId)
+  }
+}
+
+const findActiveTask = ({ client_task_id: clientTaskId, task_id: taskId }: CancelTaskRequest):
+  | ActiveReviewTask
+  | undefined => {
+  if (clientTaskId) {
+    const task = activeReviewTasks.get(clientTaskId)
+    if (task) {
+      return task
+    }
+  }
+
+  if (!taskId) {
+    return undefined
+  }
+
+  return Array.from(activeReviewTasks.values()).find((task) => task.taskId === taskId)
+}
+
+const deleteWorkspace = async (workspaceDir: string | undefined): Promise<void> => {
+  if (!workspaceDir) {
+    return
+  }
+
+  await rm(workspaceDir, { recursive: true, force: true })
+}
+
+const cancelActiveReviewTask = async (
+  task: ActiveReviewTask
+): Promise<CancelTaskResult> => {
+  if (task.cancelPromise) {
+    return task.cancelPromise
+  }
+
+  task.cancelPromise = (async () => {
+    task.abortController.abort()
+    let statusError: unknown
+
+    if (task.taskId) {
+      try {
+        await task.api.updateTaskStatus(task.token, task.taskId, {
+          status: 'cancelled',
+          error_message: '任务已取消'
+        })
+      } catch (error) {
+        statusError = error
+      }
+    }
+
+    await deleteWorkspace(task.workspaceDir)
+    if (statusError) {
+      throw statusError
+    }
+
+    return { status: 'cancelled' as const }
+  })()
+
+  return task.cancelPromise
+}
+
+export const cancelAllActiveReviewTasks = async (): Promise<void> => {
+  const uniqueTasks = new Set(activeReviewTasks.values())
+  await Promise.allSettled(Array.from(uniqueTasks).map((task) => cancelActiveReviewTask(task)))
 }
 
 const toSubmitFeedbackRequest = (payload: SubmitFeedbackIpcPayload): SubmitFeedbackRequest => ({
@@ -314,25 +418,49 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
       const taskApi = await createApiClient()
       const { client_task_id: clientTaskId, ...createTaskPayload } = payload
+      const abortController = new AbortController()
+      const activeTask: ActiveReviewTask = {
+        clientTaskId,
+        token: tokens.access_token,
+        api: taskApi,
+        abortController
+      }
+
+      registerActiveTask(activeTask)
+
+      const prepareWorkspace = dependencies.prepareWorkspace ?? defaultPrepareWorkspace
       const result = await executeReviewTask(
         {
           token: tokens.access_token,
           request: createTaskPayload,
-          clientTaskId
+          clientTaskId,
+          signal: abortController.signal
         },
         {
           api: taskApi,
           checkEnvironment: checkLocalEnvironment,
-          prepareWorkspace: dependencies.prepareWorkspace ?? defaultPrepareWorkspace,
+          prepareWorkspace: async (input) => {
+            activeTask.taskId = input.taskId
+            registerActiveTask(activeTask)
+            const workspace = await prepareWorkspace(input)
+            activeTask.workspaceDir = workspace.cwd
+            return workspace
+          },
           runCodex: dependencies.runCodex ?? defaultRunCodex,
           uploadReport:
             dependencies.uploadReport ??
             ((token, taskId, reportPath) => uploadReportFile(taskApi, token, taskId, reportPath))
         },
         (progressEvent) => {
+          if (progressEvent.taskId) {
+            activeTask.taskId = progressEvent.taskId
+            registerActiveTask(activeTask)
+          }
           sendToRenderer(event.sender, 'task:progress', progressEvent)
         }
-      )
+      ).finally(() => {
+        unregisterActiveTask(activeTask)
+      })
 
       if (result.status === 'success' && result.reportPath) {
         latestSuccessfulReport = {
@@ -345,6 +473,16 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       return result
     }
   )
+
+  ipcMain.handle('task:cancel', async (_event, payload: CancelTaskRequest): Promise<CancelTaskResult> => {
+    const activeTask = findActiveTask(payload)
+
+    if (!activeTask) {
+      return { status: 'not_found' }
+    }
+
+    return cancelActiveReviewTask(activeTask)
+  })
 
   ipcMain.handle(
     'feedback:submit',

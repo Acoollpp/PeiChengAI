@@ -724,6 +724,137 @@ describe('useTaskQueue', () => {
     expect(result.current.historyTasks[0].reportMarkdown).toBeUndefined()
   })
 
+  it('取消等待中的任务后进入历史任务且不会调用后台取消接口', async () => {
+    const deferreds = [
+      createDeferred<ExecuteTaskResult>(),
+      createDeferred<ExecuteTaskResult>(),
+      createDeferred<ExecuteTaskResult>()
+    ]
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => {
+      const deferred = deferreds[executeTask.mock.calls.length - 1]
+      return deferred.promise
+    })
+    const cancelTask = vi.fn(async () => ({ status: 'cancelled' as const }))
+
+    const { result } = renderHook(() => useTaskQueue({ executeTask, cancelTask }))
+
+    await act(async () => {
+      await result.current.submitTask(basePayload(1))
+      await result.current.submitTask(basePayload(2))
+      await result.current.submitTask(basePayload(3))
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(2))
+    const queuedTask = result.current.queuedTasks[0]
+
+    await act(async () => {
+      await result.current.cancelTask(queuedTask)
+    })
+
+    expect(cancelTask).not.toHaveBeenCalled()
+    expect(executeTask).toHaveBeenCalledTimes(2)
+    expect(result.current.queuedTasks).toHaveLength(0)
+    expect(result.current.historyTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          localTaskId: queuedTask.localTaskId,
+          status: 'cancelled',
+          progress_message: '任务已取消',
+          localQueueState: 'finished',
+          isLocallyExecuting: false
+        })
+      ])
+    )
+  })
+
+  it('取消运行中的任务后调用后台取消接口并释放并发槽位', async () => {
+    const deferreds = [
+      createDeferred<ExecuteTaskResult>(),
+      createDeferred<ExecuteTaskResult>(),
+      createDeferred<ExecuteTaskResult>()
+    ]
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => {
+      const deferred = deferreds[executeTask.mock.calls.length - 1]
+      return deferred.promise
+    })
+    const cancelTask = vi.fn(async () => ({ status: 'cancelled' as const }))
+
+    const { result } = renderHook(() => useTaskQueue({ executeTask, cancelTask }))
+
+    await act(async () => {
+      await result.current.submitTask(basePayload(1))
+      await result.current.submitTask(basePayload(2))
+      await result.current.submitTask(basePayload(3))
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(2))
+    const runningTask = result.current.runningTasks[0]
+
+    await act(async () => {
+      await result.current.cancelTask(runningTask)
+    })
+
+    expect(cancelTask).toHaveBeenCalledWith({
+      client_task_id: runningTask.localTaskId,
+      task_id: runningTask.id
+    })
+    expect(result.current.historyTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          localTaskId: runningTask.localTaskId,
+          status: 'cancelled',
+          progress_message: '任务已取消',
+          localQueueState: 'finished',
+          isLocallyExecuting: false
+        })
+      ])
+    )
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(3))
+    expect(result.current.runningTasks.map((task) => task.svn_url)).toContain('svn://repo/project-3')
+  })
+
+  it('取消运行中的任务后迟到进度和成功结果不会覆盖已取消状态', async () => {
+    const deferred = createDeferred<ExecuteTaskResult>()
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)
+    const cancelTask = vi.fn(async () => ({ status: 'cancelled' as const }))
+
+    const { result } = renderHook(() => useTaskQueue({ executeTask, cancelTask }))
+
+    await act(async () => {
+      await result.current.submitTask(basePayload(1))
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
+    const runningTask = result.current.runningTasks[0]
+
+    await act(async () => {
+      await result.current.cancelTask(runningTask)
+      result.current.applyProgressEvent({
+        taskId: 'task-late',
+        clientTaskId: runningTask.localTaskId,
+        type: 'stage',
+        stage: 'uploading_report',
+        message: '不应覆盖取消状态'
+      })
+      deferred.resolve({
+        taskId: 'task-late',
+        status: 'success',
+        reportMarkdown: '# late report',
+        reportPath: '/tmp/late.md'
+      })
+      await flushMicrotasks()
+    })
+
+    expect(result.current.historyTasks[0]).toEqual(
+      expect.objectContaining({
+        localTaskId: runningTask.localTaskId,
+        status: 'cancelled',
+        progress_message: '任务已取消'
+      })
+    )
+    expect(result.current.historyTasks[0].reportMarkdown).toBeUndefined()
+  })
+
   it('任务成功回调使用包含最新日志的任务状态', async () => {
     const deferred = createDeferred<ExecuteTaskResult>()
     const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)

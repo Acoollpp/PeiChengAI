@@ -163,4 +163,34 @@ describe('TaskBoard', () => {
 
     expect(onViewReport).toHaveBeenCalledWith(successTasks[0])
   })
+
+  it('运行中任务显示取消按钮并回传该任务', async () => {
+    const user = userEvent.setup()
+    const onCancelTask = vi.fn()
+    renderTaskBoard({ onCancelTask })
+
+    await user.click(screen.getByRole('button', { name: '取消任务' }))
+
+    expect(onCancelTask).toHaveBeenCalledWith(runningTasks[0])
+  })
+
+  it('等待中任务显示取消按钮并回传该任务', async () => {
+    const user = userEvent.setup()
+    const onCancelTask = vi.fn()
+    renderTaskBoard({ onCancelTask })
+
+    await user.click(screen.getByRole('tab', { name: '等待中 1' }))
+    await user.click(screen.getByRole('button', { name: '取消任务' }))
+
+    expect(onCancelTask).toHaveBeenCalledWith(queuedTasks[0])
+  })
+
+  it('历史任务不显示取消按钮', async () => {
+    const user = userEvent.setup()
+    renderTaskBoard({ onCancelTask: vi.fn() })
+
+    await user.click(screen.getByRole('tab', { name: '历史任务 1' }))
+
+    expect(screen.queryByRole('button', { name: '取消任务' })).not.toBeInTheDocument()
+  })
 })

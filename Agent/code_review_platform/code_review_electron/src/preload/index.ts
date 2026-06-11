@@ -6,6 +6,8 @@ import type {
   AppUpdateProgress,
   EnvironmentCheckResult,
   EnvironmentProgressEvent,
+  CancelTaskRequest,
+  CancelTaskResult,
   ExecuteTaskRequest,
   ExecuteTaskResult,
   KeyLoginRequest,
@@ -66,6 +68,8 @@ contextBridge.exposeInMainWorld('codeReview', {
   readTaskReport: (taskId: string): Promise<string> => ipcRenderer.invoke('task:report', taskId),
   executeTask: (payload: ExecuteTaskRequest): Promise<ExecuteTaskResult> =>
     ipcRenderer.invoke('task:execute', payload),
+  cancelTask: (payload: CancelTaskRequest): Promise<CancelTaskResult> =>
+    ipcRenderer.invoke('task:cancel', payload),
   onTaskProgress: (callback: (event: TaskProgressEvent) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progressEvent: TaskProgressEvent): void => {
       callback(progressEvent)

@@ -182,6 +182,43 @@ describe('executeReviewTask', () => {
     )
   })
 
+  it('取消信号触发后标记任务为已取消且不上传报告', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-cancel-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '代码审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    const controller = new AbortController()
+    const dependencies: TaskAgentDependencies = {
+      api: {
+        createTask: vi.fn(async () => makeTask()),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      runCodex: vi.fn(async () => {
+        await writeFile(reportPath, '# 不应上传\n')
+        controller.abort()
+      }),
+      uploadReport: vi.fn()
+    }
+
+    await expect(
+      executeReviewTask(
+        { token: 'token-123', request, signal: controller.signal },
+        dependencies
+      )
+    ).resolves.toEqual({
+      taskId: 'task-1',
+      status: 'cancelled'
+    })
+
+    expect(dependencies.uploadReport).not.toHaveBeenCalled()
+    expect(dependencies.api.updateTaskStatus).toHaveBeenLastCalledWith('token-123', 'task-1', {
+      status: 'cancelled',
+      error_message: '任务已取消'
+    })
+  })
+
   it('emits task progress events around environment, workspace, Codex, and upload stages', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-'))
     tempDirs.push(cwd)

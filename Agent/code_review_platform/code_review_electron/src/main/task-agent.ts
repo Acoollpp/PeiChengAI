@@ -18,6 +18,7 @@ export interface ExecuteReviewTaskInput {
   token: string
   request: CreateTaskRequest
   clientTaskId?: string
+  signal?: AbortSignal
 }
 
 export interface PreparedWorkspace {
@@ -42,6 +43,7 @@ export interface RunCodexInput {
   skillName: string
   task: ReviewTask
   clientTaskId?: string
+  signal?: AbortSignal
   onProgress?: TaskProgressReporter
 }
 
@@ -85,6 +87,13 @@ const codexErrorMessages: Record<CodexErrorCode, string> = {
   PARAM_ERROR: '输入参数无效，请检查项目路径、版本号等信息。',
   REPORT_ERROR: '审查报告生成失败，请重试或联系管理员。',
   INTERNAL_ERROR: 'Codex 执行过程中发生内部错误。',
+}
+
+export class ReviewTaskCancelledError extends Error {
+  constructor() {
+    super('任务已取消')
+    this.name = 'ReviewTaskCancelledError'
+  }
 }
 
 const toReviewTask = (value: unknown): ReviewTask => {
@@ -136,6 +145,7 @@ export const defaultRunCodex = async ({
   skillName,
   task,
   clientTaskId,
+  signal,
   onProgress
 }: RunCodexInput): Promise<void> => {
   await runCodexReview({
@@ -149,6 +159,7 @@ export const defaultRunCodex = async ({
       skillName
     }),
     timeoutMs: 30 * 60 * 1000,
+    signal,
     onOutput: (event) =>
       onProgress?.({
         taskId: task.id,
@@ -173,10 +184,12 @@ export const executeReviewTask = async (
   dependencies: TaskAgentDependencies,
   onProgress?: TaskProgressReporter
 ): Promise<ExecuteReviewTaskResult> => {
+  throwIfCancelled(input.signal)
   const task = toReviewTask(await dependencies.api.createTask(input.token, input.request))
   emitStage(onProgress, task.id, input.clientTaskId, 'created', '任务已创建')
 
   try {
+    throwIfCancelled(input.signal)
     const skillName = resolveSkillName(input.request.skill_name, task.skill_name)
 
     emitStage(onProgress, task.id, input.clientTaskId, 'checking_environment', '检查本机环境')
@@ -185,6 +198,7 @@ export const executeReviewTask = async (
     })
 
     const environment = await dependencies.checkEnvironment()
+    throwIfCancelled(input.signal)
 
     if (environment.status !== 'ready') {
       emitStage(
@@ -209,6 +223,7 @@ export const executeReviewTask = async (
       oldRevision: task.old_revision,
       newRevision: task.new_revision
     })
+    throwIfCancelled(input.signal)
 
     emitStage(onProgress, task.id, input.clientTaskId, 'running_codex', '启动 Codex 执行审查 Skill')
     await updateStatus(dependencies, input.token, task.id, {
@@ -220,8 +235,10 @@ export const executeReviewTask = async (
       skillName,
       task,
       clientTaskId: input.clientTaskId,
+      signal: input.signal,
       onProgress: withClientTaskId(onProgress, input.clientTaskId)
     })
+    throwIfCancelled(input.signal)
 
     emitStage(onProgress, task.id, input.clientTaskId, 'uploading_report', '上传审查报告')
     await updateStatus(dependencies, input.token, task.id, {
@@ -229,7 +246,9 @@ export const executeReviewTask = async (
     })
 
     await ensureReportReady(workspace.reportPath)
+    throwIfCancelled(input.signal)
     await dependencies.uploadReport(input.token, task.id, workspace.reportPath)
+    throwIfCancelled(input.signal)
     const reportMarkdown = await readFile(workspace.reportPath, 'utf8')
 
     emitStage(onProgress, task.id, input.clientTaskId, 'success', '审查完成')
@@ -240,6 +259,14 @@ export const executeReviewTask = async (
       reportPath: workspace.reportPath
     }
   } catch (error) {
+    if (isCancelledError(error) || input.signal?.aborted) {
+      await updateStatus(dependencies, input.token, task.id, {
+        status: 'cancelled',
+        error_message: '任务已取消'
+      })
+      return { taskId: task.id, status: 'cancelled' }
+    }
+
     const errorMessage = error instanceof CodexReviewError
       ? `${codexErrorMessages[error.errorCode]}（Codex 分析：${error.message}）`
       : sanitizeErrorSummary(error, input.token)
@@ -253,6 +280,16 @@ export const executeReviewTask = async (
     throw error
   }
 }
+
+const throwIfCancelled = (signal: AbortSignal | undefined): void => {
+  if (signal?.aborted) {
+    throw new ReviewTaskCancelledError()
+  }
+}
+
+const isCancelledError = (error: unknown): boolean =>
+  error instanceof ReviewTaskCancelledError ||
+  (error instanceof Error && error.message === '任务已取消')
 
 const resolveSkillName = (
   requestSkillName: string | undefined,
