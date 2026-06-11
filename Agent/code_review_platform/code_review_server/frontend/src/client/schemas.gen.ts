@@ -27,17 +27,57 @@ export const AuthTokenSchema = {
     title: 'AuthToken'
 } as const;
 
-export const Body_review_tasks_upload_review_task_reportSchema = {
+export const Body_client_releases_upload_client_releaseSchema = {
     properties: {
-        upload: {
+        version: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            title: 'Version'
+        },
+        release_notes: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 4096
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Release Notes'
+        },
+        activate: {
+            type: 'boolean',
+            title: 'Activate',
+            default: true
+        },
+        installer: {
             type: 'string',
             format: 'binary',
-            title: 'Upload'
+            title: 'Installer'
+        },
+        latest_yml: {
+            type: 'string',
+            format: 'binary',
+            title: 'Latest Yml'
+        },
+        blockmap: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'binary'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Blockmap'
         }
     },
     type: 'object',
-    required: ['upload'],
-    title: 'Body_review-tasks-upload_review_task_report'
+    required: ['version', 'installer', 'latest_yml'],
+    title: 'Body_client-releases-upload_client_release'
 } as const;
 
 export const Body_feedback_create_feedbackSchema = {
@@ -60,11 +100,36 @@ export const Body_feedback_create_feedbackSchema = {
                 }
             ],
             title: 'Screenshots'
+        },
+        screenshot: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'binary'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Screenshot'
         }
     },
     type: 'object',
     required: ['description'],
     title: 'Body_feedback-create_feedback'
+} as const;
+
+export const Body_review_tasks_upload_review_task_reportSchema = {
+    properties: {
+        upload: {
+            type: 'string',
+            format: 'binary',
+            title: 'Upload'
+        }
+    },
+    type: 'object',
+    required: ['upload'],
+    title: 'Body_review-tasks-upload_review_task_report'
 } as const;
 
 export const Body_skills_upload_skillSchema = {
@@ -157,42 +222,97 @@ export const CchSyncResultPublicSchema = {
     title: 'CchSyncResultPublic'
 } as const;
 
-export const HTTPValidationErrorSchema = {
-    properties: {
-        detail: {
-            items: {
-                '$ref': '#/components/schemas/ValidationError'
-            },
-            type: 'array',
-            title: 'Detail'
-        }
-    },
-    type: 'object',
-    title: 'HTTPValidationError'
-} as const;
-
-export const FeedbackScreenshotPublicSchema = {
+export const ClientReleasePublicSchema = {
     properties: {
         id: {
             type: 'string',
             format: 'uuid',
             title: 'Id'
         },
-        file_name: {
+        version: {
             type: 'string',
-            title: 'File Name'
+            title: 'Version'
         },
-        content_type: {
+        platform: {
             type: 'string',
-            title: 'Content Type'
+            title: 'Platform'
         },
-        file_size: {
-            type: 'integer',
-            title: 'File Size'
+        arch: {
+            type: 'string',
+            title: 'Arch'
         },
-        sort_order: {
+        release_notes: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Release Notes'
+        },
+        artifact_name: {
+            type: 'string',
+            title: 'Artifact Name'
+        },
+        artifact_path: {
+            type: 'string',
+            title: 'Artifact Path'
+        },
+        artifact_size: {
             type: 'integer',
-            title: 'Sort Order'
+            title: 'Artifact Size'
+        },
+        artifact_sha512: {
+            type: 'string',
+            title: 'Artifact Sha512'
+        },
+        latest_yml_name: {
+            type: 'string',
+            title: 'Latest Yml Name'
+        },
+        latest_yml_path: {
+            type: 'string',
+            title: 'Latest Yml Path'
+        },
+        blockmap_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Blockmap Name'
+        },
+        blockmap_path: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Blockmap Path'
+        },
+        is_active: {
+            type: 'boolean',
+            title: 'Is Active'
+        },
+        created_by_user_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created By User Id'
         },
         created_at: {
             anyOf: [
@@ -205,11 +325,42 @@ export const FeedbackScreenshotPublicSchema = {
                 }
             ],
             title: 'Created At'
+        },
+        updated_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Updated At'
         }
     },
     type: 'object',
-    required: ['id', 'file_name', 'content_type', 'file_size', 'sort_order'],
-    title: 'FeedbackScreenshotPublic'
+    required: ['id', 'version', 'platform', 'arch', 'artifact_name', 'artifact_path', 'artifact_size', 'artifact_sha512', 'latest_yml_name', 'latest_yml_path', 'is_active'],
+    title: 'ClientReleasePublic'
+} as const;
+
+export const ClientReleasesPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/ClientReleasePublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'ClientReleasesPublic'
 } as const;
 
 export const FeedbackPublicSchema = {
@@ -255,6 +406,18 @@ export const FeedbackPublicSchema = {
             title: 'Has Screenshot',
             default: false
         },
+        screenshot_count: {
+            type: 'integer',
+            title: 'Screenshot Count',
+            default: 0
+        },
+        screenshots: {
+            items: {
+                '$ref': '#/components/schemas/FeedbackScreenshotPublic'
+            },
+            type: 'array',
+            title: 'Screenshots'
+        },
         screenshot_name: {
             anyOf: [
                 {
@@ -287,19 +450,6 @@ export const FeedbackPublicSchema = {
                 }
             ],
             title: 'Screenshot Size'
-        },
-        screenshot_count: {
-            type: 'integer',
-            title: 'Screenshot Count',
-            default: 0
-        },
-        screenshots: {
-            items: {
-                '$ref': '#/components/schemas/FeedbackScreenshotPublic'
-            },
-            type: 'array',
-            title: 'Screenshots',
-            default: []
         },
         status: {
             '$ref': '#/components/schemas/FeedbackStatus'
@@ -334,6 +484,190 @@ export const FeedbackPublicSchema = {
     title: 'FeedbackPublic'
 } as const;
 
+export const FeedbackScreenshotPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        file_name: {
+            type: 'string',
+            title: 'File Name'
+        },
+        content_type: {
+            type: 'string',
+            title: 'Content Type'
+        },
+        file_size: {
+            type: 'integer',
+            title: 'File Size'
+        },
+        sort_order: {
+            type: 'integer',
+            title: 'Sort Order'
+        },
+        created_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'file_name', 'content_type', 'file_size', 'sort_order'],
+    title: 'FeedbackScreenshotPublic'
+} as const;
+
+export const FeedbackStatsPublicSchema = {
+    properties: {
+        range: {
+            '$ref': '#/components/schemas/FeedbackStatsRange'
+        },
+        total: {
+            type: 'integer',
+            title: 'Total'
+        },
+        pending: {
+            type: 'integer',
+            title: 'Pending'
+        },
+        processing: {
+            type: 'integer',
+            title: 'Processing'
+        },
+        resolved: {
+            type: 'integer',
+            title: 'Resolved'
+        },
+        unresolved: {
+            type: 'integer',
+            title: 'Unresolved'
+        },
+        resolution_rate: {
+            type: 'number',
+            title: 'Resolution Rate'
+        },
+        average_resolution_seconds: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Average Resolution Seconds'
+        },
+        by_status: {
+            additionalProperties: {
+                type: 'integer'
+            },
+            propertyNames: {
+                '$ref': '#/components/schemas/FeedbackStatus'
+            },
+            type: 'object',
+            title: 'By Status'
+        },
+        trend: {
+            items: {
+                '$ref': '#/components/schemas/FeedbackTrendPointPublic'
+            },
+            type: 'array',
+            title: 'Trend'
+        },
+        feedback_by_user: {
+            items: {
+                '$ref': '#/components/schemas/FeedbackUserStatsPublic'
+            },
+            type: 'array',
+            title: 'Feedback By User'
+        }
+    },
+    type: 'object',
+    required: ['range', 'total', 'pending', 'processing', 'resolved', 'unresolved', 'resolution_rate', 'by_status'],
+    title: 'FeedbackStatsPublic'
+} as const;
+
+export const FeedbackStatsRangeSchema = {
+    type: 'string',
+    enum: ['today', 'yesterday', 'all'],
+    title: 'FeedbackStatsRange'
+} as const;
+
+export const FeedbackStatusSchema = {
+    type: 'string',
+    enum: ['pending', 'processing', 'resolved'],
+    title: 'FeedbackStatus'
+} as const;
+
+export const FeedbackStatusUpdateSchema = {
+    properties: {
+        status: {
+            '$ref': '#/components/schemas/FeedbackStatus'
+        }
+    },
+    type: 'object',
+    required: ['status'],
+    title: 'FeedbackStatusUpdate'
+} as const;
+
+export const FeedbackTrendPointPublicSchema = {
+    properties: {
+        label: {
+            type: 'string',
+            title: 'Label'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['label', 'count'],
+    title: 'FeedbackTrendPointPublic'
+} as const;
+
+export const FeedbackUserStatsPublicSchema = {
+    properties: {
+        user_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'User Name'
+        },
+        svn_username: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Svn Username'
+        },
+        feedback_count: {
+            type: 'integer',
+            title: 'Feedback Count'
+        }
+    },
+    type: 'object',
+    required: ['feedback_count'],
+    title: 'FeedbackUserStatsPublic'
+} as const;
+
 export const FeedbacksPublicSchema = {
     properties: {
         data: {
@@ -353,21 +687,18 @@ export const FeedbacksPublicSchema = {
     title: 'FeedbacksPublic'
 } as const;
 
-export const FeedbackStatusSchema = {
-    type: 'string',
-    enum: ['pending', 'processing', 'resolved'],
-    title: 'FeedbackStatus'
-} as const;
-
-export const FeedbackStatusUpdateSchema = {
+export const HTTPValidationErrorSchema = {
     properties: {
-        status: {
-            '$ref': '#/components/schemas/FeedbackStatus'
+        detail: {
+            items: {
+                '$ref': '#/components/schemas/ValidationError'
+            },
+            type: 'array',
+            title: 'Detail'
         }
     },
     type: 'object',
-    required: ['status'],
-    title: 'FeedbackStatusUpdate'
+    title: 'HTTPValidationError'
 } as const;
 
 export const ItemCreateSchema = {
@@ -572,6 +903,30 @@ export const ReviewTaskCreateSchema = {
             maxLength: 255,
             minLength: 1,
             title: 'New Revision'
+        },
+        template_key: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Template Key'
+        },
+        skill_name: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Skill Name'
         }
     },
     type: 'object',
@@ -625,6 +980,30 @@ export const ReviewTaskPublicSchema = {
             type: 'string',
             title: 'New Revision'
         },
+        template_key: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Template Key'
+        },
+        skill_name: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Skill Name'
+        },
         status: {
             '$ref': '#/components/schemas/ReviewTaskStatus'
         },
@@ -638,6 +1017,17 @@ export const ReviewTaskPublicSchema = {
                 }
             ],
             title: 'Report Path'
+        },
+        report_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Report Name'
         },
         error_message: {
             anyOf: [
@@ -724,6 +1114,81 @@ export const ReviewTaskPublicSchema = {
     type: 'object',
     required: ['id', 'user_id', 'svn_url', 'old_revision', 'new_revision', 'status'],
     title: 'ReviewTaskPublic'
+} as const;
+
+export const ReviewTaskReportUserStatsPublicSchema = {
+    properties: {
+        user_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'User Name'
+        },
+        svn_username: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Svn Username'
+        },
+        report_count: {
+            type: 'integer',
+            title: 'Report Count'
+        }
+    },
+    type: 'object',
+    required: ['report_count'],
+    title: 'ReviewTaskReportUserStatsPublic'
+} as const;
+
+export const ReviewTaskStatsPublicSchema = {
+    properties: {
+        total: {
+            type: 'integer',
+            title: 'Total'
+        },
+        success: {
+            type: 'integer',
+            title: 'Success'
+        },
+        running: {
+            type: 'integer',
+            title: 'Running'
+        },
+        failed_or_error: {
+            type: 'integer',
+            title: 'Failed Or Error'
+        },
+        by_status: {
+            additionalProperties: {
+                type: 'integer'
+            },
+            propertyNames: {
+                '$ref': '#/components/schemas/ReviewTaskStatus'
+            },
+            type: 'object',
+            title: 'By Status'
+        },
+        reports_by_user: {
+            items: {
+                '$ref': '#/components/schemas/ReviewTaskReportUserStatsPublic'
+            },
+            type: 'array',
+            title: 'Reports By User'
+        }
+    },
+    type: 'object',
+    required: ['total', 'success', 'running', 'failed_or_error', 'by_status'],
+    title: 'ReviewTaskStatsPublic'
 } as const;
 
 export const ReviewTaskStatusSchema = {
