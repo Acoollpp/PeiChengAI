@@ -1,0 +1,24 @@
+node_modules/
+dist/
+.env
+.env.local
+exports/*
+!exports/.gitkeep
+*.log
+
+certs/*
+!certs/.gitkeep
+
+# Local backups and packaged deploy artifacts
+.sync-backups/
+*.zip
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Local editor settings
+.vscode/
+
+# Local scratch/test files
+node-created.*
+node-readable-test.txt
