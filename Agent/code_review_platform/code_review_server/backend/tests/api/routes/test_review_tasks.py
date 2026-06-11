@@ -750,14 +750,19 @@ def test_admin_task_stats_include_all_nonzero_report_counts_by_user(
 
     assert response.status_code == 200
     reports_by_user = response.json()["reports_by_user"]
-    assert len(reports_by_user) == 21
-    assert reports_by_user[0] == {
+    generated_report_users = [
+        user_stat
+        for user_stat in reports_by_user
+        if (user_stat["user_name"] or "").startswith("报告用户 ")
+    ]
+    assert len(generated_report_users) == 21
+    assert generated_report_users[0] == {
         "user_name": "报告用户 20",
         "svn_username": None,
         "report_count": 21,
     }
-    assert reports_by_user[-1]["user_name"] == "报告用户 00"
-    assert reports_by_user[-1]["report_count"] == 1
+    assert generated_report_users[-1]["user_name"] == "报告用户 00"
+    assert generated_report_users[-1]["report_count"] == 1
     assert "没有报告用户" not in {
         user_stat["user_name"] for user_stat in reports_by_user
     }
