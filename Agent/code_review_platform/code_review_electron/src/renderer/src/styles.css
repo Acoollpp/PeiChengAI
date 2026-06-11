@@ -578,8 +578,6 @@ h2 {
   grid-template-columns: minmax(360px, 430px) minmax(0, 1fr);
   gap: 20px;
   height: calc(100vh - 48px);
-  max-width: 1480px;
-  margin: 0 auto;
 }
 
 .left-pane {
@@ -895,7 +893,7 @@ h2 {
 }
 
 .markdown-preview {
-  max-width: 980px;
+  width: 100%;
   min-width: 0;
   color: rgb(245 247 251 / 86%);
   font-size: 15px;
