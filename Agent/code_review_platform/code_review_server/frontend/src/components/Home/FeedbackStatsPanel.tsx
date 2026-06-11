@@ -54,7 +54,7 @@ function formatPercent(value: number) {
 }
 
 function formatDuration(seconds: number | null | undefined) {
-  if (!seconds) {
+  if (seconds == null) {
     return "-"
   }
 

@@ -12,7 +12,7 @@ const feedbackStatsByRange = {
     resolved: 3,
     unresolved: 3,
     resolution_rate: 0.5,
-    average_resolution_seconds: 5760,
+    average_resolution_seconds: 0,
     by_status: {
       pending: 2,
       processing: 1,
@@ -95,6 +95,17 @@ async function mockFeedbackStats(
   return requestedRanges
 }
 
+function cardByText(page: Page, text: string) {
+  return page.getByText(text).locator("xpath=ancestor::div[@data-slot='card']")
+}
+
+function summaryCard(page: Page, label: string) {
+  return page.locator("[data-slot='card']").filter({
+    hasText: label,
+    hasNot: page.locator("[data-slot='card-header']"),
+  })
+}
+
 test("Home page is renamed and shows task statistics", async ({ page }) => {
   await page.goto("/")
 
@@ -136,12 +147,13 @@ test("Home page can switch to feedback statistics", async ({ page }) => {
     page.getByText("当前权限范围内的意见反馈处理情况。"),
   ).toBeVisible()
   await expect(page.getByText("总意见数")).toBeVisible()
-  await expect(page.getByText("待处理")).toBeVisible()
-  await expect(page.getByText("处理中")).toBeVisible()
-  await expect(page.getByText("已解决")).toBeVisible()
+  await expect(summaryCard(page, "待处理")).toBeVisible()
+  await expect(summaryCard(page, "处理中")).toBeVisible()
+  await expect(summaryCard(page, "已解决")).toBeVisible()
   await expect(page.getByText("状态分布")).toBeVisible()
   await expect(page.getByText("提交趋势")).toBeVisible()
   await expect(page.getByText("处理概览")).toBeVisible()
+  await expect(cardByText(page, "处理概览").getByText("0分钟")).toBeVisible()
   await expect(page.getByText("提交人排行")).toBeVisible()
   await expect(page.getByText("汪思雨")).toBeVisible()
   expect(requestedRanges).toContain("today")
@@ -154,26 +166,11 @@ test("Feedback statistics supports today yesterday and all ranges", async ({
   await page.goto("/")
   await page.getByRole("tab", { name: "意见统计" }).click()
 
-  await expect(
-    page
-      .getByText("总意见数")
-      .locator("xpath=ancestor::div[@data-slot='card']")
-      .getByText("6"),
-  ).toBeVisible()
+  await expect(summaryCard(page, "总意见数").getByText("6")).toBeVisible()
   await page.getByRole("button", { name: "昨日" }).click()
-  await expect(
-    page
-      .getByText("总意见数")
-      .locator("xpath=ancestor::div[@data-slot='card']")
-      .getByText("4"),
-  ).toBeVisible()
+  await expect(summaryCard(page, "总意见数").getByText("4")).toBeVisible()
   await page.getByRole("button", { name: "累计" }).click()
-  await expect(
-    page
-      .getByText("总意见数")
-      .locator("xpath=ancestor::div[@data-slot='card']")
-      .getByText("42"),
-  ).toBeVisible()
+  await expect(summaryCard(page, "总意见数").getByText("42")).toBeVisible()
 
   expect(requestedRanges).toContain("today")
   expect(requestedRanges).toContain("yesterday")
@@ -186,6 +183,7 @@ test.describe("Normal user home navigation", () => {
   test("Normal user home does not show department management", async ({
     page,
   }) => {
+    await mockFeedbackStats(page, { includeUsers: true })
     const svnUsername = uniqueSvnUsername()
     await createUser({ svnUsername })
     await logInWithSvn(page, svnUsername, testSvnPassword)
@@ -194,5 +192,8 @@ test.describe("Normal user home navigation", () => {
     await expect(page.getByRole("link", { name: "部门管理" })).not.toBeVisible()
     await expect(page.getByRole("tab", { name: "任务统计" })).toBeVisible()
     await expect(page.getByText("报告生成数")).not.toBeVisible()
+    await page.getByRole("tab", { name: "意见统计" }).click()
+    await expect(page.getByText("总意见数")).toBeVisible()
+    await expect(page.getByText("提交人排行")).not.toBeVisible()
   })
 })
