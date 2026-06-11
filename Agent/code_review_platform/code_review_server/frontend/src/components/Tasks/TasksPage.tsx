@@ -7,7 +7,7 @@ import { Download, ExternalLink, Search, Trash2, X } from "lucide-react"
 import { type FormEvent, Suspense, useState } from "react"
 import { toast } from "sonner"
 
-import { OpenAPI, type ReviewTaskPublic, type ReviewTaskStatus } from "@/client"
+import { OpenAPI, type ReviewTaskPublic } from "@/client"
 import {
   formatReviewTaskDateTime,
   ReviewTaskStatusBadge,
@@ -36,7 +36,7 @@ import useAuth from "@/hooks/useAuth"
 import { hasAdminPrivileges } from "@/lib/authz"
 
 type ReviewTask = Omit<ReviewTaskPublic, "status"> & {
-  status: ReviewTaskStatus | DisplayableReviewTaskStatus
+  status: DisplayableReviewTaskStatus
 }
 
 type ReviewTasksResponse = {

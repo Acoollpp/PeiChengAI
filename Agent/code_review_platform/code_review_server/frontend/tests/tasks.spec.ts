@@ -140,6 +140,8 @@ test.describe("Admin task navigation", () => {
     await expect(page.getByText("2026-06-11 14:03:20")).toBeVisible()
 
     const taskRow = page.getByRole("row").filter({ hasText: "测试用户" })
-    await expect(taskRow.getByText("-").first()).toBeVisible()
+    const cells = taskRow.getByRole("cell")
+    await expect(cells.nth(5)).toContainText("2026-06-11 14:03:20")
+    await expect(cells.nth(6)).toHaveText("-")
   })
 })

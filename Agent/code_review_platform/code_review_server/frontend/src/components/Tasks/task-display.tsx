@@ -20,7 +20,7 @@ const reviewTaskStatusLabels: Record<ReviewTaskStatus, string> = {
 function isKnownReviewTaskStatus(
   status: DisplayableReviewTaskStatus,
 ): status is ReviewTaskStatus {
-  return status in reviewTaskStatusLabels
+  return Object.prototype.hasOwnProperty.call(reviewTaskStatusLabels, status)
 }
 
 export function formatReviewTaskDateTime(value?: string | null) {
