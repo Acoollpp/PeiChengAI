@@ -70,6 +70,8 @@ test.describe("Admin task navigation", () => {
               error_message: "客户端本地已生成报告，但未上传成功",
               client_hostname: "worker-01",
               client_version: "1.0.0",
+              started_at: "2026-06-11T13:40:00",
+              finished_at: "2026-06-11T13:52:30",
             },
           ],
           count: 1,
@@ -89,5 +91,55 @@ test.describe("Admin task navigation", () => {
       page.getByText("客户端本地已生成报告，但未上传成功"),
     ).toBeVisible()
     await expect(page.getByText("worker-01 / 1.0.0")).not.toBeVisible()
+    await expect(page.getByText("失败")).toBeVisible()
+    await expect(page.getByText("2026-06-11 13:40:00")).toBeVisible()
+    await expect(page.getByText("2026-06-11 13:52:30")).toBeVisible()
+  })
+
+  test("Admin task table shows status badge and task times", async ({
+    page,
+  }) => {
+    await logInWithKey(page, testApiKey)
+
+    await page.route("**/api/v1/review-tasks?**", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: {
+          data: [
+            {
+              id: "11111111-1111-1111-1111-111111111111",
+              user_id: "22222222-2222-2222-2222-222222222222",
+              user_name: "测试用户",
+              svn_username: "test_svn",
+              svn_url: "https://example.test/svn/project",
+              old_revision: "r1",
+              new_revision: "r2",
+              status: "running_codex",
+              report_path: null,
+              error_message: null,
+              client_hostname: null,
+              client_version: null,
+              started_at: "2026-06-11T14:03:20",
+              finished_at: null,
+            },
+          ],
+          count: 1,
+        },
+      })
+    })
+
+    await page.goto("/tasks/review")
+
+    await expect(
+      page.getByRole("columnheader", { name: "开始时间" }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole("columnheader", { name: "结束时间" }),
+    ).toBeVisible()
+    await expect(page.getByText("审查中")).toBeVisible()
+    await expect(page.getByText("2026-06-11 14:03:20")).toBeVisible()
+
+    const taskRow = page.getByRole("row").filter({ hasText: "测试用户" })
+    await expect(taskRow.getByText("-").first()).toBeVisible()
   })
 })

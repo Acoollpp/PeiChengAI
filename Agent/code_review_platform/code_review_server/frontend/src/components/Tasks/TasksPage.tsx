@@ -7,7 +7,12 @@ import { Download, ExternalLink, Search, Trash2, X } from "lucide-react"
 import { type FormEvent, Suspense, useState } from "react"
 import { toast } from "sonner"
 
-import { OpenAPI } from "@/client"
+import { OpenAPI, type ReviewTaskPublic, type ReviewTaskStatus } from "@/client"
+import {
+  formatReviewTaskDateTime,
+  ReviewTaskStatusBadge,
+  type DisplayableReviewTaskStatus,
+} from "@/components/Tasks/task-display"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -30,18 +35,8 @@ import {
 import useAuth from "@/hooks/useAuth"
 import { hasAdminPrivileges } from "@/lib/authz"
 
-type ReviewTask = {
-  id: string
-  user_name?: string | null
-  svn_username?: string | null
-  svn_url: string
-  old_revision: string
-  new_revision: string
-  status: string
-  report_path?: string | null
-  error_message?: string | null
-  client_hostname?: string | null
-  client_version?: string | null
+type ReviewTask = Omit<ReviewTaskPublic, "status"> & {
+  status: ReviewTaskStatus | DisplayableReviewTaskStatus
 }
 
 type ReviewTasksResponse = {
@@ -184,6 +179,8 @@ function ReviewTasksTable({
             <TableHead>SVN地址</TableHead>
             <TableHead>版本</TableHead>
             <TableHead>状态</TableHead>
+            <TableHead>开始时间</TableHead>
+            <TableHead>结束时间</TableHead>
             <TableHead>错误信息</TableHead>
             <TableHead>报告</TableHead>
             <TableHead>操作</TableHead>
@@ -193,7 +190,7 @@ function ReviewTasksTable({
           {tasks.data.length === 0 ? (
             <TableRow className="hover:bg-transparent">
               <TableCell
-                colSpan={8}
+                colSpan={10}
                 className="h-32 text-center text-muted-foreground"
               >
                 暂无审查任务
@@ -210,7 +207,15 @@ function ReviewTasksTable({
                 <TableCell>
                   {task.old_revision} → {task.new_revision}
                 </TableCell>
-                <TableCell>{task.status}</TableCell>
+                <TableCell>
+                  <ReviewTaskStatusBadge status={task.status} />
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-muted-foreground">
+                  {formatReviewTaskDateTime(task.started_at)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-muted-foreground">
+                  {formatReviewTaskDateTime(task.finished_at)}
+                </TableCell>
                 <TableCell
                   className="max-w-xs truncate text-muted-foreground"
                   title={task.error_message || undefined}
