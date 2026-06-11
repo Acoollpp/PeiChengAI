@@ -8,9 +8,16 @@ from sqlmodel import delete
 from sqlmodel import select
 
 from app.core.config import settings
+from app.api.routes import feedback as feedback_route
 from app.models import Feedback, FeedbackScreenshot, FeedbackStatus, User, UserRole
 from app.services import feedback_service
 from tests.utils.user import authentication_token_from_key, create_key_user
+
+
+FIXED_STATS_NOW = datetime(2026, 6, 11, 16, 30, tzinfo=timezone.utc)
+FIXED_STATS_TODAY = datetime(2026, 6, 11, 16, 10, tzinfo=timezone.utc)
+FIXED_STATS_YESTERDAY = datetime(2026, 6, 10, 16, 10, tzinfo=timezone.utc)
+FIXED_STATS_HISTORY = datetime(2026, 6, 1, 4, 0, tzinfo=timezone.utc)
 
 
 def _create_feedback(client: TestClient, headers: dict[str, str], description: str) -> dict:
@@ -405,35 +412,36 @@ def test_admin_lists_all_feedback(
 def test_normal_user_feedback_stats_only_count_own_feedback(
     client: TestClient,
     db: Session,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_feedback_rows(db)
+    monkeypatch.setattr(feedback_route, "_utcnow", lambda: FIXED_STATS_NOW)
     own_user, own_api_key = create_key_user(db)
     own_headers = authentication_token_from_key(
         client=client, key=own_api_key.key, db=db
     )
     other_user, _ = create_key_user(db)
-    now = datetime.now(timezone.utc)
     _create_feedback_row(
         db,
         user_id=own_user.id,
         description="自己的待处理意见",
         status=FeedbackStatus.pending,
-        created_at=now - timedelta(minutes=30),
+        created_at=FIXED_STATS_TODAY,
     )
     _create_feedback_row(
         db,
         user_id=own_user.id,
         description="自己的已解决意见",
         status=FeedbackStatus.resolved,
-        created_at=now - timedelta(hours=2),
-        updated_at=now - timedelta(hours=1),
+        created_at=FIXED_STATS_TODAY,
+        updated_at=FIXED_STATS_TODAY + timedelta(hours=1),
     )
     _create_feedback_row(
         db,
         user_id=other_user.id,
         description="其他人的处理中意见",
         status=FeedbackStatus.processing,
-        created_at=now - timedelta(minutes=20),
+        created_at=FIXED_STATS_TODAY,
     )
 
     response = client.get(
@@ -463,8 +471,10 @@ def test_normal_user_feedback_stats_only_count_own_feedback(
 def test_admin_feedback_stats_count_all_feedback_and_user_ranking(
     client: TestClient,
     db: Session,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_feedback_rows(db)
+    monkeypatch.setattr(feedback_route, "_utcnow", lambda: FIXED_STATS_NOW)
     first_user, _ = create_key_user(db)
     first_user.full_name = "意见用户 A"
     first_user.svn_username = "feedback-a"
@@ -474,22 +484,21 @@ def test_admin_feedback_stats_count_all_feedback_and_user_ranking(
     db.add(first_user)
     db.add(second_user)
     db.commit()
-    now = datetime.now(timezone.utc)
     for index in range(3):
         _create_feedback_row(
             db,
             user_id=first_user.id,
             description=f"A 用户意见 {index}",
             status=FeedbackStatus.pending,
-            created_at=now - timedelta(minutes=index + 1),
+            created_at=FIXED_STATS_TODAY - timedelta(minutes=index + 1),
         )
     _create_feedback_row(
         db,
         user_id=second_user.id,
         description="B 用户已解决意见",
         status=FeedbackStatus.resolved,
-        created_at=now - timedelta(hours=3),
-        updated_at=now - timedelta(hours=1),
+        created_at=FIXED_STATS_TODAY,
+        updated_at=FIXED_STATS_TODAY + timedelta(hours=2),
     )
     admin_headers = _admin_headers(client, db)
 
@@ -522,32 +531,33 @@ def test_admin_feedback_stats_count_all_feedback_and_user_ranking(
 def test_feedback_stats_support_yesterday_and_all_ranges(
     client: TestClient,
     db: Session,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_feedback_rows(db)
+    monkeypatch.setattr(feedback_route, "_utcnow", lambda: FIXED_STATS_NOW)
     user, api_key = create_key_user(db)
     headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
-    now = datetime.now(timezone.utc)
     _create_feedback_row(
         db,
         user_id=user.id,
         description="今天的意见",
         status=FeedbackStatus.pending,
-        created_at=now - timedelta(hours=1),
+        created_at=FIXED_STATS_TODAY,
     )
     _create_feedback_row(
         db,
         user_id=user.id,
         description="昨天的意见",
         status=FeedbackStatus.processing,
-        created_at=now - timedelta(days=1, hours=1),
+        created_at=FIXED_STATS_YESTERDAY,
     )
     _create_feedback_row(
         db,
         user_id=user.id,
         description="历史意见",
         status=FeedbackStatus.resolved,
-        created_at=now - timedelta(days=10),
-        updated_at=now - timedelta(days=9),
+        created_at=FIXED_STATS_HISTORY,
+        updated_at=FIXED_STATS_HISTORY + timedelta(days=1),
     )
 
     yesterday_response = client.get(
@@ -579,8 +589,10 @@ def test_feedback_stats_support_yesterday_and_all_ranges(
 def test_feedback_stats_include_zero_statuses_and_trend_points(
     client: TestClient,
     db: Session,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_feedback_rows(db)
+    monkeypatch.setattr(feedback_route, "_utcnow", lambda: FIXED_STATS_NOW)
     user, api_key = create_key_user(db)
     headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
 
