@@ -40,6 +40,8 @@ export interface ReviewTask {
   skill_name?: string
   status: ReviewTaskStatus
   report_path?: string
+  started_at?: string | null
+  finished_at?: string | null
   error_message?: string
   progress_message?: string
   codex_log?: TaskProgressEvent[]

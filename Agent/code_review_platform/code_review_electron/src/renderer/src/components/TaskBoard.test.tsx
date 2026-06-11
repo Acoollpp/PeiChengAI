@@ -185,6 +185,49 @@ describe('TaskBoard', () => {
     expect(onCancelTask).toHaveBeenCalledWith(queuedTasks[0])
   })
 
+  it('任务卡片显示开始时间和结束时间', () => {
+    const startedAt = '2026-06-11T14:03:20'
+    const finishedAt = '2026-06-11T14:15:01'
+    const taskWithTimes: TaskViewItem = {
+      ...runningTasks[0],
+      started_at: startedAt,
+      finished_at: finishedAt
+    }
+
+    renderTaskBoard({ runningTasks: [taskWithTimes], queuedTasks: [], historyTasks: [] })
+
+    expect(screen.getByText('开始时间')).toBeInTheDocument()
+    expect(screen.getByText('结束时间')).toBeInTheDocument()
+    expect(screen.getByText('2026-06-11 14:03:20')).toBeInTheDocument()
+    expect(screen.getByText('2026-06-11 14:15:01')).toBeInTheDocument()
+  })
+
+  it('任务时间为空时显示占位符', async () => {
+    const user = userEvent.setup()
+    renderTaskBoard()
+
+    await user.click(screen.getByRole('tab', { name: '等待中 1' }))
+
+    const waitingPanel = screen.getByRole('tabpanel', { name: '等待中' })
+    expect(within(waitingPanel).getByText('开始时间')).toBeInTheDocument()
+    expect(within(waitingPanel).getByText('结束时间')).toBeInTheDocument()
+    expect(within(waitingPanel).getAllByText('-')).toHaveLength(2)
+  })
+
+  it('运行中任务只有开始时间时结束时间显示占位符', () => {
+    const taskWithStartOnly: TaskViewItem = {
+      ...runningTasks[0],
+      started_at: '2026-06-11T14:03:20',
+      finished_at: null
+    }
+
+    renderTaskBoard({ runningTasks: [taskWithStartOnly], queuedTasks: [], historyTasks: [] })
+
+    const runningPanel = screen.getByRole('tabpanel', { name: '运行中' })
+    expect(within(runningPanel).getByText('2026-06-11 14:03:20')).toBeInTheDocument()
+    expect(within(runningPanel).getByText('-')).toBeInTheDocument()
+  })
+
   it('历史任务不显示取消按钮', async () => {
     const user = userEvent.setup()
     renderTaskBoard({ onCancelTask: vi.fn() })

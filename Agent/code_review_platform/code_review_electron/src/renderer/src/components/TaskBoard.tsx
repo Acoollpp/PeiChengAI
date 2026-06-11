@@ -25,6 +25,23 @@ const statusText: Record<ReviewTask['status'], string> = {
   cancelled: '已取消'
 }
 
+function formatTaskDateTime(value?: string | null): string {
+  if (!value) {
+    return '-'
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return '-'
+  }
+
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return (
+    [date.getFullYear(), pad(date.getMonth() + 1), pad(date.getDate())].join('-') +
+    ` ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  )
+}
+
 type TaskCardProps = {
   task: TaskViewItem
   selectedTaskId?: string
@@ -64,6 +81,14 @@ function TaskCard({
         <div>
           <dt>新版本</dt>
           <dd>{task.new_revision}</dd>
+        </div>
+        <div>
+          <dt>开始时间</dt>
+          <dd>{formatTaskDateTime(task.started_at)}</dd>
+        </div>
+        <div>
+          <dt>结束时间</dt>
+          <dd>{formatTaskDateTime(task.finished_at)}</dd>
         </div>
       </dl>
       {showQueueIndex && <p className="task-queue-index">排队第 {task.queueIndex} 位</p>}
