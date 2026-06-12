@@ -274,10 +274,12 @@ class ReviewTaskReportUserStatsPublic(SQLModel):
 
 
 class ReviewTaskStatsPublic(SQLModel):
+    range: FeedbackStatsRange
     total: int
     success: int
     running: int
     failed_or_error: int
+    average_duration_seconds: int | None = None
     by_status: dict[ReviewTaskStatus, int]
     reports_by_user: list[ReviewTaskReportUserStatsPublic] = Field(default_factory=list)
 
