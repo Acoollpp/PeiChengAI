@@ -129,6 +129,9 @@ export type ReviewTaskPublic = {
     new_revision: string;
     status: ReviewTaskStatus;
     report_path?: (string | null);
+    report_name?: (string | null);
+    pdf_report_path?: (string | null);
+    pdf_report_name?: (string | null);
     error_message?: (string | null);
     client_hostname?: (string | null);
     client_version?: (string | null);

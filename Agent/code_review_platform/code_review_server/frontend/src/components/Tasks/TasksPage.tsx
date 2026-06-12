@@ -3,7 +3,7 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query"
-import { Download, ExternalLink, Search, Trash2, X } from "lucide-react"
+import { Download, ExternalLink, FileDown, Search, Trash2, X } from "lucide-react"
 import { type FormEvent, Suspense, useState } from "react"
 import { toast } from "sonner"
 
@@ -95,11 +95,17 @@ function getReviewTasksQueryOptions(
   }
 }
 
-function reportUrl(task: ReviewTask, action: "report" | "download") {
+function reportUrl(
+  task: ReviewTask,
+  action: "report" | "download" | "pdf/download",
+) {
   return `${OpenAPI.BASE}/api/v1/review-tasks/${task.id}/${action}`
 }
 
-async function fetchReport(task: ReviewTask, action: "report" | "download") {
+async function fetchReport(
+  task: ReviewTask,
+  action: "report" | "download" | "pdf/download",
+) {
   const token = localStorage.getItem("access_token")
   const response = await fetch(reportUrl(task, action), {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -122,6 +128,14 @@ async function downloadReport(task: ReviewTask) {
   const link = document.createElement("a")
   link.href = URL.createObjectURL(blob)
   link.download = `review-task-${task.id}.md`
+  link.click()
+}
+
+async function downloadPdfReport(task: ReviewTask) {
+  const blob = await fetchReport(task, "pdf/download")
+  const link = document.createElement("a")
+  link.href = URL.createObjectURL(blob)
+  link.download = `review-task-${task.id}.pdf`
   link.click()
 }
 
@@ -243,6 +257,17 @@ function ReviewTasksTable({
                       >
                         <Download />
                       </Button>
+                      {task.pdf_report_path ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label="下载 PDF 报告"
+                          onClick={() => void downloadPdfReport(task)}
+                        >
+                          <FileDown />
+                        </Button>
+                      ) : null}
                     </div>
                   ) : (
                     <span className="text-muted-foreground">-</span>

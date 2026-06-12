@@ -67,6 +67,7 @@ test.describe("Admin task navigation", () => {
               new_revision: "r2",
               status: "failed",
               report_path: null,
+              pdf_report_path: null,
               error_message: "客户端本地已生成报告，但未上传成功",
               client_hostname: "worker-01",
               client_version: "1.0.0",
@@ -116,6 +117,7 @@ test.describe("Admin task navigation", () => {
               new_revision: "r2",
               status: "running_codex",
               report_path: null,
+              pdf_report_path: null,
               error_message: null,
               client_hostname: null,
               client_version: null,
@@ -143,5 +145,45 @@ test.describe("Admin task navigation", () => {
     const cells = taskRow.getByRole("cell")
     await expect(cells.nth(5)).toContainText("2026-06-11 14:03:20")
     await expect(cells.nth(6)).toHaveText("-")
+  })
+
+  test("Admin task table shows PDF download button for tasks with PDF report", async ({
+    page,
+  }) => {
+    await logInWithKey(page, testApiKey)
+
+    await page.route("**/api/v1/review-tasks?**", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: {
+          data: [
+            {
+              id: "11111111-1111-1111-1111-111111111111",
+              user_id: "22222222-2222-2222-2222-222222222222",
+              user_name: "测试用户",
+              svn_username: "test_svn",
+              svn_url: "https://example.test/svn/project",
+              old_revision: "r1",
+              new_revision: "r2",
+              status: "success",
+              report_path: "/reports/task.md",
+              pdf_report_path: "/reports/task.pdf",
+              error_message: null,
+              client_hostname: null,
+              client_version: null,
+              started_at: "2026-06-11T14:03:20",
+              finished_at: "2026-06-11T14:08:20",
+            },
+          ],
+          count: 1,
+        },
+      })
+    })
+
+    await page.goto("/tasks/review")
+
+    await expect(
+      page.getByRole("button", { name: "下载 PDF 报告" }),
+    ).toBeVisible()
   })
 })
