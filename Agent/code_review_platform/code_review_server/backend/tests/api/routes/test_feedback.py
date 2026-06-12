@@ -1,14 +1,23 @@
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
+from sqlmodel import delete
 from sqlmodel import select
 
 from app.core.config import settings
-from app.models import Feedback, FeedbackScreenshot, User, UserRole
+from app.api.routes import feedback as feedback_route
+from app.models import Feedback, FeedbackScreenshot, FeedbackStatus, User, UserRole
 from app.services import feedback_service
 from tests.utils.user import authentication_token_from_key, create_key_user
+
+
+FIXED_STATS_NOW = datetime(2026, 6, 11, 16, 30, tzinfo=timezone.utc)
+FIXED_STATS_TODAY = datetime(2026, 6, 11, 16, 10, tzinfo=timezone.utc)
+FIXED_STATS_YESTERDAY = datetime(2026, 6, 10, 16, 10, tzinfo=timezone.utc)
+FIXED_STATS_HISTORY = datetime(2026, 6, 1, 4, 0, tzinfo=timezone.utc)
 
 
 def _create_feedback(client: TestClient, headers: dict[str, str], description: str) -> dict:
@@ -24,6 +33,42 @@ def _create_feedback(client: TestClient, headers: dict[str, str], description: s
 def _headers_for_new_user(client: TestClient, db: Session) -> dict[str, str]:
     _, api_key = create_key_user(db)
     return authentication_token_from_key(client=client, key=api_key.key, db=db)
+
+
+def _admin_headers(client: TestClient, db: Session) -> dict[str, str]:
+    admin, admin_api_key = create_key_user(db)
+    admin.role = UserRole.admin
+    db.add(admin)
+    db.commit()
+    return authentication_token_from_key(client=client, key=admin_api_key.key, db=db)
+
+
+def _create_feedback_row(
+    db: Session,
+    *,
+    user_id,
+    description: str,
+    status: FeedbackStatus = FeedbackStatus.pending,
+    created_at: datetime | None = None,
+    updated_at: datetime | None = None,
+) -> Feedback:
+    feedback = Feedback(
+        user_id=user_id,
+        description=description,
+        status=status,
+        created_at=created_at or datetime.now(timezone.utc),
+        updated_at=updated_at or created_at or datetime.now(timezone.utc),
+    )
+    db.add(feedback)
+    db.commit()
+    db.refresh(feedback)
+    return feedback
+
+
+def _clear_feedback_rows(db: Session) -> None:
+    db.exec(delete(FeedbackScreenshot))
+    db.exec(delete(Feedback))
+    db.commit()
 
 
 def _assert_private_paths_not_exposed(content: object) -> None:
@@ -362,6 +407,217 @@ def test_admin_lists_all_feedback(
     feedback_ids = {item["id"] for item in content["data"]}
     assert first_feedback["id"] in feedback_ids
     assert second_feedback["id"] in feedback_ids
+
+
+def test_normal_user_feedback_stats_only_count_own_feedback(
+    client: TestClient,
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_feedback_rows(db)
+    monkeypatch.setattr(feedback_route, "_utcnow", lambda: FIXED_STATS_NOW)
+    own_user, own_api_key = create_key_user(db)
+    own_headers = authentication_token_from_key(
+        client=client, key=own_api_key.key, db=db
+    )
+    other_user, _ = create_key_user(db)
+    _create_feedback_row(
+        db,
+        user_id=own_user.id,
+        description="自己的待处理意见",
+        status=FeedbackStatus.pending,
+        created_at=FIXED_STATS_TODAY,
+    )
+    _create_feedback_row(
+        db,
+        user_id=own_user.id,
+        description="自己的已解决意见",
+        status=FeedbackStatus.resolved,
+        created_at=FIXED_STATS_TODAY,
+        updated_at=FIXED_STATS_TODAY + timedelta(hours=1),
+    )
+    _create_feedback_row(
+        db,
+        user_id=other_user.id,
+        description="其他人的处理中意见",
+        status=FeedbackStatus.processing,
+        created_at=FIXED_STATS_TODAY,
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/feedback/stats",
+        headers=own_headers,
+        params={"range": "today"},
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["range"] == "today"
+    assert content["total"] == 2
+    assert content["pending"] == 1
+    assert content["processing"] == 0
+    assert content["resolved"] == 1
+    assert content["unresolved"] == 1
+    assert content["resolution_rate"] == 0.5
+    assert content["average_resolution_seconds"] == 3600
+    assert content["by_status"] == {
+        "pending": 1,
+        "processing": 0,
+        "resolved": 1,
+    }
+    assert content["feedback_by_user"] == []
+
+
+def test_admin_feedback_stats_count_all_feedback_and_user_ranking(
+    client: TestClient,
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_feedback_rows(db)
+    monkeypatch.setattr(feedback_route, "_utcnow", lambda: FIXED_STATS_NOW)
+    first_user, _ = create_key_user(db)
+    first_user.full_name = "意见用户 A"
+    first_user.svn_username = "feedback-a"
+    second_user, _ = create_key_user(db)
+    second_user.full_name = "意见用户 B"
+    second_user.svn_username = "feedback-b"
+    db.add(first_user)
+    db.add(second_user)
+    db.commit()
+    for index in range(3):
+        _create_feedback_row(
+            db,
+            user_id=first_user.id,
+            description=f"A 用户意见 {index}",
+            status=FeedbackStatus.pending,
+            created_at=FIXED_STATS_TODAY - timedelta(minutes=index + 1),
+        )
+    _create_feedback_row(
+        db,
+        user_id=second_user.id,
+        description="B 用户已解决意见",
+        status=FeedbackStatus.resolved,
+        created_at=FIXED_STATS_TODAY,
+        updated_at=FIXED_STATS_TODAY + timedelta(hours=2),
+    )
+    admin_headers = _admin_headers(client, db)
+
+    response = client.get(
+        f"{settings.API_V1_STR}/feedback/stats",
+        headers=admin_headers,
+        params={"range": "today"},
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["total"] == 4
+    assert content["pending"] == 3
+    assert content["processing"] == 0
+    assert content["resolved"] == 1
+    assert content["feedback_by_user"][:2] == [
+        {
+            "user_name": "意见用户 A",
+            "svn_username": "feedback-a",
+            "feedback_count": 3,
+        },
+        {
+            "user_name": "意见用户 B",
+            "svn_username": "feedback-b",
+            "feedback_count": 1,
+        },
+    ]
+
+
+def test_feedback_stats_support_yesterday_and_all_ranges(
+    client: TestClient,
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_feedback_rows(db)
+    monkeypatch.setattr(feedback_route, "_utcnow", lambda: FIXED_STATS_NOW)
+    user, api_key = create_key_user(db)
+    headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
+    _create_feedback_row(
+        db,
+        user_id=user.id,
+        description="今天的意见",
+        status=FeedbackStatus.pending,
+        created_at=FIXED_STATS_TODAY,
+    )
+    _create_feedback_row(
+        db,
+        user_id=user.id,
+        description="昨天的意见",
+        status=FeedbackStatus.processing,
+        created_at=FIXED_STATS_YESTERDAY,
+    )
+    _create_feedback_row(
+        db,
+        user_id=user.id,
+        description="历史意见",
+        status=FeedbackStatus.resolved,
+        created_at=FIXED_STATS_HISTORY,
+        updated_at=FIXED_STATS_HISTORY + timedelta(days=1),
+    )
+
+    yesterday_response = client.get(
+        f"{settings.API_V1_STR}/feedback/stats",
+        headers=headers,
+        params={"range": "yesterday"},
+    )
+    all_response = client.get(
+        f"{settings.API_V1_STR}/feedback/stats",
+        headers=headers,
+        params={"range": "all"},
+    )
+
+    assert yesterday_response.status_code == 200
+    yesterday = yesterday_response.json()
+    assert yesterday["range"] == "yesterday"
+    assert yesterday["total"] == 1
+    assert yesterday["processing"] == 1
+
+    assert all_response.status_code == 200
+    all_stats = all_response.json()
+    assert all_stats["range"] == "all"
+    assert all_stats["total"] == 3
+    assert all_stats["pending"] == 1
+    assert all_stats["processing"] == 1
+    assert all_stats["resolved"] == 1
+
+
+def test_feedback_stats_include_zero_statuses_and_trend_points(
+    client: TestClient,
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_feedback_rows(db)
+    monkeypatch.setattr(feedback_route, "_utcnow", lambda: FIXED_STATS_NOW)
+    user, api_key = create_key_user(db)
+    headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
+
+    response = client.get(
+        f"{settings.API_V1_STR}/feedback/stats",
+        headers=headers,
+        params={"range": "today"},
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["total"] == 0
+    assert content["pending"] == 0
+    assert content["processing"] == 0
+    assert content["resolved"] == 0
+    assert content["unresolved"] == 0
+    assert content["resolution_rate"] == 0
+    assert content["average_resolution_seconds"] is None
+    assert content["by_status"] == {
+        "pending": 0,
+        "processing": 0,
+        "resolved": 0,
+    }
+    assert len(content["trend"]) == 24
+    assert all(point["count"] == 0 for point in content["trend"])
 
 
 def test_normal_user_cannot_read_other_user_feedback(

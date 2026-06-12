@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router"
 
+import { FeedbackStatsPanel } from "@/components/Home/FeedbackStatsPanel"
 import { TaskStatsPanel } from "@/components/Home/TaskStatsPanel"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useAuth from "@/hooks/useAuth"
 
 export const Route = createFileRoute("/_layout/")({
@@ -27,7 +29,18 @@ function Home() {
         </h1>
         <p className="text-muted-foreground">欢迎回来，很高兴再次见到你。</p>
       </div>
-      <TaskStatsPanel />
+      <Tabs defaultValue="tasks" className="gap-4">
+        <TabsList>
+          <TabsTrigger value="tasks">任务统计</TabsTrigger>
+          <TabsTrigger value="feedback">意见统计</TabsTrigger>
+        </TabsList>
+        <TabsContent value="tasks">
+          <TaskStatsPanel />
+        </TabsContent>
+        <TabsContent value="feedback">
+          <FeedbackStatsPanel />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query"
 import {
-  Activity,
   AlertTriangle,
   CheckCircle2,
   ClipboardList,
+  Clock3,
 } from "lucide-react"
+import { useState } from "react"
 
 import { OpenAPI } from "@/client"
+import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
@@ -28,11 +30,15 @@ type ReviewTaskStatus =
   | "environment_error"
   | "cancelled"
 
+type TaskStatsRange = "today" | "yesterday" | "all"
+
 type ReviewTaskStats = {
+  range: TaskStatsRange
   total: number
   success: number
   running: number
   failed_or_error: number
+  average_duration_seconds: number | null
   by_status: Record<ReviewTaskStatus, number>
   reports_by_user: Array<{
     user_name: string | null
@@ -50,6 +56,12 @@ const statusLabels: Array<{ key: ReviewTaskStatus; label: string }> = [
   { key: "failed", label: "失败" },
   { key: "environment_error", label: "环境异常" },
   { key: "cancelled", label: "已取消" },
+]
+
+const rangeOptions: Array<{ label: string; value: TaskStatsRange }> = [
+  { label: "今日", value: "today" },
+  { label: "昨日", value: "yesterday" },
+  { label: "累计", value: "all" },
 ]
 
 const emptyStatusCounts: Record<ReviewTaskStatus, number> = {
@@ -74,11 +86,33 @@ const reportBarClasses = [
   "bg-fuchsia-500",
 ]
 
-async function readReviewTaskStats(): Promise<ReviewTaskStats> {
+function formatDuration(seconds: number | null | undefined) {
+  if (seconds == null) {
+    return "-"
+  }
+
+  if (seconds < 3600) {
+    return `${Math.round(seconds / 60)}分钟`
+  }
+
+  if (seconds < 86400) {
+    return `${Math.round(seconds / 3600)}小时`
+  }
+
+  return `${Math.round(seconds / 86400)}天`
+}
+
+async function readReviewTaskStats(
+  range: TaskStatsRange,
+): Promise<ReviewTaskStats> {
   const token = localStorage.getItem("access_token")
-  const response = await fetch(`${OpenAPI.BASE}/api/v1/review-tasks/stats`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  })
+  const searchParams = new URLSearchParams({ range })
+  const response = await fetch(
+    `${OpenAPI.BASE}/api/v1/review-tasks/stats?${searchParams}`,
+    {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    },
+  )
 
   if (!response.ok) {
     throw new Error("Failed to load review task stats")
@@ -98,14 +132,20 @@ async function readReviewTaskStats(): Promise<ReviewTaskStats> {
 
 export function TaskStatsPanel() {
   const { user: currentUser } = useAuth()
+  const [selectedRange, setSelectedRange] = useState<TaskStatsRange>("today")
   const {
     data: stats,
     isError,
     isLoading,
   } = useQuery({
     enabled: Boolean(currentUser),
-    queryFn: readReviewTaskStats,
-    queryKey: ["review-task-stats", currentUser?.id, currentUser?.role],
+    queryFn: () => readReviewTaskStats(selectedRange),
+    queryKey: [
+      "review-task-stats",
+      currentUser?.id,
+      currentUser?.role,
+      selectedRange,
+    ],
   })
 
   if (!currentUser || isLoading) {
@@ -153,9 +193,9 @@ export function TaskStatsPanel() {
       iconClassName: "text-destructive",
     },
     {
-      icon: Activity,
-      label: "运行中数",
-      value: stats.running,
+      icon: Clock3,
+      label: "平均运行时间",
+      value: formatDuration(stats.average_duration_seconds),
       iconClassName: "text-blue-600",
     },
   ]
@@ -174,11 +214,27 @@ export function TaskStatsPanel() {
 
   return (
     <section className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">任务统计</h2>
-        <p className="text-sm text-muted-foreground">
-          当前权限范围内的代码审查任务数量。
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">任务统计</h2>
+          <p className="text-sm text-muted-foreground">
+            当前权限范围内的代码审查任务数量。
+          </p>
+        </div>
+        <div className="flex w-fit rounded-lg bg-muted p-1">
+          {rangeOptions.map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              size="sm"
+              variant={selectedRange === option.value ? "secondary" : "ghost"}
+              className="h-8 px-3"
+              onClick={() => setSelectedRange(option.value)}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

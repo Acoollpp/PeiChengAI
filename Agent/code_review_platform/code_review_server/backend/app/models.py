@@ -38,6 +38,12 @@ class FeedbackStatus(str, Enum):
     resolved = "resolved"
 
 
+class FeedbackStatsRange(str, Enum):
+    today = "today"
+    yesterday = "yesterday"
+    all = "all"
+
+
 # Shared properties
 class UserBase(SQLModel):
     is_active: bool = True
@@ -268,10 +274,12 @@ class ReviewTaskReportUserStatsPublic(SQLModel):
 
 
 class ReviewTaskStatsPublic(SQLModel):
+    range: FeedbackStatsRange
     total: int
     success: int
     running: int
     failed_or_error: int
+    average_duration_seconds: int | None = None
     by_status: dict[ReviewTaskStatus, int]
     reports_by_user: list[ReviewTaskReportUserStatsPublic] = Field(default_factory=list)
 
@@ -309,6 +317,31 @@ class FeedbacksPublic(SQLModel):
 
 class FeedbackStatusUpdate(SQLModel):
     status: FeedbackStatus
+
+
+class FeedbackTrendPointPublic(SQLModel):
+    label: str
+    count: int
+
+
+class FeedbackUserStatsPublic(SQLModel):
+    user_name: str | None = None
+    svn_username: str | None = None
+    feedback_count: int
+
+
+class FeedbackStatsPublic(SQLModel):
+    range: FeedbackStatsRange
+    total: int
+    pending: int
+    processing: int
+    resolved: int
+    unresolved: int
+    resolution_rate: float
+    average_resolution_seconds: int | None = None
+    by_status: dict[FeedbackStatus, int]
+    trend: list[FeedbackTrendPointPublic] = Field(default_factory=list)
+    feedback_by_user: list[FeedbackUserStatsPublic] = Field(default_factory=list)
 
 
 class SkillPackage(SQLModel, table=True):

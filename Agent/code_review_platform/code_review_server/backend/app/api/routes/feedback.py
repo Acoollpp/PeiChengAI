@@ -1,7 +1,8 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -14,18 +15,98 @@ from app.models import (
     FeedbackPublic,
     FeedbackScreenshot,
     FeedbackScreenshotPublic,
+    FeedbackStatsPublic,
+    FeedbackStatsRange,
     FeedbacksPublic,
     FeedbackStatus,
     FeedbackStatusUpdate,
+    FeedbackTrendPointPublic,
+    FeedbackUserStatsPublic,
     User,
 )
 from app.services import feedback_service
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
+FEEDBACK_STATS_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _feedback_scope_filters(current_user: CurrentUser) -> list[Any]:
+    if has_admin_privileges(current_user):
+        return []
+    return [Feedback.user_id == current_user.id]
+
+
+def _range_bounds(
+    stats_range: FeedbackStatsRange,
+    now: datetime | None = None,
+) -> tuple[datetime | None, datetime | None]:
+    if stats_range == FeedbackStatsRange.all:
+        return None, None
+
+    current = (now or _utcnow()).astimezone(FEEDBACK_STATS_TIMEZONE)
+    today_start = datetime.combine(
+        current.date(),
+        time.min,
+        tzinfo=FEEDBACK_STATS_TIMEZONE,
+    )
+    if stats_range == FeedbackStatsRange.today:
+        start = today_start
+        end = current
+    else:
+        start = today_start - timedelta(days=1)
+        end = today_start
+
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+
+
+def _range_filters(
+    stats_range: FeedbackStatsRange,
+) -> list[Any]:
+    start, end = _range_bounds(stats_range)
+    filters: list[Any] = []
+    if start is not None:
+        filters.append(Feedback.created_at >= start)
+    if end is not None:
+        filters.append(Feedback.created_at < end)
+    return filters
+
+
+def _trend_points(
+    *,
+    session: SessionDep,
+    filters: list[Any],
+    stats_range: FeedbackStatsRange,
+) -> list[FeedbackTrendPointPublic]:
+    rows = session.exec(
+        select(Feedback.created_at).where(*filters).order_by(col(Feedback.created_at))
+    ).all()
+
+    if stats_range in {FeedbackStatsRange.today, FeedbackStatsRange.yesterday}:
+        counts = dict.fromkeys(range(24), 0)
+        for created_at in rows:
+            if created_at is None:
+                continue
+            hour = created_at.astimezone(FEEDBACK_STATS_TIMEZONE).hour
+            counts[hour] += 1
+        return [
+            FeedbackTrendPointPublic(label=f"{hour:02d}:00", count=count)
+            for hour, count in counts.items()
+        ]
+
+    counts_by_date: dict[str, int] = {}
+    for created_at in rows:
+        if created_at is None:
+            continue
+        label = created_at.astimezone(FEEDBACK_STATS_TIMEZONE).date().isoformat()
+        counts_by_date[label] = counts_by_date.get(label, 0) + 1
+    return [
+        FeedbackTrendPointPublic(label=label, count=count)
+        for label, count in list(counts_by_date.items())[-30:]
+    ]
 
 
 def _feedback_public(feedback: Feedback, user: User | None = None) -> FeedbackPublic:
@@ -173,6 +254,81 @@ def read_feedback(
     return FeedbacksPublic(
         data=[_feedback_public(feedback, user) for feedback, user in rows],
         count=count,
+    )
+
+
+@router.get("/stats", response_model=FeedbackStatsPublic)
+def read_feedback_stats(
+    session: SessionDep,
+    current_user: CurrentUser,
+    range: FeedbackStatsRange = FeedbackStatsRange.today,
+) -> Any:
+    filters = [
+        *_feedback_scope_filters(current_user),
+        *_range_filters(range),
+    ]
+
+    rows = session.exec(
+        select(Feedback.status, func.count()).where(*filters).group_by(Feedback.status)
+    ).all()
+    by_status = dict.fromkeys(FeedbackStatus, 0)
+    for status, count in rows:
+        by_status[status] = count
+
+    total = sum(by_status.values())
+    resolved = by_status[FeedbackStatus.resolved]
+    unresolved = by_status[FeedbackStatus.pending] + by_status[FeedbackStatus.processing]
+    resolution_rate = resolved / total if total else 0
+
+    resolved_rows = session.exec(
+        select(Feedback.created_at, Feedback.updated_at).where(
+            *filters,
+            Feedback.status == FeedbackStatus.resolved,
+            Feedback.created_at.is_not(None),
+            Feedback.updated_at.is_not(None),
+        )
+    ).all()
+    durations = [
+        int((updated_at - created_at).total_seconds())
+        for created_at, updated_at in resolved_rows
+        if created_at is not None and updated_at is not None and updated_at >= created_at
+    ]
+    average_resolution_seconds = (
+        int(sum(durations) / len(durations)) if durations else None
+    )
+
+    feedback_by_user: list[FeedbackUserStatsPublic] = []
+    if has_admin_privileges(current_user):
+        feedback_count = func.count(Feedback.id)
+        user_rows = session.exec(
+            select(User.full_name, User.svn_username, feedback_count)
+            .join(User, Feedback.user_id == User.id)
+            .where(*filters)
+            .group_by(User.id, User.full_name, User.svn_username)
+            .order_by(feedback_count.desc(), User.full_name)
+            .limit(10)
+        ).all()
+        feedback_by_user = [
+            FeedbackUserStatsPublic(
+                user_name=user_name,
+                svn_username=svn_username,
+                feedback_count=count,
+            )
+            for user_name, svn_username, count in user_rows
+        ]
+
+    return FeedbackStatsPublic(
+        range=range,
+        total=total,
+        pending=by_status[FeedbackStatus.pending],
+        processing=by_status[FeedbackStatus.processing],
+        resolved=resolved,
+        unresolved=unresolved,
+        resolution_rate=resolution_rate,
+        average_resolution_seconds=average_resolution_seconds,
+        by_status=by_status,
+        trend=_trend_points(session=session, filters=filters, stats_range=range),
+        feedback_by_user=feedback_by_user,
     )
 
 
