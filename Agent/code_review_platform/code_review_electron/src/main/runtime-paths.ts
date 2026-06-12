@@ -9,6 +9,7 @@ export interface RuntimePaths {
   workspacesDir: string
   workspaceForTask(taskId: string): string
   reportPathForTask(taskId: string, reportFileName?: string): string
+  pdfReportPathForTask?: (taskId: string) => string
   imagesDirForTask(taskId: string): string
 }
 
@@ -34,6 +35,8 @@ export const getRuntimePaths = async (): Promise<RuntimePaths> => {
     workspaceForTask: (taskId: string) => pathApi.join(workspacesDir, taskId),
     reportPathForTask: (taskId: string, reportFileName = REVIEW_REPORT_FILE_NAME) =>
       pathApi.join(workspacesDir, taskId, reportFileName),
+    pdfReportPathForTask: (taskId: string) =>
+      pathApi.join(workspacesDir, taskId, REVIEW_REPORT_FILE_NAME.replace(/\.md$/i, '.pdf')),
     imagesDirForTask: (taskId: string) => pathApi.join(workspacesDir, taskId, REVIEW_REPORT_IMAGES_DIR_NAME)
   }
 }

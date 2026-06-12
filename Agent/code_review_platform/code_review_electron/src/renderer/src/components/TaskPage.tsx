@@ -45,11 +45,13 @@ export function TaskPage({
   const [error, setError] = useState('')
   const [reportMessage, setReportMessage] = useState('')
   const [currentReportPath, setCurrentReportPath] = useState<string>()
+  const [currentPdfPath, setCurrentPdfPath] = useState<string>()
   const [isLoadingTasks, setIsLoadingTasks] = useState(true)
   const [selectedTaskId, setSelectedTaskId] = useState<string>()
   const [loadingReportTaskId, setLoadingReportTaskId] = useState<string>()
   const [showSubmitFeedback, setShowSubmitFeedback] = useState(false)
   const selectedTaskIdRef = useRef<string | undefined>(undefined)
+  const currentPdfPathRef = useRef<string | undefined>(undefined)
   const isMountedRef = useRef(true)
 
   const canRunTask = environment?.status === 'ready' && !environment.skillError
@@ -60,6 +62,11 @@ export function TaskPage({
     isInstallingCodex ||
     isInstallingSvn
   const activeSkillNames = environment?.skills?.map((skill) => skill.name)
+  const setActivePdfPath = useCallback((pdfPath: string | undefined): void => {
+    currentPdfPathRef.current = pdfPath
+    setCurrentPdfPath(pdfPath)
+  }, [])
+
   const handleTaskSuccess = useCallback((task: TaskViewItem): void => {
     if (!isMountedRef.current) {
       return
@@ -74,11 +81,12 @@ export function TaskPage({
     }
     setSelectedTaskId(task.id)
     selectedTaskIdRef.current = task.id
+    setActivePdfPath(task.pdfPath)
     if (task.report_path) {
       setCurrentReportPath(task.report_path)
       setReportMessage(`报告已生成：${task.report_path}`)
     }
-  }, [])
+  }, [setActivePdfPath])
   const {
     runningTasks,
     queuedTasks,
@@ -103,13 +111,14 @@ export function TaskPage({
       setSelectedTemplateKey(templateKey)
       setMarkdown(REVIEW_TEMPLATE_PREVIEWS[templateKey])
       setCurrentReportPath(undefined)
+      setActivePdfPath(undefined)
       setReportMessage('')
       selectedTaskIdRef.current = undefined
       setSelectedTaskId(undefined)
       setLoadingReportTaskId(undefined)
       setError('')
     },
-    []
+    [setActivePdfPath]
   )
 
   useEffect(() => {
@@ -172,10 +181,12 @@ export function TaskPage({
     if (task.reportMarkdown && task.report_path) {
       setMarkdown(task.reportMarkdown)
       setCurrentReportPath(task.report_path)
+      setActivePdfPath(task.pdfPath)
       return
     }
 
     setLoadingReportTaskId(task.id)
+    setActivePdfPath(undefined)
 
     try {
       const reportMarkdown = await window.codeReview.readTaskReport(task.id)
@@ -184,6 +195,7 @@ export function TaskPage({
       }
       setMarkdown(reportMarkdown)
       setCurrentReportPath(undefined)
+      setActivePdfPath(undefined)
     } catch (reportError) {
       if (!isMountedRef.current) {
         return
@@ -196,7 +208,7 @@ export function TaskPage({
     }
   }
 
-  const handleDownload = async (): Promise<void> => {
+  const handleOpenPdfReport = async (): Promise<void> => {
     if (!isMountedRef.current) {
       return
     }
@@ -204,28 +216,30 @@ export function TaskPage({
     setError('')
     setReportMessage('')
 
-    if (!selectedTaskId) {
+    const taskId = selectedTaskIdRef.current
+
+    if (!taskId) {
       setError('请先选择一个已完成任务报告。')
       return
     }
 
     try {
-      const result = await window.codeReview.downloadCurrentReport(selectedTaskId)
+      const result = await window.codeReview.openPdfReport({
+        taskId,
+        localPdfPath: currentPdfPathRef.current
+      })
       if (!isMountedRef.current) {
         return
       }
-      if (result.status !== 'ready' || !result.reportPath) {
-        setError('暂无可查看位置的成功审查报告。')
-        return
-      }
 
-      setReportMessage(`报告位置：${result.reportPath}`)
-      setCurrentReportPath(result.reportPath)
+      setReportMessage(`PDF报告位置：${result.pdfPath}`)
+      setActivePdfPath(result.pdfPath)
     } catch (downloadError) {
       if (!isMountedRef.current) {
         return
       }
-      setError(downloadError instanceof Error ? downloadError.message : '报告位置打开失败。')
+      const message = downloadError instanceof Error ? downloadError.message : 'PDF报告打开失败。'
+      setError(message.includes('404') ? '该历史任务没有 PDF 报告，请查看 Markdown 或重新生成报告。' : message)
     }
   }
 
@@ -299,8 +313,8 @@ export function TaskPage({
             <p className="eyebrow">Markdown</p>
             <h2>审查报告</h2>
           </div>
-          <button className="secondary-button" type="button" onClick={() => void handleDownload()}>
-            查看报告位置
+          <button className="secondary-button" type="button" onClick={() => void handleOpenPdfReport()}>
+            查看PDF报告
           </button>
         </div>
         <MarkdownPreview markdown={markdown} reportPath={currentReportPath} />

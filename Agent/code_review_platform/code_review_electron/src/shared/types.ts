@@ -40,6 +40,8 @@ export interface ReviewTask {
   skill_name?: string
   status: ReviewTaskStatus
   report_path?: string
+  pdf_report_path?: string
+  pdf_report_name?: string
   started_at?: string | null
   finished_at?: string | null
   error_message?: string

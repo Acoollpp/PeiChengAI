@@ -28,6 +28,19 @@ const makeTask = (overrides: Partial<ReviewTask> = {}): ReviewTask => ({
   ...overrides
 })
 
+const withPdfDependencies = (
+  dependencies: Omit<TaskAgentDependencies, 'generatePdfReport' | 'uploadPdfReport'> &
+    Partial<Pick<TaskAgentDependencies, 'generatePdfReport' | 'uploadPdfReport'>>
+): TaskAgentDependencies => ({
+  generatePdfReport: vi.fn(async (reportPath: string) => ({
+    status: 'ready' as const,
+    reportPath,
+    pdfPath: reportPath.replace(/\.md$/i, '.pdf')
+  })),
+  uploadPdfReport: vi.fn(),
+  ...dependencies
+})
+
 describe('executeReviewTask', () => {
   let tempDirs: string[] = []
 
@@ -70,7 +83,7 @@ describe('executeReviewTask', () => {
 
   it('marks task as environment_error and skips codex/upload when SVN CLI is missing', async () => {
     const calls: string[] = []
-    const dependencies: TaskAgentDependencies = {
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
       api: {
         createTask: vi.fn(async () => {
           calls.push('createTask')
@@ -87,7 +100,7 @@ describe('executeReviewTask', () => {
       prepareWorkspace: vi.fn(),
       runCodex: vi.fn(),
       uploadReport: vi.fn()
-    }
+    })
 
     const result = await executeReviewTask({ token: 'token-123', request }, dependencies)
 
@@ -111,9 +124,10 @@ describe('executeReviewTask', () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-'))
     tempDirs.push(cwd)
     const reportPath = join(cwd, '代码审查报告.md')
+    const pdfPath = join(cwd, '代码审查报告.pdf')
     const imagesDir = join(cwd, 'images')
     const calls: string[] = []
-    const dependencies: TaskAgentDependencies = {
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
       api: {
         createTask: vi.fn(async () => {
           calls.push('createTask')
@@ -135,10 +149,18 @@ describe('executeReviewTask', () => {
         calls.push('runCodex')
         await writeFile(reportPath, '# report\n')
       }),
+      generatePdfReport: vi.fn(async () => {
+        calls.push('generatePdfReport')
+        await writeFile(pdfPath, '%PDF-1.4\n')
+        return { status: 'ready' as const, reportPath, pdfPath }
+      }),
       uploadReport: vi.fn(async () => {
         calls.push('uploadReport')
+      }),
+      uploadPdfReport: vi.fn(async () => {
+        calls.push('uploadPdfReport')
       })
-    }
+    })
 
     const result = await executeReviewTask({ token: 'token-123', request }, dependencies)
 
@@ -146,7 +168,8 @@ describe('executeReviewTask', () => {
       taskId: 'task-1',
       status: 'success',
       reportMarkdown: '# report\n',
-      reportPath
+      reportPath,
+      pdfPath
     })
     expect(dependencies.runCodex).toHaveBeenCalledWith({
       cwd,
@@ -155,7 +178,9 @@ describe('executeReviewTask', () => {
       skillName: '通用-代码审查-模版二',
       task: makeTask()
     })
+    expect(dependencies.generatePdfReport).toHaveBeenCalledWith(reportPath)
     expect(dependencies.uploadReport).toHaveBeenCalledWith('token-123', 'task-1', reportPath)
+    expect(dependencies.uploadPdfReport).toHaveBeenCalledWith('token-123', 'task-1', pdfPath)
     expect(dependencies.prepareWorkspace).toHaveBeenCalledWith({
       taskId: 'task-1',
       svnUrl: 'svn://repo/project',
@@ -170,7 +195,9 @@ describe('executeReviewTask', () => {
       'status:running_codex',
       'runCodex',
       'status:uploading_report',
-      'uploadReport'
+      'generatePdfReport',
+      'uploadReport',
+      'uploadPdfReport'
     ])
     expect(dependencies.api.updateTaskStatus).not.toHaveBeenCalledWith(
       'token-123',
@@ -182,13 +209,51 @@ describe('executeReviewTask', () => {
     )
   })
 
+  it('marks task failed when PDF generation fails after markdown is ready', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-pdf-fail-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '代码审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => makeTask()),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      runCodex: vi.fn(async () => {
+        await writeFile(reportPath, '# report\n')
+      }),
+      generatePdfReport: vi.fn(async () => {
+        throw new Error('PDF报告生成失败：报告图片不存在')
+      }),
+      uploadReport: vi.fn(),
+      uploadPdfReport: vi.fn()
+    })
+
+    await expect(executeReviewTask({ token: 'token-123', request }, dependencies)).rejects.toThrow(
+      'PDF报告生成失败'
+    )
+
+    expect(dependencies.uploadReport).not.toHaveBeenCalled()
+    expect(dependencies.uploadPdfReport).not.toHaveBeenCalled()
+    expect(dependencies.api.updateTaskStatus).toHaveBeenLastCalledWith(
+      'token-123',
+      'task-1',
+      expect.objectContaining({
+        status: 'failed',
+        error_message: expect.stringContaining('PDF报告生成失败')
+      })
+    )
+  })
+
   it('取消信号触发后标记任务为已取消且不上传报告', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-cancel-'))
     tempDirs.push(cwd)
     const reportPath = join(cwd, '代码审查报告.md')
     const imagesDir = join(cwd, 'images')
     const controller = new AbortController()
-    const dependencies: TaskAgentDependencies = {
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
       api: {
         createTask: vi.fn(async () => makeTask()),
         updateTaskStatus: vi.fn(async () => undefined)
@@ -200,7 +265,7 @@ describe('executeReviewTask', () => {
         controller.abort()
       }),
       uploadReport: vi.fn()
-    }
+    })
 
     await expect(
       executeReviewTask(
@@ -225,7 +290,7 @@ describe('executeReviewTask', () => {
     const reportPath = join(cwd, '代码审查报告.md')
     const imagesDir = join(cwd, 'images')
     const events: string[] = []
-    const dependencies: TaskAgentDependencies = {
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
       api: {
         createTask: vi.fn(async () => makeTask()),
         updateTaskStatus: vi.fn(async () => undefined)
@@ -242,7 +307,7 @@ describe('executeReviewTask', () => {
         await writeFile(reportPath, '# report\n')
       }),
       uploadReport: vi.fn()
-    }
+    })
 
     await executeReviewTask(
       { token: 'token-123', request, clientTaskId: 'local-task-1' },
@@ -269,7 +334,7 @@ describe('executeReviewTask', () => {
     tempDirs.push(cwd)
     const reportPath = join(cwd, '代码审查报告.md')
     const imagesDir = join(cwd, 'images')
-    const dependencies: TaskAgentDependencies = {
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
       api: {
         createTask: vi.fn(async () => makeTask()),
         updateTaskStatus: vi.fn(async () => undefined)
@@ -280,7 +345,7 @@ describe('executeReviewTask', () => {
         throw new Error(`failure using token secret-token at ${cwd}`)
       }),
       uploadReport: vi.fn()
-    }
+    })
 
     await expect(executeReviewTask({ token: 'secret-token', request }, dependencies)).rejects.toThrow(
       'failure using token secret-token'
@@ -302,7 +367,7 @@ describe('executeReviewTask', () => {
     tempDirs.push(cwd)
     const reportPath = join(cwd, '代码审查报告.md')
     const imagesDir = join(cwd, 'images')
-    const dependencies: TaskAgentDependencies = {
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
       api: {
         createTask: vi.fn(async () => makeTask()),
         updateTaskStatus: vi.fn(async () => undefined)
@@ -313,7 +378,7 @@ describe('executeReviewTask', () => {
         throw new Error('failed with password=hunter2 access_token: abc Bearer xyz')
       }),
       uploadReport: vi.fn()
-    }
+    })
 
     await expect(executeReviewTask({ token: 'token-123', request }, dependencies)).rejects.toThrow(
       'failed with password=hunter2'
@@ -329,7 +394,7 @@ describe('executeReviewTask', () => {
   })
 
   it('fails and reports failed status when no review template Skill is selected', async () => {
-    const dependencies: TaskAgentDependencies = {
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
       api: {
         createTask: vi.fn(async () =>
           makeTask({
@@ -343,7 +408,7 @@ describe('executeReviewTask', () => {
       prepareWorkspace: vi.fn(),
       runCodex: vi.fn(),
       uploadReport: vi.fn()
-    }
+    })
 
     const requestWithoutSkill = {
       svn_url: request.svn_url,

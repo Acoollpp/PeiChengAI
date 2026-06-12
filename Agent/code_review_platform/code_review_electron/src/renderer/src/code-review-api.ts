@@ -60,6 +60,7 @@ export interface ExecuteTaskResult {
   status: ReviewTaskStatus
   reportMarkdown?: string
   reportPath?: string
+  pdfPath?: string
 }
 
 export interface CancelTaskRequest {
@@ -102,6 +103,16 @@ export interface DownloadCurrentReportResult {
   status: 'ready' | 'missing'
   taskId?: string
   reportPath?: string
+}
+
+export interface OpenPdfReportRequest {
+  taskId?: string
+  localPdfPath?: string
+}
+
+export interface OpenPdfReportResult {
+  status: 'ready'
+  pdfPath: string
 }
 
 export interface ReadReportAssetRequest {
@@ -158,6 +169,7 @@ export interface CodeReviewApi {
   cancelTask(payload: CancelTaskRequest): Promise<CancelTaskResult>
   onTaskProgress(callback: (event: TaskProgressEvent) => void): () => void
   downloadCurrentReport(taskId?: string): Promise<DownloadCurrentReportResult>
+  openPdfReport(payload: OpenPdfReportRequest): Promise<OpenPdfReportResult>
   readReportAsset(payload: ReadReportAssetRequest): Promise<ReadReportAssetResult>
   installCodex(): Promise<EnvironmentCheckResult>
   installSvn(): Promise<EnvironmentCheckResult>

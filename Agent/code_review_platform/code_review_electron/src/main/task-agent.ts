@@ -3,7 +3,8 @@ import { mkdir, readFile } from 'node:fs/promises'
 import type { ApiClient, CreateTaskRequest, UpdateTaskStatusRequest } from './api-client'
 import { checkEnvironment, type EnvironmentCheckResult } from './environment-checker'
 import { buildReviewPrompt, CodexReviewError, runCodexReview, type CodexErrorCode } from './codex-runner'
-import { ensureReportReady, uploadReportFile } from './report-uploader'
+import { generatePdfReport, type GeneratePdfReportResult } from './report-pdf-generator'
+import { ensureReportReady, uploadPdfReportFile, uploadReportFile } from './report-uploader'
 import { getRuntimePaths } from './runtime-paths'
 import { resolveReviewReportFileName, type RunSvnLog } from './svn-report-name-resolver'
 import type {
@@ -52,6 +53,7 @@ export interface ExecuteReviewTaskResult {
   status: ReviewTaskStatus
   reportMarkdown?: string
   reportPath?: string
+  pdfPath?: string
 }
 
 export interface TaskAgentApi {
@@ -69,7 +71,9 @@ export interface TaskAgentDependencies {
   checkEnvironment: () => Promise<EnvironmentCheckResult>
   prepareWorkspace: (input: PrepareWorkspaceInput) => Promise<PreparedWorkspace>
   runCodex: (input: RunCodexInput) => Promise<unknown>
+  generatePdfReport: (reportPath: string) => Promise<GeneratePdfReportResult>
   uploadReport: (token: string, taskId: string, reportPath: string) => Promise<unknown>
+  uploadPdfReport: (token: string, taskId: string, pdfPath: string) => Promise<unknown>
 }
 
 export type TaskProgressReporter = (event: TaskProgressEvent) => void
@@ -176,7 +180,9 @@ export const createTaskAgentDependencies = (api: ApiClient): TaskAgentDependenci
   checkEnvironment,
   prepareWorkspace: defaultPrepareWorkspace,
   runCodex: defaultRunCodex,
-  uploadReport: (token, taskId, reportPath) => uploadReportFile(api, token, taskId, reportPath)
+  generatePdfReport,
+  uploadReport: (token, taskId, reportPath) => uploadReportFile(api, token, taskId, reportPath),
+  uploadPdfReport: (token, taskId, pdfPath) => uploadPdfReportFile(api, token, taskId, pdfPath)
 })
 
 export const executeReviewTask = async (
@@ -247,7 +253,11 @@ export const executeReviewTask = async (
 
     await ensureReportReady(workspace.reportPath)
     throwIfCancelled(input.signal)
+    const pdfResult = await dependencies.generatePdfReport(workspace.reportPath)
+    throwIfCancelled(input.signal)
     await dependencies.uploadReport(input.token, task.id, workspace.reportPath)
+    throwIfCancelled(input.signal)
+    await dependencies.uploadPdfReport(input.token, task.id, pdfResult.pdfPath)
     throwIfCancelled(input.signal)
     const reportMarkdown = await readFile(workspace.reportPath, 'utf8')
 
@@ -256,7 +266,8 @@ export const executeReviewTask = async (
       taskId: task.id,
       status: 'success',
       reportMarkdown,
-      reportPath: workspace.reportPath
+      reportPath: workspace.reportPath,
+      pdfPath: pdfResult.pdfPath
     }
   } catch (error) {
     if (isCancelledError(error) || input.signal?.aborted) {

@@ -19,6 +19,7 @@ import { installSvnCli } from './svn-cli-installer'
 import { CredentialStore, type RememberedCredentials } from './credential-store'
 import { checkEnvironment } from './environment-checker'
 import type { EnvironmentProgressEvent } from '../shared/types'
+import { generatePdfReport } from './report-pdf-generator'
 import {
   defaultPrepareWorkspace,
   defaultRunCodex,
@@ -27,7 +28,7 @@ import {
   type TaskAgentDependencies
 } from './task-agent'
 import type { EnvironmentCheckResult } from './environment-checker'
-import { uploadReportFile } from './report-uploader'
+import { uploadPdfReportFile, uploadReportFile } from './report-uploader'
 import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
 import { ServerConfigStore, normalizeServerUrl } from './server-config-store'
 import { createSkillSyncService, type SkillSyncResult } from './skill-sync'
@@ -54,7 +55,9 @@ export interface IpcHandlerDependencies {
   syncSkill?: (token: string) => Promise<SkillSyncResult>
   prepareWorkspace?: typeof defaultPrepareWorkspace
   runCodex?: typeof defaultRunCodex
+  generatePdfReport?: TaskAgentDependencies['generatePdfReport']
   uploadReport?: TaskAgentDependencies['uploadReport']
+  uploadPdfReport?: TaskAgentDependencies['uploadPdfReport']
   runtimePaths?: RuntimePaths
   appUpdateService?: AppUpdateService
 }
@@ -63,6 +66,16 @@ export interface DownloadCurrentReportResult {
   status: 'ready' | 'missing'
   taskId?: string
   reportPath?: string
+}
+
+interface OpenPdfReportRequest {
+  taskId?: string
+  localPdfPath?: string
+}
+
+interface OpenPdfReportResult {
+  status: 'ready'
+  pdfPath: string
 }
 
 interface ReadReportAssetRequest {
@@ -447,9 +460,13 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
             return workspace
           },
           runCodex: dependencies.runCodex ?? defaultRunCodex,
+          generatePdfReport: dependencies.generatePdfReport ?? generatePdfReport,
           uploadReport:
             dependencies.uploadReport ??
-            ((token, taskId, reportPath) => uploadReportFile(taskApi, token, taskId, reportPath))
+            ((token, taskId, reportPath) => uploadReportFile(taskApi, token, taskId, reportPath)),
+          uploadPdfReport:
+            dependencies.uploadPdfReport ??
+            ((token, taskId, pdfPath) => uploadPdfReportFile(taskApi, token, taskId, pdfPath))
         },
         (progressEvent) => {
           if (progressEvent.taskId) {
@@ -543,6 +560,35 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     shell.showItemInFolder(reportPath)
 
     return downloadedReport
+  })
+
+  ipcMain.handle('report:open-pdf', async (_event, payload: OpenPdfReportRequest): Promise<OpenPdfReportResult> => {
+    if (payload.localPdfPath) {
+      shell.showItemInFolder(payload.localPdfPath)
+      return { status: 'ready', pdfPath: payload.localPdfPath }
+    }
+
+    if (!payload.taskId) {
+      throw new Error('请先选择一个已完成任务报告。')
+    }
+
+    const tokens = await authStore.load()
+
+    if (!tokens) {
+      throw new Error('Not authenticated')
+    }
+
+    const taskApi = await createApiClient()
+    const pdfBytes = await taskApi.downloadPdfReport(tokens.access_token, payload.taskId)
+    const runtimePaths = await loadRuntimePaths()
+    const pdfPath =
+      runtimePaths.pdfReportPathForTask?.(payload.taskId) ??
+      runtimePaths.reportPathForTask(payload.taskId).replace(/\.md$/i, '.pdf')
+    await mkdir(dirname(pdfPath), { recursive: true })
+    await writeFile(pdfPath, Buffer.from(pdfBytes))
+    shell.showItemInFolder(pdfPath)
+
+    return { status: 'ready', pdfPath }
   })
 }
 

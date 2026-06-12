@@ -13,6 +13,8 @@ import type {
   KeyLoginRequest,
   KeyLoginResult,
   DownloadCurrentReportResult,
+  OpenPdfReportRequest,
+  OpenPdfReportResult,
   ReadReportAssetRequest,
   ReadReportAssetResult,
   RememberedCredentials,
@@ -81,6 +83,8 @@ contextBridge.exposeInMainWorld('codeReview', {
   },
   downloadCurrentReport: (taskId?: string): Promise<DownloadCurrentReportResult> =>
     ipcRenderer.invoke('report:download-current', taskId),
+  openPdfReport: (payload: OpenPdfReportRequest): Promise<OpenPdfReportResult> =>
+    ipcRenderer.invoke('report:open-pdf', payload),
   readReportAsset: (payload: ReadReportAssetRequest): Promise<ReadReportAssetResult> =>
     ipcRenderer.invoke('report:asset', payload),
   bindSvnCredential: (payload: SvnCredentialPayload): Promise<true> =>

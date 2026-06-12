@@ -390,6 +390,59 @@ describe('ApiClient', () => {
     expect((upload as File).name).toBe('自定义报告.md')
   })
 
+  it('uploads generated PDF report as multipart form data with authorization header', async () => {
+    vi.stubGlobal('File', File)
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'task-1' }))
+    const client = new ApiClient('https://server.example', fetchMock)
+    const pdfBytes = new Uint8Array([37, 80, 68, 70])
+
+    await client.uploadPdfReport('token-123', 'task/1', {
+      pdf_content: pdfBytes,
+      pdf_name: '代码审查报告.pdf'
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://server.example/api/v1/review-tasks/task%2F1/pdf-report'
+    )
+    expect(init.method).toBe('POST')
+    expect(init.headers).toEqual({
+      authorization: 'Bearer token-123'
+    })
+    expect(init.body).toBeInstanceOf(FormData)
+
+    const upload = init.body.get('upload')
+    expect(upload).toBeInstanceOf(File)
+    expect((upload as File).name).toBe('代码审查报告.pdf')
+    expect((upload as File).type).toBe('application/pdf')
+    await expect((upload as File).arrayBuffer()).resolves.toEqual(pdfBytes.buffer)
+  })
+
+  it('downloads generated PDF report bytes with authorization header', async () => {
+    const bytes = new Uint8Array([37, 80, 68, 70])
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(bytes, {
+        status: 200,
+        headers: { 'content-type': 'application/pdf' }
+      })
+    )
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    const result = await client.downloadPdfReport('token-123', 'task/1')
+
+    expect(new Uint8Array(result)).toEqual(bytes)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://server.example/api/v1/review-tasks/task%2F1/pdf/download',
+      {
+        method: 'GET',
+        headers: {
+          authorization: 'Bearer token-123'
+        }
+      }
+    )
+  })
+
   it('submits feedback as multipart form data with authorization header', async () => {
     vi.stubGlobal('File', File)
     const fetchMock = vi.fn().mockResolvedValue(

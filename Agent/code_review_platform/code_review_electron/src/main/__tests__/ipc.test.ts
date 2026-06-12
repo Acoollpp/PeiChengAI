@@ -13,6 +13,15 @@ vi.mock('electron', () => ({
   app: {
     getPath: vi.fn(() => '/tmp/code-review-user-data')
   },
+  BrowserWindow: vi.fn(function BrowserWindowMock() {
+    return {
+      loadFile: vi.fn(async () => undefined),
+      webContents: {
+        printToPDF: vi.fn(async () => Buffer.from('%PDF-1.4\nfake-pdf'))
+      },
+      close: vi.fn()
+    }
+  }),
   ipcMain: {
     handle: handleMock
   },
@@ -58,7 +67,8 @@ describe('registerIpcHandlers', () => {
       'task:cancel',
       'feedback:submit',
       'report:asset',
-      'report:download-current'
+      'report:download-current',
+      'report:open-pdf'
     ])
   })
 
@@ -236,7 +246,8 @@ describe('registerIpcHandlers', () => {
         status: 'created'
       })),
       updateTaskStatus: vi.fn(async () => undefined),
-      uploadReport: vi.fn(async () => undefined)
+      uploadReport: vi.fn(async () => undefined),
+      uploadPdfReport: vi.fn(async () => undefined)
     }
     const authStore = {
       load: vi.fn(async () => ({ access_token: 'token-123' })),
@@ -349,7 +360,8 @@ describe('registerIpcHandlers', () => {
         status: 'created'
       })),
       updateTaskStatus: vi.fn(async () => undefined),
-      uploadReport: vi.fn(async () => undefined)
+      uploadReport: vi.fn(async () => undefined),
+      uploadPdfReport: vi.fn(async () => undefined)
     }
     const authStore = {
       load: vi.fn(async () => ({ access_token: 'token-123' })),
@@ -410,7 +422,8 @@ describe('registerIpcHandlers', () => {
         status: 'created'
       })),
       updateTaskStatus: vi.fn(async () => undefined),
-      uploadReport: vi.fn(async () => undefined)
+      uploadReport: vi.fn(async () => undefined),
+      uploadPdfReport: vi.fn(async () => undefined)
     }
     const authStore = {
       load: vi.fn(async () => ({ access_token: 'token-123' })),
@@ -473,7 +486,8 @@ describe('registerIpcHandlers', () => {
         status: 'created'
       })),
       updateTaskStatus: vi.fn(async () => undefined),
-      uploadReport: vi.fn(async () => undefined)
+      uploadReport: vi.fn(async () => undefined),
+      uploadPdfReport: vi.fn(async () => undefined)
     }
     const authStore = {
       load: vi.fn(async () => ({ access_token: 'token-123' })),
@@ -545,7 +559,8 @@ describe('registerIpcHandlers', () => {
         status: 'created'
       })),
       updateTaskStatus: vi.fn(async () => undefined),
-      uploadReport: vi.fn(async () => undefined)
+      uploadReport: vi.fn(async () => undefined),
+      uploadPdfReport: vi.fn(async () => undefined)
     }
     const authStore = {
       load: vi.fn(async () => ({ access_token: 'token-123' })),
@@ -640,6 +655,73 @@ describe('registerIpcHandlers', () => {
     expect(showItemInFolderMock).toHaveBeenCalledWith(reportPath)
   })
 
+  it('opens a local PDF report path without downloading it', async () => {
+    const authStore = {
+      load: vi.fn(),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      authStore: authStore as never
+    })
+
+    const openPdfHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report:open-pdf'
+    )?.[1]
+    const pdfPath = '/tmp/runtime/workspaces/task-local/代码审查报告.pdf'
+
+    await expect(openPdfHandler({}, { taskId: 'task-local', localPdfPath: pdfPath })).resolves.toEqual({
+      status: 'ready',
+      pdfPath
+    })
+    expect(authStore.load).not.toHaveBeenCalled()
+    expect(showItemInFolderMock).toHaveBeenCalledWith(pdfPath)
+  })
+
+  it('downloads a historical PDF report into the local runtime workspace before opening it', async () => {
+    const api = {
+      downloadPdfReport: vi.fn(async () => new Uint8Array([37, 80, 68, 70]).buffer)
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-runtime-pdf-report-'))
+    tempDirs.push(runtimeRoot)
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      runtimePaths: {
+        runtimeRoot,
+        skillPackagesDir: join(runtimeRoot, 'skill-packages'),
+        skillManifestPath: join(runtimeRoot, 'skill-packages', 'manifest.json'),
+        workspacesDir: join(runtimeRoot, 'workspaces'),
+        workspaceForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId),
+        reportPathForTask: (taskId: string) =>
+          join(runtimeRoot, 'workspaces', taskId, '代码审查报告.md'),
+        pdfReportPathForTask: (taskId: string) =>
+          join(runtimeRoot, 'workspaces', taskId, '代码审查报告.pdf'),
+        imagesDirForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'images')
+      }
+    })
+
+    const openPdfHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report:open-pdf'
+    )?.[1]
+    const pdfPath = join(runtimeRoot, 'workspaces', 'task-remote', '代码审查报告.pdf')
+
+    await expect(openPdfHandler({}, { taskId: 'task-remote' })).resolves.toEqual({
+      status: 'ready',
+      pdfPath
+    })
+    await expect(readFile(pdfPath)).resolves.toEqual(Buffer.from([37, 80, 68, 70]))
+    expect(api.downloadPdfReport).toHaveBeenCalledWith('token-123', 'task-remote')
+    expect(showItemInFolderMock).toHaveBeenCalledWith(pdfPath)
+  })
+
   it('opens the selected historical report even when another task was the latest success', async () => {
     const api = {
       createTask: vi.fn(async () => ({
@@ -651,6 +733,7 @@ describe('registerIpcHandlers', () => {
       })),
       updateTaskStatus: vi.fn(async () => undefined),
       uploadReport: vi.fn(async () => undefined),
+      uploadPdfReport: vi.fn(async () => undefined),
       readTaskReport: vi.fn(async () => '# selected report\n')
     }
     const authStore = {

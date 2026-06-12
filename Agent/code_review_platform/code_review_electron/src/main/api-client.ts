@@ -42,6 +42,11 @@ export interface UploadReportRequest {
   report_name?: string
 }
 
+export interface UploadPdfReportRequest {
+  pdf_content: Uint8Array | ArrayBuffer | Blob
+  pdf_name?: string
+}
+
 export interface SubmitFeedbackRequest {
   description: string
   screenshots?: Array<File | Blob>
@@ -249,6 +254,46 @@ export class ApiClient {
     )
   }
 
+  uploadPdfReport(token: string, taskId: string, payload: UploadPdfReportRequest): Promise<unknown> {
+    const body = new FormData()
+    const pdfBlob =
+      payload.pdf_content instanceof Blob
+        ? payload.pdf_content
+        : new Blob([toArrayBuffer(payload.pdf_content)], { type: 'application/pdf' })
+    body.set(
+      'upload',
+      new File([pdfBlob], payload.pdf_name ?? '代码审查报告.pdf', {
+        type: 'application/pdf'
+      })
+    )
+
+    return this.request(
+      `/api/v1/review-tasks/${encodeURIComponent(taskId)}/pdf-report`,
+      {
+        method: 'POST',
+        headers: this.authHeaders(token),
+        body
+      },
+      { json: false }
+    )
+  }
+
+  async downloadPdfReport(token: string, taskId: string): Promise<ArrayBuffer> {
+    const response = await this.fetchImpl(
+      `${this.baseUrl}/api/v1/review-tasks/${encodeURIComponent(taskId)}/pdf/download`,
+      {
+        method: 'GET',
+        headers: this.authHeaders(token)
+      }
+    )
+
+    if (!response.ok) {
+      throw new ApiError(response.status, await this.readErrorMessage(response))
+    }
+
+    return response.arrayBuffer()
+  }
+
   submitFeedback(token: string, payload: SubmitFeedbackRequest): Promise<FeedbackResult> {
     const body = new FormData()
     body.set('description', payload.description)
@@ -335,6 +380,14 @@ export class ApiClient {
       typeof body.detail === 'string'
     )
   }
+}
+
+function toArrayBuffer(value: Uint8Array | ArrayBuffer): ArrayBuffer {
+  if (value instanceof ArrayBuffer) {
+    return value
+  }
+
+  return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer
 }
 
 function formatConnectionError(error: unknown): string {

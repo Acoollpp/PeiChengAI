@@ -20,6 +20,7 @@ export type TaskViewItem = ReviewTask & {
   queueIndex: number
   createdAtMs: number
   reportMarkdown?: string
+  pdfPath?: string
   isLocalOnly?: boolean
   isLocallyExecuting?: boolean
 }
@@ -190,6 +191,7 @@ export function useTaskQueue({
             status: result.status,
             report_path: result.reportPath,
             reportMarkdown: result.reportMarkdown,
+            pdfPath: result.pdfPath,
             progress_message:
               result.status === 'success' ? '审查完成' : latestTask.progress_message,
             localQueueState: 'finished',

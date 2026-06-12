@@ -109,4 +109,19 @@ describe('preload codeReview API', () => {
       assetPath: 'images/diagram.png'
     })
   })
+
+  it('invokes PDF report IPC with task id and local PDF path', async () => {
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+
+    await api.openPdfReport({
+      taskId: 'task-1',
+      localPdfPath: '/tmp/runtime/workspaces/task-1/代码审查报告.pdf'
+    })
+
+    expect(invokeMock).toHaveBeenCalledWith('report:open-pdf', {
+      taskId: 'task-1',
+      localPdfPath: '/tmp/runtime/workspaces/task-1/代码审查报告.pdf'
+    })
+  })
 })

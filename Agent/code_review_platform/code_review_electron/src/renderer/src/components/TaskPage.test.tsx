@@ -26,6 +26,7 @@ const setupCodeReviewApi = (): void => {
     cancelTask: vi.fn(async () => ({ status: 'cancelled' })),
     onTaskProgress: vi.fn(() => vi.fn()),
     downloadCurrentReport: vi.fn(),
+    openPdfReport: vi.fn(),
     installCodex: vi.fn(),
     installSvn: vi.fn(),
     installSkill: vi.fn(),
@@ -224,7 +225,7 @@ describe('TaskPage', () => {
     expect(within(historyPanel).queryByRole('button', { name: '查看报告' })).not.toBeInTheDocument()
   })
 
-  it('查看报告位置时传入当前选中的 taskId', async () => {
+  it('历史任务查看PDF报告时按任务 ID 下载服务端 PDF', async () => {
     const user = userEvent.setup()
     window.codeReview.listTasks = vi.fn(async () => ({
       data: [
@@ -242,15 +243,16 @@ describe('TaskPage', () => {
           old_revision: '3',
           new_revision: '4',
           status: 'success' as const,
-          report_path: '/app/reports/task-history-2.md'
+          report_path: '/app/reports/task-history-2.md',
+          pdf_report_path: '/app/reports/task-history-2.pdf'
         }
       ],
       count: 2
     }))
     window.codeReview.readTaskReport = vi.fn(async () => '# 历史报告 2')
-    window.codeReview.downloadCurrentReport = vi.fn(async () => ({
+    window.codeReview.openPdfReport = vi.fn(async () => ({
       status: 'ready' as const,
-      reportPath: '/app/reports/task-history-2.md'
+      pdfPath: '/local/cache/task-history-2.pdf'
     }))
 
     renderReadyTaskPage()
@@ -258,17 +260,45 @@ describe('TaskPage', () => {
     const historyPanel = await openHistoryTasks(user)
     await user.click(within(historyPanel).getAllByRole('button', { name: '查看报告' })[1])
     await screen.findByText('历史报告 2')
-    await user.click(screen.getByRole('button', { name: '查看报告位置' }))
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
 
-    expect(window.codeReview.downloadCurrentReport).toHaveBeenCalledWith('task-history-2')
+    expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({ taskId: 'task-history-2' })
+    expect(await screen.findByText('PDF报告位置：/local/cache/task-history-2.pdf')).toBeInTheDocument()
+  })
+
+  it('点击查看PDF报告时优先打开当前任务本地 PDF', async () => {
+    const user = userEvent.setup()
+    window.codeReview.executeTask = vi.fn(async () => ({
+      taskId: 'task-local-success',
+      status: 'success' as const,
+      reportMarkdown: '# 本地报告',
+      reportPath: '/app/reports/task-local-success.md',
+      pdfPath: '/app/reports/task-local-success.pdf'
+    }))
+    window.codeReview.openPdfReport = vi.fn(async () => ({
+      status: 'ready' as const,
+      pdfPath: '/app/reports/task-local-success.pdf'
+    }))
+
+    renderReadyTaskPage()
+
+    await fillTaskForm(user, '7')
+    await user.click(screen.getByRole('button', { name: '开始审查' }))
+    await screen.findByText('本地报告')
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+
+    expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
+      taskId: 'task-local-success',
+      localPdfPath: '/app/reports/task-local-success.pdf'
+    })
   })
 
   it('未选中任务时右侧显示当前审查模板，切换模板后不打开最新报告位置', async () => {
     const user = userEvent.setup()
-    window.codeReview.downloadCurrentReport = vi.fn(async () => ({
+    window.codeReview.openPdfReport = vi.fn(async () => ({
       status: 'ready' as const,
       taskId: 'task-latest',
-      reportPath: '/tmp/latest.md'
+      pdfPath: '/tmp/latest.pdf'
     }))
 
     renderReadyTaskPage()
@@ -281,9 +311,9 @@ describe('TaskPage', () => {
     expect(screen.getByRole('heading', { name: '代码审查报告模板二' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '代码审查报告-模版一' })).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '查看报告位置' }))
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
 
-    expect(window.codeReview.downloadCurrentReport).not.toHaveBeenCalled()
+    expect(window.codeReview.openPdfReport).not.toHaveBeenCalled()
     expect(screen.getByText('请先选择一个已完成任务报告。')).toBeInTheDocument()
   })
 
