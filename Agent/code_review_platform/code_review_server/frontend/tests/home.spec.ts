@@ -72,6 +72,72 @@ const feedbackStatsByRange = {
   },
 }
 
+const taskStatsByRange = {
+  today: {
+    range: "today",
+    total: 8,
+    success: 5,
+    running: 1,
+    failed_or_error: 2,
+    average_duration_seconds: 5400,
+    by_status: {
+      created: 0,
+      checking_environment: 0,
+      running_codex: 1,
+      uploading_report: 0,
+      success: 5,
+      failed: 2,
+      environment_error: 0,
+      cancelled: 0,
+    },
+    reports_by_user: [
+      {
+        user_name: "汪思雨",
+        svn_username: "wangsiyu",
+        report_count: 5,
+      },
+    ],
+  },
+  yesterday: {
+    range: "yesterday",
+    total: 4,
+    success: 3,
+    running: 0,
+    failed_or_error: 1,
+    average_duration_seconds: 7200,
+    by_status: {
+      created: 0,
+      checking_environment: 0,
+      running_codex: 0,
+      uploading_report: 0,
+      success: 3,
+      failed: 1,
+      environment_error: 0,
+      cancelled: 0,
+    },
+    reports_by_user: [],
+  },
+  all: {
+    range: "all",
+    total: 200,
+    success: 164,
+    running: 4,
+    failed_or_error: 32,
+    average_duration_seconds: 90000,
+    by_status: {
+      created: 0,
+      checking_environment: 0,
+      running_codex: 4,
+      uploading_report: 0,
+      success: 164,
+      failed: 30,
+      environment_error: 0,
+      cancelled: 2,
+    },
+    reports_by_user: [],
+  },
+}
+
 async function mockFeedbackStats(
   page: Page,
   options?: { includeUsers?: boolean },
@@ -95,6 +161,26 @@ async function mockFeedbackStats(
   return requestedRanges
 }
 
+async function mockTaskStats(page: Page, options?: { includeUsers?: boolean }) {
+  const requestedRanges: string[] = []
+  await page.route("**/api/v1/review-tasks/stats?**", async (route) => {
+    const url = new URL(route.request().url())
+    const range = url.searchParams.get("range") || "today"
+    requestedRanges.push(range)
+    const stats =
+      taskStatsByRange[range as keyof typeof taskStatsByRange] ??
+      taskStatsByRange.today
+    await route.fulfill({
+      contentType: "application/json",
+      json: {
+        ...stats,
+        reports_by_user: options?.includeUsers ? stats.reports_by_user : [],
+      },
+    })
+  })
+  return requestedRanges
+}
+
 function cardByText(page: Page, text: string) {
   return page.getByText(text).locator("xpath=ancestor::div[@data-slot='card']")
 }
@@ -107,6 +193,7 @@ function summaryCard(page: Page, label: string) {
 }
 
 test("Home page is renamed and shows task statistics", async ({ page }) => {
+  await mockTaskStats(page, { includeUsers: true })
   await page.goto("/")
 
   await expect(page.getByRole("link", { name: "主页" })).toBeVisible()
@@ -116,7 +203,11 @@ test("Home page is renamed and shows task statistics", async ({ page }) => {
   await expect(page.getByText("总任务数")).toBeVisible()
   await expect(page.getByText("成功数")).toBeVisible()
   await expect(page.getByText("失败/异常数")).toBeVisible()
-  await expect(page.getByText("运行中数")).toBeVisible()
+  await expect(page.getByText("平均运行时间")).toBeVisible()
+  await expect(page.getByText("运行中数")).not.toBeVisible()
+  await expect(
+    summaryCard(page, "平均运行时间").getByText("2小时"),
+  ).toBeVisible()
   await expect(page.getByText("报告生成数")).toBeVisible()
   await expect(page.getByText("状态分布")).toBeVisible()
 
@@ -131,6 +222,30 @@ test("Home page is renamed and shows task statistics", async ({ page }) => {
   await expect(taskStats.getByText("失败", { exact: true })).toBeVisible()
   await expect(taskStats.getByText("环境异常", { exact: true })).toBeVisible()
   await expect(taskStats.getByText("已取消", { exact: true })).toBeVisible()
+})
+
+test("Task statistics supports today yesterday and all ranges", async ({
+  page,
+}) => {
+  const requestedRanges = await mockTaskStats(page, { includeUsers: true })
+  await page.goto("/")
+
+  await expect(summaryCard(page, "总任务数").getByText("8")).toBeVisible()
+  await expect(
+    summaryCard(page, "平均运行时间").getByText("2小时"),
+  ).toBeVisible()
+  await page.getByRole("button", { name: "昨日" }).click()
+  await expect(summaryCard(page, "总任务数").getByText("4")).toBeVisible()
+  await expect(
+    summaryCard(page, "平均运行时间").getByText("2小时"),
+  ).toBeVisible()
+  await page.getByRole("button", { name: "累计" }).click()
+  await expect(summaryCard(page, "总任务数").getByText("200")).toBeVisible()
+  await expect(summaryCard(page, "平均运行时间").getByText("1天")).toBeVisible()
+
+  expect(requestedRanges).toContain("today")
+  expect(requestedRanges).toContain("yesterday")
+  expect(requestedRanges).toContain("all")
 })
 
 test("Home page can switch to feedback statistics", async ({ page }) => {
@@ -191,6 +306,7 @@ test.describe("Normal user home navigation", () => {
     await expect(page.getByRole("link", { name: "主页" })).toBeVisible()
     await expect(page.getByRole("link", { name: "部门管理" })).not.toBeVisible()
     await expect(page.getByRole("tab", { name: "任务统计" })).toBeVisible()
+    await expect(page.getByText("平均运行时间")).toBeVisible()
     await expect(page.getByText("报告生成数")).not.toBeVisible()
     await page.getByRole("tab", { name: "意见统计" }).click()
     await expect(page.getByText("总意见数")).toBeVisible()
