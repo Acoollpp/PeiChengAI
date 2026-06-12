@@ -86,6 +86,15 @@ const reportBarClasses = [
   "bg-fuchsia-500",
 ]
 
+function rangeButtonClassName(isSelected: boolean) {
+  return cn(
+    "h-8 min-w-14 px-3",
+    isSelected
+      ? "bg-primary font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 hover:text-primary-foreground"
+      : "text-muted-foreground hover:bg-background hover:text-foreground",
+  )
+}
+
 function formatDuration(seconds: number | null | undefined) {
   if (seconds == null) {
     return "-"
@@ -227,8 +236,9 @@ export function TaskStatsPanel() {
               key={option.value}
               type="button"
               size="sm"
-              variant={selectedRange === option.value ? "secondary" : "ghost"}
-              className="h-8 px-3"
+              variant="ghost"
+              aria-pressed={selectedRange === option.value}
+              className={rangeButtonClassName(selectedRange === option.value)}
               onClick={() => setSelectedRange(option.value)}
             >
               {option.label}
