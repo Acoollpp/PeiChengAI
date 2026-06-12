@@ -7,6 +7,7 @@ export type LiveVoiceClientOptions = {
 };
 
 const targetSampleRate = 16000;
+const fallbackStopWaitTimeoutMs = 120000;
 
 function liveTranscriptionUrl(): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -15,6 +16,7 @@ function liveTranscriptionUrl(): string {
 
 function statusMessage(status: LiveVoiceStatus): string {
   if (status === "connected") return "实时语音已连接。";
+  if (status === "speech") return "已检测到语音，停顿后会自动识别。";
   if (status === "transcribing") return "正在识别刚才的语音...";
   if (status === "idle") return "实时语音已停止。";
   return "正在聆听，停顿后会自动识别整句。";
@@ -28,6 +30,9 @@ export class LiveVoiceClient {
   private processor: AudioWorkletNode | null = null;
   private mutedOutput: GainNode | null = null;
   private stopping = false;
+  private serverTimeoutMs = fallbackStopWaitTimeoutMs;
+  private stopPromise: Promise<void> | null = null;
+  private stopResolver: (() => void) | null = null;
 
   constructor(private readonly options: LiveVoiceClientOptions) {}
 
@@ -49,6 +54,7 @@ export class LiveVoiceClient {
 
     socket.onmessage = (event) => this.handleMessage(event.data);
     socket.onclose = () => {
+      this.resolveStopWaiter();
       if (!this.stopping) this.options.onStatus("idle", "实时语音连接已断开。");
     };
     socket.send(JSON.stringify({ type: "start", sampleRate: targetSampleRate, language: "zh" }));
@@ -72,7 +78,6 @@ export class LiveVoiceClient {
   async stop(): Promise<void> {
     this.stopping = true;
     const socket = this.socket;
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "stop" }));
     this.processor?.disconnect();
     this.mutedOutput?.disconnect();
     this.source?.disconnect();
@@ -83,13 +88,31 @@ export class LiveVoiceClient {
     this.stream = null;
     await this.audioContext?.close().catch(() => undefined);
     this.audioContext = null;
-    socket?.close(1000, "client stopped");
+
+    if (socket?.readyState === WebSocket.OPEN) {
+      this.stopPromise = new Promise((resolve) => {
+        this.stopResolver = resolve;
+        window.setTimeout(resolve, this.serverTimeoutMs + 5000);
+      });
+      socket.send(JSON.stringify({ type: "stop" }));
+      await this.stopPromise;
+      socket.close(1000, "client stopped");
+    } else {
+      this.resolveStopWaiter();
+    }
+
     this.socket = null;
     this.options.onStatus("idle", statusMessage("idle"));
   }
 
+  private resolveStopWaiter() {
+    this.stopResolver?.();
+    this.stopResolver = null;
+    this.stopPromise = null;
+  }
+
   private handleMessage(raw: unknown) {
-    let message: { type?: unknown; status?: unknown; message?: unknown; text?: unknown; final?: unknown };
+    let message: { type?: unknown; status?: unknown; message?: unknown; text?: unknown; final?: unknown; timeoutMs?: unknown };
     try {
       message = JSON.parse(String(raw));
     } catch {
@@ -97,7 +120,10 @@ export class LiveVoiceClient {
     }
     if (message.type === "status") {
       const status = String(message.status || "listening") as LiveVoiceStatus;
+      const timeoutMs = Number(message.timeoutMs);
+      if (Number.isFinite(timeoutMs) && timeoutMs > 0) this.serverTimeoutMs = timeoutMs;
       this.options.onStatus(status, statusMessage(status));
+      if (status === "idle") this.resolveStopWaiter();
       return;
     }
     if (message.type === "transcript" && message.final === true) {
@@ -106,6 +132,7 @@ export class LiveVoiceClient {
       return;
     }
     if (message.type === "error") {
+      this.resolveStopWaiter();
       this.options.onError(String(message.message || "本地语音识别失败。"));
     }
   }
