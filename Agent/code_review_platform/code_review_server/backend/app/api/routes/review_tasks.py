@@ -1,8 +1,9 @@
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -10,6 +11,7 @@ from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep, has_admin_privileges
 from app.models import (
+    FeedbackStatsRange,
     ReviewTask,
     ReviewTaskCreate,
     ReviewTaskPublic,
@@ -25,6 +27,7 @@ from app.services import report_service
 router = APIRouter(prefix="/review-tasks", tags=["review-tasks"])
 REVIEW_REPORT_FILE_NAME = "代码审查报告.md"
 PDF_REPORT_FILE_NAME = "代码审查报告.pdf"
+TASK_STATS_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 _REVISION_RE = re.compile(r"^r?(\d+)$")
 
@@ -43,6 +46,48 @@ _FAILED_OR_ERROR_STATUSES = {
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _task_scope_filters(current_user: CurrentUser) -> list[Any]:
+    if has_admin_privileges(current_user):
+        return []
+    return [ReviewTask.user_id == current_user.id]
+
+
+def _range_bounds(
+    stats_range: FeedbackStatsRange,
+    now: datetime | None = None,
+) -> tuple[datetime | None, datetime | None]:
+    if stats_range == FeedbackStatsRange.all:
+        return None, None
+
+    current = (now or _utcnow()).astimezone(TASK_STATS_TIMEZONE)
+    today_start = datetime.combine(
+        current.date(),
+        time.min,
+        tzinfo=TASK_STATS_TIMEZONE,
+    )
+    if stats_range == FeedbackStatsRange.today:
+        start = today_start
+        end = current
+    else:
+        start = today_start - timedelta(days=1)
+        end = today_start
+
+    return (
+        start.astimezone(timezone.utc).replace(tzinfo=None),
+        end.astimezone(timezone.utc).replace(tzinfo=None),
+    )
+
+
+def _range_filters(stats_range: FeedbackStatsRange) -> list[Any]:
+    start, end = _range_bounds(stats_range)
+    filters: list[Any] = []
+    if start is not None:
+        filters.append(ReviewTask.created_at >= start)
+    if end is not None:
+        filters.append(ReviewTask.created_at < end)
+    return filters
 
 
 def _normalize_revision(revision: str) -> str:
@@ -157,10 +202,12 @@ def read_review_tasks(
 def read_review_task_stats(
     session: SessionDep,
     current_user: CurrentUser,
+    range: FeedbackStatsRange = FeedbackStatsRange.today,
 ) -> Any:
-    filters = []
-    if not has_admin_privileges(current_user):
-        filters.append(ReviewTask.user_id == current_user.id)
+    filters = [
+        *_task_scope_filters(current_user),
+        *_range_filters(range),
+    ]
 
     statement = select(ReviewTask.status, func.count()).where(*filters).group_by(
         ReviewTask.status
@@ -170,13 +217,31 @@ def read_review_task_stats(
     for status, count in rows:
         by_status[status] = count
 
+    duration_rows = session.exec(
+        select(ReviewTask.started_at, ReviewTask.finished_at).where(
+            *filters,
+            ReviewTask.started_at.is_not(None),
+            ReviewTask.finished_at.is_not(None),
+        )
+    ).all()
+    durations = [
+        int((finished_at - started_at).total_seconds())
+        for started_at, finished_at in duration_rows
+        if (
+            started_at is not None
+            and finished_at is not None
+            and finished_at >= started_at
+        )
+    ]
+    average_duration_seconds = int(sum(durations) / len(durations)) if durations else None
+
     reports_by_user: list[ReviewTaskReportUserStatsPublic] = []
     if has_admin_privileges(current_user):
         report_count = func.count(ReviewTask.id)
         report_rows = session.exec(
             select(User.full_name, User.svn_username, report_count)
             .join(User, ReviewTask.user_id == User.id)
-            .where(ReviewTask.report_path.is_not(None))
+            .where(*filters, ReviewTask.report_path.is_not(None))
             .group_by(User.id, User.full_name, User.svn_username)
             .order_by(report_count.desc(), User.full_name)
         ).all()
@@ -190,12 +255,14 @@ def read_review_task_stats(
         ]
 
     return ReviewTaskStatsPublic(
+        range=range,
         total=sum(by_status.values()),
         success=by_status[ReviewTaskStatus.success],
         running=sum(by_status[status] for status in _RUNNING_STATUSES),
         failed_or_error=sum(
             by_status[status] for status in _FAILED_OR_ERROR_STATUSES
         ),
+        average_duration_seconds=average_duration_seconds,
         by_status=by_status,
         reports_by_user=reports_by_user,
     )

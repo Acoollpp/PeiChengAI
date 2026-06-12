@@ -1,18 +1,22 @@
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from urllib.parse import unquote
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.models import ReviewTask, UserRole
+from app.models import ReviewTask, ReviewTaskStatus, UserRole
 from tests.utils.user import (
     authentication_token_from_key,
     create_key_user,
 )
 from tests.utils.utils import random_lower_string
+
+TASK_STATS_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
 def _create_review_task(
@@ -56,6 +60,50 @@ def _create_named_svn_user_task(
         "user": user,
         "svn_username": user.svn_username,
     }
+
+
+def _shanghai_datetime(days_delta: int, hour: int = 12) -> datetime:
+    today = datetime.now(TASK_STATS_TIMEZONE).date()
+    return datetime.combine(
+        today + timedelta(days=days_delta),
+        time(hour=hour),
+        tzinfo=TASK_STATS_TIMEZONE,
+    ).astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _today_elapsed_datetime(minutes_ago: int) -> datetime:
+    current = datetime.now(TASK_STATS_TIMEZONE)
+    today_start = datetime.combine(
+        current.date(),
+        time.min,
+        tzinfo=TASK_STATS_TIMEZONE,
+    )
+    elapsed = max(1, int((current - today_start).total_seconds() // 60) - minutes_ago)
+    return (today_start + timedelta(minutes=elapsed)).astimezone(timezone.utc).replace(
+        tzinfo=None
+    )
+
+
+def _set_review_task_stats_fields(
+    db: Session,
+    task_id: str,
+    *,
+    created_at: datetime,
+    status: ReviewTaskStatus,
+    started_at: datetime | None = None,
+    finished_at: datetime | None = None,
+    report_path: str | None = None,
+) -> None:
+    db_task = db.get(ReviewTask, UUID(task_id))
+    assert db_task is not None
+    db_task.created_at = created_at
+    db_task.updated_at = created_at
+    db_task.status = status
+    db_task.started_at = started_at
+    db_task.finished_at = finished_at
+    db_task.report_path = report_path
+    db.add(db_task)
+    db.commit()
 
 
 def test_create_review_task_normalizes_revisions(
@@ -802,6 +850,190 @@ def test_admin_task_stats_count_all_tasks(
     )
 
 
+def test_task_stats_support_today_yesterday_and_all_ranges(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+) -> None:
+    user, api_key = create_key_user(db)
+    user.full_name = "任务统计用户"
+    db.add(user)
+    db.commit()
+    headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
+
+    today_task = _create_review_task(client, headers, old_revision="301")
+    _set_review_task_stats_fields(
+        db,
+        today_task["id"],
+        created_at=_today_elapsed_datetime(60),
+        status=ReviewTaskStatus.success,
+        started_at=_today_elapsed_datetime(60),
+        finished_at=_today_elapsed_datetime(60) + timedelta(minutes=10),
+        report_path=str(tmp_path / "today.md"),
+    )
+    yesterday_task = _create_review_task(client, headers, old_revision="302")
+    _set_review_task_stats_fields(
+        db,
+        yesterday_task["id"],
+        created_at=_shanghai_datetime(-1, 10),
+        status=ReviewTaskStatus.failed,
+        report_path=str(tmp_path / "yesterday.md"),
+    )
+    older_task = _create_review_task(client, headers, old_revision="303")
+    _set_review_task_stats_fields(
+        db,
+        older_task["id"],
+        created_at=_shanghai_datetime(-2, 10),
+        status=ReviewTaskStatus.running_codex,
+        report_path=str(tmp_path / "older.md"),
+    )
+
+    today_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=headers,
+        params={"range": "today"},
+    )
+    yesterday_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=headers,
+        params={"range": "yesterday"},
+    )
+    all_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=headers,
+        params={"range": "all"},
+    )
+
+    assert today_response.status_code == 200
+    today_content = today_response.json()
+    assert today_content["range"] == "today"
+    assert today_content["total"] == 1
+    assert today_content["success"] == 1
+    assert today_content["running"] == 0
+    assert today_content["failed_or_error"] == 0
+    assert today_content["reports_by_user"] == []
+
+    assert yesterday_response.status_code == 200
+    yesterday_content = yesterday_response.json()
+    assert yesterday_content["range"] == "yesterday"
+    assert yesterday_content["total"] == 1
+    assert yesterday_content["success"] == 0
+    assert yesterday_content["failed_or_error"] == 1
+    assert yesterday_content["reports_by_user"] == []
+
+    assert all_response.status_code == 200
+    all_content = all_response.json()
+    assert all_content["range"] == "all"
+    assert all_content["total"] == 3
+    assert all_content["success"] == 1
+    assert all_content["running"] == 1
+    assert all_content["failed_or_error"] == 1
+    assert all_content["reports_by_user"] == []
+
+
+def test_task_stats_average_duration_uses_valid_finished_tasks(
+    client: TestClient,
+    db: Session,
+) -> None:
+    own_user, own_api_key = create_key_user(db)
+    own_headers = authentication_token_from_key(
+        client=client, key=own_api_key.key, db=db
+    )
+    other_user, other_api_key = create_key_user(db)
+    other_headers = authentication_token_from_key(
+        client=client, key=other_api_key.key, db=db
+    )
+
+    valid_short = _create_review_task(client, own_headers, old_revision="401")
+    _set_review_task_stats_fields(
+        db,
+        valid_short["id"],
+        created_at=_today_elapsed_datetime(80),
+        status=ReviewTaskStatus.success,
+        started_at=_today_elapsed_datetime(80),
+        finished_at=_today_elapsed_datetime(80) + timedelta(minutes=10),
+    )
+    valid_long = _create_review_task(client, own_headers, old_revision="402")
+    _set_review_task_stats_fields(
+        db,
+        valid_long["id"],
+        created_at=_today_elapsed_datetime(70),
+        status=ReviewTaskStatus.failed,
+        started_at=_today_elapsed_datetime(70),
+        finished_at=_today_elapsed_datetime(70) + timedelta(minutes=20),
+    )
+    missing_started = _create_review_task(client, own_headers, old_revision="403")
+    _set_review_task_stats_fields(
+        db,
+        missing_started["id"],
+        created_at=_today_elapsed_datetime(60),
+        status=ReviewTaskStatus.success,
+        finished_at=_today_elapsed_datetime(60) + timedelta(minutes=5),
+    )
+    negative_duration = _create_review_task(client, own_headers, old_revision="404")
+    _set_review_task_stats_fields(
+        db,
+        negative_duration["id"],
+        created_at=_today_elapsed_datetime(50),
+        status=ReviewTaskStatus.success,
+        started_at=_today_elapsed_datetime(50),
+        finished_at=_today_elapsed_datetime(50) - timedelta(minutes=5),
+    )
+    other_task = _create_review_task(client, other_headers, old_revision="405")
+    _set_review_task_stats_fields(
+        db,
+        other_task["id"],
+        created_at=_today_elapsed_datetime(40),
+        status=ReviewTaskStatus.success,
+        started_at=_today_elapsed_datetime(40),
+        finished_at=_today_elapsed_datetime(40) + timedelta(hours=2),
+    )
+    yesterday_valid = _create_review_task(client, own_headers, old_revision="406")
+    _set_review_task_stats_fields(
+        db,
+        yesterday_valid["id"],
+        created_at=_shanghai_datetime(-1, 9),
+        status=ReviewTaskStatus.success,
+        started_at=_shanghai_datetime(-1, 9),
+        finished_at=_shanghai_datetime(-1, 9) + timedelta(minutes=30),
+    )
+
+    today_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=own_headers,
+        params={"range": "today"},
+    )
+    yesterday_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=own_headers,
+        params={"range": "yesterday"},
+    )
+    all_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=own_headers,
+        params={"range": "all"},
+    )
+
+    assert today_response.status_code == 200
+    today_content = today_response.json()
+    assert today_content["range"] == "today"
+    assert today_content["total"] == 4
+    assert today_content["average_duration_seconds"] == 900
+
+    assert yesterday_response.status_code == 200
+    yesterday_content = yesterday_response.json()
+    assert yesterday_content["range"] == "yesterday"
+    assert yesterday_content["total"] == 1
+    assert yesterday_content["average_duration_seconds"] == 1800
+
+    assert all_response.status_code == 200
+    all_content = all_response.json()
+    assert all_content["range"] == "all"
+    assert all_content["total"] >= 5
+    assert all_content["average_duration_seconds"] == 1200
+    assert other_user.id != own_user.id
+
+
 def test_admin_task_stats_include_all_nonzero_report_counts_by_user(
     client: TestClient,
     superuser_token_headers: dict[str, str],
@@ -837,6 +1069,14 @@ def test_admin_task_stats_include_all_nonzero_report_counts_by_user(
                 },
             )
             assert upload_response.status_code == 200
+            if index == 20 and report_index == 0:
+                _set_review_task_stats_fields(
+                    db,
+                    task["id"],
+                    created_at=_shanghai_datetime(-1, 10),
+                    status=ReviewTaskStatus.success,
+                    report_path=upload_response.json()["report_path"],
+                )
 
     no_report_user, no_report_api_key = create_key_user(db)
     no_report_user.full_name = "没有报告用户"
@@ -859,16 +1099,41 @@ def test_admin_task_stats_include_all_nonzero_report_counts_by_user(
         if user_stat["user_name"].startswith(report_user_prefix)
     ]
     assert len(reports_by_user) == 21
-    assert reports_by_user[0] == {
+    report_user_20 = next(
+        user_stat
+        for user_stat in reports_by_user
+        if user_stat["user_name"] == f"{report_user_prefix} 20"
+    )
+    assert report_user_20 == {
         "user_name": f"{report_user_prefix} 20",
         "svn_username": None,
-        "report_count": 21,
+        "report_count": 20,
     }
     assert reports_by_user[-1]["user_name"] == f"{report_user_prefix} 00"
     assert reports_by_user[-1]["report_count"] == 1
     assert "没有报告用户" not in {
         user_stat["user_name"] for user_stat in reports_by_user
     }
+
+    yesterday_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=superuser_token_headers,
+        params={"range": "yesterday"},
+    )
+
+    assert yesterday_response.status_code == 200
+    yesterday_report_users = [
+        user_stat
+        for user_stat in yesterday_response.json()["reports_by_user"]
+        if user_stat["user_name"] == f"{report_user_prefix} 20"
+    ]
+    assert yesterday_report_users == [
+        {
+            "user_name": f"{report_user_prefix} 20",
+            "svn_username": None,
+            "report_count": 1,
+        }
+    ]
 
 
 def test_normal_user_task_stats_do_not_include_report_counts_by_user(

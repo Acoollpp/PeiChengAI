@@ -8,13 +8,23 @@ export type AuthToken = {
     refresh_token: string;
 };
 
-export type Body_review_tasks_upload_review_task_report = {
-    upload: (Blob | File);
+export type Body_client_releases_upload_client_release = {
+    version: string;
+    release_notes?: (string | null);
+    activate?: boolean;
+    installer: (Blob | File);
+    latest_yml: (Blob | File);
+    blockmap?: ((Blob | File) | null);
 };
 
 export type Body_feedback_create_feedback = {
     description: string;
-    screenshots?: (Array<Blob | File> | null);
+    screenshots?: (Array<((Blob | File))> | null);
+    screenshot?: ((Blob | File) | null);
+};
+
+export type Body_review_tasks_upload_review_task_report = {
+    upload: (Blob | File);
 };
 
 export type Body_skills_upload_skill = {
@@ -35,8 +45,29 @@ export type CchSyncResultPublic = {
     finished_at?: (string | null);
 };
 
-export type HTTPValidationError = {
-    detail?: Array<ValidationError>;
+export type ClientReleasePublic = {
+    id: string;
+    version: string;
+    platform: string;
+    arch: string;
+    release_notes?: (string | null);
+    artifact_name: string;
+    artifact_path: string;
+    artifact_size: number;
+    artifact_sha512: string;
+    latest_yml_name: string;
+    latest_yml_path: string;
+    blockmap_name?: (string | null);
+    blockmap_path?: (string | null);
+    is_active: boolean;
+    created_by_user_id?: (string | null);
+    created_at?: (string | null);
+    updated_at?: (string | null);
+};
+
+export type ClientReleasesPublic = {
+    data: Array<ClientReleasePublic>;
+    count: number;
 };
 
 export type FeedbackPublic = {
@@ -46,19 +77,14 @@ export type FeedbackPublic = {
     svn_username?: (string | null);
     description: string;
     has_screenshot?: boolean;
+    screenshot_count?: number;
+    screenshots?: Array<FeedbackScreenshotPublic>;
     screenshot_name?: (string | null);
     screenshot_content_type?: (string | null);
     screenshot_size?: (number | null);
-    screenshot_count?: number;
-    screenshots?: Array<FeedbackScreenshotPublic>;
     status: FeedbackStatus;
     created_at?: (string | null);
     updated_at?: (string | null);
-};
-
-export type FeedbacksPublic = {
-    data: Array<FeedbackPublic>;
-    count: number;
 };
 
 export type FeedbackScreenshotPublic = {
@@ -70,10 +96,48 @@ export type FeedbackScreenshotPublic = {
     created_at?: (string | null);
 };
 
+export type FeedbacksPublic = {
+    data: Array<FeedbackPublic>;
+    count: number;
+};
+
+export type FeedbackStatsPublic = {
+    range: FeedbackStatsRange;
+    total: number;
+    pending: number;
+    processing: number;
+    resolved: number;
+    unresolved: number;
+    resolution_rate: number;
+    average_resolution_seconds?: (number | null);
+    by_status: {
+        [key: string]: (number);
+    };
+    trend?: Array<FeedbackTrendPointPublic>;
+    feedback_by_user?: Array<FeedbackUserStatsPublic>;
+};
+
+export type FeedbackStatsRange = 'today' | 'yesterday' | 'all';
+
 export type FeedbackStatus = 'pending' | 'processing' | 'resolved';
 
 export type FeedbackStatusUpdate = {
     status: FeedbackStatus;
+};
+
+export type FeedbackTrendPointPublic = {
+    label: string;
+    count: number;
+};
+
+export type FeedbackUserStatsPublic = {
+    user_name?: (string | null);
+    svn_username?: (string | null);
+    feedback_count: number;
+};
+
+export type HTTPValidationError = {
+    detail?: Array<ValidationError>;
 };
 
 export type ItemCreate = {
@@ -117,6 +181,8 @@ export type ReviewTaskCreate = {
     svn_url: string;
     old_revision: string;
     new_revision: string;
+    template_key?: (string | null);
+    skill_name?: (string | null);
 };
 
 export type ReviewTaskPublic = {
@@ -127,6 +193,8 @@ export type ReviewTaskPublic = {
     svn_url: string;
     old_revision: string;
     new_revision: string;
+    template_key?: (string | null);
+    skill_name?: (string | null);
     status: ReviewTaskStatus;
     report_path?: (string | null);
     report_name?: (string | null);
@@ -141,9 +209,26 @@ export type ReviewTaskPublic = {
     updated_at?: (string | null);
 };
 
+export type ReviewTaskReportUserStatsPublic = {
+    user_name?: (string | null);
+    svn_username?: (string | null);
+    report_count: number;
+};
+
 export type ReviewTasksPublic = {
     data: Array<ReviewTaskPublic>;
     count: number;
+};
+
+export type ReviewTaskStatsPublic = {
+    total: number;
+    success: number;
+    running: number;
+    failed_or_error: number;
+    by_status: {
+        [key: string]: (number);
+    };
+    reports_by_user?: Array<ReviewTaskReportUserStatsPublic>;
 };
 
 export type ReviewTaskStatus = 'created' | 'checking_environment' | 'running_codex' | 'uploading_report' | 'success' | 'failed' | 'environment_error' | 'cancelled';
@@ -239,6 +324,40 @@ export type ValidationError = {
 
 export type CchSyncSyncCchUsersResponse = (CchSyncResultPublic);
 
+export type ClientReleasesReadClientReleasesData = {
+    limit?: number;
+    skip?: number;
+};
+
+export type ClientReleasesReadClientReleasesResponse = (ClientReleasesPublic);
+
+export type ClientReleasesUploadClientReleaseData = {
+    formData: Body_client_releases_upload_client_release;
+};
+
+export type ClientReleasesUploadClientReleaseResponse = (ClientReleasePublic);
+
+export type ClientReleasesActivateClientReleaseData = {
+    releaseId: string;
+};
+
+export type ClientReleasesActivateClientReleaseResponse = (ClientReleasePublic);
+
+export type ClientReleasesDownloadLatestYmlData = {
+    arch: string;
+    platform: string;
+};
+
+export type ClientReleasesDownloadLatestYmlResponse = (unknown);
+
+export type ClientReleasesDownloadReleaseFileData = {
+    arch: string;
+    filename: string;
+    platform: string;
+};
+
+export type ClientReleasesDownloadReleaseFileResponse = (unknown);
+
 export type CredentialsReadMySvnCredentialResponse = (SvnCredentialPublic);
 
 export type CredentialsUpdateMySvnCredentialData = {
@@ -262,6 +381,12 @@ export type FeedbackReadFeedbackData = {
 };
 
 export type FeedbackReadFeedbackResponse = (FeedbacksPublic);
+
+export type FeedbackReadFeedbackStatsData = {
+    range?: FeedbackStatsRange;
+};
+
+export type FeedbackReadFeedbackStatsResponse = (FeedbackStatsPublic);
 
 export type FeedbackReadFeedbackByIdData = {
     feedbackId: string;
@@ -356,6 +481,8 @@ export type ReviewTasksReadReviewTasksData = {
 
 export type ReviewTasksReadReviewTasksResponse = (ReviewTasksPublic);
 
+export type ReviewTasksReadReviewTaskStatsResponse = (ReviewTaskStatsPublic);
+
 export type ReviewTasksReadReviewTaskData = {
     taskId: string;
 };
@@ -415,9 +542,21 @@ export type SkillsActivateSkillData = {
 
 export type SkillsActivateSkillResponse = (SkillPackagePublic);
 
-export type SkillsReadActiveSkillResponse = (SkillPackagePublic);
+export type SkillsDeactivateSkillData = {
+    skillId: string;
+};
+
+export type SkillsDeactivateSkillResponse = (SkillPackagePublic);
+
+export type SkillsReadActiveSkillsResponse = (SkillPackagesPublic);
 
 export type SkillsDownloadActiveSkillResponse = (unknown);
+
+export type SkillsDownloadSkillData = {
+    skillId: string;
+};
+
+export type SkillsDownloadSkillResponse = (unknown);
 
 export type UsersReadUsersData = {
     limit?: number;

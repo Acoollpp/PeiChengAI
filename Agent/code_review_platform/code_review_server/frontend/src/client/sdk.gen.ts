@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { CchSyncSyncCchUsersResponse, CredentialsReadMySvnCredentialResponse, CredentialsUpdateMySvnCredentialData, CredentialsUpdateMySvnCredentialResponse, FeedbackCreateFeedbackData, FeedbackCreateFeedbackResponse, FeedbackReadFeedbackData, FeedbackReadFeedbackResponse, FeedbackReadFeedbackByIdData, FeedbackReadFeedbackByIdResponse, FeedbackReadFeedbackScreenshotData, FeedbackReadFeedbackScreenshotResponse, FeedbackReadFeedbackScreenshotByIdData, FeedbackReadFeedbackScreenshotByIdResponse, FeedbackUpdateFeedbackStatusData, FeedbackUpdateFeedbackStatusResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginSvnAccountData, LoginLoginSvnAccountResponse, LoginLoginWithKeyData, LoginLoginWithKeyResponse, LoginTestTokenResponse, PrivateCreateUserData, PrivateCreateUserResponse, ReviewTasksCreateReviewTaskData, ReviewTasksCreateReviewTaskResponse, ReviewTasksReadReviewTasksData, ReviewTasksReadReviewTasksResponse, ReviewTasksReadReviewTaskData, ReviewTasksReadReviewTaskResponse, ReviewTasksDeleteReviewTaskData, ReviewTasksDeleteReviewTaskResponse, ReviewTasksUpdateReviewTaskStatusData, ReviewTasksUpdateReviewTaskStatusResponse, ReviewTasksUploadReviewTaskReportData, ReviewTasksUploadReviewTaskReportResponse, ReviewTasksReadReviewTaskReportData, ReviewTasksReadReviewTaskReportResponse, ReviewTasksDownloadReviewTaskReportData, ReviewTasksDownloadReviewTaskReportResponse, SkillsReadSkillsData, SkillsReadSkillsResponse, SkillsUploadSkillData, SkillsUploadSkillResponse, SkillsActivateSkillData, SkillsActivateSkillResponse, SkillsReadActiveSkillResponse, SkillsDownloadActiveSkillResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { CchSyncSyncCchUsersResponse, ClientReleasesReadClientReleasesData, ClientReleasesReadClientReleasesResponse, ClientReleasesUploadClientReleaseData, ClientReleasesUploadClientReleaseResponse, ClientReleasesActivateClientReleaseData, ClientReleasesActivateClientReleaseResponse, ClientReleasesDownloadLatestYmlData, ClientReleasesDownloadLatestYmlResponse, ClientReleasesDownloadReleaseFileData, ClientReleasesDownloadReleaseFileResponse, CredentialsReadMySvnCredentialResponse, CredentialsUpdateMySvnCredentialData, CredentialsUpdateMySvnCredentialResponse, FeedbackCreateFeedbackData, FeedbackCreateFeedbackResponse, FeedbackReadFeedbackData, FeedbackReadFeedbackResponse, FeedbackReadFeedbackStatsData, FeedbackReadFeedbackStatsResponse, FeedbackReadFeedbackByIdData, FeedbackReadFeedbackByIdResponse, FeedbackReadFeedbackScreenshotData, FeedbackReadFeedbackScreenshotResponse, FeedbackReadFeedbackScreenshotByIdData, FeedbackReadFeedbackScreenshotByIdResponse, FeedbackUpdateFeedbackStatusData, FeedbackUpdateFeedbackStatusResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginSvnAccountData, LoginLoginSvnAccountResponse, LoginLoginWithKeyData, LoginLoginWithKeyResponse, LoginTestTokenResponse, PrivateCreateUserData, PrivateCreateUserResponse, ReviewTasksCreateReviewTaskData, ReviewTasksCreateReviewTaskResponse, ReviewTasksReadReviewTasksData, ReviewTasksReadReviewTasksResponse, ReviewTasksReadReviewTaskStatsResponse, ReviewTasksReadReviewTaskData, ReviewTasksReadReviewTaskResponse, ReviewTasksDeleteReviewTaskData, ReviewTasksDeleteReviewTaskResponse, ReviewTasksUpdateReviewTaskStatusData, ReviewTasksUpdateReviewTaskStatusResponse, ReviewTasksUploadReviewTaskReportData, ReviewTasksUploadReviewTaskReportResponse, ReviewTasksReadReviewTaskReportData, ReviewTasksReadReviewTaskReportResponse, ReviewTasksDownloadReviewTaskReportData, ReviewTasksDownloadReviewTaskReportResponse, SkillsReadSkillsData, SkillsReadSkillsResponse, SkillsUploadSkillData, SkillsUploadSkillResponse, SkillsActivateSkillData, SkillsActivateSkillResponse, SkillsDeactivateSkillData, SkillsDeactivateSkillResponse, SkillsReadActiveSkillsResponse, SkillsDownloadActiveSkillResponse, SkillsDownloadSkillData, SkillsDownloadSkillResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class CchSyncService {
     /**
@@ -15,6 +15,115 @@ export class CchSyncService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/v1/admin/cch-sync/users'
+        });
+    }
+}
+
+export class ClientReleasesService {
+    /**
+     * Read Client Releases
+     * @param data The data for the request.
+     * @param data.skip
+     * @param data.limit
+     * @returns ClientReleasesPublic Successful Response
+     * @throws ApiError
+     */
+    public static readClientReleases(data: ClientReleasesReadClientReleasesData = {}): CancelablePromise<ClientReleasesReadClientReleasesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/client-releases',
+            query: {
+                skip: data.skip,
+                limit: data.limit
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Upload Client Release
+     * @param data The data for the request.
+     * @param data.formData
+     * @returns ClientReleasePublic Successful Response
+     * @throws ApiError
+     */
+    public static uploadClientRelease(data: ClientReleasesUploadClientReleaseData): CancelablePromise<ClientReleasesUploadClientReleaseResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/client-releases',
+            formData: data.formData,
+            mediaType: 'multipart/form-data',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Activate Client Release
+     * @param data The data for the request.
+     * @param data.releaseId
+     * @returns ClientReleasePublic Successful Response
+     * @throws ApiError
+     */
+    public static activateClientRelease(data: ClientReleasesActivateClientReleaseData): CancelablePromise<ClientReleasesActivateClientReleaseResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/client-releases/{release_id}/activate',
+            path: {
+                release_id: data.releaseId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Download Latest Yml
+     * @param data The data for the request.
+     * @param data.platform
+     * @param data.arch
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static downloadLatestYml(data: ClientReleasesDownloadLatestYmlData): CancelablePromise<ClientReleasesDownloadLatestYmlResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/client-updates/{platform}/{arch}/latest.yml',
+            path: {
+                platform: data.platform,
+                arch: data.arch
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Download Release File
+     * @param data The data for the request.
+     * @param data.platform
+     * @param data.arch
+     * @param data.filename
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static downloadReleaseFile(data: ClientReleasesDownloadReleaseFileData): CancelablePromise<ClientReleasesDownloadReleaseFileResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/client-updates/{platform}/{arch}/{filename}',
+            path: {
+                platform: data.platform,
+                arch: data.arch,
+                filename: data.filename
+            },
+            errors: {
+                422: 'Validation Error'
+            }
         });
     }
 }
@@ -93,6 +202,26 @@ export class FeedbackService {
                 status: data.status,
                 user_name: data.userName,
                 svn_username: data.svnUsername
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Read Feedback Stats
+     * @param data The data for the request.
+     * @param data.range
+     * @returns FeedbackStatsPublic Successful Response
+     * @throws ApiError
+     */
+    public static readFeedbackStats(data: FeedbackReadFeedbackStatsData = {}): CancelablePromise<FeedbackReadFeedbackStatsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/feedback/stats',
+            query: {
+                range: data.range
             },
             errors: {
                 422: 'Validation Error'
@@ -421,6 +550,18 @@ export class ReviewTasksService {
     }
 
     /**
+     * Read Review Task Stats
+     * @returns ReviewTaskStatsPublic Successful Response
+     * @throws ApiError
+     */
+    public static readReviewTaskStats(): CancelablePromise<ReviewTasksReadReviewTaskStatsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/review-tasks/stats'
+        });
+    }
+
+    /**
      * Read Review Task
      * @param data The data for the request.
      * @param data.taskId
@@ -610,11 +751,31 @@ export class SkillsService {
     }
 
     /**
-     * Read Active Skill
+     * Deactivate Skill
+     * @param data The data for the request.
+     * @param data.skillId
      * @returns SkillPackagePublic Successful Response
      * @throws ApiError
      */
-    public static readActiveSkill(): CancelablePromise<SkillsReadActiveSkillResponse> {
+    public static deactivateSkill(data: SkillsDeactivateSkillData): CancelablePromise<SkillsDeactivateSkillResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/skills/{skill_id}/deactivate',
+            path: {
+                skill_id: data.skillId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Read Active Skills
+     * @returns SkillPackagesPublic Successful Response
+     * @throws ApiError
+     */
+    public static readActiveSkills(): CancelablePromise<SkillsReadActiveSkillsResponse> {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/v1/skills/active'
@@ -630,6 +791,26 @@ export class SkillsService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/v1/skills/active/download'
+        });
+    }
+
+    /**
+     * Download Skill
+     * @param data The data for the request.
+     * @param data.skillId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static downloadSkill(data: SkillsDownloadSkillData): CancelablePromise<SkillsDownloadSkillResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/skills/{skill_id}/download',
+            path: {
+                skill_id: data.skillId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
         });
     }
 }
