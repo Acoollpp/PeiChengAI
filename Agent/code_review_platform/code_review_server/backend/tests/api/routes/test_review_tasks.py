@@ -810,10 +810,11 @@ def test_admin_task_stats_include_all_nonzero_report_counts_by_user(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    report_user_prefix = f"报告用户-{random_lower_string()}"
 
     for index in range(21):
         user, api_key = create_key_user(db)
-        user.full_name = f"报告用户 {index:02d}"
+        user.full_name = f"{report_user_prefix} {index:02d}"
         db.add(user)
         db.commit()
         headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
@@ -852,14 +853,18 @@ def test_admin_task_stats_include_all_nonzero_report_counts_by_user(
     )
 
     assert response.status_code == 200
-    reports_by_user = response.json()["reports_by_user"]
+    reports_by_user = [
+        user_stat
+        for user_stat in response.json()["reports_by_user"]
+        if user_stat["user_name"].startswith(report_user_prefix)
+    ]
     assert len(reports_by_user) == 21
     assert reports_by_user[0] == {
-        "user_name": "报告用户 20",
+        "user_name": f"{report_user_prefix} 20",
         "svn_username": None,
         "report_count": 21,
     }
-    assert reports_by_user[-1]["user_name"] == "报告用户 00"
+    assert reports_by_user[-1]["user_name"] == f"{report_user_prefix} 00"
     assert reports_by_user[-1]["report_count"] == 1
     assert "没有报告用户" not in {
         user_stat["user_name"] for user_stat in reports_by_user
