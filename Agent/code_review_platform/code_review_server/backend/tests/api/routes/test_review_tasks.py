@@ -227,6 +227,109 @@ def test_download_review_task_report_falls_back_to_default_report_filename(
     assert "代码审查报告.md" in unquote(response.headers["content-disposition"])
 
 
+def test_upload_and_download_review_task_pdf_report(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf-report",
+        headers=normal_user_token_headers,
+        files={"upload": ("代码审查报告.pdf", b"%PDF-1.4\npdf\n", "application/pdf")},
+    )
+
+    assert upload_response.status_code == 200
+    uploaded = upload_response.json()
+    assert uploaded["pdf_report_path"]
+    assert uploaded["pdf_report_name"] == "代码审查报告.pdf"
+
+    download_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf/download",
+        headers=normal_user_token_headers,
+    )
+
+    assert download_response.status_code == 200
+    assert download_response.headers["content-type"].startswith("application/pdf")
+    assert "代码审查报告.pdf" in unquote(
+        download_response.headers["content-disposition"]
+    )
+    assert download_response.content == b"%PDF-1.4\npdf\n"
+
+
+def test_download_review_task_pdf_report_returns_404_when_missing(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+) -> None:
+    task = _create_review_task(client, normal_user_token_headers)
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf/download",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "PDF report not found"
+
+
+def test_delete_review_task_removes_existing_pdf_report_file(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf-report",
+        headers=normal_user_token_headers,
+        files={"upload": ("report.pdf", b"%PDF-1.4\npdf\n", "application/pdf")},
+    )
+    assert upload_response.status_code == 200
+    pdf_path = Path(upload_response.json()["pdf_report_path"])
+    assert pdf_path.is_file()
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert not pdf_path.exists()
+
+
+def test_download_review_task_pdf_report_requires_task_permission(
+    client: TestClient,
+    db: Session,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    other = _create_named_svn_user_task(
+        client=client,
+        db=db,
+        full_name="Other User",
+        svn_username="other",
+    )
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{other['task']['id']}/pdf-report",
+        headers=other["headers"],
+        files={"upload": ("report.pdf", b"%PDF-1.4\npdf\n", "application/pdf")},
+    )
+    assert upload_response.status_code == 200
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{other['task']['id']}/pdf/download",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 403
+
+
 def test_delete_review_task_removes_task_row(
     client: TestClient, normal_user_token_headers: dict[str, str]
 ) -> None:

@@ -145,6 +145,8 @@ class ReviewTask(SQLModel, table=True):
     status: ReviewTaskStatus = Field(default=ReviewTaskStatus.created)
     report_path: str | None = Field(default=None, max_length=2048)
     report_name: str | None = Field(default=None, max_length=255)
+    pdf_report_path: str | None = Field(default=None, max_length=2048)
+    pdf_report_name: str | None = Field(default=None, max_length=255)
     error_message: str | None = None
     client_hostname: str | None = Field(default=None, max_length=255)
     client_version: str | None = Field(default=None, max_length=255)
@@ -247,6 +249,8 @@ class ReviewTaskPublic(SQLModel):
     status: ReviewTaskStatus
     report_path: str | None = None
     report_name: str | None = None
+    pdf_report_path: str | None = None
+    pdf_report_name: str | None = None
     error_message: str | None = None
     client_hostname: str | None = None
     client_version: str | None = None

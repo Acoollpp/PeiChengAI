@@ -24,6 +24,7 @@ from app.services import report_service
 
 router = APIRouter(prefix="/review-tasks", tags=["review-tasks"])
 REVIEW_REPORT_FILE_NAME = "代码审查报告.md"
+PDF_REPORT_FILE_NAME = "代码审查报告.pdf"
 
 _REVISION_RE = re.compile(r"^r?(\d+)$")
 
@@ -69,6 +70,13 @@ def _read_report_path(task: ReviewTask) -> Path:
     report_path = Path(task.report_path) if task.report_path else None
     if not report_path or not report_path.is_file():
         raise HTTPException(status_code=404, detail="Report not found")
+    return report_path
+
+
+def _read_pdf_report_path(task: ReviewTask) -> Path:
+    report_path = Path(task.pdf_report_path) if task.pdf_report_path else None
+    if not report_path or not report_path.is_file():
+        raise HTTPException(status_code=404, detail="PDF report not found")
     return report_path
 
 
@@ -217,6 +225,14 @@ def delete_review_task(
             raise HTTPException(
                 status_code=500, detail="Failed to delete review task report"
             ) from exc
+    pdf_report_path = Path(task.pdf_report_path) if task.pdf_report_path else None
+    if pdf_report_path and pdf_report_path.is_file():
+        try:
+            pdf_report_path.unlink()
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500, detail="Failed to delete review task PDF report"
+            ) from exc
 
     session.delete(task)
     session.commit()
@@ -281,6 +297,29 @@ async def upload_review_task_report(
     return task
 
 
+@router.post("/{task_id}/pdf-report", response_model=ReviewTaskPublic)
+async def upload_review_task_pdf_report(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    upload: UploadFile = File(...),
+) -> Any:
+    task = _get_task_for_user(
+        session=session, current_user=current_user, task_id=task_id
+    )
+    report_path = await report_service.save_pdf_upload(task_id, upload)
+    now = _utcnow()
+    task.pdf_report_path = str(report_path)
+    task.pdf_report_name = upload.filename or PDF_REPORT_FILE_NAME
+    task.updated_at = now
+
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return task
+
+
 @router.get("/{task_id}/report", response_class=PlainTextResponse)
 def read_review_task_report(
     session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
@@ -306,4 +345,19 @@ def download_review_task_report(
         report_path,
         media_type="text/markdown",
         filename=task.report_name or REVIEW_REPORT_FILE_NAME,
+    )
+
+
+@router.get("/{task_id}/pdf/download")
+def download_review_task_pdf_report(
+    session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
+) -> FileResponse:
+    task = _get_task_for_user(
+        session=session, current_user=current_user, task_id=task_id
+    )
+    report_path = _read_pdf_report_path(task)
+    return FileResponse(
+        report_path,
+        media_type="application/pdf",
+        filename=task.pdf_report_name or PDF_REPORT_FILE_NAME,
     )
