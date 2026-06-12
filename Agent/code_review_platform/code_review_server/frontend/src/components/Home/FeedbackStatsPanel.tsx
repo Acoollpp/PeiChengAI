@@ -71,8 +71,7 @@ function formatDuration(seconds: number | null | undefined) {
 
 export function FeedbackStatsPanel() {
   const { user: currentUser } = useAuth()
-  const [selectedRange, setSelectedRange] =
-    useState<FeedbackStatsRange>("today")
+  const [selectedRange, setSelectedRange] = useState<FeedbackStatsRange>("all")
   const {
     data: stats,
     isError,

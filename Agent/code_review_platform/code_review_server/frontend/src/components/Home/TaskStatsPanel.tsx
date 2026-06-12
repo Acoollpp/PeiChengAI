@@ -132,7 +132,7 @@ async function readReviewTaskStats(
 
 export function TaskStatsPanel() {
   const { user: currentUser } = useAuth()
-  const [selectedRange, setSelectedRange] = useState<TaskStatsRange>("today")
+  const [selectedRange, setSelectedRange] = useState<TaskStatsRange>("all")
   const {
     data: stats,
     isError,

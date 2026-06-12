@@ -205,9 +205,8 @@ test("Home page is renamed and shows task statistics", async ({ page }) => {
   await expect(page.getByText("失败/异常数")).toBeVisible()
   await expect(page.getByText("平均运行时间")).toBeVisible()
   await expect(page.getByText("运行中数")).not.toBeVisible()
-  await expect(
-    summaryCard(page, "平均运行时间").getByText("2小时"),
-  ).toBeVisible()
+  await expect(summaryCard(page, "总任务数").getByText("200")).toBeVisible()
+  await expect(summaryCard(page, "平均运行时间").getByText("1天")).toBeVisible()
   await expect(page.getByText("报告生成数")).toBeVisible()
   await expect(page.getByText("状态分布")).toBeVisible()
 
@@ -230,6 +229,9 @@ test("Task statistics supports today yesterday and all ranges", async ({
   const requestedRanges = await mockTaskStats(page, { includeUsers: true })
   await page.goto("/")
 
+  await expect(summaryCard(page, "总任务数").getByText("200")).toBeVisible()
+  await expect(summaryCard(page, "平均运行时间").getByText("1天")).toBeVisible()
+  await page.getByRole("button", { name: "今日" }).click()
   await expect(summaryCard(page, "总任务数").getByText("8")).toBeVisible()
   await expect(
     summaryCard(page, "平均运行时间").getByText("2小时"),
@@ -239,9 +241,6 @@ test("Task statistics supports today yesterday and all ranges", async ({
   await expect(
     summaryCard(page, "平均运行时间").getByText("2小时"),
   ).toBeVisible()
-  await page.getByRole("button", { name: "累计" }).click()
-  await expect(summaryCard(page, "总任务数").getByText("200")).toBeVisible()
-  await expect(summaryCard(page, "平均运行时间").getByText("1天")).toBeVisible()
 
   expect(requestedRanges).toContain("today")
   expect(requestedRanges).toContain("yesterday")
@@ -268,10 +267,10 @@ test("Home page can switch to feedback statistics", async ({ page }) => {
   await expect(page.getByText("状态分布")).toBeVisible()
   await expect(page.getByText("提交趋势")).toBeVisible()
   await expect(page.getByText("处理概览")).toBeVisible()
-  await expect(cardByText(page, "处理概览").getByText("0分钟")).toBeVisible()
+  await expect(cardByText(page, "处理概览").getByText("2天")).toBeVisible()
   await expect(page.getByText("提交人排行")).toBeVisible()
-  await expect(page.getByText("汪思雨")).toBeVisible()
-  expect(requestedRanges).toContain("today")
+  await expect(page.getByText("汪思雨")).not.toBeVisible()
+  expect(requestedRanges).toContain("all")
 })
 
 test("Feedback statistics supports today yesterday and all ranges", async ({
@@ -281,11 +280,11 @@ test("Feedback statistics supports today yesterday and all ranges", async ({
   await page.goto("/")
   await page.getByRole("tab", { name: "意见统计" }).click()
 
+  await expect(summaryCard(page, "总意见数").getByText("42")).toBeVisible()
+  await page.getByRole("button", { name: "今日" }).click()
   await expect(summaryCard(page, "总意见数").getByText("6")).toBeVisible()
   await page.getByRole("button", { name: "昨日" }).click()
   await expect(summaryCard(page, "总意见数").getByText("4")).toBeVisible()
-  await page.getByRole("button", { name: "累计" }).click()
-  await expect(summaryCard(page, "总意见数").getByText("42")).toBeVisible()
 
   expect(requestedRanges).toContain("today")
   expect(requestedRanges).toContain("yesterday")
