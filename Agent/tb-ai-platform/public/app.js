@@ -1,6 +1,7 @@
 const state = {
   mode: "create",
-  running: false
+  running: false,
+  user: null
 };
 
 const modeTitles = {
@@ -14,15 +15,23 @@ const modePlaceholders = {
 };
 
 const el = {
+  accountCard: document.querySelector("#accountCard"),
+  accountName: document.querySelector("#accountName"),
   healthText: document.querySelector("#healthText"),
-  pulse: document.querySelector(".pulse"),
+  loginBtn: document.querySelector("#loginBtn"),
+  loginKey: document.querySelector("#loginKeyInput"),
+  loginPanel: document.querySelector("#loginPanel"),
+  loginState: document.querySelector("#loginState"),
+  logoutBtn: document.querySelector("#logoutBtn"),
   modeTitle: document.querySelector("#modeTitle"),
   message: document.querySelector("#messageInput"),
+  pulse: document.querySelector(".pulse"),
   runBtn: document.querySelector("#runBtn"),
   clearBtn: document.querySelector("#clearBtn"),
   output: document.querySelector("#output"),
   runState: document.querySelector("#runState"),
-  runId: document.querySelector("#runId")
+  runId: document.querySelector("#runId"),
+  workspace: document.querySelector("#workspace")
 };
 
 function setMode(mode) {
@@ -32,6 +41,16 @@ function setMode(mode) {
   });
   el.modeTitle.textContent = modeTitles[mode];
   el.message.placeholder = modePlaceholders[mode];
+}
+
+function setUser(user) {
+  state.user = user;
+  const loggedIn = Boolean(user);
+  el.loginPanel.hidden = loggedIn;
+  el.workspace.hidden = !loggedIn;
+  el.accountCard.hidden = !loggedIn;
+  el.accountName.textContent = user ? user.fullName || `CCH 用户 ${user.cchUserId}` : "未登录";
+  if (!loggedIn) el.loginKey.focus();
 }
 
 function appendOutput(text, kind = "stdout") {
@@ -59,6 +78,53 @@ async function checkHealth() {
   }
 }
 
+async function checkSession() {
+  try {
+    const res = await fetch("/api/me");
+    if (res.status === 401) return setUser(null);
+    const data = await res.json();
+    setUser(data.user);
+  } catch {
+    setUser(null);
+  }
+}
+
+async function login() {
+  const key = el.loginKey.value.trim();
+  if (!key) {
+    el.loginState.textContent = "请输入 CCH key";
+    el.loginKey.focus();
+    return;
+  }
+
+  el.loginBtn.disabled = true;
+  el.loginState.textContent = "正在登录";
+  try {
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key })
+    });
+    const data = await res.json().catch(() => ({ error: "登录失败" }));
+    if (!res.ok) throw new Error(data.error || "登录失败");
+    el.loginKey.value = "";
+    el.loginState.textContent = "登录成功";
+    setUser(data.user);
+  } catch (err) {
+    el.loginState.textContent = err.message;
+  } finally {
+    el.loginBtn.disabled = false;
+  }
+}
+
+async function logout() {
+  await fetch("/api/logout", { method: "POST" }).catch(() => {});
+  setUser(null);
+  el.output.textContent = "";
+  el.runId.textContent = "未开始";
+  el.runState.textContent = "等待输入";
+}
+
 async function runTask() {
   if (state.running) return;
   const message = el.message.value.trim();
@@ -81,6 +147,10 @@ async function runTask() {
       body: JSON.stringify({ mode: state.mode, message })
     });
 
+    if (res.status === 401) {
+      setUser(null);
+      throw new Error("登录已失效，请重新登录");
+    }
     if (!res.ok || !res.body) {
       const data = await res.json().catch(() => ({ error: "请求失败" }));
       throw new Error(data.error || `请求失败：${res.status}`);
@@ -124,6 +194,11 @@ document.querySelectorAll(".mode").forEach(btn => {
   btn.addEventListener("click", () => setMode(btn.dataset.mode));
 });
 
+el.loginBtn.addEventListener("click", login);
+el.logoutBtn.addEventListener("click", logout);
+el.loginKey.addEventListener("keydown", event => {
+  if (event.key === "Enter") login();
+});
 el.runBtn.addEventListener("click", runTask);
 el.clearBtn.addEventListener("click", () => {
   el.message.value = "";
@@ -140,3 +215,4 @@ el.message.addEventListener("keydown", event => {
 
 setMode("create");
 checkHealth();
+checkSession();

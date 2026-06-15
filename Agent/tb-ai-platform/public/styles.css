@@ -75,7 +75,8 @@ h1 {
   line-height: 1.7;
 }
 
-.status-card {
+.status-card,
+.account-card {
   min-width: 240px;
   display: flex;
   align-items: center;
@@ -88,11 +89,22 @@ h1 {
 }
 
 .status-card small,
+.account-card small,
 .mode small {
   display: block;
   margin-top: 4px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.account-card {
+  min-width: 280px;
+  justify-content: space-between;
+}
+
+.compact {
+  min-height: 34px;
+  padding: 0 12px;
 }
 
 .pulse {
@@ -113,6 +125,12 @@ h1 {
   grid-template-columns: 300px minmax(0, 1fr);
   gap: 18px;
   align-items: stretch;
+}
+
+.login-panel {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 22px;
 }
 
 .panel {
@@ -303,7 +321,8 @@ pre {
     grid-template-columns: 1fr;
   }
 
-  .status-card {
+  .status-card,
+  .account-card {
     min-width: 0;
   }
 }

@@ -4,6 +4,11 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node test/config.test.js && node test/db.test.js && node test/sync.test.js && node test/auth.test.js && node test/server-auth.test.js && node test/frontend-static.test.js && node test/no-token-run.test.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "pg": "^8.13.1"
   }
 }

@@ -3,30 +3,10 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
-
-const ROOT = __dirname;
-const PUBLIC = path.join(ROOT, "public");
-const WORKSPACE = path.join(ROOT, "workspace");
-
-const envFile = path.join(ROOT, ".env");
-if (fs.existsSync(envFile)) {
-  const lines = fs.readFileSync(envFile, "utf8").split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const index = trimmed.indexOf("=");
-    if (index < 1) continue;
-    const key = trimmed.slice(0, index).trim();
-    const value = trimmed.slice(index + 1).trim();
-    if (!process.env[key]) process.env[key] = value;
-  }
-}
-
-const CODEX_BIN = process.env.CODEX_BIN || path.join(process.env.HOME || "/home/gpt", ".local/bin/codex");
-const PORT = Number(process.env.PORT || 8787);
-const HOST = process.env.HOST || "0.0.0.0";
-
-fs.mkdirSync(WORKSPACE, { recursive: true });
+const { createAuthService } = require("./src/auth");
+const { syncFromCchDatabase } = require("./src/cchSync");
+const { loadConfig, loadEnvFile } = require("./src/config");
+const { createStore } = require("./src/db");
 
 const modes = {
   create: {
@@ -43,11 +23,150 @@ const modes = {
   }
 };
 
-function sendJson(res, status, data) {
+function createServer({ config, store, syncState }) {
+  fs.mkdirSync(config.workspaceDir, { recursive: true });
+  const auth = createAuthService({
+    store,
+    sessionSecret: config.sessionSecret,
+    sessionTtlHours: config.sessionTtlHours
+  });
+
+  async function login(req, res) {
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message });
+    }
+
+    const result = auth.loginWithKey(body.key);
+    if (!result.ok) return sendJson(res, result.status, { error: result.error });
+    return sendJson(res, 200, { user: result.user }, { "Set-Cookie": result.cookie });
+  }
+
+  function me(req, res) {
+    const user = auth.getCurrentUser(req);
+    if (!user) return sendJson(res, 401, { error: "请先登录" });
+    return sendJson(res, 200, { user });
+  }
+
+  function logout(req, res) {
+    auth.logout(auth.sessionIdFromRequest(req));
+    return sendJson(res, 200, { ok: true }, { "Set-Cookie": auth.clearCookie() });
+  }
+
+  async function runCodex(req, res) {
+    const currentUser = auth.getCurrentUser(req);
+    if (!currentUser) return sendJson(res, 401, { error: "请先登录" });
+
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message });
+    }
+
+    const mode = modes[body.mode];
+    const message = String(body.message || "").trim();
+    if (!mode) return sendJson(res, 400, { error: "任务类型无效" });
+    if (!message) return sendJson(res, 400, { error: "请输入任务内容" });
+
+    const runId = crypto.randomUUID();
+    const prompt = `${mode.promptPrefix}\n\n${message}`;
+    const startedAt = new Date().toISOString();
+
+    store.recordAuditLog({
+      userId: currentUser.id,
+      action: "run_codex",
+      mode: body.mode,
+      runId,
+      metadata: {
+        title: mode.title,
+        messageLength: message.length
+      }
+    });
+
+    res.writeHead(200, {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no"
+    });
+    res.write(JSON.stringify({ type: "start", runId, mode: body.mode, title: mode.title, startedAt }) + "\n");
+
+    const args = [
+      "exec",
+      "--skip-git-repo-check",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "-C",
+      config.workspaceDir,
+      "-"
+    ];
+    const child = spawn(config.codexBin, args, {
+      cwd: config.workspaceDir,
+      env: {
+        ...process.env,
+        LANG: "C.UTF-8",
+        LC_ALL: "C.UTF-8"
+      },
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+
+    child.stdin.end(prompt);
+
+    child.stdout.on("data", chunk => {
+      res.write(JSON.stringify({ type: "stdout", data: chunk.toString("utf8") }) + "\n");
+    });
+
+    child.stderr.on("data", chunk => {
+      res.write(JSON.stringify({ type: "stderr", data: chunk.toString("utf8") }) + "\n");
+    });
+
+    child.on("error", err => {
+      res.write(JSON.stringify({ type: "error", error: err.message }) + "\n");
+      res.end();
+    });
+
+    child.on("close", code => {
+      res.write(JSON.stringify({ type: "done", code, finishedAt: new Date().toISOString() }) + "\n");
+      res.end();
+    });
+
+    req.on("close", () => {
+      if (!child.killed) child.kill("SIGTERM");
+    });
+  }
+
+  function router(req, res) {
+    if (req.method === "GET" && req.url.startsWith("/api/health")) {
+      return sendJson(res, 200, {
+        ok: true,
+        codexBin: config.codexBin,
+        authRequired: true,
+        lastSyncAt: syncState.lastSyncAt,
+        lastSyncError: syncState.lastSyncError,
+        lastSyncResult: syncState.lastSyncResult,
+        modes: Object.fromEntries(Object.entries(modes).map(([key, value]) => [key, value.title]))
+      });
+    }
+
+    if (req.method === "GET" && req.url.startsWith("/api/me")) return me(req, res);
+    if (req.method === "POST" && req.url.startsWith("/api/login")) return login(req, res);
+    if (req.method === "POST" && req.url.startsWith("/api/logout")) return logout(req, res);
+    if (req.method === "POST" && req.url.startsWith("/api/run")) return runCodex(req, res);
+
+    if (req.method === "GET") return serveStatic(req, res, config.publicDir);
+    sendJson(res, 405, { error: "方法不支持" });
+  }
+
+  return http.createServer(router);
+}
+
+function sendJson(res, status, data, headers = {}) {
   const body = JSON.stringify(data);
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
-    "Content-Length": Buffer.byteLength(body)
+    "Content-Length": Buffer.byteLength(body),
+    ...headers
   });
   res.end(body);
 }
@@ -74,12 +193,12 @@ function parseBody(req) {
   });
 }
 
-function serveStatic(req, res) {
+function serveStatic(req, res, publicDir) {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   let file = decodeURIComponent(url.pathname);
   if (file === "/") file = "/index.html";
-  const full = path.normalize(path.join(PUBLIC, file));
-  if (!full.startsWith(PUBLIC)) return sendJson(res, 403, { error: "拒绝访问" });
+  const full = path.normalize(path.join(publicDir, file));
+  if (!full.startsWith(publicDir)) return sendJson(res, 403, { error: "拒绝访问" });
 
   fs.readFile(full, (err, data) => {
     if (err) return sendJson(res, 404, { error: "页面不存在" });
@@ -95,91 +214,56 @@ function serveStatic(req, res) {
   });
 }
 
-async function runCodex(req, res) {
-  let body;
-  try {
-    body = await parseBody(req);
-  } catch (err) {
-    return sendJson(res, 400, { error: err.message });
-  }
-
-  const mode = modes[body.mode];
-  const message = String(body.message || "").trim();
-  if (!mode) return sendJson(res, 400, { error: "任务类型无效" });
-  if (!message) return sendJson(res, 400, { error: "请输入任务内容" });
-
-  const runId = crypto.randomUUID();
-  const prompt = `${mode.promptPrefix}\n\n${message}`;
-  const startedAt = new Date().toISOString();
-
-  res.writeHead(200, {
-    "Content-Type": "application/x-ndjson; charset=utf-8",
-    "Cache-Control": "no-cache, no-transform",
-    "X-Accel-Buffering": "no"
-  });
-  res.write(JSON.stringify({ type: "start", runId, mode: body.mode, title: mode.title, startedAt }) + "\n");
-
-  const args = [
-    "exec",
-    "--skip-git-repo-check",
-    "--dangerously-bypass-approvals-and-sandbox",
-    "-C",
-    WORKSPACE,
-    "-"
-  ];
-  const child = spawn(CODEX_BIN, args, {
-    cwd: WORKSPACE,
-    env: {
-      ...process.env,
-      LANG: "C.UTF-8",
-      LC_ALL: "C.UTF-8"
-    },
-    stdio: ["pipe", "pipe", "pipe"]
-  });
-
-  child.stdin.end(prompt);
-
-  child.stdout.on("data", chunk => {
-    res.write(JSON.stringify({ type: "stdout", data: chunk.toString("utf8") }) + "\n");
-  });
-
-  child.stderr.on("data", chunk => {
-    res.write(JSON.stringify({ type: "stderr", data: chunk.toString("utf8") }) + "\n");
-  });
-
-  child.on("error", err => {
-    res.write(JSON.stringify({ type: "error", error: err.message }) + "\n");
-    res.end();
-  });
-
-  child.on("close", code => {
-    res.write(JSON.stringify({ type: "done", code, finishedAt: new Date().toISOString() }) + "\n");
-    res.end();
-  });
-
-  req.on("close", () => {
-    if (!child.killed) child.kill("SIGTERM");
+function start() {
+  loadEnvFile(__dirname);
+  const config = loadConfig(process.env, __dirname);
+  const store = createStore({ databasePath: config.databasePath });
+  const syncState = createSyncState();
+  startCchSync({ config, store, syncState });
+  const server = createServer({ config, store, syncState });
+  server.listen(config.port, config.host, () => {
+    console.log(`TB AI Platform listening on http://${config.host}:${config.port}`);
   });
 }
 
-function router(req, res) {
-  if (req.method === "GET" && req.url.startsWith("/api/health")) {
-    return sendJson(res, 200, {
-      ok: true,
-      codexBin: CODEX_BIN,
-      authRequired: false,
-      modes: Object.fromEntries(Object.entries(modes).map(([key, value]) => [key, value.title]))
-    });
-  }
-
-  if (req.method === "POST" && req.url.startsWith("/api/run")) {
-    return runCodex(req, res);
-  }
-
-  if (req.method === "GET") return serveStatic(req, res);
-  sendJson(res, 405, { error: "方法不支持" });
+function createSyncState() {
+  return { lastSyncAt: null, lastSyncError: null, lastSyncResult: null };
 }
 
-http.createServer(router).listen(PORT, HOST, () => {
-  console.log(`TB AI Platform listening on http://${HOST}:${PORT}`);
-});
+function startCchSync({ config, store, syncState }) {
+  if (!config.cchDatabaseUrl) return null;
+
+  const run = async () => {
+    try {
+      const result = await syncFromCchDatabase(store, config.cchDatabaseUrl);
+      syncState.lastSyncAt = new Date().toISOString();
+      syncState.lastSyncError = null;
+      syncState.lastSyncResult = result;
+      console.log(
+        `CCH sync complete: users ${result.usersCreated}/${result.usersUpdated}, keys ${result.keysCreated}/${result.keysUpdated}`
+      );
+    } catch (err) {
+      syncState.lastSyncError = err.message;
+      console.error(`CCH sync failed: ${err.message}`);
+    }
+  };
+
+  run();
+  const timer = setInterval(run, config.cchSyncIntervalMs);
+  timer.unref?.();
+  return timer;
+}
+
+if (require.main === module) {
+  start();
+}
+
+module.exports = {
+  createServer,
+  createSyncState,
+  modes,
+  parseBody,
+  sendJson,
+  start,
+  startCchSync
+};

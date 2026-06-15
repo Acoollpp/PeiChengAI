@@ -21,9 +21,31 @@
             <small>后台连接本机 Codex CLI</small>
           </div>
         </div>
+        <div class="account-card" id="accountCard" hidden>
+          <div>
+            <strong id="accountName">未登录</strong>
+            <small>已使用 CCH key 登录</small>
+          </div>
+          <button class="ghost compact" id="logoutBtn" type="button">退出</button>
+        </div>
       </section>
 
-      <section class="workspace">
+      <section class="panel login-panel" id="loginPanel">
+        <div>
+          <div class="section-title">登录</div>
+          <h2>使用 CCH Key 进入</h2>
+        </div>
+        <label class="input-label" for="loginKeyInput">CCH Key</label>
+        <input id="loginKeyInput" class="token-input" type="password" placeholder="请输入你的 CCH key" autocomplete="current-password" />
+        <div class="actions">
+          <button id="loginBtn" class="primary" type="button">
+            <span>登录</span>
+          </button>
+          <span id="loginState" class="run-state">等待登录</span>
+        </div>
+      </section>
+
+      <section class="workspace" id="workspace" hidden>
         <aside class="panel side">
           <div class="section-title">任务类型</div>
           <button class="mode active" data-mode="create">

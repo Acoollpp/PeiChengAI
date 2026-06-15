@@ -1,5 +1,8 @@
 const assert = require("assert");
 const http = require("http");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 const { spawn } = require("child_process");
 
 const PORT = 18887;
@@ -61,7 +64,8 @@ function postRun(body) {
       ...process.env,
       PORT: String(PORT),
       HOST: "127.0.0.1",
-      ACCESS_TOKEN: "test-token"
+      SESSION_SECRET: "test-secret",
+      TB_DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), "tb-no-login-"))
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -69,9 +73,9 @@ function postRun(body) {
   try {
     await waitForHealth();
     const response = await postRun({ mode: "create", message: "" });
-    assert.strictEqual(response.statusCode, 400);
-    assert.match(response.body, /请输入任务内容/);
-    console.log("ok - /api/run does not require a token");
+    assert.strictEqual(response.statusCode, 401);
+    assert.match(response.body, /请先登录/);
+    console.log("ok - /api/run requires login");
   } finally {
     child.kill("SIGTERM");
   }
