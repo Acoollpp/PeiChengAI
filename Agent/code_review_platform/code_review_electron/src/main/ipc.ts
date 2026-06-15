@@ -1,5 +1,5 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname, extname, isAbsolute, resolve, sep } from 'node:path'
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
 
 import { ipcMain, shell } from 'electron'
 
@@ -71,6 +71,7 @@ export interface DownloadCurrentReportResult {
 interface OpenPdfReportRequest {
   taskId?: string
   localPdfPath?: string
+  pdfReportName?: string
 }
 
 interface OpenPdfReportResult {
@@ -211,6 +212,28 @@ const imageContentTypes: Record<string, string> = {
 
 const isInsideDirectory = (filePath: string, directory: string): boolean =>
   filePath === directory || filePath.startsWith(`${directory}${sep}`)
+
+const isExistingFile = async (filePath?: string): Promise<boolean> => {
+  if (!filePath) {
+    return false
+  }
+
+  try {
+    return (await stat(filePath)).isFile()
+  } catch {
+    return false
+  }
+}
+
+const sanitizeReportFileName = (fileName: string | undefined, fallback: string): string => {
+  const trimmedFileName = fileName?.trim()
+
+  if (!trimmedFileName || trimmedFileName.includes('/') || trimmedFileName.includes('\\')) {
+    return fallback
+  }
+
+  return trimmedFileName
+}
 
 const readReportAsset = async ({
   reportPath,
@@ -563,13 +586,28 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   })
 
   ipcMain.handle('report:open-pdf', async (_event, payload: OpenPdfReportRequest): Promise<OpenPdfReportResult> => {
-    if (payload.localPdfPath) {
+    if (await isExistingFile(payload.localPdfPath)) {
       shell.showItemInFolder(payload.localPdfPath)
       return { status: 'ready', pdfPath: payload.localPdfPath }
     }
 
     if (!payload.taskId) {
       throw new Error('请先选择一个已完成任务报告。')
+    }
+
+    const runtimePaths = await loadRuntimePaths()
+    const fallbackPdfPath =
+      runtimePaths.pdfReportPathForTask?.(payload.taskId) ??
+      runtimePaths.reportPathForTask(payload.taskId).replace(/\.md$/i, '.pdf')
+    const fallbackPdfFileName = '代码审查报告.pdf'
+    const pdfFileName = sanitizeReportFileName(payload.pdfReportName, fallbackPdfFileName)
+    const trimmedPdfReportName = payload.pdfReportName?.trim()
+    const hasValidPdfReportName = Boolean(trimmedPdfReportName && pdfFileName === trimmedPdfReportName)
+    const workspacePdfPath = join(runtimePaths.workspaceForTask(payload.taskId), pdfFileName)
+
+    if (await isExistingFile(workspacePdfPath)) {
+      shell.showItemInFolder(workspacePdfPath)
+      return { status: 'ready', pdfPath: workspacePdfPath }
     }
 
     const tokens = await authStore.load()
@@ -580,10 +618,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
     const taskApi = await createApiClient()
     const pdfBytes = await taskApi.downloadPdfReport(tokens.access_token, payload.taskId)
-    const runtimePaths = await loadRuntimePaths()
-    const pdfPath =
-      runtimePaths.pdfReportPathForTask?.(payload.taskId) ??
-      runtimePaths.reportPathForTask(payload.taskId).replace(/\.md$/i, '.pdf')
+    const pdfPath = hasValidPdfReportName ? workspacePdfPath : fallbackPdfPath
     await mkdir(dirname(pdfPath), { recursive: true })
     await writeFile(pdfPath, Buffer.from(pdfBytes))
     shell.showItemInFolder(pdfPath)
