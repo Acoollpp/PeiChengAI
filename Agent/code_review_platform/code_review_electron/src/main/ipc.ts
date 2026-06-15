@@ -225,14 +225,17 @@ const isExistingFile = async (filePath?: string): Promise<boolean> => {
   }
 }
 
-const sanitizeReportFileName = (fileName: string | undefined, fallback: string): string => {
+const resolveReportFileName = (
+  fileName: string | undefined,
+  fallback: string
+): { fileName: string; isValidProvidedName: boolean } => {
   const trimmedFileName = fileName?.trim()
 
   if (!trimmedFileName || trimmedFileName.includes('/') || trimmedFileName.includes('\\')) {
-    return fallback
+    return { fileName: fallback, isValidProvidedName: false }
   }
 
-  return trimmedFileName
+  return { fileName: trimmedFileName, isValidProvidedName: true }
 }
 
 const readReportAsset = async ({
@@ -600,12 +603,15 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       runtimePaths.pdfReportPathForTask?.(payload.taskId) ??
       runtimePaths.reportPathForTask(payload.taskId).replace(/\.md$/i, '.pdf')
     const fallbackPdfFileName = '代码审查报告.pdf'
-    const pdfFileName = sanitizeReportFileName(payload.pdfReportName, fallbackPdfFileName)
-    const trimmedPdfReportName = payload.pdfReportName?.trim()
-    const hasValidPdfReportName = Boolean(trimmedPdfReportName && pdfFileName === trimmedPdfReportName)
-    const workspacePdfPath = join(runtimePaths.workspaceForTask(payload.taskId), pdfFileName)
+    const { fileName: pdfFileName, isValidProvidedName } = resolveReportFileName(
+      payload.pdfReportName,
+      fallbackPdfFileName
+    )
+    const workspacePdfPath = isValidProvidedName
+      ? join(runtimePaths.workspaceForTask(payload.taskId), pdfFileName)
+      : undefined
 
-    if (await isExistingFile(workspacePdfPath)) {
+    if (workspacePdfPath && (await isExistingFile(workspacePdfPath))) {
       shell.showItemInFolder(workspacePdfPath)
       return { status: 'ready', pdfPath: workspacePdfPath }
     }
@@ -618,7 +624,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
     const taskApi = await createApiClient()
     const pdfBytes = await taskApi.downloadPdfReport(tokens.access_token, payload.taskId)
-    const pdfPath = hasValidPdfReportName ? workspacePdfPath : fallbackPdfPath
+    const pdfPath = workspacePdfPath ?? fallbackPdfPath
     await mkdir(dirname(pdfPath), { recursive: true })
     await writeFile(pdfPath, Buffer.from(pdfBytes))
     shell.showItemInFolder(pdfPath)

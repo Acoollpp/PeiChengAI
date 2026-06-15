@@ -683,6 +683,25 @@ describe('registerIpcHandlers', () => {
     expect(showItemInFolderMock).toHaveBeenCalledWith(pdfPath)
   })
 
+  it('rejects opening a PDF report without taskId before authentication', async () => {
+    const authStore = {
+      load: vi.fn(),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      authStore: authStore as never
+    })
+
+    const openPdfHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report:open-pdf'
+    )?.[1]
+
+    await expect(openPdfHandler({}, {})).rejects.toThrow('请先选择一个已完成任务报告。')
+    expect(authStore.load).not.toHaveBeenCalled()
+  })
+
   it('opens an existing named PDF report from the workspace without downloading it', async () => {
     const api = {
       downloadPdfReport: vi.fn()
@@ -828,9 +847,9 @@ describe('registerIpcHandlers', () => {
     expect(showItemInFolderMock).toHaveBeenCalledWith(pdfPath)
   })
 
-  it('falls back to the default PDF report path when pdfReportName is missing', async () => {
+  it('downloads to the default PDF report path when pdfReportName is missing', async () => {
     const api = {
-      downloadPdfReport: vi.fn(async () => new Uint8Array([37, 80, 68, 70]).buffer)
+      downloadPdfReport: vi.fn(async () => new Uint8Array([37, 80, 68, 70, 45, 110, 101, 119]).buffer)
     }
     const authStore = {
       load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
@@ -860,13 +879,16 @@ describe('registerIpcHandlers', () => {
     const openPdfHandler = handleMock.mock.calls.find(
       ([channel]) => channel === 'report:open-pdf'
     )?.[1]
-    const pdfPath = join(runtimeRoot, 'workspaces', 'task-remote', '代码审查报告.pdf')
+    const workspaceDir = join(runtimeRoot, 'workspaces', 'task-remote')
+    const pdfPath = join(workspaceDir, '代码审查报告.pdf')
+    await mkdir(workspaceDir, { recursive: true })
+    await writeFile(pdfPath, Buffer.from([37, 80, 68, 70, 45, 111, 108, 100]))
 
     await expect(openPdfHandler({}, { taskId: 'task-remote' })).resolves.toEqual({
       status: 'ready',
       pdfPath
     })
-    await expect(readFile(pdfPath)).resolves.toEqual(Buffer.from([37, 80, 68, 70]))
+    await expect(readFile(pdfPath)).resolves.toEqual(Buffer.from([37, 80, 68, 70, 45, 110, 101, 119]))
     expect(api.downloadPdfReport).toHaveBeenCalledWith('token-123', 'task-remote')
     expect(showItemInFolderMock).toHaveBeenCalledWith(pdfPath)
   })
