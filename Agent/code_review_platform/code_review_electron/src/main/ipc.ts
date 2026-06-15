@@ -589,9 +589,10 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   })
 
   ipcMain.handle('report:open-pdf', async (_event, payload: OpenPdfReportRequest): Promise<OpenPdfReportResult> => {
-    if (await isExistingFile(payload.localPdfPath)) {
-      shell.showItemInFolder(payload.localPdfPath)
-      return { status: 'ready', pdfPath: payload.localPdfPath }
+    const localPdfPath = payload.localPdfPath
+    if (localPdfPath && await isExistingFile(localPdfPath)) {
+      shell.showItemInFolder(localPdfPath)
+      return { status: 'ready', pdfPath: localPdfPath }
     }
 
     if (!payload.taskId) {
