@@ -45,6 +45,10 @@ type ReviewTaskStats = {
     svn_username: string | null
     report_count: number
   }>
+  trend?: Array<{
+    label: string
+    count: number
+  }>
 }
 
 const statusLabels: Array<{ key: ReviewTaskStatus; label: string }> = [
@@ -220,6 +224,8 @@ export function TaskStatsPanel() {
     1,
     ...reportsByUser.map((item) => item.report_count),
   )
+  const trend = stats.trend ?? []
+  const maxTrendCount = Math.max(1, ...trend.map((item) => item.count))
 
   return (
     <section className="space-y-4">
@@ -327,36 +333,76 @@ export function TaskStatsPanel() {
         </Card>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>状态分布</CardTitle>
-          <CardDescription>按任务当前状态统计。</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {statusLabels.map(({ key, label }) => {
-            const count = stats.by_status[key] ?? 0
-            const width = `${(count / maxStatusCount) * 100}%`
-
-            return (
-              <div
-                key={key}
-                className="grid grid-cols-[minmax(6rem,max-content)_minmax(0,1fr)_3rem] items-center gap-3 text-sm"
-              >
-                <span className="text-muted-foreground">{label}</span>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary"
-                    style={{ width }}
-                  />
+      {selectedRange === "all" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>提交趋势</CardTitle>
+            <CardDescription>按日期统计任务提交数量。</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {trend.length > 0 ? (
+              <div className="overflow-x-auto pb-2">
+                <div className="flex h-64 min-w-max items-end gap-4">
+                  {trend.map((item, index) => (
+                    <div
+                      key={`${item.label}-${index}`}
+                      className="flex h-full w-20 shrink-0 flex-col items-center justify-end gap-2 text-sm"
+                    >
+                      <span className="font-medium tabular-nums">
+                        {item.count}
+                      </span>
+                      <div className="flex h-44 w-full items-end justify-center rounded-md bg-muted/60 px-3 py-2">
+                        <div
+                          className="w-full rounded-t-md bg-primary transition-all"
+                          style={{
+                            height: `${(item.count / maxTrendCount) * 100}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="w-full truncate text-center text-muted-foreground">
+                        {item.label}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-                <span className="text-right font-medium tabular-nums">
-                  {count}
-                </span>
               </div>
-            )
-          })}
-        </CardContent>
-      </Card>
+            ) : (
+              <p className="text-sm text-muted-foreground">暂无提交记录。</p>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>状态分布</CardTitle>
+            <CardDescription>按任务当前状态统计。</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {statusLabels.map(({ key, label }) => {
+              const count = stats.by_status[key] ?? 0
+              const width = `${(count / maxStatusCount) * 100}%`
+
+              return (
+                <div
+                  key={key}
+                  className="grid grid-cols-[minmax(6rem,max-content)_minmax(0,1fr)_3rem] items-center gap-3 text-sm"
+                >
+                  <span className="text-muted-foreground">{label}</span>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary"
+                      style={{ width }}
+                    />
+                  </div>
+                  <span className="text-right font-medium tabular-nums">
+                    {count}
+                  </span>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+      )}
     </section>
   )
 }

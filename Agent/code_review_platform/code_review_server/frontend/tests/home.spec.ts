@@ -97,6 +97,10 @@ const taskStatsByRange = {
         report_count: 5,
       },
     ],
+    trend: [
+      { label: "2026-06-13", count: 3 },
+      { label: "2026-06-14", count: 5 },
+    ],
   },
   yesterday: {
     range: "yesterday",
@@ -116,6 +120,7 @@ const taskStatsByRange = {
       cancelled: 0,
     },
     reports_by_user: [],
+    trend: [{ label: "2026-06-12", count: 4 }],
   },
   all: {
     range: "all",
@@ -135,6 +140,11 @@ const taskStatsByRange = {
       cancelled: 2,
     },
     reports_by_user: [],
+    trend: [
+      { label: "2026-06-10", count: 12 },
+      { label: "2026-06-11", count: 38 },
+      { label: "2026-06-12", count: 42 },
+    ],
   },
 }
 
@@ -208,19 +218,10 @@ test("Home page is renamed and shows task statistics", async ({ page }) => {
   await expect(summaryCard(page, "总任务数").getByText("200")).toBeVisible()
   await expect(summaryCard(page, "平均运行时间").getByText("1天")).toBeVisible()
   await expect(page.getByText("报告生成数")).toBeVisible()
-  await expect(page.getByText("状态分布")).toBeVisible()
-
-  const taskStats = page
-    .getByText("状态分布")
-    .locator("xpath=ancestor::div[@data-slot='card']")
-  await expect(taskStats.getByText("待处理", { exact: true })).toBeVisible()
-  await expect(taskStats.getByText("环境检查中", { exact: true })).toBeVisible()
-  await expect(taskStats.getByText("运行中", { exact: true })).toBeVisible()
-  await expect(taskStats.getByText("上传报告中", { exact: true })).toBeVisible()
-  await expect(taskStats.getByText("成功", { exact: true })).toBeVisible()
-  await expect(taskStats.getByText("失败", { exact: true })).toBeVisible()
-  await expect(taskStats.getByText("环境异常", { exact: true })).toBeVisible()
-  await expect(taskStats.getByText("已取消", { exact: true })).toBeVisible()
+  await expect(page.getByText("提交趋势")).toBeVisible()
+  await expect(page.getByText("按日期统计任务提交数量。")).toBeVisible()
+  await expect(page.getByText("2026-06-12")).toBeVisible()
+  await expect(page.getByText("状态分布")).not.toBeVisible()
 })
 
 test("Task statistics supports today yesterday and all ranges", async ({
@@ -244,6 +245,12 @@ test("Task statistics supports today yesterday and all ranges", async ({
   await expect(
     summaryCard(page, "平均运行时间").getByText("2小时"),
   ).toBeVisible()
+  await expect(page.getByText("状态分布")).toBeVisible()
+  const taskStats = page
+    .getByText("状态分布")
+    .locator("xpath=ancestor::div[@data-slot='card']")
+  await expect(taskStats.getByText("待处理", { exact: true })).toBeVisible()
+  await expect(taskStats.getByText("成功", { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "昨日" }).click()
   await expect(page.getByRole("button", { name: "昨日" })).toHaveAttribute(
     "aria-pressed",

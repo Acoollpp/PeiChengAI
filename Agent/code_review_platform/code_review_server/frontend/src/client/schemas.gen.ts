@@ -119,6 +119,19 @@ export const Body_feedback_create_feedbackSchema = {
     title: 'Body_feedback-create_feedback'
 } as const;
 
+export const Body_review_tasks_upload_review_task_pdf_reportSchema = {
+    properties: {
+        upload: {
+            type: 'string',
+            format: 'binary',
+            title: 'Upload'
+        }
+    },
+    type: 'object',
+    required: ['upload'],
+    title: 'Body_review-tasks-upload_review_task_pdf_report'
+} as const;
+
 export const Body_review_tasks_upload_review_task_reportSchema = {
     properties: {
         upload: {
@@ -1029,6 +1042,28 @@ export const ReviewTaskPublicSchema = {
             ],
             title: 'Report Name'
         },
+        pdf_report_path: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Pdf Report Path'
+        },
+        pdf_report_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Pdf Report Name'
+        },
         error_message: {
             anyOf: [
                 {
@@ -1152,6 +1187,9 @@ export const ReviewTaskReportUserStatsPublicSchema = {
 
 export const ReviewTaskStatsPublicSchema = {
     properties: {
+        range: {
+            '$ref': '#/components/schemas/FeedbackStatsRange'
+        },
         total: {
             type: 'integer',
             title: 'Total'
@@ -1167,6 +1205,17 @@ export const ReviewTaskStatsPublicSchema = {
         failed_or_error: {
             type: 'integer',
             title: 'Failed Or Error'
+        },
+        average_duration_seconds: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Average Duration Seconds'
         },
         by_status: {
             additionalProperties: {
@@ -1184,10 +1233,17 @@ export const ReviewTaskStatsPublicSchema = {
             },
             type: 'array',
             title: 'Reports By User'
+        },
+        trend: {
+            items: {
+                '$ref': '#/components/schemas/ReviewTaskTrendPointPublic'
+            },
+            type: 'array',
+            title: 'Trend'
         }
     },
     type: 'object',
-    required: ['total', 'success', 'running', 'failed_or_error', 'by_status'],
+    required: ['range', 'total', 'success', 'running', 'failed_or_error', 'by_status'],
     title: 'ReviewTaskStatsPublic'
 } as const;
 
@@ -1241,6 +1297,22 @@ export const ReviewTaskStatusUpdateSchema = {
     type: 'object',
     required: ['status'],
     title: 'ReviewTaskStatusUpdate'
+} as const;
+
+export const ReviewTaskTrendPointPublicSchema = {
+    properties: {
+        label: {
+            type: 'string',
+            title: 'Label'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['label', 'count'],
+    title: 'ReviewTaskTrendPointPublic'
 } as const;
 
 export const ReviewTasksPublicSchema = {

@@ -23,6 +23,10 @@ export type Body_feedback_create_feedback = {
     screenshot?: ((Blob | File) | null);
 };
 
+export type Body_review_tasks_upload_review_task_pdf_report = {
+    upload: (Blob | File);
+};
+
 export type Body_review_tasks_upload_review_task_report = {
     upload: (Blob | File);
 };
@@ -221,14 +225,17 @@ export type ReviewTasksPublic = {
 };
 
 export type ReviewTaskStatsPublic = {
+    range: FeedbackStatsRange;
     total: number;
     success: number;
     running: number;
     failed_or_error: number;
+    average_duration_seconds?: (number | null);
     by_status: {
         [key: string]: (number);
     };
     reports_by_user?: Array<ReviewTaskReportUserStatsPublic>;
+    trend?: Array<ReviewTaskTrendPointPublic>;
 };
 
 export type ReviewTaskStatus = 'created' | 'checking_environment' | 'running_codex' | 'uploading_report' | 'success' | 'failed' | 'environment_error' | 'cancelled';
@@ -238,6 +245,11 @@ export type ReviewTaskStatusUpdate = {
     error_message?: (string | null);
     client_hostname?: (string | null);
     client_version?: (string | null);
+};
+
+export type ReviewTaskTrendPointPublic = {
+    label: string;
+    count: number;
 };
 
 export type SkillPackagePublic = {
@@ -481,6 +493,10 @@ export type ReviewTasksReadReviewTasksData = {
 
 export type ReviewTasksReadReviewTasksResponse = (ReviewTasksPublic);
 
+export type ReviewTasksReadReviewTaskStatsData = {
+    range?: FeedbackStatsRange;
+};
+
 export type ReviewTasksReadReviewTaskStatsResponse = (ReviewTaskStatsPublic);
 
 export type ReviewTasksReadReviewTaskData = {
@@ -517,11 +533,24 @@ export type ReviewTasksReadReviewTaskReportData = {
 
 export type ReviewTasksReadReviewTaskReportResponse = (string);
 
+export type ReviewTasksUploadReviewTaskPdfReportData = {
+    formData: Body_review_tasks_upload_review_task_pdf_report;
+    taskId: string;
+};
+
+export type ReviewTasksUploadReviewTaskPdfReportResponse = (ReviewTaskPublic);
+
 export type ReviewTasksDownloadReviewTaskReportData = {
     taskId: string;
 };
 
 export type ReviewTasksDownloadReviewTaskReportResponse = (unknown);
+
+export type ReviewTasksDownloadReviewTaskPdfReportData = {
+    taskId: string;
+};
+
+export type ReviewTasksDownloadReviewTaskPdfReportResponse = (unknown);
 
 export type SkillsReadSkillsData = {
     limit?: number;

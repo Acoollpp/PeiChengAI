@@ -277,6 +277,11 @@ class ReviewTaskReportUserStatsPublic(SQLModel):
     report_count: int
 
 
+class ReviewTaskTrendPointPublic(SQLModel):
+    label: str
+    count: int
+
+
 class ReviewTaskStatsPublic(SQLModel):
     range: FeedbackStatsRange
     total: int
@@ -286,6 +291,7 @@ class ReviewTaskStatsPublic(SQLModel):
     average_duration_seconds: int | None = None
     by_status: dict[ReviewTaskStatus, int]
     reports_by_user: list[ReviewTaskReportUserStatsPublic] = Field(default_factory=list)
+    trend: list[ReviewTaskTrendPointPublic] = Field(default_factory=list)
 
 
 class FeedbackScreenshotPublic(SQLModel):

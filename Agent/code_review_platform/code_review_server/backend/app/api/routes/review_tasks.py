@@ -20,6 +20,7 @@ from app.models import (
     ReviewTaskStatsPublic,
     ReviewTaskStatus,
     ReviewTaskStatusUpdate,
+    ReviewTaskTrendPointPublic,
     User,
 )
 from app.services import report_service
@@ -88,6 +89,30 @@ def _range_filters(stats_range: FeedbackStatsRange) -> list[Any]:
     if end is not None:
         filters.append(ReviewTask.created_at < end)
     return filters
+
+
+def _trend_points(
+    *,
+    session: SessionDep,
+    filters: list[Any],
+) -> list[ReviewTaskTrendPointPublic]:
+    rows = session.exec(
+        select(ReviewTask.created_at)
+        .where(*filters)
+        .order_by(col(ReviewTask.created_at))
+    ).all()
+
+    counts_by_date: dict[str, int] = {}
+    for created_at in rows:
+        if created_at is None:
+            continue
+        label = created_at.astimezone(TASK_STATS_TIMEZONE).date().isoformat()
+        counts_by_date[label] = counts_by_date.get(label, 0) + 1
+
+    return [
+        ReviewTaskTrendPointPublic(label=label, count=count)
+        for label, count in list(counts_by_date.items())[-30:]
+    ]
 
 
 def _normalize_revision(revision: str) -> str:
@@ -265,6 +290,7 @@ def read_review_task_stats(
         average_duration_seconds=average_duration_seconds,
         by_status=by_status,
         reports_by_user=reports_by_user,
+        trend=_trend_points(session=session, filters=filters),
     )
 
 

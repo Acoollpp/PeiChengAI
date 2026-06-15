@@ -912,6 +912,7 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
     assert today_content["running"] == 0
     assert today_content["failed_or_error"] == 0
     assert today_content["reports_by_user"] == []
+    assert today_content["trend"][-1]["count"] == 1
 
     assert yesterday_response.status_code == 200
     yesterday_content = yesterday_response.json()
@@ -920,6 +921,7 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
     assert yesterday_content["success"] == 0
     assert yesterday_content["failed_or_error"] == 1
     assert yesterday_content["reports_by_user"] == []
+    assert yesterday_content["trend"][-1]["count"] == 1
 
     assert all_response.status_code == 200
     all_content = all_response.json()
@@ -929,6 +931,27 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
     assert all_content["running"] == 1
     assert all_content["failed_or_error"] == 1
     assert all_content["reports_by_user"] == []
+    today_label = datetime.now(TASK_STATS_TIMEZONE).date().isoformat()
+    yesterday_label = (
+        datetime.now(TASK_STATS_TIMEZONE).date() - timedelta(days=1)
+    ).isoformat()
+    older_label = (
+        datetime.now(TASK_STATS_TIMEZONE).date() - timedelta(days=2)
+    ).isoformat()
+    assert all_content["trend"] == [
+        {
+            "label": older_label,
+            "count": 1,
+        },
+        {
+            "label": yesterday_label,
+            "count": 1,
+        },
+        {
+            "label": today_label,
+            "count": 1,
+        },
+    ]
 
 
 def test_task_stats_average_duration_uses_valid_finished_tasks(
