@@ -348,6 +348,17 @@ h2 {
   background: #e9eff7;
 }
 
+.ai-test {
+  color: #8a4b00;
+  background: #fff7ed;
+  border: 1px solid rgba(217, 119, 6, 0.22);
+  font-weight: 800;
+}
+
+.ai-test:hover {
+  background: #ffedd5;
+}
+
 .primary {
   min-width: 142px;
   padding: 0 20px;

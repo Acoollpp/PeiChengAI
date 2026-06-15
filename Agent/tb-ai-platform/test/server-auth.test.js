@@ -157,6 +157,15 @@ function parseNdjson(raw) {
     assert.doesNotMatch(runFlow.body, /"type":"stdout"/);
     assert.doesNotMatch(runFlow.body, /"type":"stderr"/);
 
+    const aiTestRun = await request(port, {
+      method: "POST",
+      path: "/api/run",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ mode: "create", message: "项目名称：61374-P16S200A-低压户储", aiTest: true })
+    });
+    assert.strictEqual(aiTestRun.statusCode, 200);
+    assert.match(aiTestRun.body, /"aiTest":true/);
+
     const repairFlow = await request(port, {
       method: "POST",
       path: "/api/repair",
@@ -214,6 +223,7 @@ function parseNdjson(raw) {
     assert.strictEqual(history.statusCode, 200);
     const historyBody = JSON.parse(history.body);
     assert.ok(historyBody.history.some(item => item.itemCount === 2 && item.mode === "create"));
+    assert.ok(historyBody.history.some(item => /AI测试/.test(item.title)));
   } finally {
     await new Promise(resolve => server.close(resolve));
     store.close();

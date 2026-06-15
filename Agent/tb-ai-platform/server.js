@@ -97,6 +97,7 @@ function createServer({ config, store, syncState }) {
 
     const mode = modes[body.mode];
     const message = String(body.message || "").trim();
+    const aiTest = body.mode === "create" && Boolean(body.aiTest);
     if (!mode) return sendJson(res, 400, { error: "任务类型无效" });
     if (!message) return sendJson(res, 400, { error: "请输入任务内容" });
     const items = detectProjectItems(body.mode, message);
@@ -115,7 +116,8 @@ function createServer({ config, store, syncState }) {
       metadata: {
         title: mode.title,
         messageLength: message.length,
-        itemCount: items.length
+        itemCount: items.length,
+        aiTest
       }
     });
 
@@ -123,7 +125,7 @@ function createServer({ config, store, syncState }) {
       userId: currentUser.id,
       runId,
       mode: body.mode,
-      title: mode.title,
+      title: aiTest ? `${mode.title}（AI测试）` : mode.title,
       message,
       itemCount: items.length
     });
@@ -143,7 +145,8 @@ function createServer({ config, store, syncState }) {
       message,
       flow,
       items,
-      startEvent: { type: "start", runId, mode: body.mode, title: mode.title, startedAt, steps: flow, items }
+      aiTest,
+      startEvent: { type: "start", runId, mode: body.mode, title: mode.title, startedAt, steps: flow, items, aiTest }
     });
   }
 
@@ -257,7 +260,7 @@ function createServer({ config, store, syncState }) {
   return http.createServer(router);
 }
 
-async function executeCodexBatch({ req, res, store, runId, config, mode, message, flow, items, startEvent }) {
+async function executeCodexBatch({ req, res, store, runId, config, mode, message, flow, items, aiTest, startEvent }) {
   writeNdjson(res, startEvent);
   const results = await Promise.all(
     items.map(item =>
@@ -270,7 +273,8 @@ async function executeCodexBatch({ req, res, store, runId, config, mode, message
           message: item.message,
           steps: flow,
           item,
-          totalItems: items.length
+          totalItems: items.length,
+          aiTest
         }),
         startEvent: null,
         item,
@@ -324,7 +328,7 @@ function normalizeStepId(stepId, index) {
   return /^[a-z0-9][a-z0-9_-]*$/i.test(clean) ? clean : `step-${index}`;
 }
 
-function buildCodexPrompt({ mode, message, steps, repairStep, item, totalItems }) {
+function buildCodexPrompt({ mode, message, steps, repairStep, item, totalItems, aiTest }) {
   const stepList = steps.map(step => `- ${step.id}: ${step.label}`).join("\n");
   const markerGuide = [
     "你必须按下面的 skill 流程执行，并只用机器可解析标记汇报步骤状态：",
@@ -341,7 +345,10 @@ function buildCodexPrompt({ mode, message, steps, repairStep, item, totalItems }
   const itemGuide = item && totalItems > 1
     ? `\n这是并行创建任务中的一个独立项目：${item.title}。只处理下面这一份项目信息单，不要创建其他项目。`
     : "";
-  return `${mode.promptPrefix}\n\n${itemGuide}\n\n${message}\n\n${markerGuide}${repairGuide}`;
+  const aiTestGuide = aiTest
+    ? "\n这是 AI 测试创建：创建项目空间、迭代、文件夹、任务等所有会显示项目名的位置，项目名称都必须追加 `（AI测试）`；如果原信息单项目名已带该后缀，不要重复追加。"
+    : "";
+  return `${mode.promptPrefix}\n\n${itemGuide}${aiTestGuide}\n\n${message}\n\n${markerGuide}${repairGuide}`;
 }
 
 function validateTaskMessage(modeKey, mode, message, items = []) {

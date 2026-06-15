@@ -38,6 +38,7 @@ const el = {
   message: document.querySelector("#messageInput"),
   pulse: document.querySelector(".pulse"),
   runBtn: document.querySelector("#runBtn"),
+  aiTestBtn: document.querySelector("#aiTestBtn"),
   clearBtn: document.querySelector("#clearBtn"),
   runState: document.querySelector("#runState"),
   runId: document.querySelector("#runId"),
@@ -53,6 +54,7 @@ function setMode(mode) {
   });
   el.modeTitle.textContent = modeTitles[mode];
   el.message.placeholder = modePlaceholders[mode];
+  el.aiTestBtn.hidden = mode !== "create";
   resetFlowStatuses();
   renderFlowSteps();
 }
@@ -74,6 +76,7 @@ function setUser(user) {
 function setRunning(running) {
   state.running = running;
   el.runBtn.disabled = running;
+  el.aiTestBtn.disabled = running;
   el.runBtn.querySelector("span").textContent = running ? "运行中" : "启动流程";
   el.runState.textContent = running ? "Codex 正在按 skill 流程处理" : "等待输入";
   updateRepairButtons();
@@ -302,8 +305,9 @@ function renderHistory(history) {
   }
 }
 
-async function runTask() {
+async function runTask(options = {}) {
   if (state.running) return;
+  const aiTest = Boolean(options.aiTest);
   const message = el.message.value.trim();
   if (!message) {
     el.runState.textContent = "请先填写任务内容";
@@ -319,14 +323,15 @@ async function runTask() {
 
   resetFlowStatuses();
   renderFlowSteps();
-  el.runId.textContent = "准备启动";
+  el.runId.textContent = aiTest ? "准备 AI 测试" : "准备启动";
   setRunning(true);
+  if (aiTest) el.runState.textContent = "AI测试创建会给项目名追加（AI测试）";
 
   try {
     const res = await fetch("/api/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: state.mode, message })
+      body: JSON.stringify({ mode: state.mode, message, aiTest })
     });
     await consumeNdjson(res);
   } catch (err) {
@@ -478,6 +483,7 @@ el.loginKey.addEventListener("keydown", event => {
   if (event.key === "Enter") login();
 });
 el.runBtn.addEventListener("click", runTask);
+el.aiTestBtn.addEventListener("click", () => runTask({ aiTest: true }));
 el.clearBtn.addEventListener("click", () => {
   el.message.value = "";
   resetFlowStatuses();
