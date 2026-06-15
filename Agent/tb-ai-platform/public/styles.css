@@ -387,7 +387,8 @@ h2 {
 }
 
 .ghost,
-.primary {
+.primary,
+.danger {
   min-height: 42px;
   border: 0;
   border-radius: var(--radius);
@@ -437,6 +438,25 @@ h2 {
 .primary:disabled {
   cursor: not-allowed;
   opacity: 0.58;
+  transform: none;
+}
+
+.danger {
+  min-width: 86px;
+  padding: 0 16px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--red), #b91c1c);
+  box-shadow: 0 10px 22px rgba(220, 38, 38, 0.18);
+  font-weight: 800;
+}
+
+.danger:hover {
+  background: linear-gradient(135deg, #b91c1c, #991b1b);
+}
+
+.danger:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
   transform: none;
 }
 

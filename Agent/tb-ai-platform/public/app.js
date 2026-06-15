@@ -19,7 +19,10 @@ const state = {
   },
   runMode: "create",
   runStartedAt: null,
-  timerId: null
+  timerId: null,
+  currentRunId: "",
+  abortController: null,
+  abortRequested: false
 };
 
 const modeTitles = {
@@ -57,6 +60,7 @@ const el = {
   pulse: document.querySelector(".pulse"),
   runBtn: document.querySelector("#runBtn"),
   aiTestBtn: document.querySelector("#aiTestBtn"),
+  abortBtn: document.querySelector("#abortBtn"),
   clearBtn: document.querySelector("#clearBtn"),
   runState: document.querySelector("#runState"),
   runTimer: document.querySelector("#runTimer"),
@@ -102,12 +106,17 @@ function setRunning(running) {
   state.running = running;
   el.runBtn.disabled = running;
   el.aiTestBtn.disabled = running;
+  el.abortBtn.hidden = !running;
+  el.abortBtn.disabled = !running;
   el.runBtn.querySelector("span").textContent = running ? "运行中" : "启动流程";
   if (running) {
     startTimer();
     el.runState.textContent = "Codex 正在按 skill 流程处理";
   } else {
     stopTimer();
+    state.abortController = null;
+    state.abortRequested = false;
+    state.currentRunId = "";
   }
   updateRepairButtons();
 }
@@ -211,6 +220,8 @@ async function logout() {
   el.runId.textContent = "未开始";
   el.runState.textContent = "等待输入";
   el.runTimer.textContent = "00:00";
+  el.abortBtn.hidden = true;
+  el.abortBtn.disabled = true;
   clearResults();
 }
 
@@ -445,6 +456,8 @@ async function runTask(options = {}) {
   renderFlowSteps();
   clearResults();
   state.runMode = state.mode;
+  state.abortController = new AbortController();
+  state.abortRequested = false;
   el.runId.textContent = aiTest ? "准备 AI 测试" : "准备启动";
   setRunning(true);
   if (aiTest) el.runState.textContent = "AI测试创建会给项目名追加（AI测试）";
@@ -453,13 +466,15 @@ async function runTask(options = {}) {
     const res = await fetch("/api/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: state.mode, message, projectUrl, aiTest })
+      body: JSON.stringify({ mode: state.mode, message, projectUrl, aiTest }),
+      signal: state.abortController.signal
     });
     await consumeNdjson(res, { source: "run" });
   } catch (err) {
-    el.runState.textContent = err.message;
+    el.runState.textContent = state.abortRequested ? "已中止生成" : err.message;
   } finally {
     setRunning(false);
+    loadHistory(state.runMode);
   }
 }
 
@@ -481,20 +496,40 @@ async function repairStep(stepId) {
 
   updateStep(stepId, "running");
   state.runMode = state.mode;
+  state.abortController = new AbortController();
+  state.abortRequested = false;
   setRunning(true);
   try {
     const res = await fetch("/api/repair", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: state.mode, message, projectUrl, stepId, continueAfterRepair: true })
+      body: JSON.stringify({ mode: state.mode, message, projectUrl, stepId, continueAfterRepair: true }),
+      signal: state.abortController.signal
     });
     await consumeNdjson(res, { source: "repair" });
   } catch (err) {
     updateStep(stepId, "failed");
-    el.runState.textContent = err.message;
+    el.runState.textContent = state.abortRequested ? "已中止生成" : err.message;
   } finally {
     setRunning(false);
+    loadHistory(state.runMode);
   }
+}
+
+async function abortCurrentRun() {
+  if (!state.running) return;
+  state.abortRequested = true;
+  el.abortBtn.disabled = true;
+  el.runState.textContent = "正在中止生成";
+  const runId = state.currentRunId || el.runId.textContent;
+  if (runId && runId !== "准备启动" && runId !== "准备 AI 测试" && runId !== "未开始") {
+    fetch("/api/abort", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ runId })
+    }).catch(() => {});
+  }
+  state.abortController?.abort();
 }
 
 async function consumeNdjson(res, context = {}) {
@@ -527,6 +562,7 @@ async function consumeNdjson(res, context = {}) {
 function handleStreamEvent(event, context = {}) {
   if (event.type === "start") {
     el.runId.textContent = event.runId;
+    state.currentRunId = event.runId;
     if (event.startedAt) {
       state.runStartedAt = Date.parse(event.startedAt);
       updateTimer();
@@ -663,6 +699,10 @@ el.runBtn.addEventListener("click", event => {
 el.aiTestBtn.addEventListener("click", event => {
   flashButton(event.currentTarget);
   runTask({ aiTest: true });
+});
+el.abortBtn.addEventListener("click", event => {
+  flashButton(event.currentTarget);
+  abortCurrentRun();
 });
 el.clearBtn.addEventListener("click", event => {
   flashButton(event.currentTarget);

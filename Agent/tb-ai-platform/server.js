@@ -30,6 +30,7 @@ const modes = {
 
 function createServer({ config, store, syncState }) {
   fs.mkdirSync(config.workspaceDir, { recursive: true });
+  const activeRuns = new Map();
   const auth = createAuthService({
     store,
     sessionSecret: config.sessionSecret,
@@ -147,9 +148,12 @@ function createServer({ config, store, syncState }) {
       req,
       res,
       store,
+      activeRuns,
+      userId: currentUser.id,
       runId,
       config,
       mode,
+      modeKey: body.mode,
       message,
       flow,
       items,
@@ -229,6 +233,7 @@ function createServer({ config, store, syncState }) {
     executeCodexStream({
       req,
       res,
+      controller: createRunController({ activeRuns, runId, userId: currentUser.id, modeKey: body.mode }),
       config,
       prompt,
       startEvent: {
@@ -242,6 +247,7 @@ function createServer({ config, store, syncState }) {
         repairStepId: step.id
       },
       onDone: result => {
+        activeRuns.delete(runId);
         const resultUrls = result.url ? [{ itemId: result.itemId, itemTitle: result.itemTitle, url: result.url }] : [];
         const errorMessages = result.error ? [{ itemId: result.itemId, itemTitle: result.itemTitle, message: result.error }] : [];
         store.finishRunHistory({
@@ -257,6 +263,32 @@ function createServer({ config, store, syncState }) {
         });
       }
     });
+  }
+
+  async function abortRun(req, res) {
+    const currentUser = auth.getCurrentUser(req);
+    if (!currentUser) return sendJson(res, 401, { error: "请先登录" });
+
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message });
+    }
+
+    const runId = String(body.runId || "").trim();
+    if (!runId) return sendJson(res, 400, { error: "缺少 runId" });
+    const active = activeRuns.get(runId);
+    if (!active || active.userId !== currentUser.id) return sendJson(res, 404, { error: "没有找到正在执行的任务" });
+    active.abort("用户已中止生成");
+    store.recordAuditLog({
+      userId: currentUser.id,
+      action: "abort_codex_run",
+      mode: active.modeKey,
+      runId,
+      metadata: { reason: "用户已中止生成" }
+    });
+    return sendJson(res, 200, { ok: true, runId });
   }
 
   function router(req, res) {
@@ -279,6 +311,7 @@ function createServer({ config, store, syncState }) {
     if (req.method === "POST" && req.url.startsWith("/api/logout")) return logout(req, res);
     if (req.method === "POST" && req.url.startsWith("/api/run")) return runCodex(req, res);
     if (req.method === "POST" && req.url.startsWith("/api/repair")) return repairStep(req, res);
+    if (req.method === "POST" && req.url.startsWith("/api/abort")) return abortRun(req, res);
 
     if (req.method === "GET") return serveStatic(req, res, config.publicDir);
     sendJson(res, 405, { error: "方法不支持" });
@@ -287,13 +320,31 @@ function createServer({ config, store, syncState }) {
   return http.createServer(router);
 }
 
-async function executeCodexBatch({ req, res, store, runId, config, mode, message, flow, items, aiTest, projectUrl, startEvent }) {
+async function executeCodexBatch({
+  req,
+  res,
+  store,
+  activeRuns,
+  userId,
+  runId,
+  config,
+  mode,
+  modeKey,
+  message,
+  flow,
+  items,
+  aiTest,
+  projectUrl,
+  startEvent
+}) {
+  const controller = createRunController({ activeRuns, runId, userId, modeKey });
   writeNdjson(res, startEvent);
   const results = await Promise.all(
     items.map(item =>
       executeCodexStream({
         req,
         res,
+        controller,
         config,
         prompt: buildCodexPrompt({
           mode,
@@ -310,6 +361,7 @@ async function executeCodexBatch({ req, res, store, runId, config, mode, message
       })
     )
   );
+  activeRuns.delete(runId);
 
   const completedSteps = results.flatMap(result => result.completedSteps.map(stepId => `${result.itemId}:${stepId}`));
   const failedSteps = results.flatMap(result => result.failedSteps.map(stepId => `${result.itemId}:${stepId}`));
@@ -440,7 +492,25 @@ function hasChangeFields(message, items = []) {
   return /项目名称/.test(text) && /原项目编号/.test(text) && /新项目编号/.test(text);
 }
 
-function executeCodexStream({ req, res, config, prompt, startEvent, item, endResponse = true, onDone }) {
+function createRunController({ activeRuns, runId, userId, modeKey }) {
+  const controller = {
+    runId,
+    userId,
+    modeKey,
+    aborted: false,
+    abortReason: "",
+    children: new Set(),
+    abort(reason = "用户已中止生成") {
+      this.aborted = true;
+      this.abortReason = reason;
+      for (const child of this.children) killChildProcess(child);
+    }
+  };
+  activeRuns.set(runId, controller);
+  return controller;
+}
+
+function executeCodexStream({ req, res, config, prompt, startEvent, item, endResponse = true, onDone, controller }) {
   const completedSteps = new Set();
   const failedSteps = new Set();
   const knownSteps = new Set((startEvent?.steps || []).map(step => step.id));
@@ -469,8 +539,10 @@ function executeCodexStream({ req, res, config, prompt, startEvent, item, endRes
         LANG: "C.UTF-8",
         LC_ALL: "C.UTF-8"
       },
+      detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"]
     });
+    controller?.children.add(child);
 
     child.stdin.on("error", err => {
       if (err.code !== "EPIPE") writeNdjson(res, withItem({ type: "error", error: err.message }, item));
@@ -500,24 +572,31 @@ function executeCodexStream({ req, res, config, prompt, startEvent, item, endRes
     child.stderr.on("data", handleOutput);
 
     child.on("error", err => {
+      controller?.children.delete(child);
       writeNdjson(res, withItem({ type: "error", error: err.message }, item));
       if (endResponse) res.end();
       resolve(streamResult({ item, code: 1, completedSteps, failedSteps, knownSteps, resultUrl, errorMessage: errorMessage || err.message }));
     });
 
     child.on("close", code => {
+      controller?.children.delete(child);
       const missing = [...knownSteps].filter(stepId => !completedSteps.has(stepId));
+      const aborted = Boolean(controller?.aborted);
+      if (aborted && !errorMessage) {
+        errorMessage = controller.abortReason || "用户已中止生成";
+        writeNdjson(res, withItem({ type: "run_error", message: errorMessage }, item));
+      }
       if (!errorMessage && (code !== 0 || missing.length)) {
         errorMessage = code !== 0
           ? `Codex 退出码 ${code}`
           : `未完成步骤：${missing.join(", ")}`;
         writeNdjson(res, withItem({ type: "run_error", message: errorMessage }, item));
       }
-      const result = streamResult({ item, code, completedSteps, failedSteps, knownSteps, resultUrl, errorMessage });
+      const result = streamResult({ item, code: aborted ? 130 : code, completedSteps, failedSteps, knownSteps, resultUrl, errorMessage });
       if (endResponse) {
         writeNdjson(res, {
           type: "done",
-          code,
+          code: result.code,
           completedSteps: result.completedSteps,
           failedSteps: result.failedSteps,
           missingSteps: result.missingSteps,
@@ -530,9 +609,29 @@ function executeCodexStream({ req, res, config, prompt, startEvent, item, endRes
     });
 
     res.on("close", () => {
-      if (!res.writableEnded && !child.killed) child.kill("SIGTERM");
+      if (!res.writableEnded && !child.killed) {
+        if (controller) controller.abort("用户已中止生成");
+        else killChildProcess(child);
+      }
     });
   });
+}
+
+function killChildProcess(child) {
+  if (!child || child.killed) return;
+  try {
+    if (process.platform !== "win32" && child.pid) {
+      process.kill(-child.pid, "SIGTERM");
+    } else {
+      child.kill("SIGTERM");
+    }
+  } catch {
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      // Process already exited.
+    }
+  }
 }
 
 function streamResult({ item, code, completedSteps, failedSteps, knownSteps, resultUrl, errorMessage }) {
@@ -579,7 +678,12 @@ function withItem(event, item) {
 }
 
 function writeNdjson(res, event) {
-  res.write(JSON.stringify(event) + "\n");
+  if (res.destroyed || res.writableEnded) return;
+  try {
+    res.write(JSON.stringify(event) + "\n");
+  } catch {
+    // The browser may have aborted the stream while the child process is closing.
+  }
 }
 
 function sendJson(res, status, data, headers = {}) {
