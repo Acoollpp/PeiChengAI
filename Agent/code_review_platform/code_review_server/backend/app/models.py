@@ -48,7 +48,6 @@ class DepartmentBase(SQLModel):
     name: str = Field(min_length=1, max_length=255, index=True)
     description: str | None = Field(default=None, max_length=1024)
     is_active: bool = Field(default=True, index=True)
-    sort_order: int = Field(default=0, index=True)
 
 
 class DepartmentCreate(DepartmentBase):
@@ -59,7 +58,6 @@ class DepartmentUpdate(SQLModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=1024)
     is_active: bool | None = None
-    sort_order: int | None = None
 
 
 class Department(DepartmentBase, table=True):
@@ -184,14 +182,14 @@ class ReviewFocusDirection(SQLModel, table=True):
     __tablename__ = "review_focus_direction"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    title: str = Field(min_length=1, max_length=255)
+    content: str = Field(min_length=1, max_length=4096)
     department_id: uuid.UUID | None = Field(
         default=None, foreign_key="department.id", index=True
     )
-    name: str = Field(max_length=255, index=True)
-    description: str | None = Field(default=None, max_length=2048)
-    content: str | None = Field(default=None, max_length=8192)
     is_active: bool = Field(default=True, index=True)
-    sort_order: int = Field(default=0, index=True)
+    usage_count: int = Field(default=0)
+    created_by_user_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
@@ -206,15 +204,13 @@ class ReviewTaskRequirementFile(SQLModel, table=True):
     __tablename__ = "review_task_requirement_file"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    task_id: uuid.UUID = Field(foreign_key="review_task.id", nullable=False, index=True)
     file_name: str = Field(max_length=255)
     file_path: str = Field(max_length=2048)
-    file_size: int
-    file_sha256: str = Field(max_length=64, index=True)
     content_type: str | None = Field(default=None, max_length=128)
-    uploaded_by_user_id: uuid.UUID | None = Field(
-        default=None, foreign_key="user.id", index=True
-    )
-    created_at: datetime | None = Field(
+    file_size: int
+    sha256: str = Field(max_length=64, index=True)
+    uploaded_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
     )
@@ -240,10 +236,8 @@ class ReviewTask(SQLModel, table=True):
     focus_direction_id: uuid.UUID | None = Field(
         default=None, foreign_key="review_focus_direction.id", index=True
     )
-    focus_direction_snapshot: str | None = Field(default=None, max_length=8192)
-    requirement_file_id: uuid.UUID | None = Field(
-        default=None, foreign_key="review_task_requirement_file.id", index=True
-    )
+    focus_direction_snapshot: str | None = Field(default=None, max_length=4096)
+    requirement_file_id: uuid.UUID | None = Field(default=None, index=True)
     requirement_file_name: str | None = Field(default=None, max_length=255)
     requirement_file_size: int | None = Field(default=None)
     requirement_file_sha256: str | None = Field(default=None, max_length=64)
@@ -333,7 +327,7 @@ class ReviewTaskCreate(SQLModel):
     template_key: str | None = Field(default=None, max_length=64)
     skill_name: str | None = Field(default=None, max_length=255)
     focus_direction_id: uuid.UUID | None = None
-    focus_direction_snapshot: str | None = Field(default=None, max_length=8192)
+    focus_direction_snapshot: str | None = Field(default=None, max_length=4096)
     requirement_file_name: str | None = Field(default=None, max_length=255)
 
 
