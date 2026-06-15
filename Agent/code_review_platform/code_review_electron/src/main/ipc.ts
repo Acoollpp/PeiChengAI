@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
 
-import { ipcMain, shell } from 'electron'
+import { dialog, ipcMain, shell } from 'electron'
 
 import {
   ApiClient,
@@ -98,6 +98,15 @@ interface CancelTaskRequest {
 interface CancelTaskResult {
   status: 'cancelled' | 'not_found'
 }
+
+type SelectRequirementFileResult =
+  | {
+      status: 'selected'
+      filePath: string
+    }
+  | {
+      status: 'cancelled'
+    }
 
 interface ActiveReviewTask {
   clientTaskId?: string
@@ -411,6 +420,20 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
     const taskApi = await createApiClient()
     return taskApi.readTaskReport(tokens.access_token, taskId)
+  })
+
+  ipcMain.handle('requirement-file:select', async (): Promise<SelectRequirementFileResult> => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Excel 文件', extensions: ['xls', 'xlsx'] }]
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return { status: 'cancelled' }
+    }
+    return {
+      status: 'selected',
+      filePath: result.filePaths[0]
+    }
   })
 
   ipcMain.handle('codex:install', (): Promise<EnvironmentCheckResult> => installLocalCodexCli())

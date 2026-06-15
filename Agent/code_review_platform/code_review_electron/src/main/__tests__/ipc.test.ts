@@ -8,10 +8,14 @@ import type { SubmitFeedbackRequest } from '../api-client'
 
 const handleMock = vi.fn()
 const showItemInFolderMock = vi.fn()
+const showOpenDialogMock = vi.hoisted(() => vi.fn())
 
 vi.mock('electron', () => ({
   app: {
     getPath: vi.fn(() => '/tmp/code-review-user-data')
+  },
+  dialog: {
+    showOpenDialog: showOpenDialogMock
   },
   BrowserWindow: vi.fn(function BrowserWindowMock() {
     return {
@@ -59,6 +63,7 @@ describe('registerIpcHandlers', () => {
       'app-update:install',
       'task:list',
       'task:report',
+      'requirement-file:select',
       'codex:install',
       'svn:install',
       'skill:install',
@@ -70,6 +75,43 @@ describe('registerIpcHandlers', () => {
       'report:download-current',
       'report:open-pdf'
     ])
+  })
+
+  it('selects a requirement Excel file through IPC', async () => {
+    showOpenDialogMock.mockResolvedValue({
+      canceled: false,
+      filePaths: ['/tmp/产品开发需求表.xls']
+    })
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers()
+
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'requirement-file:select'
+    )?.[1]
+
+    await expect(handler()).resolves.toEqual({
+      status: 'selected',
+      filePath: '/tmp/产品开发需求表.xls'
+    })
+  })
+
+  it('returns cancelled when requirement file dialog is cancelled', async () => {
+    showOpenDialogMock.mockResolvedValue({
+      canceled: true,
+      filePaths: []
+    })
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers()
+
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'requirement-file:select'
+    )?.[1]
+
+    await expect(handler()).resolves.toEqual({
+      status: 'cancelled'
+    })
   })
 
   it('passes app update IPC calls through to the update service', async () => {

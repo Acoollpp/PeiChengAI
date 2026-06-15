@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const invokeMock = vi.hoisted(() => vi.fn())
 const exposeInMainWorldMock = vi.hoisted(() => vi.fn())
+const getPathForFileMock = vi.hoisted(() => vi.fn())
 
 vi.mock('electron', () => ({
   contextBridge: {
@@ -13,6 +14,9 @@ vi.mock('electron', () => ({
     invoke: invokeMock,
     on: vi.fn(),
     removeListener: vi.fn()
+  },
+  webUtils: {
+    getPathForFile: getPathForFileMock
   }
 }))
 
@@ -125,5 +129,24 @@ describe('preload codeReview API', () => {
       localPdfPath: '/tmp/runtime/workspaces/task-1/代码审查报告.pdf',
       pdfReportName: 'r1_r2审查报告_20260615_143000.pdf'
     })
+  })
+
+  it('selects requirement file through IPC', async () => {
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+
+    await api.selectRequirementFile()
+
+    expect(invokeMock).toHaveBeenCalledWith('requirement-file:select')
+  })
+
+  it('reads pasted file path through Electron webUtils', async () => {
+    getPathForFileMock.mockReturnValue('/tmp/产品开发需求表.xlsx')
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+    const file = new File(['x'], '产品开发需求表.xlsx')
+
+    expect(api.getPathForPastedFile(file)).toBe('/tmp/产品开发需求表.xlsx')
+    expect(getPathForFileMock).toHaveBeenCalledWith(file)
   })
 })

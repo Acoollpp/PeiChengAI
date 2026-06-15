@@ -19,6 +19,7 @@ export type TaskViewItem = ReviewTask & {
   localQueueState: LocalTaskQueueState
   queueIndex: number
   createdAtMs: number
+  requirement_file_path?: string
   reportMarkdown?: string
   pdfPath?: string
   isLocalOnly?: boolean
@@ -97,7 +98,12 @@ const isMatchingUnboundLocalTask = (
   localTask.old_revision === serverTask.old_revision &&
   localTask.new_revision === serverTask.new_revision &&
   localTask.template_key === serverTask.template_key &&
-  localTask.skill_name === serverTask.skill_name
+  localTask.skill_name === serverTask.skill_name &&
+  (localTask.focus_direction_id ?? undefined) === (serverTask.focus_direction_id ?? undefined) &&
+  (localTask.focus_direction_snapshot ?? undefined) ===
+    (serverTask.focus_direction_snapshot ?? undefined) &&
+  (localTask.requirement_file_name ?? undefined) ===
+    (serverTask.requirement_file_name ?? undefined)
 
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : '审查任务执行失败。'
@@ -176,6 +182,10 @@ export function useTaskQueue({
         new_revision: task.new_revision,
         template_key: task.template_key,
         skill_name: task.skill_name,
+        requirement_file_path: task.requirement_file_path ?? undefined,
+        requirement_file_name: task.requirement_file_name ?? undefined,
+        focus_direction_id: task.focus_direction_id ?? undefined,
+        focus_direction_snapshot: task.focus_direction_snapshot ?? undefined,
         client_task_id: task.localTaskId
       })
         .then((result) => {
@@ -305,6 +315,10 @@ export function useTaskQueue({
       new_revision: payload.new_revision,
       template_key: payload.template_key,
       skill_name: payload.skill_name,
+      requirement_file_path: payload.requirement_file_path,
+      requirement_file_name: payload.requirement_file_name,
+      focus_direction_id: payload.focus_direction_id,
+      focus_direction_snapshot: payload.focus_direction_snapshot,
       status: 'created',
       localQueueState: 'queued',
       queueIndex: 0,

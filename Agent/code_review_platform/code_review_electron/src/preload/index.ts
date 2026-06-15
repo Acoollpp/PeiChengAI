@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 import type {
   AppUpdateError,
@@ -24,6 +24,7 @@ import type {
   SvnCredentialPayload,
   SvnLoginRequest,
   ReviewTasksResponse,
+  SelectRequirementFileResult,
   TaskProgressEvent
 } from '../renderer/src/code-review-api'
 
@@ -72,6 +73,9 @@ contextBridge.exposeInMainWorld('codeReview', {
     ipcRenderer.invoke('task:execute', payload),
   cancelTask: (payload: CancelTaskRequest): Promise<CancelTaskResult> =>
     ipcRenderer.invoke('task:cancel', payload),
+  selectRequirementFile: (): Promise<SelectRequirementFileResult> =>
+    ipcRenderer.invoke('requirement-file:select'),
+  getPathForPastedFile: (file: File): string => webUtils.getPathForFile(file),
   onTaskProgress: (callback: (event: TaskProgressEvent) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progressEvent: TaskProgressEvent): void => {
       callback(progressEvent)

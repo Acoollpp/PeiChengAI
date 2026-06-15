@@ -589,6 +589,83 @@ describe('useTaskQueue', () => {
     ])
   })
 
+  it('启动任务时传递需求表和重点审查方向字段', async () => {
+    const executeTask = vi.fn(async () => ({
+      taskId: 'task-1',
+      status: 'success' as const
+    }))
+    const payload: ExecuteTaskRequest = {
+      ...basePayload(1),
+      requirement_file_path: '/tmp/产品开发需求表.xls',
+      requirement_file_name: '产品开发需求表.xls',
+      focus_direction_id: 'direction-1',
+      focus_direction_snapshot: '重点检查 SOC 跳变'
+    }
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
+
+    await act(async () => {
+      await result.current.submitTask(payload)
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
+    expect(executeTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requirement_file_path: '/tmp/产品开发需求表.xls',
+        requirement_file_name: '产品开发需求表.xls',
+        focus_direction_id: 'direction-1',
+        focus_direction_snapshot: '重点检查 SOC 跳变'
+      })
+    )
+  })
+
+  it('服务端刷新时不会把不同需求表的任务误绑定到本地任务', async () => {
+    const deferred = createDeferred<ExecuteTaskResult>()
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)
+    const payload: ExecuteTaskRequest = {
+      ...basePayload(1),
+      requirement_file_path: '/tmp/A.xls',
+      requirement_file_name: 'A.xls',
+      focus_direction_snapshot: '重点检查 A'
+    }
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
+
+    await act(async () => {
+      await result.current.submitTask(payload)
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
+    const localTaskId = executeTask.mock.calls[0]![0].client_task_id
+
+    await act(async () => {
+      result.current.setServerTasks([
+        {
+          id: 'task-server-different-requirement',
+          svn_url: payload.svn_url,
+          old_revision: payload.old_revision,
+          new_revision: payload.new_revision,
+          template_key: payload.template_key,
+          skill_name: payload.skill_name,
+          requirement_file_name: 'B.xls',
+          focus_direction_snapshot: payload.focus_direction_snapshot,
+          status: 'running_codex'
+        }
+      ])
+    })
+
+    expect(result.current.tasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'task-server-different-requirement',
+          localTaskId: 'task-server-different-requirement'
+        }),
+        expect.objectContaining({
+          id: localTaskId,
+          localTaskId
+        })
+      ])
+    )
+  })
+
   it('服务端刷新同参数终态历史任务时不绑定本地运行任务且不释放并发槽位', async () => {
     const deferreds = [
       createDeferred<ExecuteTaskResult>(),

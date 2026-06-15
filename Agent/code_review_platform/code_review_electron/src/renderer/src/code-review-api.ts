@@ -47,6 +47,15 @@ export interface ExecuteTaskRequest {
   client_task_id?: string
 }
 
+export type SelectRequirementFileResult =
+  | {
+      status: 'selected'
+      filePath: string
+    }
+  | {
+      status: 'cancelled'
+    }
+
 export interface EnvironmentCheckResult {
   status: EnvironmentStatus
   codexVersion?: string
@@ -173,6 +182,8 @@ export interface CodeReviewApi {
   readTaskReport(taskId: string): Promise<string>
   executeTask(payload: ExecuteTaskRequest): Promise<ExecuteTaskResult>
   cancelTask(payload: CancelTaskRequest): Promise<CancelTaskResult>
+  selectRequirementFile(): Promise<SelectRequirementFileResult>
+  getPathForPastedFile(file: File): string
   onTaskProgress(callback: (event: TaskProgressEvent) => void): () => void
   downloadCurrentReport(taskId?: string): Promise<DownloadCurrentReportResult>
   openPdfReport(payload: OpenPdfReportRequest): Promise<OpenPdfReportResult>
