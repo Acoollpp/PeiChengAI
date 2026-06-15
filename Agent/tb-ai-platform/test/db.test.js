@@ -6,6 +6,7 @@ const { createStore } = require("../src/db");
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tb-db-"));
 const store = createStore({ databasePath: path.join(tmpDir, "state.sqlite") });
+assert.strictEqual((fs.statSync(path.join(tmpDir, "state.sqlite")).mode & 0o777), 0o600);
 
 const tables = store.db
   .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")

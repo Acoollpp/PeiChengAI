@@ -5,7 +5,9 @@ const Database = require("better-sqlite3");
 
 function createStore({ databasePath }) {
   fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+  fs.chmodSync(path.dirname(databasePath), 0o700);
   const db = new Database(databasePath);
+  fs.chmodSync(databasePath, 0o600);
   db.pragma("journal_mode = WAL");
   migrate(db);
 
