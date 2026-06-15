@@ -3,17 +3,17 @@ import { createFileRoute } from "@tanstack/react-router"
 import { Search } from "lucide-react"
 import { Suspense } from "react"
 
-import { ItemsService } from "@/client"
+import { DepartmentsService } from "@/client"
 import { DataTable } from "@/components/Common/DataTable"
-import AddItem from "@/components/Items/AddItem"
-import { columns } from "@/components/Items/columns"
+import AddDepartment from "@/components/Departments/AddDepartment"
+import { columns } from "@/components/Departments/columns"
 import PendingItems from "@/components/Pending/PendingItems"
 import { requireAdminUser } from "@/lib/admin-route"
 
-function getItemsQueryOptions() {
+function getDepartmentsQueryOptions() {
   return {
-    queryFn: () => ItemsService.readItems({ skip: 0, limit: 100 }),
-    queryKey: ["items"],
+    queryFn: () => DepartmentsService.readDepartments({ skip: 0, limit: 100 }),
+    queryKey: ["departments"],
   }
 }
 
@@ -32,9 +32,9 @@ export const Route = createFileRoute("/_layout/items")({
 })
 
 function ItemsTableContent() {
-  const { data: items } = useSuspenseQuery(getItemsQueryOptions())
+  const { data: departments } = useSuspenseQuery(getDepartmentsQueryOptions())
 
-  if (items.data.length === 0) {
+  if (departments.data.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center text-center py-12">
         <div className="rounded-full bg-muted p-4 mb-4">
@@ -46,7 +46,7 @@ function ItemsTableContent() {
     )
   }
 
-  return <DataTable columns={columns} data={items.data} />
+  return <DataTable columns={columns} data={departments.data} />
 }
 
 function ItemsTable() {
@@ -65,7 +65,7 @@ function Items() {
           <h1 className="text-2xl font-bold tracking-tight">部门管理</h1>
           <p className="text-muted-foreground">创建并管理部门信息</p>
         </div>
-        <AddItem />
+        <AddDepartment />
       </div>
       <ItemsTable />
     </div>

@@ -14,7 +14,8 @@ const PendingItems = () => (
       <TableRow>
         <TableHead>ID</TableHead>
         <TableHead>部门名称</TableHead>
-        <TableHead>说明</TableHead>
+        <TableHead>描述</TableHead>
+        <TableHead>状态</TableHead>
         <TableHead>
           <span className="sr-only">操作</span>
         </TableHead>
@@ -31,6 +32,9 @@ const PendingItems = () => (
           </TableCell>
           <TableCell>
             <Skeleton className="h-4 w-48" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-5 w-12 rounded-full" />
           </TableCell>
           <TableCell>
             <div className="flex justify-end">

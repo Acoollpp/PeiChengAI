@@ -10,43 +10,46 @@ test("Admin can access items page and sees correct title", async ({ page }) => {
   await expect(page.getByText("创建并管理部门信息")).toBeVisible()
 })
 
-test("Add Item button is visible", async ({ page }) => {
+test("Add Department button is visible", async ({ page }) => {
   await page.goto("/items")
   await expect(page.getByRole("button", { name: "新增部门" })).toBeVisible()
 })
 
-test.describe("Items management", () => {
+test.describe("Departments management", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/items")
   })
 
-  test("Create a new item successfully", async ({ page }) => {
-    const title = randomItemTitle()
+  test("Create a new department successfully", async ({ page }) => {
+    const name = randomItemTitle()
     const description = randomItemDescription()
 
     await page.getByRole("button", { name: "新增部门" }).click()
-    await page.getByLabel("部门名称").fill(title)
-    await page.getByLabel("说明").fill(description)
+    await page.getByLabel("部门名称").fill(name)
+    await page.getByLabel("描述").fill(description)
+    await expect(page.getByLabel("状态")).toBeChecked()
     await page.getByRole("button", { name: "保存" }).click()
 
     await expect(page.getByText("部门创建成功")).toBeVisible()
-    await expect(page.getByText(title)).toBeVisible()
+    await expect(page.getByText(name)).toBeVisible()
+    await expect(page.getByText(description)).toBeVisible()
+    await expect(page.getByText("启用")).toBeVisible()
   })
 
-  test("Create item with only required fields", async ({ page }) => {
-    const title = randomItemTitle()
+  test("Create department with only required fields", async ({ page }) => {
+    const name = randomItemTitle()
 
     await page.getByRole("button", { name: "新增部门" }).click()
-    await page.getByLabel("部门名称").fill(title)
+    await page.getByLabel("部门名称").fill(name)
     await page.getByRole("button", { name: "保存" }).click()
 
     await expect(page.getByText("部门创建成功")).toBeVisible()
-    await expect(page.getByText(title)).toBeVisible()
+    await expect(page.getByText(name)).toBeVisible()
   })
 
-  test("Cancel item creation", async ({ page }) => {
+  test("Cancel department creation", async ({ page }) => {
     await page.getByRole("button", { name: "新增部门" }).click()
-    await page.getByLabel("部门名称").fill("Test Item")
+    await page.getByLabel("部门名称").fill("测试部门")
     await page.getByRole("button", { name: "取消" }).click()
 
     await expect(page.getByRole("dialog")).not.toBeVisible()
@@ -61,42 +64,42 @@ test.describe("Items management", () => {
   })
 
   test.describe("Edit and Delete", () => {
-    let itemTitle: string
+    let departmentName: string
 
     test.beforeEach(async ({ page }) => {
-      itemTitle = randomItemTitle()
+      departmentName = randomItemTitle()
 
       await page.getByRole("button", { name: "新增部门" }).click()
-      await page.getByLabel("部门名称").fill(itemTitle)
+      await page.getByLabel("部门名称").fill(departmentName)
       await page.getByRole("button", { name: "保存" }).click()
       await expect(page.getByText("部门创建成功")).toBeVisible()
       await expect(page.getByRole("dialog")).not.toBeVisible()
     })
 
-    test("Edit an item successfully", async ({ page }) => {
-      const itemRow = page.getByRole("row").filter({ hasText: itemTitle })
-      await itemRow.getByRole("button").last().click()
+    test("Edit a department successfully", async ({ page }) => {
+      const departmentRow = page.getByRole("row").filter({ hasText: departmentName })
+      await departmentRow.getByRole("button").last().click()
       await page.getByRole("menuitem", { name: "编辑部门" }).click()
 
-      const updatedTitle = randomItemTitle()
-      await page.getByLabel("部门名称").fill(updatedTitle)
+      const updatedName = randomItemTitle()
+      await page.getByLabel("部门名称").fill(updatedName)
+      await page.getByLabel("状态").uncheck()
       await page.getByRole("button", { name: "保存" }).click()
 
       await expect(page.getByText("部门更新成功")).toBeVisible()
-      await expect(page.getByText(updatedTitle)).toBeVisible()
+      await expect(page.getByText(updatedName)).toBeVisible()
+      await expect(page.getByText("停用")).toBeVisible()
     })
 
-    test("Delete an item successfully", async ({ page }) => {
-      const itemRow = page.getByRole("row").filter({ hasText: itemTitle })
-      await itemRow.getByRole("button").last().click()
+    test("Delete a department successfully", async ({ page }) => {
+      const departmentRow = page.getByRole("row").filter({ hasText: departmentName })
+      await departmentRow.getByRole("button").last().click()
       await page.getByRole("menuitem", { name: "删除部门" }).click()
 
       await page.getByRole("button", { name: "删除" }).click()
 
-      await expect(
-        page.getByText("部门删除成功"),
-      ).toBeVisible()
-      await expect(page.getByText(itemTitle)).not.toBeVisible()
+      await expect(page.getByText("部门删除成功")).toBeVisible()
+      await expect(page.getByText(departmentName)).not.toBeVisible()
     })
   })
 })

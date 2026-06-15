@@ -31,6 +31,10 @@ export type Body_review_tasks_upload_review_task_report = {
     upload: (Blob | File);
 };
 
+export type Body_review_tasks_upload_review_task_requirement_file = {
+    upload: (Blob | File);
+};
+
 export type Body_skills_upload_skill = {
     name: string;
     version: string;
@@ -72,6 +76,32 @@ export type ClientReleasePublic = {
 export type ClientReleasesPublic = {
     data: Array<ClientReleasePublic>;
     count: number;
+};
+
+export type DepartmentCreate = {
+    name: string;
+    description?: (string | null);
+    is_active?: boolean;
+};
+
+export type DepartmentPublic = {
+    name: string;
+    description?: (string | null);
+    is_active?: boolean;
+    id: string;
+    created_at?: (string | null);
+    updated_at?: (string | null);
+};
+
+export type DepartmentsPublic = {
+    data: Array<DepartmentPublic>;
+    count: number;
+};
+
+export type DepartmentUpdate = {
+    name?: (string | null);
+    description?: (string | null);
+    is_active?: (boolean | null);
 };
 
 export type FeedbackPublic = {
@@ -181,12 +211,59 @@ export type PrivateUserCreate = {
     is_superuser?: boolean;
 };
 
+export type ReviewFocusDirectionCreate = {
+    title: string;
+    content: string;
+    department_id?: (string | null);
+    is_active?: boolean;
+};
+
+export type ReviewFocusDirectionPublic = {
+    id: string;
+    title: string;
+    content: string;
+    department_id?: (string | null);
+    department_name?: (string | null);
+    is_active: boolean;
+    usage_count: number;
+    created_by_user_id?: (string | null);
+    created_at?: (string | null);
+    updated_at?: (string | null);
+};
+
+export type ReviewFocusDirectionsPublic = {
+    data: Array<ReviewFocusDirectionPublic>;
+    count: number;
+};
+
+export type ReviewFocusDirectionUpdate = {
+    title?: (string | null);
+    content?: (string | null);
+    department_id?: (string | null);
+    is_active?: (boolean | null);
+};
+
+export type ReviewFocusDirectionUsageStatPublic = {
+    content: string;
+    usage_count: number;
+    latest_used_at?: (string | null);
+    departments?: Array<(string)>;
+};
+
+export type ReviewFocusDirectionUsageStatsPublic = {
+    data: Array<ReviewFocusDirectionUsageStatPublic>;
+    count: number;
+};
+
 export type ReviewTaskCreate = {
     svn_url: string;
     old_revision: string;
     new_revision: string;
     template_key?: (string | null);
     skill_name?: (string | null);
+    focus_direction_id?: (string | null);
+    focus_direction_snapshot?: (string | null);
+    requirement_file_name?: (string | null);
 };
 
 export type ReviewTaskPublic = {
@@ -199,6 +276,14 @@ export type ReviewTaskPublic = {
     new_revision: string;
     template_key?: (string | null);
     skill_name?: (string | null);
+    department_id?: (string | null);
+    department_name?: (string | null);
+    focus_direction_id?: (string | null);
+    focus_direction_snapshot?: (string | null);
+    requirement_file_id?: (string | null);
+    requirement_file_name?: (string | null);
+    requirement_file_size?: (number | null);
+    requirement_file_sha256?: (string | null);
     status: ReviewTaskStatus;
     report_path?: (string | null);
     report_name?: (string | null);
@@ -289,6 +374,7 @@ export type UserCreate = {
     is_active?: boolean;
     is_superuser?: boolean;
     full_name?: (string | null);
+    department_id?: (string | null);
     svn_username?: (string | null);
     role?: UserRole;
 };
@@ -297,8 +383,10 @@ export type UserPublic = {
     is_active?: boolean;
     is_superuser?: boolean;
     full_name?: (string | null);
+    department_id?: (string | null);
     id: string;
     svn_username?: (string | null);
+    department_name?: (string | null);
     role?: UserRole;
     auth_source?: AuthSource;
     cch_user_id?: (number | null);
@@ -318,6 +406,7 @@ export type UserUpdate = {
     full_name?: (string | null);
     svn_username?: (string | null);
     role?: (UserRole | null);
+    department_id?: (string | null);
 };
 
 export type UserUpdateMe = {
@@ -377,6 +466,32 @@ export type CredentialsUpdateMySvnCredentialData = {
 };
 
 export type CredentialsUpdateMySvnCredentialResponse = (SvnCredentialPublic);
+
+export type DepartmentsReadDepartmentsData = {
+    limit?: number;
+    skip?: number;
+};
+
+export type DepartmentsReadDepartmentsResponse = (DepartmentsPublic);
+
+export type DepartmentsCreateDepartmentData = {
+    requestBody: DepartmentCreate;
+};
+
+export type DepartmentsCreateDepartmentResponse = (DepartmentPublic);
+
+export type DepartmentsUpdateDepartmentData = {
+    departmentId: string;
+    requestBody: DepartmentUpdate;
+};
+
+export type DepartmentsUpdateDepartmentResponse = (DepartmentPublic);
+
+export type DepartmentsDeleteDepartmentData = {
+    departmentId: string;
+};
+
+export type DepartmentsDeleteDepartmentResponse = (Message);
 
 export type FeedbackCreateFeedbackData = {
     formData: Body_feedback_create_feedback;
@@ -478,6 +593,40 @@ export type PrivateCreateUserData = {
 
 export type PrivateCreateUserResponse = (UserPublic);
 
+export type ReviewFocusDirectionsReadReviewFocusDirectionsData = {
+    limit?: number;
+    skip?: number;
+};
+
+export type ReviewFocusDirectionsReadReviewFocusDirectionsResponse = (ReviewFocusDirectionsPublic);
+
+export type ReviewFocusDirectionsCreateReviewFocusDirectionData = {
+    requestBody: ReviewFocusDirectionCreate;
+};
+
+export type ReviewFocusDirectionsCreateReviewFocusDirectionResponse = (ReviewFocusDirectionPublic);
+
+export type ReviewFocusDirectionsReadUsageStatsResponse = (ReviewFocusDirectionUsageStatsPublic);
+
+export type ReviewFocusDirectionsCreateReviewFocusDirectionFromUsageData = {
+    requestBody: ReviewFocusDirectionCreate;
+};
+
+export type ReviewFocusDirectionsCreateReviewFocusDirectionFromUsageResponse = (ReviewFocusDirectionPublic);
+
+export type ReviewFocusDirectionsUpdateReviewFocusDirectionData = {
+    directionId: string;
+    requestBody: ReviewFocusDirectionUpdate;
+};
+
+export type ReviewFocusDirectionsUpdateReviewFocusDirectionResponse = (ReviewFocusDirectionPublic);
+
+export type ReviewFocusDirectionsDeleteReviewFocusDirectionData = {
+    directionId: string;
+};
+
+export type ReviewFocusDirectionsDeleteReviewFocusDirectionResponse = (Message);
+
 export type ReviewTasksCreateReviewTaskData = {
     requestBody: ReviewTaskCreate;
 };
@@ -539,6 +688,13 @@ export type ReviewTasksUploadReviewTaskPdfReportData = {
 };
 
 export type ReviewTasksUploadReviewTaskPdfReportResponse = (ReviewTaskPublic);
+
+export type ReviewTasksUploadReviewTaskRequirementFileData = {
+    formData: Body_review_tasks_upload_review_task_requirement_file;
+    taskId: string;
+};
+
+export type ReviewTasksUploadReviewTaskRequirementFileResponse = (ReviewTaskPublic);
 
 export type ReviewTasksDownloadReviewTaskReportData = {
     taskId: string;

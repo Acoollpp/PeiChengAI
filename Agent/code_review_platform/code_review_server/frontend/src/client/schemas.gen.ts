@@ -145,6 +145,19 @@ export const Body_review_tasks_upload_review_task_reportSchema = {
     title: 'Body_review-tasks-upload_review_task_report'
 } as const;
 
+export const Body_review_tasks_upload_review_task_requirement_fileSchema = {
+    properties: {
+        upload: {
+            type: 'string',
+            format: 'binary',
+            title: 'Upload'
+        }
+    },
+    type: 'object',
+    required: ['upload'],
+    title: 'Body_review-tasks-upload_review_task_requirement_file'
+} as const;
+
 export const Body_skills_upload_skillSchema = {
     properties: {
         name: {
@@ -374,6 +387,159 @@ export const ClientReleasesPublicSchema = {
     type: 'object',
     required: ['data', 'count'],
     title: 'ClientReleasesPublic'
+} as const;
+
+export const DepartmentCreateSchema = {
+    properties: {
+        name: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1024
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        is_active: {
+            type: 'boolean',
+            title: 'Is Active',
+            default: true
+        }
+    },
+    type: 'object',
+    required: ['name'],
+    title: 'DepartmentCreate'
+} as const;
+
+export const DepartmentPublicSchema = {
+    properties: {
+        name: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1024
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        is_active: {
+            type: 'boolean',
+            title: 'Is Active',
+            default: true
+        },
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        created_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created At'
+        },
+        updated_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['name', 'id'],
+    title: 'DepartmentPublic'
+} as const;
+
+export const DepartmentUpdateSchema = {
+    properties: {
+        name: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1024
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        is_active: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Is Active'
+        }
+    },
+    type: 'object',
+    title: 'DepartmentUpdate'
+} as const;
+
+export const DepartmentsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DepartmentPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DepartmentsPublic'
 } as const;
 
 export const FeedbackPublicSchema = {
@@ -897,6 +1063,260 @@ export const PrivateUserCreateSchema = {
     title: 'PrivateUserCreate'
 } as const;
 
+export const ReviewFocusDirectionCreateSchema = {
+    properties: {
+        title: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Title'
+        },
+        content: {
+            type: 'string',
+            maxLength: 4096,
+            minLength: 1,
+            title: 'Content'
+        },
+        department_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Department Id'
+        },
+        is_active: {
+            type: 'boolean',
+            title: 'Is Active',
+            default: true
+        }
+    },
+    type: 'object',
+    required: ['title', 'content'],
+    title: 'ReviewFocusDirectionCreate'
+} as const;
+
+export const ReviewFocusDirectionPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        title: {
+            type: 'string',
+            title: 'Title'
+        },
+        content: {
+            type: 'string',
+            title: 'Content'
+        },
+        department_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Department Id'
+        },
+        department_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Department Name'
+        },
+        is_active: {
+            type: 'boolean',
+            title: 'Is Active'
+        },
+        usage_count: {
+            type: 'integer',
+            title: 'Usage Count'
+        },
+        created_by_user_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created By User Id'
+        },
+        created_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created At'
+        },
+        updated_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'title', 'content', 'is_active', 'usage_count'],
+    title: 'ReviewFocusDirectionPublic'
+} as const;
+
+export const ReviewFocusDirectionUpdateSchema = {
+    properties: {
+        title: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Title'
+        },
+        content: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 4096,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Content'
+        },
+        department_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Department Id'
+        },
+        is_active: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Is Active'
+        }
+    },
+    type: 'object',
+    title: 'ReviewFocusDirectionUpdate'
+} as const;
+
+export const ReviewFocusDirectionUsageStatPublicSchema = {
+    properties: {
+        content: {
+            type: 'string',
+            title: 'Content'
+        },
+        usage_count: {
+            type: 'integer',
+            title: 'Usage Count'
+        },
+        latest_used_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Latest Used At'
+        },
+        departments: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Departments'
+        }
+    },
+    type: 'object',
+    required: ['content', 'usage_count'],
+    title: 'ReviewFocusDirectionUsageStatPublic'
+} as const;
+
+export const ReviewFocusDirectionUsageStatsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/ReviewFocusDirectionUsageStatPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'ReviewFocusDirectionUsageStatsPublic'
+} as const;
+
+export const ReviewFocusDirectionsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/ReviewFocusDirectionPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'ReviewFocusDirectionsPublic'
+} as const;
+
 export const ReviewTaskCreateSchema = {
     properties: {
         svn_url: {
@@ -940,6 +1360,42 @@ export const ReviewTaskCreateSchema = {
                 }
             ],
             title: 'Skill Name'
+        },
+        focus_direction_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Focus Direction Id'
+        },
+        focus_direction_snapshot: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 4096
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Focus Direction Snapshot'
+        },
+        requirement_file_name: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Requirement File Name'
         }
     },
     type: 'object',
@@ -1016,6 +1472,97 @@ export const ReviewTaskPublicSchema = {
                 }
             ],
             title: 'Skill Name'
+        },
+        department_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Department Id'
+        },
+        department_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Department Name'
+        },
+        focus_direction_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Focus Direction Id'
+        },
+        focus_direction_snapshot: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Focus Direction Snapshot'
+        },
+        requirement_file_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Requirement File Id'
+        },
+        requirement_file_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Requirement File Name'
+        },
+        requirement_file_size: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Requirement File Size'
+        },
+        requirement_file_sha256: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Requirement File Sha256'
         },
         status: {
             '$ref': '#/components/schemas/ReviewTaskStatus'
@@ -1505,6 +2052,18 @@ export const UserCreateSchema = {
             ],
             title: 'Full Name'
         },
+        department_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Department Id'
+        },
         svn_username: {
             anyOf: [
                 {
@@ -1550,6 +2109,18 @@ export const UserPublicSchema = {
             ],
             title: 'Full Name'
         },
+        department_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Department Id'
+        },
         id: {
             type: 'string',
             format: 'uuid',
@@ -1565,6 +2136,17 @@ export const UserPublicSchema = {
                 }
             ],
             title: 'Svn Username'
+        },
+        department_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Department Name'
         },
         role: {
             '$ref': '#/components/schemas/UserRole',
@@ -1667,6 +2249,18 @@ export const UserUpdateSchema = {
                     type: 'null'
                 }
             ]
+        },
+        department_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Department Id'
         }
     },
     type: 'object',
