@@ -24,6 +24,8 @@ assert.doesNotMatch(html, /id="output"/);
 assert.doesNotMatch(html, /<pre\b/i);
 
 assert.match(cssText(), /\[hidden\][^{]*{[^}]*display:\s*none\s*!important/i);
+assert.match(cssText(), /button\.clicked/);
+assert.match(cssText(), /@keyframes clickPulse/);
 assert.ok(js.includes('fetch("/api/me"'));
 assert.ok(js.includes('fetch("/api/login"'));
 assert.ok(js.includes('fetch("/api/logout"'));
@@ -36,6 +38,8 @@ assert.ok(js.includes("body: JSON.stringify({ mode: state.mode, message, project
 assert.ok(js.includes("body: JSON.stringify({ mode: state.mode, message, projectUrl, stepId })"));
 assert.ok(js.includes('el.projectUrlField.hidden = mode === "create"'));
 assert.ok(js.includes('event.type === "result" || event.type === "run_error"'));
+assert.ok(js.includes("function flashButton"));
+assert.ok(js.includes("flashButton(event.currentTarget)"));
 assert.ok(js.includes("renderFlowSteps"));
 assert.ok(js.includes("consumeNdjson"));
 assert.match(js, /项目变更请粘贴项目地址/);

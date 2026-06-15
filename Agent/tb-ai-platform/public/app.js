@@ -89,6 +89,14 @@ function setRunning(running) {
   updateRepairButtons();
 }
 
+function flashButton(button) {
+  if (!button) return;
+  button.classList.remove("clicked");
+  void button.offsetWidth;
+  button.classList.add("clicked");
+  window.setTimeout(() => button.classList.remove("clicked"), 640);
+}
+
 async function checkHealth() {
   try {
     const res = await fetch("/api/health");
@@ -242,7 +250,10 @@ function renderFlowSteps() {
       repair.dataset.stepId = step.id;
       repair.hidden = !step.repairable || state.activeItems.length > 1;
       repair.disabled = state.running || status === "done";
-      repair.addEventListener("click", () => repairStep(step.id));
+      repair.addEventListener("click", event => {
+        flashButton(event.currentTarget);
+        repairStep(step.id);
+      });
 
       row.append(light, index, content, badge, repair);
       group.append(row);
@@ -534,18 +545,34 @@ function formatTime(value) {
 }
 
 document.querySelectorAll(".mode").forEach(btn => {
-  btn.addEventListener("click", () => setMode(btn.dataset.mode));
+  btn.addEventListener("click", () => {
+    flashButton(btn);
+    setMode(btn.dataset.mode);
+  });
 });
 
-el.loginBtn.addEventListener("click", login);
-el.logoutBtn.addEventListener("click", logout);
+el.loginBtn.addEventListener("click", event => {
+  flashButton(event.currentTarget);
+  login();
+});
+el.logoutBtn.addEventListener("click", event => {
+  flashButton(event.currentTarget);
+  logout();
+});
 el.loginKey.addEventListener("keydown", event => {
   if (event.key === "Enter") login();
 });
-el.runBtn.addEventListener("click", runTask);
-el.aiTestBtn.addEventListener("click", () => runTask({ aiTest: true }));
-el.clearBtn.addEventListener("click", () => {
-    el.message.value = "";
+el.runBtn.addEventListener("click", event => {
+  flashButton(event.currentTarget);
+  runTask();
+});
+el.aiTestBtn.addEventListener("click", event => {
+  flashButton(event.currentTarget);
+  runTask({ aiTest: true });
+});
+el.clearBtn.addEventListener("click", event => {
+  flashButton(event.currentTarget);
+  el.message.value = "";
   el.projectUrl.value = "";
   clearResults();
   resetFlowStatuses();

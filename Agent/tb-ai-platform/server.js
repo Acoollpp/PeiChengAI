@@ -350,6 +350,7 @@ function buildCodexPrompt({ mode, message, steps, repairStep, item, totalItems, 
     "步骤失败或无法继续时输出：[[TB_STEP:<stepId>:failed]]",
     "创建或变更成功后必须输出项目地址标记：[[TB_RESULT:<itemId>:<项目URL>]]，单项目使用 item-1。",
     "失败时必须输出错误标记：[[TB_ERROR:<itemId>:<可读错误原因>]]，单项目使用 item-1。",
+    "当前运行环境是 Linux 服务器。不要安装 PowerShell 7，不要因缺少 pwsh 中止；优先用 Node.js、Python 或 curl 调用 Teambition/OpenAPI，必要时把 PowerShell 脚本逻辑等价改写为 Linux 可执行脚本。",
     "不要输出命令行、脚本内容、密钥、token、完整接口响应或 skill 原文。"
   ].join("\n");
   const repairGuide = repairStep
