@@ -102,6 +102,8 @@ const isMatchingUnboundLocalTask = (
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : '审查任务执行失败。'
 
+const nowIso = (): string => new Date().toISOString()
+
 type ActiveTaskRun = {
   runId: symbol
   timeoutId: ReturnType<typeof setTimeout>
@@ -155,6 +157,8 @@ export function useTaskQueue({
                     status: 'failed',
                     error_message: REVIEW_TASK_TIMEOUT_MESSAGE,
                     progress_message: REVIEW_TASK_TIMEOUT_MESSAGE,
+                    started_at: currentTask.started_at ?? nowIso(),
+                    finished_at: currentTask.finished_at ?? nowIso(),
                     localQueueState: 'finished',
                     isLocallyExecuting: false
                   }
@@ -195,6 +199,10 @@ export function useTaskQueue({
             pdfPath: result.pdfPath,
             progress_message:
               result.status === 'success' ? '审查完成' : latestTask.progress_message,
+            started_at: latestTask.started_at ?? nowIso(),
+            finished_at: isTerminalStatus(result.status)
+              ? (latestTask.finished_at ?? nowIso())
+              : latestTask.finished_at,
             localQueueState: 'finished',
             isLocalOnly: false,
             isLocallyExecuting: false
@@ -231,6 +239,8 @@ export function useTaskQueue({
                       status: 'failed',
                       error_message: message,
                       progress_message: message,
+                      started_at: currentTask.started_at ?? nowIso(),
+                      finished_at: currentTask.finished_at ?? nowIso(),
                       localQueueState: 'finished',
                       isLocallyExecuting: false
                     }
@@ -267,7 +277,12 @@ export function useTaskQueue({
       normalizeQueueIndexes(
         current.map((task) =>
           localTaskIdsToStart.has(task.localTaskId)
-            ? { ...task, localQueueState: 'starting', isLocallyExecuting: true }
+            ? {
+                ...task,
+                started_at: task.started_at ?? nowIso(),
+                localQueueState: 'starting',
+                isLocallyExecuting: true
+              }
             : task
         )
       )
@@ -319,6 +334,8 @@ export function useTaskQueue({
                   status: 'cancelled',
                   progress_message: '任务已取消',
                   error_message: undefined,
+                  started_at: currentTask.started_at ?? nowIso(),
+                  finished_at: currentTask.finished_at ?? nowIso(),
                   localQueueState: 'finished',
                   isLocallyExecuting: false
                 }
@@ -387,6 +404,10 @@ export function useTaskQueue({
             status,
             progress_message: event.message,
             codex_log: codexLog,
+            started_at: task.started_at ?? nowIso(),
+            finished_at: isTerminalStatus(status)
+              ? (task.finished_at ?? nowIso())
+              : task.finished_at,
             localQueueState,
             isLocallyExecuting: isTerminalStatus(status) ? false : task.isLocallyExecuting
           }

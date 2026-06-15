@@ -227,6 +227,39 @@ describe('useTaskQueue', () => {
     )
   })
 
+  it('本地提交的任务执行和完成时补充开始结束时间', async () => {
+    const deferred = createDeferred<ExecuteTaskResult>()
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)
+
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
+
+    await act(async () => {
+      await result.current.submitTask(basePayload(1))
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
+    expect(result.current.runningTasks[0].started_at).toEqual(expect.any(String))
+    expect(result.current.runningTasks[0].finished_at).toBeUndefined()
+    const startedAt = result.current.runningTasks[0].started_at
+
+    await act(async () => {
+      deferred.resolve({
+        taskId: 'task-1',
+        status: 'success',
+        reportMarkdown: '# report',
+        reportPath: '/tmp/report.md'
+      })
+      await flushMicrotasks()
+    })
+
+    expect(result.current.historyTasks[0]).toEqual(
+      expect.objectContaining({
+        started_at: startedAt,
+        finished_at: expect.any(String)
+      })
+    )
+  })
+
   it('新任务完成时把执行结果的 PDF 原文件名写入历史任务', async () => {
     const deferred = createDeferred<ExecuteTaskResult>()
     const onTaskSuccess = vi.fn()
@@ -670,8 +703,7 @@ describe('useTaskQueue', () => {
     expect(result.current.queuedTasks).toHaveLength(0)
   })
 
-  it('任务执行超过 30 分钟后标记失败并继续调度下一条', async () => {
-    vi.useFakeTimers()
+  it('任务执行超过配置超时时间后标记失败并继续调度下一条', async () => {
     const deferreds = [
       createDeferred<ExecuteTaskResult>(),
       createDeferred<ExecuteTaskResult>(),
@@ -682,7 +714,7 @@ describe('useTaskQueue', () => {
       return deferred.promise
     })
 
-    const { result } = renderHook(() => useTaskQueue({ executeTask, taskTimeoutMs: 30 * 60 * 1000 }))
+    const { result } = renderHook(() => useTaskQueue({ executeTask, taskTimeoutMs: 100 }))
 
     await act(async () => {
       await result.current.submitTask(basePayload(1))
@@ -692,44 +724,38 @@ describe('useTaskQueue', () => {
 
     expect(executeTask).toHaveBeenCalledTimes(2)
 
-    act(() => {
-      vi.advanceTimersByTime(30 * 60 * 1000)
-    })
-    await act(async () => {
-      await flushMicrotasks()
-    })
-
-    expect(executeTask).toHaveBeenCalledTimes(3)
-    expect(result.current.historyTasks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          svn_url: 'svn://repo/project-1',
-          status: 'failed',
-          error_message: '任务执行超时，请联系管理员处理。',
-          progress_message: '任务执行超时，请联系管理员处理。',
-          localQueueState: 'finished',
-          isLocallyExecuting: false
-        }),
-        expect.objectContaining({
-          svn_url: 'svn://repo/project-2',
-          status: 'failed',
-          error_message: '任务执行超时，请联系管理员处理。',
-          progress_message: '任务执行超时，请联系管理员处理。',
-          localQueueState: 'finished',
-          isLocallyExecuting: false
-        })
-      ])
+    await waitFor(() =>
+      expect(result.current.historyTasks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            svn_url: 'svn://repo/project-1',
+            status: 'failed',
+            error_message: '任务执行超时，请联系管理员处理。',
+            progress_message: '任务执行超时，请联系管理员处理。',
+            localQueueState: 'finished',
+            isLocallyExecuting: false
+          }),
+          expect.objectContaining({
+            svn_url: 'svn://repo/project-2',
+            status: 'failed',
+            error_message: '任务执行超时，请联系管理员处理。',
+            progress_message: '任务执行超时，请联系管理员处理。',
+            localQueueState: 'finished',
+            isLocallyExecuting: false
+          })
+        ])
+      )
     )
+    expect(executeTask).toHaveBeenCalledTimes(3)
     expect(result.current.runningTasks.map((task) => task.svn_url)).toContain('svn://repo/project-3')
     expect(result.current.queuedTasks).toHaveLength(0)
   })
 
   it('超时后的迟到成功结果不会覆盖失败状态', async () => {
-    vi.useFakeTimers()
     const deferred = createDeferred<ExecuteTaskResult>()
     const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)
 
-    const { result } = renderHook(() => useTaskQueue({ executeTask, taskTimeoutMs: 30 * 60 * 1000 }))
+    const { result } = renderHook(() => useTaskQueue({ executeTask, taskTimeoutMs: 1 }))
 
     await act(async () => {
       await result.current.submitTask(basePayload(1))
@@ -737,18 +763,13 @@ describe('useTaskQueue', () => {
 
     expect(executeTask).toHaveBeenCalledTimes(1)
 
-    act(() => {
-      vi.advanceTimersByTime(30 * 60 * 1000)
-    })
-    await act(async () => {
-      await flushMicrotasks()
-    })
-
-    expect(result.current.historyTasks[0]).toEqual(
-      expect.objectContaining({
-        status: 'failed',
-        error_message: '任务执行超时，请联系管理员处理。'
-      })
+    await waitFor(() =>
+      expect(result.current.historyTasks[0]).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          error_message: '任务执行超时，请联系管理员处理。'
+        })
+      )
     )
 
     await act(async () => {
