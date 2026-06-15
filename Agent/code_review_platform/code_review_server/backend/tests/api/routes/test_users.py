@@ -13,6 +13,7 @@ from app.models import (
     AuditLog,
     AuthSource,
     ClientRelease,
+    Department,
     Feedback,
     FeedbackScreenshot,
     ReviewTask,
@@ -36,6 +37,14 @@ def _user_payload(**overrides: object) -> dict[str, object]:
     }
     payload.update(overrides)
     return payload
+
+
+def _create_department(db: Session, name: str | None = None) -> Department:
+    department = Department(name=name or f"部门-{random_lower_string()}")
+    db.add(department)
+    db.commit()
+    db.refresh(department)
+    return department
 
 
 def test_get_users_superuser_me(
@@ -86,6 +95,27 @@ def test_create_user_new_svn_username(
     assert created_user["role"] == "user"
     assert created_user["is_active"] is True
     assert "email" not in created_user
+
+
+def test_admin_can_create_user_with_department(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    department = _create_department(db, "研发部门")
+    data = _user_payload(
+        full_name="Department User",
+        department_id=str(department.id),
+    )
+
+    response = client.post(
+        f"{settings.API_V1_STR}/users/",
+        headers=superuser_token_headers,
+        json=data,
+    )
+
+    assert response.status_code == 200
+    created_user = response.json()
+    assert created_user["department_id"] == str(department.id)
+    assert created_user["department_name"] == "研发部门"
 
 
 def test_get_existing_user_as_superuser(
@@ -212,6 +242,76 @@ def test_retrieve_users(
         assert "role" in item
         assert "is_active" in item
         assert "email" not in item
+
+
+def test_admin_update_user_department_is_visible_in_read_and_list(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    department = _create_department(db, "质量部门")
+    user = create_random_user(db)
+
+    update_response = client.patch(
+        f"{settings.API_V1_STR}/users/{user.id}",
+        headers=superuser_token_headers,
+        json={"department_id": str(department.id)},
+    )
+
+    assert update_response.status_code == 200
+    updated_user = update_response.json()
+    assert updated_user["department_id"] == str(department.id)
+    assert updated_user["department_name"] == "质量部门"
+
+    read_response = client.get(
+        f"{settings.API_V1_STR}/users/{user.id}",
+        headers=superuser_token_headers,
+    )
+    assert read_response.status_code == 200
+    read_user = read_response.json()
+    assert read_user["department_id"] == str(department.id)
+    assert read_user["department_name"] == "质量部门"
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/users/",
+        headers=superuser_token_headers,
+    )
+    assert list_response.status_code == 200
+    listed_user = next(
+        item for item in list_response.json()["data"] if item["id"] == str(user.id)
+    )
+    assert listed_user["department_id"] == str(department.id)
+    assert listed_user["department_name"] == "质量部门"
+
+
+def test_create_user_with_missing_department_returns_400(
+    client: TestClient, superuser_token_headers: dict[str, str]
+) -> None:
+    data = _user_payload(department_id=str(uuid.uuid4()))
+
+    response = client.post(
+        f"{settings.API_V1_STR}/users/",
+        headers=superuser_token_headers,
+        json=data,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "部门不存在"
+
+
+def test_update_user_with_missing_department_returns_400(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    user = create_random_user(db)
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/users/{user.id}",
+        headers=superuser_token_headers,
+        json={"department_id": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "部门不存在"
 
 
 def test_retrieve_users_as_role_admin(client: TestClient, db: Session) -> None:

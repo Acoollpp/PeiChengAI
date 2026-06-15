@@ -11,6 +11,7 @@ from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep, has_admin_privileges
 from app.models import (
+    Department,
     FeedbackStatsRange,
     ReviewTask,
     ReviewTaskCreate,
@@ -171,12 +172,20 @@ def create_review_task(
             status_code=400, detail="Old and new revisions must differ"
         )
 
+    department = (
+        session.get(Department, current_user.department_id)
+        if current_user.department_id is not None
+        else None
+    )
     task = ReviewTask.model_validate(
         task_in,
         update={
             "user_id": current_user.id,
             "old_revision": old_revision,
             "new_revision": new_revision,
+            "department_id": department.id if department else None,
+            "department_name": department.name if department else None,
+            "focus_direction_snapshot": task_in.focus_direction_snapshot,
         },
     )
     session.add(task)

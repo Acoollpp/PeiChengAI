@@ -15,6 +15,7 @@ from app.api.deps import (
 from app.models import (
     AuditLog,
     ClientRelease,
+    Department,
     Feedback,
     Item,
     Message,
@@ -34,6 +35,42 @@ from app.services import feedback_service
 
 router = APIRouter(prefix="/users", tags=["users"])
 logger = logging.getLogger(__name__)
+
+
+def _user_public(user: User, department_name: str | None = None) -> UserPublic:
+    return UserPublic.model_validate(
+        user,
+        update={"department_name": department_name},
+    )
+
+
+def _department_name_for_user(*, session: SessionDep, user: User) -> str | None:
+    if user.department_id is None:
+        return None
+    department = session.get(Department, user.department_id)
+    return department.name if department else None
+
+
+def _department_names_by_id(
+    *, session: SessionDep, department_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    if not department_ids:
+        return {}
+    departments = session.exec(
+        select(Department).where(col(Department.id).in_(department_ids))
+    ).all()
+    return {department.id: department.name for department in departments}
+
+
+def _ensure_department_exists(
+    *, session: SessionDep, department_id: uuid.UUID | None
+) -> Department | None:
+    if department_id is None:
+        return None
+    department = session.get(Department, department_id)
+    if department is None:
+        raise HTTPException(status_code=400, detail="部门不存在")
+    return department
 
 
 def _ensure_svn_username_available(
@@ -139,7 +176,23 @@ def read_users(
     )
     users = session.exec(statement).all()
 
-    users_public = [UserPublic.model_validate(user) for user in users]
+    department_names = _department_names_by_id(
+        session=session,
+        department_ids={
+            user.department_id for user in users if user.department_id is not None
+        },
+    )
+    users_public = [
+        _user_public(
+            user,
+            department_name=(
+                department_names.get(user.department_id)
+                if user.department_id is not None
+                else None
+            ),
+        )
+        for user in users
+    ]
     return UsersPublic(data=users_public, count=count)
 
 
@@ -153,8 +206,15 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
     _ensure_svn_username_available(
         session=session, svn_username=user_in.svn_username
     )
+    department = _ensure_department_exists(
+        session=session, department_id=user_in.department_id
+    )
     user_in.is_superuser = user_in.role == UserRole.admin
-    return crud.create_user(session=session, user_create=user_in)
+    user = crud.create_user(session=session, user_create=user_in)
+    return _user_public(
+        user,
+        department_name=department.name if department else None,
+    )
 
 
 @router.patch("/me", response_model=UserPublic)
@@ -169,15 +229,21 @@ def update_user_me(
     session.add(current_user)
     session.commit()
     session.refresh(current_user)
-    return current_user
+    return _user_public(
+        current_user,
+        department_name=_department_name_for_user(session=session, user=current_user),
+    )
 
 
 @router.get("/me", response_model=UserPublic)
-def read_user_me(current_user: CurrentUser) -> Any:
+def read_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
     """
     Get current user.
     """
-    return current_user
+    return _user_public(
+        current_user,
+        department_name=_department_name_for_user(session=session, user=current_user),
+    )
 
 
 @router.delete("/me", response_model=Message)
@@ -202,7 +268,12 @@ def read_user_by_id(
     """
     user = session.get(User, user_id)
     if user == current_user:
-        return user
+        return _user_public(
+            current_user,
+            department_name=_department_name_for_user(
+                session=session, user=current_user
+            ),
+        )
     if not has_admin_privileges(current_user):
         raise HTTPException(
             status_code=403,
@@ -210,7 +281,10 @@ def read_user_by_id(
         )
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
-    return user
+    return _user_public(
+        user,
+        department_name=_department_name_for_user(session=session, user=user),
+    )
 
 
 @router.patch(
@@ -237,11 +311,19 @@ def update_user(
     _ensure_svn_username_available(
         session=session, svn_username=user_in.svn_username, user_id=user_id
     )
+    department = _ensure_department_exists(
+        session=session, department_id=user_in.department_id
+    )
     if user_in.role is not None:
         db_user.is_superuser = user_in.role == UserRole.admin
 
     db_user = crud.update_user(session=session, db_user=db_user, user_in=user_in)
-    return db_user
+    department_name = (
+        department.name
+        if department
+        else _department_name_for_user(session=session, user=db_user)
+    )
+    return _user_public(db_user, department_name=department_name)
 
 
 @router.delete("/{user_id}", dependencies=[Depends(get_current_active_admin)])

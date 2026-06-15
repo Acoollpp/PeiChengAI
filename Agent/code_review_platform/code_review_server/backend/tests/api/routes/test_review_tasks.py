@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.models import ReviewTask, ReviewTaskStatus, UserRole
+from app.models import Department, ReviewTask, ReviewTaskStatus, UserRole
 from tests.utils.user import (
     authentication_token_from_key,
     create_key_user,
@@ -194,6 +194,46 @@ def test_create_review_task_legacy_payload_returns_new_fields_as_empty(
     assert content["requirement_file_name"] is None
     assert content["requirement_file_size"] is None
     assert content["requirement_file_sha256"] is None
+
+
+def test_create_review_task_stores_department_and_focus_snapshot(
+    client: TestClient,
+    db: Session,
+) -> None:
+    department = Department(name=f"审查部门-{random_lower_string()}")
+    db.add(department)
+    db.commit()
+    db.refresh(department)
+    user, api_key = create_key_user(db)
+    user.department_id = department.id
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
+    focus_snapshot = "重点检查权限、缓存一致性和异常处理"
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=headers,
+        json={
+            "svn_url": "svn://repo/project",
+            "old_revision": "12",
+            "new_revision": "14",
+            "focus_direction_snapshot": focus_snapshot,
+        },
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["department_id"] == str(department.id)
+    assert content["department_name"] == department.name
+    assert content["focus_direction_snapshot"] == focus_snapshot
+
+    db_task = db.get(ReviewTask, UUID(content["id"]))
+    assert db_task is not None
+    assert db_task.department_id == department.id
+    assert db_task.department_name == department.name
+    assert db_task.focus_direction_snapshot == focus_snapshot
 
 
 def test_create_review_task_rejects_same_revision(
