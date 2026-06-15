@@ -171,6 +171,31 @@ def test_create_review_task_without_template_fields_remains_supported(
     assert content["skill_name"] is None
 
 
+def test_create_review_task_legacy_payload_returns_new_fields_as_empty(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+        json={
+            "svn_url": "svn://repo/project",
+            "old_revision": "12",
+            "new_revision": "14",
+        },
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["department_id"] is None
+    assert content["department_name"] is None
+    assert content["focus_direction_id"] is None
+    assert content["focus_direction_snapshot"] is None
+    assert content["requirement_file_name"] is None
+    assert content["requirement_file_size"] is None
+    assert content["requirement_file_sha256"] is None
+
+
 def test_create_review_task_rejects_same_revision(
     client: TestClient, normal_user_token_headers: dict[str, str]
 ) -> None:

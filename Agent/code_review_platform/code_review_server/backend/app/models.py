@@ -44,11 +44,55 @@ class FeedbackStatsRange(str, Enum):
     all = "all"
 
 
+class DepartmentBase(SQLModel):
+    name: str = Field(min_length=1, max_length=255, index=True)
+    description: str | None = Field(default=None, max_length=1024)
+    is_active: bool = Field(default=True, index=True)
+    sort_order: int = Field(default=0, index=True)
+
+
+class DepartmentCreate(DepartmentBase):
+    pass
+
+
+class DepartmentUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=1024)
+    is_active: bool | None = None
+    sort_order: int | None = None
+
+
+class Department(DepartmentBase, table=True):
+    __tablename__ = "department"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class DepartmentPublic(DepartmentBase):
+    id: uuid.UUID
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class DepartmentsPublic(SQLModel):
+    data: list[DepartmentPublic]
+    count: int
+
+
 # Shared properties
 class UserBase(SQLModel):
     is_active: bool = True
     is_superuser: bool = False
     full_name: str | None = Field(default=None, max_length=255)
+    department_id: uuid.UUID | None = Field(default=None, foreign_key="department.id")
 
 
 # Properties to receive via API on creation
@@ -62,6 +106,7 @@ class UserUpdate(SQLModel):
     full_name: str | None = Field(default=None, max_length=255)
     svn_username: str | None = Field(default=None, max_length=255)
     role: UserRole | None = None
+    department_id: uuid.UUID | None = None
 
 
 class UserUpdateMe(SQLModel):
@@ -135,6 +180,46 @@ class UserApiKey(SQLModel, table=True):
     )
 
 
+class ReviewFocusDirection(SQLModel, table=True):
+    __tablename__ = "review_focus_direction"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    department_id: uuid.UUID | None = Field(
+        default=None, foreign_key="department.id", index=True
+    )
+    name: str = Field(max_length=255, index=True)
+    description: str | None = Field(default=None, max_length=2048)
+    content: str | None = Field(default=None, max_length=8192)
+    is_active: bool = Field(default=True, index=True)
+    sort_order: int = Field(default=0, index=True)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class ReviewTaskRequirementFile(SQLModel, table=True):
+    __tablename__ = "review_task_requirement_file"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    file_name: str = Field(max_length=255)
+    file_path: str = Field(max_length=2048)
+    file_size: int
+    file_sha256: str = Field(max_length=64, index=True)
+    content_type: str | None = Field(default=None, max_length=128)
+    uploaded_by_user_id: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", index=True
+    )
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
 class ReviewTask(SQLModel, table=True):
     __tablename__ = "review_task"
     __table_args__ = (
@@ -148,6 +233,20 @@ class ReviewTask(SQLModel, table=True):
     new_revision: str = Field(max_length=255)
     template_key: str | None = Field(default=None, max_length=64)
     skill_name: str | None = Field(default=None, max_length=255)
+    department_id: uuid.UUID | None = Field(
+        default=None, foreign_key="department.id", index=True
+    )
+    department_name: str | None = Field(default=None, max_length=255)
+    focus_direction_id: uuid.UUID | None = Field(
+        default=None, foreign_key="review_focus_direction.id", index=True
+    )
+    focus_direction_snapshot: str | None = Field(default=None, max_length=8192)
+    requirement_file_id: uuid.UUID | None = Field(
+        default=None, foreign_key="review_task_requirement_file.id", index=True
+    )
+    requirement_file_name: str | None = Field(default=None, max_length=255)
+    requirement_file_size: int | None = Field(default=None)
+    requirement_file_sha256: str | None = Field(default=None, max_length=64)
     status: ReviewTaskStatus = Field(default=ReviewTaskStatus.created)
     report_path: str | None = Field(default=None, max_length=2048)
     report_name: str | None = Field(default=None, max_length=255)
@@ -233,6 +332,9 @@ class ReviewTaskCreate(SQLModel):
     new_revision: str = Field(min_length=1, max_length=255)
     template_key: str | None = Field(default=None, max_length=64)
     skill_name: str | None = Field(default=None, max_length=255)
+    focus_direction_id: uuid.UUID | None = None
+    focus_direction_snapshot: str | None = Field(default=None, max_length=8192)
+    requirement_file_name: str | None = Field(default=None, max_length=255)
 
 
 class ReviewTaskStatusUpdate(SQLModel):
@@ -252,6 +354,14 @@ class ReviewTaskPublic(SQLModel):
     new_revision: str
     template_key: str | None = Field(default=None, max_length=64)
     skill_name: str | None = Field(default=None, max_length=255)
+    department_id: uuid.UUID | None = None
+    department_name: str | None = None
+    focus_direction_id: uuid.UUID | None = None
+    focus_direction_snapshot: str | None = None
+    requirement_file_id: uuid.UUID | None = None
+    requirement_file_name: str | None = None
+    requirement_file_size: int | None = None
+    requirement_file_sha256: str | None = None
     status: ReviewTaskStatus
     report_path: str | None = None
     report_name: str | None = None
@@ -465,6 +575,7 @@ class AuditLog(SQLModel, table=True):
 class UserPublic(UserBase):
     id: uuid.UUID
     svn_username: str | None = None
+    department_name: str | None = None
     role: UserRole = UserRole.user
     auth_source: AuthSource = AuthSource.local
     cch_user_id: int | None = None
