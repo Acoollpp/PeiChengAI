@@ -152,7 +152,7 @@ def create_review_focus_direction(
     dependencies=[Depends(_ensure_admin)],
     response_model=ReviewFocusDirectionUsageStatsPublic,
 )
-def read_review_focus_direction_usage_stats(session: SessionDep) -> Any:
+def read_usage_stats(session: SessionDep) -> Any:
     rows = session.exec(
         select(
             ReviewTask.focus_direction_snapshot,
