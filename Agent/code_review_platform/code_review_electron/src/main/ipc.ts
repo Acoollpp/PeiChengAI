@@ -617,6 +617,11 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       return { status: 'ready', pdfPath: workspacePdfPath }
     }
 
+    if (!workspacePdfPath && (await isExistingFile(fallbackPdfPath))) {
+      shell.showItemInFolder(fallbackPdfPath)
+      return { status: 'ready', pdfPath: fallbackPdfPath }
+    }
+
     const tokens = await authStore.load()
 
     if (!tokens) {
