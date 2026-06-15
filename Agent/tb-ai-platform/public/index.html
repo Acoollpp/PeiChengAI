@@ -64,13 +64,18 @@
             <span class="mode-icon">↻</span>
             <span>
               <strong>变更</strong>
-              <small>粘贴变更单和项目地址</small>
+              <small>粘贴变更单，项目地址优先</small>
             </span>
           </button>
 
           <div class="tips">
             <div class="section-title">输入建议</div>
-            <p>创建时粘贴项目创建信息单。变更时粘贴项目变更信息单，并附上对应项目地址，避免只按项目名查找失败。</p>
+            <p>创建时粘贴项目创建信息单。变更时粘贴项目变更信息单；有项目地址时一并粘贴，没有地址时需包含项目名称、原项目编号和新项目编号。</p>
+          </div>
+
+          <div class="history-panel">
+            <div class="section-title">历史记录</div>
+            <div id="historyList" class="history-list" aria-live="polite">等待登录</div>
           </div>
         </aside>
 

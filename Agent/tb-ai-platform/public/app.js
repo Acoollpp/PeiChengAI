@@ -3,7 +3,8 @@ const state = {
   running: false,
   user: null,
   flows: {},
-  stepStatus: new Map()
+  stepStatus: new Map(),
+  activeItems: [{ id: "item-1", title: "项目 1" }]
 };
 
 const modeTitles = {
@@ -13,7 +14,7 @@ const modeTitles = {
 
 const modePlaceholders = {
   create: "粘贴项目创建信息单，例如项目名称、项目编号、客户、项目工程师、售前/发起人、客户要求日期等。",
-  change: "粘贴项目变更信息单，并附上对应项目地址，例如 https://www.teambition.com/project/xxx/tasks/view/xxx"
+  change: "粘贴项目变更信息单；有项目地址时一并粘贴，没有地址时需包含项目名称、原项目编号和新项目编号。"
 };
 
 const statusText = {
@@ -31,6 +32,7 @@ const el = {
   loginKey: document.querySelector("#loginKeyInput"),
   loginPanel: document.querySelector("#loginPanel"),
   loginState: document.querySelector("#loginState"),
+  historyList: document.querySelector("#historyList"),
   logoutBtn: document.querySelector("#logoutBtn"),
   modeTitle: document.querySelector("#modeTitle"),
   message: document.querySelector("#messageInput"),
@@ -62,7 +64,10 @@ function setUser(user) {
   el.workspace.hidden = !loggedIn;
   el.accountCard.hidden = !loggedIn;
   el.accountName.textContent = user ? user.fullName || `CCH 用户 ${user.cchUserId}` : "未登录";
-  if (loggedIn) loadFlows();
+  if (loggedIn) {
+    loadFlows();
+    loadHistory();
+  }
   if (!loggedIn) el.loginKey.focus();
 }
 
@@ -110,6 +115,18 @@ async function loadFlows() {
   }
 }
 
+async function loadHistory() {
+  try {
+    const res = await fetch("/api/history");
+    if (res.status === 401) return setUser(null);
+    if (!res.ok) throw new Error("历史读取失败");
+    const data = await res.json();
+    renderHistory(data.history || []);
+  } catch (err) {
+    el.historyList.textContent = err.message;
+  }
+}
+
 async function login() {
   const key = el.loginKey.value.trim();
   if (!key) {
@@ -143,15 +160,19 @@ async function logout() {
   setUser(null);
   state.flows = {};
   state.stepStatus.clear();
+  state.activeItems = [{ id: "item-1", title: "项目 1" }];
   el.flowSteps.innerHTML = "";
   el.flowSummary.textContent = "等待登录";
+  el.historyList.textContent = "等待登录";
   el.runId.textContent = "未开始";
   el.runState.textContent = "等待输入";
 }
 
 function resetFlowStatuses() {
   state.stepStatus.clear();
-  getCurrentSteps().forEach(step => state.stepStatus.set(step.id, "pending"));
+  for (const item of state.activeItems) {
+    getCurrentSteps().forEach(step => state.stepStatus.set(stepKey(item.id, step.id), "pending"));
+  }
 }
 
 function getCurrentSteps() {
@@ -166,19 +187,29 @@ function renderFlowSteps() {
     return;
   }
 
-  for (const step of steps) {
-    const status = state.stepStatus.get(step.id) || "pending";
-    const row = document.createElement("article");
-    row.className = `flow-step ${status}`;
-    row.dataset.stepId = step.id;
+  for (const item of state.activeItems) {
+    const group = document.createElement("section");
+    group.className = "flow-item";
+    const heading = document.createElement("div");
+    heading.className = "flow-item-title";
+    heading.textContent = item.title;
+    group.append(heading);
+
+    for (const step of steps) {
+      const key = stepKey(item.id, step.id);
+      const status = state.stepStatus.get(key) || "pending";
+      const row = document.createElement("article");
+      row.className = `flow-step ${status}`;
+      row.dataset.stepId = step.id;
+      row.dataset.itemId = item.id;
 
     const light = document.createElement("span");
     light.className = `step-light step-signal ${status}`;
     light.setAttribute("aria-hidden", "true");
 
-    const index = document.createElement("span");
-    index.className = "step-index";
-    index.textContent = String(step.order || el.flowSteps.children.length + 1).padStart(2, "0");
+      const index = document.createElement("span");
+      index.className = "step-index";
+      index.textContent = String(step.order || group.querySelectorAll(".flow-step").length + 1).padStart(2, "0");
 
     const content = document.createElement("div");
     content.className = "step-copy";
@@ -192,26 +223,30 @@ function renderFlowSteps() {
     badge.className = "step-badge";
     badge.textContent = statusText[status] || statusText.pending;
 
-    const repair = document.createElement("button");
-    repair.className = "repair-step repair-btn";
-    repair.type = "button";
-    repair.textContent = "修复";
-    repair.dataset.stepId = step.id;
-    repair.hidden = !step.repairable;
-    repair.disabled = state.running || status === "done";
-    repair.addEventListener("click", () => repairStep(step.id));
+      const repair = document.createElement("button");
+      repair.className = "repair-step repair-btn";
+      repair.type = "button";
+      repair.textContent = "修复";
+      repair.dataset.stepId = step.id;
+      repair.hidden = !step.repairable || state.activeItems.length > 1;
+      repair.disabled = state.running || status === "done";
+      repair.addEventListener("click", () => repairStep(step.id));
 
-    row.append(light, index, content, badge, repair);
-    el.flowSteps.append(row);
+      row.append(light, index, content, badge, repair);
+      group.append(row);
+    }
+
+    el.flowSteps.append(group);
   }
 
   updateFlowSummary();
 }
 
-function updateStep(stepId, status) {
-  if (!state.stepStatus.has(stepId)) return;
-  state.stepStatus.set(stepId, status);
-  const row = el.flowSteps.querySelector(`[data-step-id="${cssEscape(stepId)}"]`);
+function updateStep(stepId, status, itemId = "item-1") {
+  const key = stepKey(itemId, stepId);
+  if (!state.stepStatus.has(key)) return;
+  state.stepStatus.set(key, status);
+  const row = el.flowSteps.querySelector(`[data-item-id="${cssEscape(itemId)}"][data-step-id="${cssEscape(stepId)}"]`);
   if (!row) return renderFlowSteps();
   row.className = `flow-step ${status}`;
   const light = row.querySelector(".step-light");
@@ -225,24 +260,46 @@ function updateStep(stepId, status) {
 
 function updateFlowSummary() {
   const steps = getCurrentSteps();
-  const done = steps.filter(step => state.stepStatus.get(step.id) === "done").length;
-  const failed = steps.filter(step => state.stepStatus.get(step.id) === "failed").length;
-  const running = steps.some(step => state.stepStatus.get(step.id) === "running");
+  const keys = state.activeItems.flatMap(item => steps.map(step => stepKey(item.id, step.id)));
+  const done = keys.filter(key => state.stepStatus.get(key) === "done").length;
+  const failed = keys.filter(key => state.stepStatus.get(key) === "failed").length;
+  const running = keys.some(key => state.stepStatus.get(key) === "running");
   if (!steps.length) return;
   if (running) {
-    el.flowSummary.textContent = `正在执行 ${done}/${steps.length}`;
+    el.flowSummary.textContent = `正在执行 ${done}/${keys.length}`;
   } else if (failed) {
     el.flowSummary.textContent = `${failed} 个步骤需要修复`;
   } else {
-    el.flowSummary.textContent = `已完成 ${done}/${steps.length}`;
+    el.flowSummary.textContent = `已完成 ${done}/${keys.length}`;
   }
 }
 
 function updateRepairButtons() {
   el.flowSteps.querySelectorAll(".repair-step").forEach(btn => {
-    const status = state.stepStatus.get(btn.dataset.stepId);
+    const itemId = btn.closest(".flow-step")?.dataset.itemId || "item-1";
+    const status = state.stepStatus.get(stepKey(itemId, btn.dataset.stepId));
     btn.disabled = state.running || status === "done";
   });
+}
+
+function renderHistory(history) {
+  el.historyList.innerHTML = "";
+  if (!history.length) {
+    el.historyList.textContent = "暂无使用记录";
+    return;
+  }
+  for (const item of history.slice(0, 10)) {
+    const row = document.createElement("div");
+    row.className = `history-item ${item.status}`;
+    const title = document.createElement("strong");
+    title.textContent = `${modeTitles[item.mode] || item.title} · ${item.itemCount || 1} 项`;
+    const meta = document.createElement("small");
+    meta.textContent = `${historyStatus(item.status)} · ${formatTime(item.createdAt)}`;
+    const preview = document.createElement("span");
+    preview.textContent = item.messagePreview || "无摘要";
+    row.append(title, meta, preview);
+    el.historyList.append(row);
+  }
 }
 
 async function runTask() {
@@ -341,21 +398,32 @@ async function consumeNdjson(res) {
 function handleStreamEvent(event) {
   if (event.type === "start") {
     el.runId.textContent = event.runId;
+    if (event.items?.length) {
+      state.activeItems = event.items;
+      resetFlowStatuses();
+      renderFlowSteps();
+    }
     if (event.steps?.length === 1 && event.repairStepId) updateStep(event.repairStepId, "running");
   } else if (event.type === "step") {
-    updateStep(event.stepId, event.status);
+    updateStep(event.stepId, event.status, event.itemId || "item-1");
   } else if (event.type === "log") {
     el.runState.textContent = event.message;
   } else if (event.type === "error") {
     el.runState.textContent = event.error;
   } else if (event.type === "done") {
-    for (const stepId of event.failedSteps || []) updateStep(stepId, "failed");
+    for (const stepId of event.failedSteps || []) updateCompositeStep(stepId, "failed");
     for (const stepId of event.missingSteps || []) {
-      if (state.stepStatus.get(stepId) !== "done") updateStep(stepId, "failed");
+      if (state.stepStatus.get(stepId) !== "done") updateCompositeStep(stepId, "failed");
     }
     el.runState.textContent = event.code === 0 ? "流程结束" : "流程异常";
     updateFlowSummary();
+    loadHistory();
   }
+}
+
+function updateCompositeStep(value, status) {
+  const [itemId, stepId] = String(value).includes(":") ? String(value).split(":") : ["item-1", value];
+  if (state.stepStatus.get(stepKey(itemId, stepId)) !== "done") updateStep(stepId, status, itemId);
 }
 
 function cssEscape(value) {
@@ -364,10 +432,40 @@ function cssEscape(value) {
 }
 
 function validateMessage(message) {
-  if (state.mode === "change" && !/https?:\/\/[^\s，。；;]+/i.test(message)) {
-    return "项目变更必须粘贴对应的项目地址";
+  if (state.mode === "change" && !/https?:\/\/[^\s，。；;]+/i.test(message) && !hasChangeFields(message)) {
+    return "项目变更请粘贴项目地址，或提供项目名称、原项目编号和新项目编号";
   }
   return "";
+}
+
+function hasChangeFields(message) {
+  if (/项目名称/.test(message) && /原项目编号/.test(message) && /新项目编号/.test(message)) return true;
+  const names = sectionItems(message, "项目名称", ["原项目编号", "新项目编号"]);
+  const originalCodes = sectionItems(message, "原项目编号", ["新项目编号"]);
+  const newCodes = sectionItems(message, "新项目编号", ["阶段属性", "优先级", "客户要求日期"]);
+  return Math.min(names.length, originalCodes.length, newCodes.length) > 1;
+}
+
+function sectionItems(text, startLabel, endLabels) {
+  const start = text.indexOf(startLabel);
+  if (start < 0) return [];
+  const afterStart = text.slice(start + startLabel.length);
+  const endPositions = endLabels.map(label => afterStart.indexOf(label)).filter(position => position >= 0);
+  const section = afterStart.slice(0, endPositions.length ? Math.min(...endPositions) : afterStart.length);
+  return section.split(/[、。，\n]+/).map(item => item.trim()).filter(Boolean);
+}
+
+function stepKey(itemId, stepId) {
+  return `${itemId || "item-1"}::${stepId}`;
+}
+
+function historyStatus(status) {
+  return { running: "运行中", success: "成功", failed: "异常" }[status] || status;
+}
+
+function formatTime(value) {
+  if (!value) return "";
+  return new Date(value).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 document.querySelectorAll(".mode").forEach(btn => {

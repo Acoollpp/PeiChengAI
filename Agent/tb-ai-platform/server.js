@@ -8,6 +8,7 @@ const { syncFromCchDatabase } = require("./src/cchSync");
 const { loadConfig, loadEnvFile } = require("./src/config");
 const { createStore } = require("./src/db");
 const { parseCodexEvents } = require("./src/flowEvents");
+const { detectProjectItems } = require("./src/projectItems");
 const { buildModeFlow } = require("./src/skillFlow");
 
 const modes = {
@@ -22,9 +23,8 @@ const modes = {
     title: "创建项目变更迭代",
     skill: "通用-钉钉项目变更",
     skills: ["通用-钉钉项目变更"],
-    requireProjectUrl: true,
     promptPrefix:
-      "你正在通过网站后台执行钉钉 TB 项目变更任务。用户会直接粘贴项目变更信息单，并必须提供对应的 Teambition/钉钉项目地址；不要只按项目名搜索项目。必须使用 skill `通用-钉钉项目变更`。不要泄露任何 AppSecret、accessToken 或完整敏感凭证。用户需求如下："
+      "你正在通过网站后台执行钉钉 TB 项目变更任务。用户会直接粘贴项目变更信息单；如果用户提供 Teambition/钉钉项目地址，必须优先用项目地址定位项目，否则用项目名称、原项目编号和新项目编号定位。必须使用 skill `通用-钉钉项目变更`。不要泄露任何 AppSecret、accessToken 或完整敏感凭证。用户需求如下："
   }
 };
 
@@ -78,6 +78,12 @@ function createServer({ config, store, syncState }) {
     return sendJson(res, 200, getFlows(config));
   }
 
+  function history(req, res) {
+    const currentUser = auth.getCurrentUser(req);
+    if (!currentUser) return sendJson(res, 401, { error: "请先登录" });
+    return sendJson(res, 200, { history: store.listRunHistory({ userId: currentUser.id }) });
+  }
+
   async function runCodex(req, res) {
     const currentUser = auth.getCurrentUser(req);
     if (!currentUser) return sendJson(res, 401, { error: "请先登录" });
@@ -93,12 +99,12 @@ function createServer({ config, store, syncState }) {
     const message = String(body.message || "").trim();
     if (!mode) return sendJson(res, 400, { error: "任务类型无效" });
     if (!message) return sendJson(res, 400, { error: "请输入任务内容" });
-    const validationError = validateTaskMessage(body.mode, mode, message);
+    const items = detectProjectItems(body.mode, message);
+    const validationError = validateTaskMessage(body.mode, mode, message, items);
     if (validationError) return sendJson(res, 400, { error: validationError });
 
     const runId = crypto.randomUUID();
     const flow = getModeFlow(body.mode, mode, config);
-    const prompt = buildCodexPrompt({ mode, message, steps: flow });
     const startedAt = new Date().toISOString();
 
     store.recordAuditLog({
@@ -108,8 +114,18 @@ function createServer({ config, store, syncState }) {
       runId,
       metadata: {
         title: mode.title,
-        messageLength: message.length
+        messageLength: message.length,
+        itemCount: items.length
       }
+    });
+
+    store.createRunHistory({
+      userId: currentUser.id,
+      runId,
+      mode: body.mode,
+      title: mode.title,
+      message,
+      itemCount: items.length
     });
 
     res.writeHead(200, {
@@ -117,12 +133,17 @@ function createServer({ config, store, syncState }) {
       "Cache-Control": "no-cache, no-transform",
       "X-Accel-Buffering": "no"
     });
-    executeCodexStream({
+    executeCodexBatch({
       req,
       res,
+      store,
+      runId,
       config,
-      prompt,
-      startEvent: { type: "start", runId, mode: body.mode, title: mode.title, startedAt, steps: flow }
+      mode,
+      message,
+      flow,
+      items,
+      startEvent: { type: "start", runId, mode: body.mode, title: mode.title, startedAt, steps: flow, items }
     });
   }
 
@@ -165,6 +186,14 @@ function createServer({ config, store, syncState }) {
         messageLength: message.length
       }
     });
+    store.createRunHistory({
+      userId: currentUser.id,
+      runId,
+      mode: body.mode,
+      title: `修复：${step.label}`,
+      message,
+      itemCount: 1
+    });
 
     res.writeHead(200, {
       "Content-Type": "application/x-ndjson; charset=utf-8",
@@ -186,6 +215,16 @@ function createServer({ config, store, syncState }) {
         steps: [step],
         repair: true,
         repairStepId: step.id
+      },
+      onDone: result => {
+        store.finishRunHistory({
+          runId,
+          status:
+            result.code === 0 && result.failedSteps.length === 0 && result.missingSteps.length === 0
+              ? "success"
+              : "failed",
+          ...result
+        });
       }
     });
   }
@@ -205,6 +244,7 @@ function createServer({ config, store, syncState }) {
 
     if (req.method === "GET" && req.url.startsWith("/api/me")) return me(req, res);
     if (req.method === "GET" && req.url.startsWith("/api/flows")) return flows(req, res);
+    if (req.method === "GET" && req.url.startsWith("/api/history")) return history(req, res);
     if (req.method === "POST" && req.url.startsWith("/api/login")) return login(req, res);
     if (req.method === "POST" && req.url.startsWith("/api/logout")) return logout(req, res);
     if (req.method === "POST" && req.url.startsWith("/api/run")) return runCodex(req, res);
@@ -215,6 +255,48 @@ function createServer({ config, store, syncState }) {
   }
 
   return http.createServer(router);
+}
+
+async function executeCodexBatch({ req, res, store, runId, config, mode, message, flow, items, startEvent }) {
+  writeNdjson(res, startEvent);
+  const results = await Promise.all(
+    items.map(item =>
+      executeCodexStream({
+        req,
+        res,
+        config,
+        prompt: buildCodexPrompt({
+          mode,
+          message: item.message,
+          steps: flow,
+          item,
+          totalItems: items.length
+        }),
+        startEvent: null,
+        item,
+        endResponse: false
+      })
+    )
+  );
+
+  const completedSteps = results.flatMap(result => result.completedSteps.map(stepId => `${result.itemId}:${stepId}`));
+  const failedSteps = results.flatMap(result => result.failedSteps.map(stepId => `${result.itemId}:${stepId}`));
+  const missingSteps = results.flatMap(result => result.missingSteps.map(stepId => `${result.itemId}:${stepId}`));
+  const code = results.every(result => result.code === 0) ? 0 : 1;
+  const status = code === 0 && failedSteps.length === 0 && missingSteps.length === 0 ? "success" : "failed";
+
+  const doneEvent = {
+    type: "done",
+    code,
+    completedSteps,
+    failedSteps,
+    missingSteps,
+    itemResults: results,
+    finishedAt: new Date().toISOString()
+  };
+  store.finishRunHistory({ runId, status, code, completedSteps, failedSteps, missingSteps });
+  writeNdjson(res, doneEvent);
+  res.end();
 }
 
 function getFlows(config) {
@@ -242,7 +324,7 @@ function normalizeStepId(stepId, index) {
   return /^[a-z0-9][a-z0-9_-]*$/i.test(clean) ? clean : `step-${index}`;
 }
 
-function buildCodexPrompt({ mode, message, steps, repairStep }) {
+function buildCodexPrompt({ mode, message, steps, repairStep, item, totalItems }) {
   const stepList = steps.map(step => `- ${step.id}: ${step.label}`).join("\n");
   const markerGuide = [
     "你必须按下面的 skill 流程执行，并只用机器可解析标记汇报步骤状态：",
@@ -256,12 +338,15 @@ function buildCodexPrompt({ mode, message, steps, repairStep }) {
   const repairGuide = repairStep
     ? `\n这是单步修复任务，只修复当前步骤 ${repairStep.id}（${repairStep.label}）。不要重复执行其他已完成步骤。`
     : "";
-  return `${mode.promptPrefix}\n\n${message}\n\n${markerGuide}${repairGuide}`;
+  const itemGuide = item && totalItems > 1
+    ? `\n这是并行创建任务中的一个独立项目：${item.title}。只处理下面这一份项目信息单，不要创建其他项目。`
+    : "";
+  return `${mode.promptPrefix}\n\n${itemGuide}\n\n${message}\n\n${markerGuide}${repairGuide}`;
 }
 
-function validateTaskMessage(modeKey, mode, message) {
-  if (modeKey === "change" && mode.requireProjectUrl && !hasProjectUrl(message)) {
-    return "项目变更必须粘贴对应的项目地址，避免只按项目名查找失败";
+function validateTaskMessage(modeKey, mode, message, items = []) {
+  if (modeKey === "change" && !hasProjectUrl(message) && !hasChangeFields(message, items)) {
+    return "项目变更请粘贴项目地址，或提供项目名称、原项目编号和新项目编号";
   }
   return "";
 }
@@ -270,72 +355,106 @@ function hasProjectUrl(message) {
   return /https?:\/\/[^\s，。；;]+/i.test(String(message || ""));
 }
 
-function executeCodexStream({ req, res, config, prompt, startEvent }) {
+function hasChangeFields(message, items = []) {
+  if (items.length > 1) return true;
+  const text = String(message || "");
+  return /项目名称/.test(text) && /原项目编号/.test(text) && /新项目编号/.test(text);
+}
+
+function executeCodexStream({ req, res, config, prompt, startEvent, item, endResponse = true, onDone }) {
   const completedSteps = new Set();
   const failedSteps = new Set();
-  const knownSteps = new Set((startEvent.steps || []).map(step => step.id));
+  const knownSteps = new Set((startEvent?.steps || []).map(step => step.id));
+  if (!knownSteps.size && startEvent === null) {
+    const markerSteps = prompt.match(/- ([a-z0-9_-]+):/gi) || [];
+    markerSteps.forEach(line => knownSteps.add(line.replace(/^- /, "").replace(/:.*/, "").trim()));
+  }
 
-  writeNdjson(res, startEvent);
+  if (startEvent) writeNdjson(res, startEvent);
 
-  const args = [
-    "exec",
-    "--skip-git-repo-check",
-    "--dangerously-bypass-approvals-and-sandbox",
-    "-C",
-    config.workspaceDir,
-    "-"
-  ];
-  const child = spawn(config.codexBin, args, {
-    cwd: config.workspaceDir,
-    env: {
-      ...process.env,
-      LANG: "C.UTF-8",
-      LC_ALL: "C.UTF-8"
-    },
-    stdio: ["pipe", "pipe", "pipe"]
-  });
-
-  child.stdin.on("error", err => {
-    if (err.code !== "EPIPE") writeNdjson(res, { type: "error", error: err.message });
-  });
-  child.stdin.end(prompt);
-
-  const handleOutput = chunk => {
-    const parsed = parseCodexEvents(chunk.toString("utf8"));
-    for (const event of parsed.events) {
-      const { stepId, status } = event;
-      if (!knownSteps.has(stepId)) continue;
-      if (status === "done") completedSteps.add(stepId);
-      if (status === "failed") failedSteps.add(stepId);
-      writeNdjson(res, { type: "step", stepId, status });
-    }
-    if (parsed.text) writeNdjson(res, { type: "log", message: parsed.text });
-  };
-
-  child.stdout.on("data", handleOutput);
-  child.stderr.on("data", handleOutput);
-
-  child.on("error", err => {
-    writeNdjson(res, { type: "error", error: err.message });
-    res.end();
-  });
-
-  child.on("close", code => {
-    const missingSteps = [...knownSteps].filter(stepId => !completedSteps.has(stepId));
-    writeNdjson(res, {
-      type: "done",
-      code,
-      completedSteps: [...completedSteps],
-      failedSteps: [...failedSteps],
-      missingSteps,
-      finishedAt: new Date().toISOString()
+  return new Promise(resolve => {
+    const args = [
+      "exec",
+      "--skip-git-repo-check",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "-C",
+      config.workspaceDir,
+      "-"
+    ];
+    const child = spawn(config.codexBin, args, {
+      cwd: config.workspaceDir,
+      env: {
+        ...process.env,
+        LANG: "C.UTF-8",
+        LC_ALL: "C.UTF-8"
+      },
+      stdio: ["pipe", "pipe", "pipe"]
     });
-    res.end();
-  });
 
-  res.on("close", () => {
-    if (!res.writableEnded && !child.killed) child.kill("SIGTERM");
+    child.stdin.on("error", err => {
+      if (err.code !== "EPIPE") writeNdjson(res, withItem({ type: "error", error: err.message }, item));
+    });
+    child.stdin.end(prompt);
+
+    const handleOutput = chunk => {
+      const parsed = parseCodexEvents(chunk.toString("utf8"));
+      for (const event of parsed.events) {
+        const { stepId, status } = event;
+        if (!knownSteps.has(stepId)) continue;
+        if (status === "done") completedSteps.add(stepId);
+        if (status === "failed") failedSteps.add(stepId);
+        writeNdjson(res, withItem({ type: "step", stepId, status }, item));
+      }
+      if (parsed.text) writeNdjson(res, withItem({ type: "log", message: parsed.text }, item));
+    };
+
+    child.stdout.on("data", handleOutput);
+    child.stderr.on("data", handleOutput);
+
+    child.on("error", err => {
+      writeNdjson(res, withItem({ type: "error", error: err.message }, item));
+      if (endResponse) res.end();
+      resolve(streamResult({ item, code: 1, completedSteps, failedSteps, knownSteps }));
+    });
+
+    child.on("close", code => {
+      const result = streamResult({ item, code, completedSteps, failedSteps, knownSteps });
+      if (endResponse) {
+        writeNdjson(res, {
+          type: "done",
+          code,
+          completedSteps: result.completedSteps,
+          failedSteps: result.failedSteps,
+          missingSteps: result.missingSteps,
+          finishedAt: new Date().toISOString()
+        });
+        onDone?.(result);
+        res.end();
+      }
+      resolve(result);
+    });
+
+    res.on("close", () => {
+      if (!res.writableEnded && !child.killed) child.kill("SIGTERM");
+    });
   });
+}
+
+function streamResult({ item, code, completedSteps, failedSteps, knownSteps }) {
+  const completed = [...completedSteps];
+  const failed = [...failedSteps];
+  return {
+    itemId: item?.id || "item-1",
+    itemTitle: item?.title || "项目 1",
+    code,
+    completedSteps: completed,
+    failedSteps: failed,
+    missingSteps: [...knownSteps].filter(stepId => !completedSteps.has(stepId))
+  };
+}
+
+function withItem(event, item) {
+  return item ? { ...event, itemId: item.id, itemTitle: item.title } : event;
 }
 
 function writeNdjson(res, event) {

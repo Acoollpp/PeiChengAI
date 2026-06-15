@@ -13,7 +13,7 @@ const tables = store.db
   .all()
   .map(row => row.name);
 
-for (const table of ["api_keys", "audit_logs", "sessions", "users"]) {
+for (const table of ["api_keys", "audit_logs", "run_history", "sessions", "users"]) {
   assert.ok(tables.includes(table), `missing table ${table}`);
 }
 
@@ -54,6 +54,28 @@ store.recordAuditLog({
   metadata: { ok: true }
 });
 assert.strictEqual(store.db.prepare("SELECT count(*) AS count FROM audit_logs").get().count, 1);
+
+store.createRunHistory({
+  userId: user.id,
+  runId: "history-1",
+  mode: "create",
+  title: "创建钉钉 TB 项目",
+  message: "项目名称：A\n项目编号：P001",
+  itemCount: 2
+});
+store.finishRunHistory({
+  runId: "history-1",
+  status: "success",
+  code: 0,
+  completedSteps: ["item-1:step-1"],
+  failedSteps: [],
+  missingSteps: []
+});
+const history = store.listRunHistory({ userId: user.id });
+assert.strictEqual(history.length, 1);
+assert.strictEqual(history[0].itemCount, 2);
+assert.strictEqual(history[0].status, "success");
+assert.deepStrictEqual(history[0].completedSteps, ["item-1:step-1"]);
 
 store.close();
 console.log("ok - db store manages users, keys, sessions, and audit logs");

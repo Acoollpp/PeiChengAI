@@ -33,6 +33,14 @@ function request(port, { method = "GET", path = "/", headers = {}, body = "" }) 
   });
 }
 
+function parseNdjson(raw) {
+  return raw
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map(line => JSON.parse(line));
+}
+
 (async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tb-server-"));
   const fakeCodex = path.join(tmpDir, "codex");
@@ -160,26 +168,52 @@ function request(port, { method = "GET", path = "/", headers = {}, body = "" }) 
     assert.match(repairFlow.body, /"type":"step"/);
     assert.doesNotMatch(repairFlow.body, /RAW COMMAND SHOULD STAY SERVER SIDE/);
 
-    const changeWithoutUrl = await request(port, {
+    const incompleteChange = await request(port, {
       method: "POST",
       path: "/api/run",
       headers: { "Content-Type": "application/json", Cookie: cookie },
       body: JSON.stringify({ mode: "change", message: "项目名称 60411，创建变更迭代" })
     });
-    assert.strictEqual(changeWithoutUrl.statusCode, 400);
-    assert.match(changeWithoutUrl.body, /项目变更必须粘贴对应的项目地址/);
+    assert.strictEqual(incompleteChange.statusCode, 400);
+    assert.match(incompleteChange.body, /项目变更请粘贴项目地址/);
 
-    const changeWithUrl = await request(port, {
+    const changeWithFields = await request(port, {
       method: "POST",
       path: "/api/run",
       headers: { "Content-Type": "application/json", Cookie: cookie },
       body: JSON.stringify({
         mode: "change",
-        message: "项目地址 https://www.teambition.com/project/abc/tasks/view/def，创建变更迭代"
+        message: "项目名称\n61374-P16S200A-低压户储\n原项目编号\nP16S200A-LG61374L20-1.0\n新项目编号\nP16S200A-LG61374L20-1.1"
       })
     });
-    assert.strictEqual(changeWithUrl.statusCode, 200);
-    assert.match(changeWithUrl.body, /"type":"start"/);
+    assert.strictEqual(changeWithFields.statusCode, 200);
+    assert.match(changeWithFields.body, /"type":"start"/);
+
+    const multiCreate = await request(port, {
+      method: "POST",
+      path: "/api/run",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        mode: "create",
+        message: [
+          "项目名称：60411-P15S100A-低压户储",
+          "项目编号：P15S100A-MK60411L10-IOB-1.0",
+          "",
+          "项目名称：60412-P16S100A-低压户储",
+          "项目编号：P16S100A-MK60412L10-IOB-1.0"
+        ].join("\n")
+      })
+    });
+    assert.strictEqual(multiCreate.statusCode, 200);
+    const events = parseNdjson(multiCreate.body);
+    assert.strictEqual(events[0].items.length, 2);
+    assert.ok(events.some(event => event.type === "step" && event.itemId === "item-1"));
+    assert.ok(events.some(event => event.type === "step" && event.itemId === "item-2"));
+
+    const history = await request(port, { path: "/api/history", headers: { Cookie: cookie } });
+    assert.strictEqual(history.statusCode, 200);
+    const historyBody = JSON.parse(history.body);
+    assert.ok(historyBody.history.some(item => item.itemCount === 2 && item.mode === "create"));
   } finally {
     await new Promise(resolve => server.close(resolve));
     store.close();
