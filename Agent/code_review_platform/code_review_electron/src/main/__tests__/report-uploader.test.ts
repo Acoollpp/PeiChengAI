@@ -7,7 +7,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ensurePdfReportReady,
   ensureReportReady,
+  ensureRequirementFileReady,
   uploadPdfReportFile,
+  uploadRequirementFile,
   uploadReportFile
 } from '../report-uploader'
 
@@ -75,6 +77,34 @@ describe('report uploader', () => {
     expect(api.uploadPdfReport).toHaveBeenCalledWith('token-123', 'task-1', {
       pdf_content: Buffer.from('%PDF-1.4\n'),
       pdf_name: 'r12_r14审查报告_20260610_142530.pdf'
+    })
+  })
+
+  it('rejects missing and empty requirement files', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'requirement-uploader-'))
+    tempDirs.push(dir)
+    const missingPath = join(dir, 'missing.xls')
+    const emptyPath = join(dir, 'empty.xlsx')
+    await writeFile(emptyPath, '')
+
+    await expect(ensureRequirementFileReady(missingPath)).rejects.toThrow('产品开发需求表不存在')
+    await expect(ensureRequirementFileReady(emptyPath)).rejects.toThrow('产品开发需求表为空')
+  })
+
+  it('uploads requirement file bytes and file name from disk path', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'requirement-uploader-'))
+    tempDirs.push(dir)
+    const filePath = join(dir, '产品开发需求表.xls')
+    const api = {
+      uploadRequirementFile: vi.fn(async () => ({ ok: true }))
+    }
+    await writeFile(filePath, 'excel-content')
+
+    await uploadRequirementFile(api, 'token-123', 'task-1', filePath)
+
+    expect(api.uploadRequirementFile).toHaveBeenCalledWith('token-123', 'task-1', {
+      file_content: Buffer.from('excel-content'),
+      file_name: '产品开发需求表.xls'
     })
   })
 })

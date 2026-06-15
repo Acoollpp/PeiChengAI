@@ -28,7 +28,7 @@ import {
   type TaskAgentDependencies
 } from './task-agent'
 import type { EnvironmentCheckResult } from './environment-checker'
-import { uploadPdfReportFile, uploadReportFile } from './report-uploader'
+import { uploadPdfReportFile, uploadReportFile, uploadRequirementFile } from './report-uploader'
 import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
 import { ServerConfigStore, normalizeServerUrl } from './server-config-store'
 import { createSkillSyncService, type SkillSyncResult } from './skill-sync'
@@ -56,6 +56,7 @@ export interface IpcHandlerDependencies {
   prepareWorkspace?: typeof defaultPrepareWorkspace
   runCodex?: typeof defaultRunCodex
   generatePdfReport?: TaskAgentDependencies['generatePdfReport']
+  uploadRequirementFile?: TaskAgentDependencies['uploadRequirementFile']
   uploadReport?: TaskAgentDependencies['uploadReport']
   uploadPdfReport?: TaskAgentDependencies['uploadPdfReport']
   runtimePaths?: RuntimePaths
@@ -487,6 +488,10 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
           },
           runCodex: dependencies.runCodex ?? defaultRunCodex,
           generatePdfReport: dependencies.generatePdfReport ?? generatePdfReport,
+          uploadRequirementFile:
+            dependencies.uploadRequirementFile ??
+            ((token, taskId, filePath) =>
+              uploadRequirementFile(taskApi, token, taskId, filePath)),
           uploadReport:
             dependencies.uploadReport ??
             ((token, taskId, reportPath) => uploadReportFile(taskApi, token, taskId, reportPath)),

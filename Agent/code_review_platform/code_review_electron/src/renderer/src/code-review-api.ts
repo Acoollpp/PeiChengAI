@@ -40,6 +40,10 @@ export interface ExecuteTaskRequest {
   new_revision: string
   template_key?: ReviewTemplateKey
   skill_name?: string
+  requirement_file_path?: string
+  requirement_file_name?: string
+  focus_direction_id?: string
+  focus_direction_snapshot?: string
   client_task_id?: string
 }
 

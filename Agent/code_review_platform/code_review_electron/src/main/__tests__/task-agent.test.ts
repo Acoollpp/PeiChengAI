@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   defaultPrepareWorkspace,
   executeReviewTask,
+  prepareRequirementFile,
   type TaskAgentDependencies
 } from '../task-agent'
 import type { ReviewTask } from '../../shared/types'
@@ -29,14 +30,20 @@ const makeTask = (overrides: Partial<ReviewTask> = {}): ReviewTask => ({
 })
 
 const withPdfDependencies = (
-  dependencies: Omit<TaskAgentDependencies, 'generatePdfReport' | 'uploadPdfReport'> &
-    Partial<Pick<TaskAgentDependencies, 'generatePdfReport' | 'uploadPdfReport'>>
+  dependencies: Omit<
+    TaskAgentDependencies,
+    'generatePdfReport' | 'uploadPdfReport' | 'uploadRequirementFile'
+  > &
+    Partial<
+      Pick<TaskAgentDependencies, 'generatePdfReport' | 'uploadPdfReport' | 'uploadRequirementFile'>
+    >
 ): TaskAgentDependencies => ({
   generatePdfReport: vi.fn(async (reportPath: string) => ({
     status: 'ready' as const,
     reportPath,
     pdfPath: reportPath.replace(/\.md$/i, '.pdf')
   })),
+  uploadRequirementFile: vi.fn(),
   uploadPdfReport: vi.fn(),
   ...dependencies
 })
@@ -143,7 +150,12 @@ describe('executeReviewTask', () => {
       }),
       prepareWorkspace: vi.fn(async () => {
         calls.push('prepareWorkspace')
-        return { cwd, reportPath, imagesDir }
+        return {
+          cwd,
+          reportPath,
+          imagesDir,
+          requirementFilePath: join(cwd, 'requirements', '产品开发需求表.xls')
+        }
       }),
       runCodex: vi.fn(async () => {
         calls.push('runCodex')
@@ -153,6 +165,9 @@ describe('executeReviewTask', () => {
         calls.push('generatePdfReport')
         await writeFile(pdfPath, '%PDF-1.4\n')
         return { status: 'ready' as const, reportPath, pdfPath }
+      }),
+      uploadRequirementFile: vi.fn(async () => {
+        calls.push('uploadRequirementFile')
       }),
       uploadReport: vi.fn(async () => {
         calls.push('uploadReport')
@@ -176,10 +191,19 @@ describe('executeReviewTask', () => {
       cwd,
       reportPath,
       imagesDir,
+      requirementFilePath: join(cwd, 'requirements', '产品开发需求表.xls'),
       skillName: '通用-代码审查-模版二',
-      task: makeTask()
+      task: makeTask(),
+      clientTaskId: undefined,
+      signal: undefined,
+      onProgress: undefined
     })
     expect(dependencies.generatePdfReport).toHaveBeenCalledWith(reportPath)
+    expect(dependencies.uploadRequirementFile).toHaveBeenCalledWith(
+      'token-123',
+      'task-1',
+      join(cwd, 'requirements', '产品开发需求表.xls')
+    )
     expect(dependencies.uploadReport).toHaveBeenCalledWith('token-123', 'task-1', reportPath)
     expect(dependencies.uploadPdfReport).toHaveBeenCalledWith('token-123', 'task-1', pdfPath)
     expect(dependencies.prepareWorkspace).toHaveBeenCalledWith({
@@ -193,6 +217,7 @@ describe('executeReviewTask', () => {
       'status:checking_environment',
       'checkEnvironment',
       'prepareWorkspace',
+      'uploadRequirementFile',
       'status:running_codex',
       'runCodex',
       'status:uploading_report',
@@ -328,6 +353,54 @@ describe('executeReviewTask', () => {
       'local-task-1:task-1:stage:uploading_report:上传审查报告',
       'local-task-1:task-1:stage:success:审查完成'
     ])
+  })
+
+  it('continues review when requirement file archive fails', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-requirement-upload-fail-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '代码审查报告.md')
+    const pdfPath = join(cwd, '代码审查报告.pdf')
+    const imagesDir = join(cwd, 'images')
+    const events: string[] = []
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => makeTask()),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      prepareWorkspace: vi.fn(async () => ({
+        cwd,
+        reportPath,
+        imagesDir,
+        requirementFilePath: join(cwd, 'requirements', '产品开发需求表.xls')
+      })),
+      uploadRequirementFile: vi.fn(async () => {
+        throw new Error('服务端不可用')
+      }),
+      runCodex: vi.fn(async () => {
+        await writeFile(reportPath, '# report\n')
+      }),
+      generatePdfReport: vi.fn(async () => {
+        await writeFile(pdfPath, '%PDF-1.4\n')
+        return { status: 'ready' as const, reportPath, pdfPath }
+      }),
+      uploadReport: vi.fn(),
+      uploadPdfReport: vi.fn()
+    })
+
+    const result = await executeReviewTask(
+      { token: 'token-123', request, clientTaskId: 'local-task-1' },
+      dependencies,
+      (event) => {
+        if (event.type === 'stage') {
+          events.push(`${event.stage}:${event.message}`)
+        }
+      }
+    )
+
+    expect(result.status).toBe('success')
+    expect(dependencies.runCodex).toHaveBeenCalled()
+    expect(events).toContain('preparing_workspace:产品开发需求表归档失败，审查将继续执行。')
   })
 
   it('marks task as failed with a sanitized summary when codex throws', async () => {
@@ -475,5 +548,62 @@ describe('defaultPrepareWorkspace', () => {
     await expect(
       readFile(join(workspace.cwd, 'skills', '???-?????????', 'SKILL.md'), 'utf8')
     ).rejects.toThrow()
+  })
+
+  it('copies requirement Excel into the task workspace', async () => {
+    vi.doMock('electron', () => ({
+      app: {
+        isPackaged: false,
+        getAppPath: vi.fn(() => appRoot)
+      }
+    }))
+    const sourceDir = await mkdtemp(join(tmpdir(), 'requirement-source-'))
+    const sourcePath = join(sourceDir, '产品开发需求表.xlsx')
+    await writeFile(sourcePath, 'excel-content')
+
+    const { defaultPrepareWorkspace } = await import('../task-agent')
+    const workspace = await defaultPrepareWorkspace({
+      taskId: 'task-with-requirement',
+      svnUrl: 'svn://repo/project',
+      oldRevision: '12',
+      newRevision: '14',
+      requirementFilePath: sourcePath
+    })
+
+    expect(workspace.requirementFilePath).toBe(
+      join(workspace.cwd, 'requirements', '产品开发需求表.xlsx')
+    )
+    expect(workspace.requirementFilePath).toBeDefined()
+    await expect(readFile(workspace.requirementFilePath!, 'utf8')).resolves.toBe('excel-content')
+    await rm(sourceDir, { recursive: true, force: true })
+  })
+})
+
+describe('prepareRequirementFile', () => {
+  let tempDirs: string[] = []
+
+  afterEach(async () => {
+    await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })))
+    tempDirs = []
+  })
+
+  it('returns undefined when no requirement file path is provided', async () => {
+    const destinationDir = await mkdtemp(join(tmpdir(), 'requirement-target-'))
+    tempDirs.push(destinationDir)
+
+    await expect(prepareRequirementFile(undefined, destinationDir)).resolves.toBeUndefined()
+    await expect(prepareRequirementFile('   ', destinationDir)).resolves.toBeUndefined()
+  })
+
+  it('rejects non-Excel requirement files with a Chinese message', async () => {
+    const sourceDir = await mkdtemp(join(tmpdir(), 'requirement-source-'))
+    const destinationDir = await mkdtemp(join(tmpdir(), 'requirement-target-'))
+    tempDirs.push(sourceDir, destinationDir)
+    const sourcePath = join(sourceDir, '需求.txt')
+    await writeFile(sourcePath, 'text')
+
+    await expect(prepareRequirementFile(sourcePath, destinationDir)).rejects.toThrow(
+      '产品开发需求表仅支持 .xls 或 .xlsx 文件。'
+    )
   })
 })

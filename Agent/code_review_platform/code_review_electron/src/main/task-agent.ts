@@ -1,11 +1,16 @@
-import { mkdir, readFile } from 'node:fs/promises'
-import { basename } from 'node:path'
+import { copyFile, mkdir, readFile, stat } from 'node:fs/promises'
+import { basename, extname, join } from 'node:path'
 
 import type { ApiClient, CreateTaskRequest, UpdateTaskStatusRequest } from './api-client'
 import { checkEnvironment, type EnvironmentCheckResult } from './environment-checker'
 import { buildReviewPrompt, CodexReviewError, runCodexReview, type CodexErrorCode } from './codex-runner'
 import { generatePdfReport, type GeneratePdfReportResult } from './report-pdf-generator'
-import { ensureReportReady, uploadPdfReportFile, uploadReportFile } from './report-uploader'
+import {
+  ensureReportReady,
+  uploadPdfReportFile,
+  uploadReportFile,
+  uploadRequirementFile
+} from './report-uploader'
 import { getRuntimePaths } from './runtime-paths'
 import { resolveReviewReportFileName, type RunSvnLog } from './svn-report-name-resolver'
 import type {
@@ -27,6 +32,7 @@ export interface PreparedWorkspace {
   cwd: string
   reportPath: string
   imagesDir: string
+  requirementFilePath?: string
 }
 
 export interface PrepareWorkspaceInput {
@@ -34,6 +40,7 @@ export interface PrepareWorkspaceInput {
   svnUrl: string
   oldRevision: string
   newRevision: string
+  requirementFilePath?: string
   generatedAt?: Date
   runSvnLog?: RunSvnLog
 }
@@ -42,6 +49,7 @@ export interface RunCodexInput {
   cwd: string
   reportPath: string
   imagesDir: string
+  requirementFilePath?: string
   skillName: string
   task: ReviewTask
   clientTaskId?: string
@@ -66,6 +74,7 @@ export interface TaskAgentApi {
     payload: UpdateTaskStatusRequest
   ): Promise<unknown>
   uploadReport?: ApiClient['uploadReport']
+  uploadRequirementFile?: ApiClient['uploadRequirementFile']
 }
 
 export interface TaskAgentDependencies {
@@ -74,6 +83,7 @@ export interface TaskAgentDependencies {
   prepareWorkspace: (input: PrepareWorkspaceInput) => Promise<PreparedWorkspace>
   runCodex: (input: RunCodexInput) => Promise<unknown>
   generatePdfReport: (reportPath: string) => Promise<GeneratePdfReportResult>
+  uploadRequirementFile: (token: string, taskId: string, filePath: string) => Promise<unknown>
   uploadReport: (token: string, taskId: string, reportPath: string) => Promise<unknown>
   uploadPdfReport: (token: string, taskId: string, pdfPath: string) => Promise<unknown>
 }
@@ -94,6 +104,8 @@ const codexErrorMessages: Record<CodexErrorCode, string> = {
   REPORT_ERROR: '审查报告生成失败，请重试或联系管理员。',
   INTERNAL_ERROR: 'Codex 执行过程中发生内部错误。',
 }
+
+const allowedRequirementExtensions = new Set(['.xls', '.xlsx'])
 
 export class ReviewTaskCancelledError extends Error {
   constructor() {
@@ -120,6 +132,7 @@ export const defaultPrepareWorkspace = async ({
   svnUrl,
   oldRevision,
   newRevision,
+  requirementFilePath,
   generatedAt,
   runSvnLog
 }: PrepareWorkspaceInput): Promise<PreparedWorkspace> => {
@@ -136,18 +149,58 @@ export const defaultPrepareWorkspace = async ({
 
   await mkdir(cwd, { recursive: true })
   await mkdir(imagesDir, { recursive: true })
+  const workspaceRequirementFilePath = await prepareRequirementFile(
+    requirementFilePath,
+    join(cwd, 'requirements')
+  )
 
   return {
     cwd,
     reportPath: runtimePaths.reportPathForTask(taskId, reportFileName),
-    imagesDir
+    imagesDir,
+    requirementFilePath: workspaceRequirementFilePath
   }
+}
+
+export const prepareRequirementFile = async (
+  sourcePath: string | undefined,
+  destinationDir: string
+): Promise<string | undefined> => {
+  const trimmed = sourcePath?.trim()
+  if (!trimmed) {
+    return undefined
+  }
+
+  const sourceStat = await stat(trimmed).catch(() => {
+    throw new Error('产品开发需求表不存在，请检查文件路径。')
+  })
+  if (!sourceStat.isFile()) {
+    throw new Error('产品开发需求表路径不是文件，请重新选择。')
+  }
+  if (sourceStat.size <= 0) {
+    throw new Error('产品开发需求表为空，请重新选择。')
+  }
+
+  const extension = extname(trimmed).toLowerCase()
+  if (!allowedRequirementExtensions.has(extension)) {
+    throw new Error('产品开发需求表仅支持 .xls 或 .xlsx 文件。')
+  }
+
+  await mkdir(destinationDir, { recursive: true })
+  const targetPath = join(destinationDir, basename(trimmed))
+  await copyFile(trimmed, targetPath).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`产品开发需求表复制失败，请检查文件权限后重试。${message}`)
+  })
+
+  return targetPath
 }
 
 export const defaultRunCodex = async ({
   cwd,
   reportPath,
   imagesDir,
+  requirementFilePath,
   skillName,
   task,
   clientTaskId,
@@ -162,7 +215,9 @@ export const defaultRunCodex = async ({
       newRevision: task.new_revision,
       reportPath,
       imagesDir,
-      skillName
+      skillName,
+      requirementFilePath,
+      focusDirectionSnapshot: task.focus_direction_snapshot ?? undefined
     }),
     timeoutMs: 30 * 60 * 1000,
     signal,
@@ -183,6 +238,8 @@ export const createTaskAgentDependencies = (api: ApiClient): TaskAgentDependenci
   prepareWorkspace: defaultPrepareWorkspace,
   runCodex: defaultRunCodex,
   generatePdfReport,
+  uploadRequirementFile: (token, taskId, filePath) =>
+    uploadRequirementFile(api, token, taskId, filePath),
   uploadReport: (token, taskId, reportPath) => uploadReportFile(api, token, taskId, reportPath),
   uploadPdfReport: (token, taskId, pdfPath) => uploadPdfReportFile(api, token, taskId, pdfPath)
 })
@@ -229,9 +286,25 @@ export const executeReviewTask = async (
       taskId: task.id,
       svnUrl: task.svn_url,
       oldRevision: task.old_revision,
-      newRevision: task.new_revision
+      newRevision: task.new_revision,
+      requirementFilePath: input.request.requirement_file_path
     })
     throwIfCancelled(input.signal)
+
+    if (workspace.requirementFilePath) {
+      try {
+        await dependencies.uploadRequirementFile(input.token, task.id, workspace.requirementFilePath)
+      } catch {
+        emitStage(
+          onProgress,
+          task.id,
+          input.clientTaskId,
+          'preparing_workspace',
+          '产品开发需求表归档失败，审查将继续执行。'
+        )
+      }
+      throwIfCancelled(input.signal)
+    }
 
     emitStage(onProgress, task.id, input.clientTaskId, 'running_codex', '启动 Codex 执行审查 Skill')
     await updateStatus(dependencies, input.token, task.id, {

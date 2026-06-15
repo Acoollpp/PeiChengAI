@@ -197,6 +197,31 @@ describe('buildReviewPrompt', () => {
 
     expect(prompt).not.toContain('svn diff')
   })
+
+  it('includes optional requirement file and focus direction before execution rules', () => {
+    const prompt = buildReviewPrompt({
+      svnUrl: 'svn://example.com/repo/project',
+      oldRevision: '123',
+      newRevision: '130',
+      reportPath: '/tmp/review/代码审查报告.md',
+      imagesDir: '/tmp/review/images',
+      skillName: '通用-代码审查-模版二',
+      requirementFilePath: '/tmp/workspaces/task-1/requirements/产品开发需求表.xls',
+      focusDirectionSnapshot: '重点检查 SOC 跳变和低电量禁放逻辑'
+    })
+
+    expect(prompt).toContain('补充审查输入：')
+    expect(prompt).toContain(
+      '产品开发需求表路径：/tmp/workspaces/task-1/requirements/产品开发需求表.xls'
+    )
+    expect(prompt).toContain('重点审查方向：\n重点检查 SOC 跳变和低电量禁放逻辑')
+    expect(prompt).toContain('不得覆盖 Skill 中已有规则')
+    expect(prompt.indexOf('补充审查输入：')).toBeGreaterThan(prompt.indexOf('图片保存目录：'))
+    expect(prompt.indexOf('补充审查输入：')).toBeLessThan(
+      prompt.indexOf('请严格按该 Skill 的输入模块')
+    )
+    expect(prompt.indexOf('补充审查输入：')).toBeLessThan(prompt.indexOf('错误处理规范'))
+  })
 })
 
 describe('buildCodexExecArgs', () => {

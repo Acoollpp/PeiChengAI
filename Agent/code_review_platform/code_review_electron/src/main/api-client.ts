@@ -28,6 +28,10 @@ export interface CreateTaskRequest {
   new_revision: string
   template_key?: ReviewTemplateKey
   skill_name?: string
+  requirement_file_path?: string
+  requirement_file_name?: string
+  focus_direction_id?: string
+  focus_direction_snapshot?: string
 }
 
 export interface UpdateTaskStatusRequest {
@@ -45,6 +49,11 @@ export interface UploadReportRequest {
 export interface UploadPdfReportRequest {
   pdf_content: Uint8Array | ArrayBuffer | Blob
   pdf_name?: string
+}
+
+export interface UploadRequirementFileRequest {
+  file_content: Uint8Array | ArrayBuffer | Blob
+  file_name: string
 }
 
 export interface SubmitFeedbackRequest {
@@ -124,10 +133,11 @@ export class ApiClient {
   }
 
   createTask(token: string, payload: CreateTaskRequest): Promise<unknown> {
+    const { requirement_file_path: _requirementFilePath, ...requestPayload } = payload
     return this.request('/api/v1/review-tasks', {
       method: 'POST',
       headers: this.authHeaders(token),
-      body: JSON.stringify(payload)
+      body: JSON.stringify(requestPayload)
     })
   }
 
@@ -278,6 +288,34 @@ export class ApiClient {
     )
   }
 
+  uploadRequirementFile(
+    token: string,
+    taskId: string,
+    payload: UploadRequirementFileRequest
+  ): Promise<unknown> {
+    const body = new FormData()
+    const requirementBlob =
+      payload.file_content instanceof Blob
+        ? payload.file_content
+        : new Blob([toArrayBuffer(payload.file_content)], { type: contentTypeForRequirementFile(payload.file_name) })
+    body.set(
+      'upload',
+      new File([requirementBlob], payload.file_name, {
+        type: contentTypeForRequirementFile(payload.file_name)
+      })
+    )
+
+    return this.request(
+      `/api/v1/review-tasks/${encodeURIComponent(taskId)}/requirement-file`,
+      {
+        method: 'POST',
+        headers: this.authHeaders(token),
+        body
+      },
+      { json: false }
+    )
+  }
+
   async downloadPdfReport(token: string, taskId: string): Promise<ArrayBuffer> {
     const response = await this.fetchImpl(
       `${this.baseUrl}/api/v1/review-tasks/${encodeURIComponent(taskId)}/pdf/download`,
@@ -388,6 +426,12 @@ function toArrayBuffer(value: Uint8Array | ArrayBuffer): ArrayBuffer {
   }
 
   return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer
+}
+
+function contentTypeForRequirementFile(fileName: string): string {
+  return fileName.toLowerCase().endsWith('.xlsx')
+    ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    : 'application/vnd.ms-excel'
 }
 
 function formatConnectionError(error: unknown): string {

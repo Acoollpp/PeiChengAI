@@ -11,6 +11,10 @@ export interface PdfReportUploadApi {
   uploadPdfReport: ApiClient['uploadPdfReport']
 }
 
+export interface RequirementFileUploadApi {
+  uploadRequirementFile: ApiClient['uploadRequirementFile']
+}
+
 export const ensureReportReady = async (reportPath: string): Promise<void> => {
   let reportStat
 
@@ -69,5 +73,35 @@ export const uploadPdfReportFile = async (
   return api.uploadPdfReport(token, taskId, {
     pdf_content: pdfContent,
     pdf_name: basename(pdfPath)
+  })
+}
+
+export const ensureRequirementFileReady = async (filePath: string): Promise<void> => {
+  let requirementStat
+
+  try {
+    requirementStat = await stat(filePath)
+  } catch {
+    throw new Error(`产品开发需求表不存在：${filePath}`)
+  }
+
+  if (!requirementStat.isFile() || requirementStat.size <= 0) {
+    throw new Error(`产品开发需求表为空：${filePath}`)
+  }
+}
+
+export const uploadRequirementFile = async (
+  api: RequirementFileUploadApi,
+  token: string,
+  taskId: string,
+  filePath: string
+): Promise<unknown> => {
+  await ensureRequirementFileReady(filePath)
+
+  const fileContent = await readFile(filePath)
+
+  return api.uploadRequirementFile(token, taskId, {
+    file_content: fileContent,
+    file_name: basename(filePath)
   })
 }

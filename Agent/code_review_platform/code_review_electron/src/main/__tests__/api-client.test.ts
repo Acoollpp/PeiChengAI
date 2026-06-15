@@ -118,6 +118,36 @@ describe('ApiClient', () => {
     })
   })
 
+  it('serializes supplemental review input fields when creating a review task', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'task-1' }))
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    await client.createTask('token-123', {
+      svn_url: 'svn://repo/project',
+      old_revision: '12',
+      new_revision: '14',
+      requirement_file_name: '产品开发需求表.xls',
+      focus_direction_id: 'direction-1',
+      focus_direction_snapshot: '重点检查 SOC 跳变'
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith('https://server.example/api/v1/review-tasks', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer token-123'
+      },
+      body: JSON.stringify({
+        svn_url: 'svn://repo/project',
+        old_revision: '12',
+        new_revision: '14',
+        requirement_file_name: '产品开发需求表.xls',
+        focus_direction_id: 'direction-1',
+        focus_direction_snapshot: '重点检查 SOC 跳变'
+      })
+    })
+  })
+
   it('lists review tasks with authorization header', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
@@ -417,6 +447,37 @@ describe('ApiClient', () => {
     expect((upload as File).name).toBe('代码审查报告.pdf')
     expect((upload as File).type).toBe('application/pdf')
     await expect((upload as File).arrayBuffer()).resolves.toEqual(pdfBytes.buffer)
+  })
+
+  it('uploads requirement file as multipart form data with Excel content type', async () => {
+    vi.stubGlobal('File', File)
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'task-1' }))
+    const client = new ApiClient('https://server.example', fetchMock)
+    const content = new Uint8Array([1, 2, 3])
+
+    await client.uploadRequirementFile('token-123', 'task/1', {
+      file_content: content,
+      file_name: '产品开发需求表.xlsx'
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://server.example/api/v1/review-tasks/task%2F1/requirement-file'
+    )
+    expect(init.method).toBe('POST')
+    expect(init.headers).toEqual({
+      authorization: 'Bearer token-123'
+    })
+    expect(init.body).toBeInstanceOf(FormData)
+
+    const upload = init.body.get('upload')
+    expect(upload).toBeInstanceOf(File)
+    expect((upload as File).name).toBe('产品开发需求表.xlsx')
+    expect((upload as File).type).toBe(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    await expect((upload as File).arrayBuffer()).resolves.toEqual(content.buffer)
   })
 
   it('downloads generated PDF report bytes with authorization header', async () => {

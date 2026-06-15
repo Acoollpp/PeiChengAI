@@ -38,6 +38,13 @@ export interface ReviewTask {
   new_revision: string
   template_key?: ReviewTemplateKey
   skill_name?: string
+  department_id?: string | null
+  department_name?: string | null
+  focus_direction_id?: string | null
+  focus_direction_snapshot?: string | null
+  requirement_file_name?: string | null
+  requirement_file_size?: number | null
+  requirement_file_sha256?: string | null
   status: ReviewTaskStatus
   report_path?: string
   pdf_report_path?: string

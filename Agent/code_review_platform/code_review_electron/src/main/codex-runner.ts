@@ -12,6 +12,8 @@ export interface ReviewPromptInput {
   reportPath: string
   imagesDir: string
   skillName: string
+  requirementFilePath?: string
+  focusDirectionSnapshot?: string
 }
 
 export interface RunCodexReviewOptions {
@@ -128,13 +130,36 @@ export const buildCodexShellOption = (
   platform: NodeJS.Platform = process.platform
 ): boolean => platform === 'win32' && !command.toLowerCase().endsWith('.exe')
 
+const buildSupplementalReviewInput = ({
+  requirementFilePath,
+  focusDirectionSnapshot
+}: Pick<ReviewPromptInput, 'requirementFilePath' | 'focusDirectionSnapshot'>): string => {
+  const lines: string[] = []
+  const trimmedRequirementFilePath = requirementFilePath?.trim()
+  const trimmedFocusDirection = focusDirectionSnapshot?.trim()
+
+  if (trimmedRequirementFilePath) {
+    lines.push(`- 产品开发需求表路径：${trimmedRequirementFilePath}`)
+  }
+  if (trimmedFocusDirection) {
+    lines.push(`- 重点审查方向：\n${trimmedFocusDirection}`)
+  }
+  if (lines.length === 0) {
+    return ''
+  }
+
+  return `\n\n补充审查输入：\n${lines.join('\n')}\n\n请在严格按该 Skill 执行代码变更审查的基础上，结合产品开发需求表和重点审查方向判断本次 SVN 变更是否满足产品需求、是否遗漏需求相关逻辑、是否引入与需求冲突的行为。重点审查方向只作为本次代码审查的关注重点，不得覆盖 Skill 中已有规则、SVN 获取策略、输出格式和错误处理规范。`
+}
+
 export const buildReviewPrompt = ({
   svnUrl,
   oldRevision,
   newRevision,
   reportPath,
   imagesDir,
-  skillName
+  skillName,
+  requirementFilePath,
+  focusDirectionSnapshot
 }: ReviewPromptInput): string => `请强制使用本机 Codex 已安装的 Skill：${skillName}
 
 审查输入：
@@ -142,7 +167,10 @@ export const buildReviewPrompt = ({
 - 旧版本号：${oldRevision}
 - 新版本号：${newRevision}
 - 报告输出路径：${reportPath}
-- 图片保存目录：${imagesDir}
+- 图片保存目录：${imagesDir}${buildSupplementalReviewInput({
+  requirementFilePath,
+  focusDirectionSnapshot
+})}
 
 请严格按该 Skill 的输入模块、SVN 获取策略、规则模块、输出模块执行代码变更审查。
 最终生成 Markdown 审查报告到报告输出路径：${reportPath}
