@@ -116,12 +116,14 @@ describe('preload codeReview API', () => {
 
     await api.openPdfReport({
       taskId: 'task-1',
-      localPdfPath: '/tmp/runtime/workspaces/task-1/代码审查报告.pdf'
+      localPdfPath: '/tmp/runtime/workspaces/task-1/代码审查报告.pdf',
+      pdfReportName: 'r1_r2审查报告_20260615_143000.pdf'
     })
 
     expect(invokeMock).toHaveBeenCalledWith('report:open-pdf', {
       taskId: 'task-1',
-      localPdfPath: '/tmp/runtime/workspaces/task-1/代码审查报告.pdf'
+      localPdfPath: '/tmp/runtime/workspaces/task-1/代码审查报告.pdf',
+      pdfReportName: 'r1_r2审查报告_20260615_143000.pdf'
     })
   })
 })

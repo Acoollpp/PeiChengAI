@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -169,7 +169,8 @@ describe('executeReviewTask', () => {
       status: 'success',
       reportMarkdown: '# report\n',
       reportPath,
-      pdfPath
+      pdfPath,
+      pdfReportName: basename(pdfPath)
     })
     expect(dependencies.runCodex).toHaveBeenCalledWith({
       cwd,

@@ -660,6 +660,11 @@ describe('registerIpcHandlers', () => {
       load: vi.fn(),
       save: vi.fn()
     }
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-local-pdf-report-'))
+    tempDirs.push(runtimeRoot)
+    const pdfPath = join(runtimeRoot, 'workspaces', 'task-local', '代码审查报告.pdf')
+    await mkdir(join(runtimeRoot, 'workspaces', 'task-local'), { recursive: true })
+    await writeFile(pdfPath, Buffer.from([37, 80, 68, 70]))
     const { registerIpcHandlers } = await import('../ipc')
 
     registerIpcHandlers({
@@ -669,13 +674,131 @@ describe('registerIpcHandlers', () => {
     const openPdfHandler = handleMock.mock.calls.find(
       ([channel]) => channel === 'report:open-pdf'
     )?.[1]
-    const pdfPath = '/tmp/runtime/workspaces/task-local/代码审查报告.pdf'
 
     await expect(openPdfHandler({}, { taskId: 'task-local', localPdfPath: pdfPath })).resolves.toEqual({
       status: 'ready',
       pdfPath
     })
     expect(authStore.load).not.toHaveBeenCalled()
+    expect(showItemInFolderMock).toHaveBeenCalledWith(pdfPath)
+  })
+
+  it('rejects opening a PDF report without taskId before authentication', async () => {
+    const authStore = {
+      load: vi.fn(),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      authStore: authStore as never
+    })
+
+    const openPdfHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report:open-pdf'
+    )?.[1]
+
+    await expect(openPdfHandler({}, {})).rejects.toThrow('请先选择一个已完成任务报告。')
+    expect(authStore.load).not.toHaveBeenCalled()
+  })
+
+  it('opens an existing named PDF report from the workspace without downloading it', async () => {
+    const api = {
+      downloadPdfReport: vi.fn()
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-existing-pdf-report-'))
+    tempDirs.push(runtimeRoot)
+    const workspaceDir = join(runtimeRoot, 'workspaces', 'task-local')
+    const pdfPath = join(workspaceDir, '自定义报告.pdf')
+    await mkdir(workspaceDir, { recursive: true })
+    await writeFile(pdfPath, Buffer.from([37, 80, 68, 70]))
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      runtimePaths: {
+        runtimeRoot,
+        skillPackagesDir: join(runtimeRoot, 'skill-packages'),
+        skillManifestPath: join(runtimeRoot, 'skill-packages', 'manifest.json'),
+        workspacesDir: join(runtimeRoot, 'workspaces'),
+        workspaceForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId),
+        reportPathForTask: (taskId: string) =>
+          join(runtimeRoot, 'workspaces', taskId, '代码审查报告.md'),
+        pdfReportPathForTask: (taskId: string) =>
+          join(runtimeRoot, 'workspaces', taskId, '代码审查报告.pdf'),
+        imagesDirForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'images')
+      }
+    })
+
+    const openPdfHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report:open-pdf'
+    )?.[1]
+
+    await expect(
+      openPdfHandler({}, { taskId: 'task-local', pdfReportName: '自定义报告.pdf' })
+    ).resolves.toEqual({
+      status: 'ready',
+      pdfPath
+    })
+    expect(api.downloadPdfReport).not.toHaveBeenCalled()
+    expect(showItemInFolderMock).toHaveBeenCalledWith(pdfPath)
+  })
+
+  it('downloads a PDF report when localPdfPath is missing and saves it with the requested name', async () => {
+    const api = {
+      downloadPdfReport: vi.fn(async () => new Uint8Array([37, 80, 68, 70]).buffer)
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-missing-local-pdf-report-'))
+    tempDirs.push(runtimeRoot)
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      runtimePaths: {
+        runtimeRoot,
+        skillPackagesDir: join(runtimeRoot, 'skill-packages'),
+        skillManifestPath: join(runtimeRoot, 'skill-packages', 'manifest.json'),
+        workspacesDir: join(runtimeRoot, 'workspaces'),
+        workspaceForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId),
+        reportPathForTask: (taskId: string) =>
+          join(runtimeRoot, 'workspaces', taskId, '代码审查报告.md'),
+        pdfReportPathForTask: (taskId: string) =>
+          join(runtimeRoot, 'workspaces', taskId, '代码审查报告.pdf'),
+        imagesDirForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'images')
+      }
+    })
+
+    const openPdfHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report:open-pdf'
+    )?.[1]
+    const missingPdfPath = join(runtimeRoot, 'workspaces', 'task-remote', 'missing.pdf')
+    const pdfPath = join(runtimeRoot, 'workspaces', 'task-remote', '历史报告.pdf')
+
+    await expect(
+      openPdfHandler(
+        {},
+        {
+          taskId: 'task-remote',
+          localPdfPath: missingPdfPath,
+          pdfReportName: '历史报告.pdf'
+        }
+      )
+    ).resolves.toEqual({
+      status: 'ready',
+      pdfPath
+    })
+    await expect(readFile(pdfPath)).resolves.toEqual(Buffer.from([37, 80, 68, 70]))
+    expect(api.downloadPdfReport).toHaveBeenCalledWith('token-123', 'task-remote')
     expect(showItemInFolderMock).toHaveBeenCalledWith(pdfPath)
   })
 
@@ -711,13 +834,105 @@ describe('registerIpcHandlers', () => {
     const openPdfHandler = handleMock.mock.calls.find(
       ([channel]) => channel === 'report:open-pdf'
     )?.[1]
+    const pdfPath = join(runtimeRoot, 'workspaces', 'task-remote', '历史报告.pdf')
+
+    await expect(
+      openPdfHandler({}, { taskId: 'task-remote', pdfReportName: '历史报告.pdf' })
+    ).resolves.toEqual({
+      status: 'ready',
+      pdfPath
+    })
+    await expect(readFile(pdfPath)).resolves.toEqual(Buffer.from([37, 80, 68, 70]))
+    expect(api.downloadPdfReport).toHaveBeenCalledWith('token-123', 'task-remote')
+    expect(showItemInFolderMock).toHaveBeenCalledWith(pdfPath)
+  })
+
+  it('opens an existing default PDF report path when pdfReportName is missing', async () => {
+    const api = {
+      downloadPdfReport: vi.fn(async () => new Uint8Array([37, 80, 68, 70, 45, 110, 101, 119]).buffer)
+    }
+    const authStore = {
+      load: vi.fn(),
+      save: vi.fn()
+    }
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-fallback-pdf-report-'))
+    tempDirs.push(runtimeRoot)
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      runtimePaths: {
+        runtimeRoot,
+        skillPackagesDir: join(runtimeRoot, 'skill-packages'),
+        skillManifestPath: join(runtimeRoot, 'skill-packages', 'manifest.json'),
+        workspacesDir: join(runtimeRoot, 'workspaces'),
+        workspaceForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId),
+        reportPathForTask: (taskId: string) =>
+          join(runtimeRoot, 'workspaces', taskId, '代码审查报告.md'),
+        pdfReportPathForTask: (taskId: string) =>
+          join(runtimeRoot, 'workspaces', taskId, '代码审查报告.pdf'),
+        imagesDirForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'images')
+      }
+    })
+
+    const openPdfHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report:open-pdf'
+    )?.[1]
+    const workspaceDir = join(runtimeRoot, 'workspaces', 'task-remote')
+    const pdfPath = join(workspaceDir, '代码审查报告.pdf')
+    await mkdir(workspaceDir, { recursive: true })
+    await writeFile(pdfPath, Buffer.from([37, 80, 68, 70, 45, 111, 108, 100]))
+
+    await expect(openPdfHandler({}, { taskId: 'task-remote' })).resolves.toEqual({
+      status: 'ready',
+      pdfPath
+    })
+    await expect(readFile(pdfPath)).resolves.toEqual(Buffer.from([37, 80, 68, 70, 45, 111, 108, 100]))
+    expect(authStore.load).not.toHaveBeenCalled()
+    expect(api.downloadPdfReport).not.toHaveBeenCalled()
+    expect(showItemInFolderMock).toHaveBeenCalledWith(pdfPath)
+  })
+
+  it('downloads to the default PDF report path when pdfReportName is missing and no local PDF exists', async () => {
+    const api = {
+      downloadPdfReport: vi.fn(async () => new Uint8Array([37, 80, 68, 70, 45, 110, 101, 119]).buffer)
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-fallback-pdf-download-'))
+    tempDirs.push(runtimeRoot)
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      runtimePaths: {
+        runtimeRoot,
+        skillPackagesDir: join(runtimeRoot, 'skill-packages'),
+        skillManifestPath: join(runtimeRoot, 'skill-packages', 'manifest.json'),
+        workspacesDir: join(runtimeRoot, 'workspaces'),
+        workspaceForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId),
+        reportPathForTask: (taskId: string) =>
+          join(runtimeRoot, 'workspaces', taskId, '代码审查报告.md'),
+        pdfReportPathForTask: (taskId: string) =>
+          join(runtimeRoot, 'workspaces', taskId, '代码审查报告.pdf'),
+        imagesDirForTask: (taskId: string) => join(runtimeRoot, 'workspaces', taskId, 'images')
+      }
+    })
+
+    const openPdfHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report:open-pdf'
+    )?.[1]
     const pdfPath = join(runtimeRoot, 'workspaces', 'task-remote', '代码审查报告.pdf')
 
     await expect(openPdfHandler({}, { taskId: 'task-remote' })).resolves.toEqual({
       status: 'ready',
       pdfPath
     })
-    await expect(readFile(pdfPath)).resolves.toEqual(Buffer.from([37, 80, 68, 70]))
+    await expect(readFile(pdfPath)).resolves.toEqual(Buffer.from([37, 80, 68, 70, 45, 110, 101, 119]))
     expect(api.downloadPdfReport).toHaveBeenCalledWith('token-123', 'task-remote')
     expect(showItemInFolderMock).toHaveBeenCalledWith(pdfPath)
   })

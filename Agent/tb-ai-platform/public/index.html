@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>钉钉 TB 项目 AI 平台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">PACE · Codex 工作台</p>
+          <h1>钉钉 TB 项目 AI 平台</h1>
+          <p class="subtitle">把项目创建、项目变更和审批查询接到服务器 Codex，统一在网页里发起、跟踪和复查。</p>
+        </div>
+        <div class="status-card">
+          <span class="pulse"></span>
+          <div>
+            <strong id="healthText">正在检查服务</strong>
+            <small>后台连接本机 Codex CLI</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <aside class="panel side">
+          <div class="section-title">任务类型</div>
+          <button class="mode active" data-mode="create">
+            <span class="mode-icon">＋</span>
+            <span>
+              <strong>创建</strong>
+              <small>根据审批或输入创建 TB 项目</small>
+            </span>
+          </button>
+          <button class="mode" data-mode="change">
+            <span class="mode-icon">↻</span>
+            <span>
+              <strong>变更</strong>
+              <small>定位项目并创建变更迭代</small>
+            </span>
+          </button>
+
+          <div class="tips">
+            <div class="section-title">输入建议</div>
+            <p>可以粘贴审批标题、项目编号、项目名称、发起人、变更说明，也可以直接写“查刘虹谊审批并创建”。</p>
+          </div>
+        </aside>
+
+        <section class="panel main-panel">
+          <div class="toolbar">
+            <div>
+              <div class="section-title">对话任务</div>
+              <h2 id="modeTitle">创建钉钉 TB 项目</h2>
+            </div>
+            <button class="ghost" id="clearBtn" type="button">清空</button>
+          </div>
+
+          <label class="input-label" for="messageInput">任务内容</label>
+          <textarea id="messageInput" spellcheck="false" placeholder="例如：在刘虹谊的审批里查项目启动申请，项目号 60411，确认后创建到本月低压户储项目集。"></textarea>
+
+          <div class="actions">
+            <button id="runBtn" class="primary" type="button">
+              <span>启动 Codex</span>
+            </button>
+            <span id="runState" class="run-state">等待输入</span>
+          </div>
+
+          <div class="output-wrap">
+            <div class="output-head">
+              <span>运行输出</span>
+              <span id="runId">未开始</span>
+            </div>
+            <pre id="output"></pre>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
