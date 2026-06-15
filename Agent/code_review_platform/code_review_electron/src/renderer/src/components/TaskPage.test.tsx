@@ -244,7 +244,8 @@ describe('TaskPage', () => {
           new_revision: '4',
           status: 'success' as const,
           report_path: '/app/reports/task-history-2.md',
-          pdf_report_path: '/app/reports/task-history-2.pdf'
+          pdf_report_path: '/app/reports/task-history-2.pdf',
+          pdf_report_name: 'r3_r4审查报告_20260615_143000.pdf'
         }
       ],
       count: 2
@@ -262,7 +263,10 @@ describe('TaskPage', () => {
     await screen.findByText('历史报告 2')
     await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
 
-    expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({ taskId: 'task-history-2' })
+    expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
+      taskId: 'task-history-2',
+      pdfReportName: 'r3_r4审查报告_20260615_143000.pdf'
+    })
     expect(await screen.findByText('PDF报告位置：/local/cache/task-history-2.pdf')).toBeInTheDocument()
   })
 
@@ -289,7 +293,8 @@ describe('TaskPage', () => {
 
     expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
       taskId: 'task-local-success',
-      localPdfPath: '/app/reports/task-local-success.pdf'
+      localPdfPath: '/app/reports/task-local-success.pdf',
+      pdfReportName: undefined
     })
   })
 

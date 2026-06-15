@@ -52,6 +52,7 @@ export function TaskPage({
   const [showSubmitFeedback, setShowSubmitFeedback] = useState(false)
   const selectedTaskIdRef = useRef<string | undefined>(undefined)
   const currentPdfPathRef = useRef<string | undefined>(undefined)
+  const currentPdfReportNameRef = useRef<string | undefined>(undefined)
   const isMountedRef = useRef(true)
 
   const canRunTask = environment?.status === 'ready' && !environment.skillError
@@ -65,6 +66,9 @@ export function TaskPage({
   const setActivePdfPath = useCallback((pdfPath: string | undefined): void => {
     currentPdfPathRef.current = pdfPath
     setCurrentPdfPath(pdfPath)
+  }, [])
+  const setActivePdfReportName = useCallback((pdfReportName: string | undefined): void => {
+    currentPdfReportNameRef.current = pdfReportName
   }, [])
 
   const handleTaskSuccess = useCallback((task: TaskViewItem): void => {
@@ -82,11 +86,12 @@ export function TaskPage({
     setSelectedTaskId(task.id)
     selectedTaskIdRef.current = task.id
     setActivePdfPath(task.pdfPath)
+    setActivePdfReportName(task.pdf_report_name)
     if (task.report_path) {
       setCurrentReportPath(task.report_path)
       setReportMessage(`报告已生成：${task.report_path}`)
     }
-  }, [setActivePdfPath])
+  }, [setActivePdfPath, setActivePdfReportName])
   const {
     runningTasks,
     queuedTasks,
@@ -112,13 +117,14 @@ export function TaskPage({
       setMarkdown(REVIEW_TEMPLATE_PREVIEWS[templateKey])
       setCurrentReportPath(undefined)
       setActivePdfPath(undefined)
+      setActivePdfReportName(undefined)
       setReportMessage('')
       selectedTaskIdRef.current = undefined
       setSelectedTaskId(undefined)
       setLoadingReportTaskId(undefined)
       setError('')
     },
-    [setActivePdfPath]
+    [setActivePdfPath, setActivePdfReportName]
   )
 
   useEffect(() => {
@@ -182,11 +188,13 @@ export function TaskPage({
       setMarkdown(task.reportMarkdown)
       setCurrentReportPath(task.report_path)
       setActivePdfPath(task.pdfPath)
+      setActivePdfReportName(task.pdf_report_name)
       return
     }
 
     setLoadingReportTaskId(task.id)
     setActivePdfPath(undefined)
+    setActivePdfReportName(task.pdf_report_name)
 
     try {
       const reportMarkdown = await window.codeReview.readTaskReport(task.id)
@@ -196,6 +204,7 @@ export function TaskPage({
       setMarkdown(reportMarkdown)
       setCurrentReportPath(undefined)
       setActivePdfPath(undefined)
+      setActivePdfReportName(currentPdfReportNameRef.current)
     } catch (reportError) {
       if (!isMountedRef.current) {
         return
@@ -226,7 +235,8 @@ export function TaskPage({
     try {
       const result = await window.codeReview.openPdfReport({
         taskId,
-        localPdfPath: currentPdfPathRef.current
+        localPdfPath: currentPdfPathRef.current,
+        pdfReportName: currentPdfReportNameRef.current
       })
       if (!isMountedRef.current) {
         return
