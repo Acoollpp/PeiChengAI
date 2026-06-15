@@ -9,6 +9,7 @@ from app.api.routes import (
     items,
     login,
     private,
+    review_focus_directions,
     review_tasks,
     skills,
     users,
@@ -22,6 +23,7 @@ api_router.include_router(users.router)
 api_router.include_router(utils.router)
 api_router.include_router(items.router)
 api_router.include_router(review_tasks.router)
+api_router.include_router(review_focus_directions.router)
 api_router.include_router(credentials.router)
 api_router.include_router(cch_sync.router)
 api_router.include_router(departments.router)

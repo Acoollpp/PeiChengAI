@@ -200,6 +200,50 @@ class ReviewFocusDirection(SQLModel, table=True):
     )
 
 
+class ReviewFocusDirectionCreate(SQLModel):
+    title: str = Field(min_length=1, max_length=255)
+    content: str = Field(min_length=1, max_length=4096)
+    department_id: uuid.UUID
+    is_active: bool = True
+
+
+class ReviewFocusDirectionUpdate(SQLModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    content: str | None = Field(default=None, min_length=1, max_length=4096)
+    department_id: uuid.UUID | None = None
+    is_active: bool | None = None
+
+
+class ReviewFocusDirectionPublic(SQLModel):
+    id: uuid.UUID
+    title: str
+    content: str
+    department_id: uuid.UUID | None = None
+    department_name: str | None = None
+    is_active: bool
+    usage_count: int
+    created_by_user_id: uuid.UUID | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ReviewFocusDirectionsPublic(SQLModel):
+    data: list[ReviewFocusDirectionPublic]
+    count: int
+
+
+class ReviewFocusDirectionUsageStatPublic(SQLModel):
+    content: str
+    usage_count: int
+    latest_used_at: datetime | None = None
+    departments: list[str] = Field(default_factory=list)
+
+
+class ReviewFocusDirectionUsageStatsPublic(SQLModel):
+    data: list[ReviewFocusDirectionUsageStatPublic]
+    count: int
+
+
 class ReviewTaskRequirementFile(SQLModel, table=True):
     __tablename__ = "review_task_requirement_file"
 
