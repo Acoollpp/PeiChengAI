@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
+import { DepartmentSelect } from "@/components/Departments/DepartmentSelect"
 import {
   Select,
   SelectContent,
@@ -44,6 +45,7 @@ const formSchema = z.object({
     message: "请填写 SVN 账号",
   }),
   role: z.enum(["admin", "user"]),
+  department_id: z.string().nullable(),
   is_active: z.boolean(),
 })
 
@@ -62,6 +64,7 @@ const AddUser = () => {
       full_name: "",
       svn_username: "",
       role: "user",
+      department_id: null,
       is_active: true,
     },
   })
@@ -81,7 +84,11 @@ const AddUser = () => {
   })
 
   const onSubmit = (data: FormData) => {
-    mutation.mutate(data)
+    mutation.mutate({
+      ...data,
+      full_name: data.full_name || null,
+      department_id: data.department_id || null,
+    })
   }
 
   return (
@@ -156,6 +163,23 @@ const AddUser = () => {
                           <SelectItem value="admin">管理员</SelectItem>
                         </SelectContent>
                       </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="department_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>部门</FormLabel>
+                    <FormControl>
+                      <DepartmentSelect
+                        value={field.value}
+                        onChange={field.onChange}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
+import { DepartmentSelect } from "@/components/Departments/DepartmentSelect"
 import {
   Select,
   SelectContent,
@@ -41,6 +42,7 @@ const formSchema = z.object({
   full_name: z.string().optional(),
   svn_username: z.string().trim().optional(),
   role: z.enum(["admin", "user"]),
+  department_id: z.string().nullable(),
 })
 
 type FormData = z.infer<typeof formSchema>
@@ -63,6 +65,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
       full_name: user.full_name ?? "",
       svn_username: user.svn_username ?? "",
       role: user.role ?? "user",
+      department_id: user.department_id ?? null,
     },
   })
 
@@ -156,6 +159,23 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
                         <SelectItem value="admin">管理员</SelectItem>
                       </SelectContent>
                     </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="department_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>部门</FormLabel>
+                    <FormControl>
+                      <DepartmentSelect
+                        value={field.value}
+                        onChange={field.onChange}
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}

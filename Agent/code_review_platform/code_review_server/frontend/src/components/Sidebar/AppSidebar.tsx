@@ -5,6 +5,7 @@ import {
   ListChecks,
   MessageSquareText,
   MonitorDown,
+  Target,
   Users,
 } from "lucide-react"
 
@@ -41,6 +42,11 @@ const adminItems: Item[] = [
   { icon: Home, title: "主页", path: "/" },
   { icon: Briefcase, title: "部门管理", path: "/items" },
   { icon: Users, title: "用户管理", path: "/admin/users" },
+  {
+    icon: Target,
+    title: "重点审查方向",
+    path: "/admin/review-focus-directions",
+  },
   { icon: MessageSquareText, title: "意见管理", path: "/feedback" },
   {
     icon: ListChecks,

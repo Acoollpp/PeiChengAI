@@ -25,6 +25,9 @@ test("Admin page is accessible and shows current management sections", async ({
     usersTable.getByRole("columnheader", { name: "SVN账号" }),
   ).toBeVisible()
   await expect(
+    usersTable.getByRole("columnheader", { name: "部门" }),
+  ).toBeVisible()
+  await expect(
     usersTable.getByRole("columnheader", { name: "来源" }),
   ).toBeVisible()
   await expect(
@@ -62,6 +65,9 @@ test("Admin sidebar entries are visible", async ({ page }) => {
   await expect(page.getByRole("link", { name: "主页" })).toBeVisible()
   await expect(page.getByRole("link", { name: "部门管理" })).toBeVisible()
   await expect(page.getByRole("link", { name: "用户管理" })).toBeVisible()
+  await expect(
+    page.getByRole("link", { name: "重点审查方向" }),
+  ).toBeVisible()
   await expect(page.getByRole("link", { name: "Skill库" })).toBeVisible()
   const taskMenu = page.getByRole("button", { name: "任务管理" })
   await expect(taskMenu).toBeVisible()
@@ -89,6 +95,43 @@ test("Add User button is visible", async ({ page }) => {
 })
 
 test.describe("Admin user management", () => {
+  test("Create and edit a user department", async ({ page }) => {
+    await page.goto("/items")
+    const departmentName = `测试部门${Date.now()}`
+
+    await page.getByRole("button", { name: "新增部门" }).click()
+    await page.getByLabel("部门名称").fill(departmentName)
+    await page.getByRole("button", { name: "保存" }).click()
+    await expect(page.getByText("部门创建成功")).toBeVisible()
+
+    await page.goto("/admin")
+
+    const svnUsername = randomSvnUsername()
+    const fullName = `Test User ${svnUsername}`
+
+    await page.getByRole("button", { name: "新增用户" }).click()
+    await expect(page.getByText("不选择部门")).toBeVisible()
+    await page.getByLabel("部门").click()
+    await page.getByRole("option", { name: departmentName }).click()
+    await page.getByPlaceholder("姓名").fill(fullName)
+    await page.getByPlaceholder("SVN 账号").fill(svnUsername)
+    await page.getByRole("button", { name: "保存" }).click()
+
+    await expect(page.getByText("用户创建成功")).toBeVisible()
+
+    const userRow = page.getByRole("row").filter({ hasText: svnUsername })
+    await expect(userRow.getByText(departmentName)).toBeVisible()
+
+    await userRow.getByRole("button").click()
+    await page.getByRole("menuitem", { name: "编辑用户" }).click()
+    await page.getByLabel("部门").click()
+    await page.getByRole("option", { name: "不选择部门" }).click()
+    await page.getByRole("button", { name: "保存" }).click()
+
+    await expect(page.getByText("用户更新成功")).toBeVisible()
+    await expect(userRow.getByText("未分配")).toBeVisible()
+  })
+
   test("Create a new user successfully", async ({ page }) => {
     await page.goto("/admin")
 
@@ -119,7 +162,8 @@ test.describe("Admin user management", () => {
     await page.getByRole("button", { name: "新增用户" }).click()
 
     await page.getByPlaceholder("SVN 账号").fill(svnUsername)
-    await page.getByLabel("设为管理员").check()
+    await page.getByLabel("角色").click()
+    await page.getByRole("option", { name: "管理员" }).click()
     await page.getByLabel("启用账号").check()
 
     await page.getByRole("button", { name: "保存" }).click()

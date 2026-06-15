@@ -12,6 +12,7 @@ export type UserTableData = UserPublic & {
   auth_source?: string | null
   cch_user_id?: number | null
   last_synced_at?: string | null
+  department_name?: string | null
 }
 
 export const columns: ColumnDef<UserTableData>[] = [
@@ -25,7 +26,7 @@ export const columns: ColumnDef<UserTableData>[] = [
           <span
             className={cn("font-medium", !fullName && "text-muted-foreground")}
           >
-            {fullName || "N/A"}
+            {fullName || "未填写"}
           </span>
           {row.original.isCurrentUser && (
             <Badge variant="outline" className="text-xs">
@@ -42,6 +43,15 @@ export const columns: ColumnDef<UserTableData>[] = [
     cell: ({ row }) => (
       <span className="text-muted-foreground">
         {row.original.svn_username || "-"}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "department_name",
+    header: "部门",
+    cell: ({ row }) => (
+      <span className="text-muted-foreground">
+        {row.original.department_name || "未分配"}
       </span>
     ),
   },
