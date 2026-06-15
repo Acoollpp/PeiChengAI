@@ -240,6 +240,8 @@ function parseNdjson(raw) {
     const historyBody = JSON.parse(history.body);
     assert.ok(historyBody.history.some(item => item.itemCount === 2 && item.mode === "create"));
     assert.ok(historyBody.history.some(item => /AI测试/.test(item.title)));
+    assert.ok(historyBody.history.some(item => item.messageText && item.messageText.includes("项目名称")));
+    assert.ok(historyBody.history.some(item => Array.isArray(item.resultUrls) && item.resultUrls.length > 0));
   } finally {
     await new Promise(resolve => server.close(resolve));
     store.close();

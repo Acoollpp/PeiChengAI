@@ -129,7 +129,9 @@ function createServer({ config, store, syncState }) {
       mode: body.mode,
       title: aiTest ? `${mode.title}（AI测试）` : mode.title,
       message,
-      itemCount: items.length
+      itemCount: items.length,
+      projectUrl,
+      aiTest
     });
 
     res.writeHead(200, {
@@ -199,7 +201,8 @@ function createServer({ config, store, syncState }) {
       mode: body.mode,
       title: `修复：${step.label}`,
       message,
-      itemCount: 1
+      itemCount: 1,
+      projectUrl
     });
 
     res.writeHead(200, {
@@ -224,13 +227,18 @@ function createServer({ config, store, syncState }) {
         repairStepId: step.id
       },
       onDone: result => {
+        const resultUrls = result.url ? [{ itemId: result.itemId, itemTitle: result.itemTitle, url: result.url }] : [];
+        const errorMessages = result.error ? [{ itemId: result.itemId, itemTitle: result.itemTitle, message: result.error }] : [];
         store.finishRunHistory({
           runId,
           status:
             result.code === 0 && result.failedSteps.length === 0 && result.missingSteps.length === 0
               ? "success"
               : "failed",
-          ...result
+          ...result,
+          resultUrls,
+          errorMessages,
+          itemResults: [result]
         });
       }
     });
@@ -309,7 +317,17 @@ async function executeCodexBatch({ req, res, store, runId, config, mode, message
     itemResults: results,
     finishedAt: new Date().toISOString()
   };
-  store.finishRunHistory({ runId, status, code, completedSteps, failedSteps, missingSteps });
+  store.finishRunHistory({
+    runId,
+    status,
+    code,
+    completedSteps,
+    failedSteps,
+    missingSteps,
+    resultUrls,
+    errorMessages,
+    itemResults: results
+  });
   writeNdjson(res, doneEvent);
   res.end();
 }

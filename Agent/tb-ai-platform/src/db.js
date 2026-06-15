@@ -134,20 +134,43 @@ function createStore({ databasePath }) {
     );
   }
 
-  function createRunHistory({ userId, runId, mode, title, message, itemCount }) {
+  function createRunHistory({ userId, runId, mode, title, message, itemCount, projectUrl, aiTest }) {
     const now = new Date().toISOString();
     db.prepare(
       `
         INSERT INTO run_history (
-          run_id, user_id, mode, title, message_preview, item_count,
+          run_id, user_id, mode, title, message_preview, message_text,
+          project_url, ai_test, item_count,
           status, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)
       `
-    ).run(runId, userId, mode, title, previewText(message), itemCount || 1, now, now);
+    ).run(
+      runId,
+      userId,
+      mode,
+      title,
+      previewText(message),
+      message,
+      projectUrl || null,
+      aiTest ? 1 : 0,
+      itemCount || 1,
+      now,
+      now
+    );
   }
 
-  function finishRunHistory({ runId, status, code, completedSteps, failedSteps, missingSteps }) {
+  function finishRunHistory({
+    runId,
+    status,
+    code,
+    completedSteps,
+    failedSteps,
+    missingSteps,
+    resultUrls,
+    errorMessages,
+    itemResults
+  }) {
     db.prepare(
       `
         UPDATE run_history
@@ -156,6 +179,9 @@ function createStore({ databasePath }) {
             completed_steps_json = ?,
             failed_steps_json = ?,
             missing_steps_json = ?,
+            result_urls_json = ?,
+            error_messages_json = ?,
+            item_results_json = ?,
             finished_at = ?,
             updated_at = ?
         WHERE run_id = ?
@@ -166,6 +192,9 @@ function createStore({ databasePath }) {
       JSON.stringify(completedSteps || []),
       JSON.stringify(failedSteps || []),
       JSON.stringify(missingSteps || []),
+      JSON.stringify(resultUrls || []),
+      JSON.stringify(errorMessages || []),
+      JSON.stringify(itemResults || []),
       new Date().toISOString(),
       new Date().toISOString(),
       runId
@@ -228,12 +257,18 @@ function mapRunHistory(row) {
     mode: row.mode,
     title: row.title,
     messagePreview: row.message_preview,
+    messageText: row.message_text,
+    projectUrl: row.project_url,
+    aiTest: Boolean(row.ai_test),
     itemCount: row.item_count,
     status: row.status,
     exitCode: row.exit_code,
     completedSteps: parseJsonArray(row.completed_steps_json),
     failedSteps: parseJsonArray(row.failed_steps_json),
     missingSteps: parseJsonArray(row.missing_steps_json),
+    resultUrls: parseJsonArray(row.result_urls_json),
+    errorMessages: parseJsonArray(row.error_messages_json),
+    itemResults: parseJsonArray(row.item_results_json),
     createdAt: row.created_at,
     finishedAt: row.finished_at,
     updatedAt: row.updated_at
@@ -307,12 +342,18 @@ function migrate(db) {
       mode TEXT NOT NULL,
       title TEXT NOT NULL,
       message_preview TEXT,
+      message_text TEXT,
+      project_url TEXT,
+      ai_test INTEGER NOT NULL DEFAULT 0,
       item_count INTEGER NOT NULL DEFAULT 1,
       status TEXT NOT NULL,
       exit_code INTEGER,
       completed_steps_json TEXT,
       failed_steps_json TEXT,
       missing_steps_json TEXT,
+      result_urls_json TEXT,
+      error_messages_json TEXT,
+      item_results_json TEXT,
       created_at TEXT NOT NULL,
       finished_at TEXT,
       updated_at TEXT NOT NULL,
@@ -325,6 +366,20 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS ix_run_history_user_id ON run_history(user_id);
     CREATE INDEX IF NOT EXISTS ix_run_history_created_at ON run_history(created_at);
   `);
+
+  ensureColumn(db, "run_history", "message_text", "TEXT");
+  ensureColumn(db, "run_history", "project_url", "TEXT");
+  ensureColumn(db, "run_history", "ai_test", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "run_history", "result_urls_json", "TEXT");
+  ensureColumn(db, "run_history", "error_messages_json", "TEXT");
+  ensureColumn(db, "run_history", "item_results_json", "TEXT");
+}
+
+function ensureColumn(db, table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all().map(row => row.name);
+  if (!columns.includes(column)) {
+    db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+  }
 }
 
 module.exports = {
