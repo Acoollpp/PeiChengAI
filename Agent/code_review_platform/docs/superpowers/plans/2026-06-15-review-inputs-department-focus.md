@@ -261,7 +261,7 @@ class ReviewFocusDirection(SQLModel, table=True):
 """add departments review inputs
 
 Revision ID: 20260615_add_departments_review_inputs
-Revises: b4d3f2c8a901
+Revises: 20260612pdf01
 Create Date: 2026-06-15 00:00:00.000000
 
 """
@@ -272,7 +272,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision = "20260615_add_departments_review_inputs"
-down_revision = "b4d3f2c8a901"
+down_revision = "20260612pdf01"
 branch_labels = None
 depends_on = None
 
@@ -953,7 +953,28 @@ async def upload_review_task_requirement_file(
     return task
 ```
 
-在删除任务时删除 `ReviewTaskRequirementFile.file_path` 指向的文件；捕获 `OSError` 时返回中文错误“产品开发需求表附件删除失败”。
+在删除任务时删除 `ReviewTaskRequirementFile.file_path` 指向的文件；删除语义必须和现有 Markdown/PDF 报告保持一致：先删除磁盘文件，任一文件删除失败则返回 500 并中断，不删除数据库任务记录。捕获 `OSError` 时返回中文错误“产品开发需求表附件删除失败”。
+
+实现时先查询任务附件：
+
+```python
+requirement_files = session.exec(
+    select(ReviewTaskRequirementFile).where(
+        ReviewTaskRequirementFile.task_id == task.id
+    )
+).all()
+for requirement_file in requirement_files:
+    requirement_path = Path(requirement_file.file_path)
+    if requirement_path.is_file():
+        try:
+            requirement_path.unlink()
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500, detail="产品开发需求表附件删除失败"
+            ) from exc
+```
+
+只有报告、PDF 和需求表附件文件都删除成功后，才执行 `session.delete(task)` 和 `session.commit()`。
 
 - [ ] **Step 5: 运行附件测试**
 
@@ -1309,6 +1330,24 @@ queryClient.invalidateQueries({ queryKey: ["departments"] })
 
 创建 `EditDepartment.tsx`、`DeleteDepartment.tsx`、`columns.tsx`，字段使用 `name/description/is_active`。
 
+所有 Department 组件和页面统一使用 `["departments"]` 作为 query key：
+
+```tsx
+queryClient.invalidateQueries({ queryKey: ["departments"] })
+```
+
+不要保留旧 `["items"]` key，否则新增、编辑、删除部门后列表不会刷新。
+
+`columns.tsx` 必须显示启用状态列：
+
+```tsx
+{
+  accessorKey: "is_active",
+  header: "状态",
+  cell: ({ row }) => row.original.is_active ? "启用" : "停用",
+}
+```
+
 - [ ] **Step 4: 更新 Playwright 部门测试**
 
 修改 `code_review_server/frontend/tests/items.spec.ts`，断言仍使用中文：
@@ -1598,7 +1637,23 @@ const buildSupplementalReviewInput = ({
 }
 ```
 
-在 prompt 模板中插入 `${buildSupplementalReviewInput(...)}`。
+在 prompt 模板中把 `${buildSupplementalReviewInput(...)}` 固定插入到“审查输入”列表之后、“请严格按该 Skill 的输入模块、SVN 获取策略、规则模块、输出模块执行代码变更审查。”之前。不要插入到 `---` 之后，也不要插入“错误处理规范”内部或之后，避免破坏 `[CODEX_ERROR::...]` 协议。
+
+模板位置应类似：
+
+```ts
+审查输入：
+- 项目路径：${svnUrl}
+- 旧版本号：${oldRevision}
+- 新版本号：${newRevision}
+- 报告输出路径：${reportPath}
+- 图片保存目录：${imagesDir}${buildSupplementalReviewInput({
+  requirementFilePath,
+  focusDirectionSnapshot
+})}
+
+请严格按该 Skill 的输入模块、SVN 获取策略、规则模块、输出模块执行代码变更审查。
+```
 
 - [ ] **Step 4: 扩展 API 和上传附件**
 
@@ -1684,6 +1739,19 @@ export interface PreparedWorkspace {
 }
 ```
 
+在 `TaskAgentDependencies` 增加必需归档依赖，避免可选链静默跳过服务端附件归档：
+
+```ts
+uploadRequirementFile: (token: string, taskId: string, filePath: string) => Promise<unknown>
+```
+
+在 `createTaskAgentDependencies` 中接入：
+
+```ts
+uploadRequirementFile: (token, taskId, filePath) =>
+  uploadRequirementFile(api, token, taskId, filePath),
+```
+
 增加 helper：
 
 ```ts
@@ -1724,7 +1792,7 @@ export const prepareRequirementFile = async (
 ```ts
 if (workspace.requirementFilePath) {
   try {
-    await dependencies.uploadRequirementFile?.(input.token, task.id, workspace.requirementFilePath)
+    await dependencies.uploadRequirementFile(input.token, task.id, workspace.requirementFilePath)
   } catch (error) {
     emitStage(
       onProgress,
@@ -1736,6 +1804,22 @@ if (workspace.requirementFilePath) {
   }
 }
 ```
+
+在 `ipc.ts` 的 `IpcHandlerDependencies` 增加：
+
+```ts
+uploadRequirementFile?: TaskAgentDependencies['uploadRequirementFile']
+```
+
+在 `task:execute` 调用 `executeReviewTask` 的 dependencies 对象中注入：
+
+```ts
+uploadRequirementFile:
+  dependencies.uploadRequirementFile ??
+  ((token, taskId, filePath) => uploadRequirementFile(taskApi, token, taskId, filePath)),
+```
+
+这一步必须和 `TaskAgentDependencies` 同步修改；不允许使用 `?.` 可选调用，否则附件归档失败会被静默跳过。
 
 - [ ] **Step 6: 运行 Electron 主进程测试**
 
@@ -1803,12 +1887,12 @@ npm test -- src/renderer/src/components/TaskForm.test.tsx
 
 Expected: FAIL，找不到新增输入。
 
-- [ ] **Step 3: 新增选择文件和粘贴文件 IPC**
+- [ ] **Step 3: 新增选择文件和粘贴文件 IPC，并同步测试 mock**
 
 在 `ipc.ts` 引入 `dialog`：
 
 ```ts
-import { dialog, ipcMain, shell, webUtils } from 'electron'
+import { dialog, ipcMain, shell } from 'electron'
 ```
 
 注册：
@@ -1834,10 +1918,95 @@ selectRequirementFile: (): Promise<SelectRequirementFileResult> =>
 getPathForPastedFile: (file: File): string => webUtils.getPathForFile(file),
 ```
 
-如果 preload 当前不能直接 import `webUtils`，从 `electron` 引入：
+在 preload 中直接从 `electron` 引入 `webUtils`：
 
 ```ts
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+```
+
+同步更新 `code_review_electron/src/main/__tests__/ipc.test.ts`：
+
+- 在 `vi.mock('electron', ...)` 中补充 `dialog.showOpenDialog` mock。
+- 在 `registers only the renderer-facing IPC channels` 的 `toEqual([...])` 数组中，按实际注册位置加入 `'requirement-file:select'`。建议放在 `'task:report'` 之后、`'codex:install'` 之前，和 `ipc.ts` 中注册顺序一致。
+- 新增测试覆盖选择文件成功和取消：
+
+```ts
+const showOpenDialogMock = vi.fn()
+
+vi.mock('electron', () => ({
+  dialog: {
+    showOpenDialog: showOpenDialogMock
+  },
+  // 保留现有 mock 字段
+}))
+
+it('selects a requirement Excel file through IPC', async () => {
+  showOpenDialogMock.mockResolvedValue({
+    canceled: false,
+    filePaths: ['/tmp/产品开发需求表.xls']
+  })
+  const { registerIpcHandlers } = await import('../ipc')
+  registerIpcHandlers()
+
+  const handler = handleMock.mock.calls.find(
+    ([channel]) => channel === 'requirement-file:select'
+  )?.[1]
+
+  await expect(handler()).resolves.toEqual({
+    status: 'selected',
+    filePath: '/tmp/产品开发需求表.xls'
+  })
+})
+
+it('returns cancelled when requirement file dialog is cancelled', async () => {
+  showOpenDialogMock.mockResolvedValue({
+    canceled: true,
+    filePaths: []
+  })
+  const { registerIpcHandlers } = await import('../ipc')
+  registerIpcHandlers()
+
+  const handler = handleMock.mock.calls.find(
+    ([channel]) => channel === 'requirement-file:select'
+  )?.[1]
+
+  await expect(handler()).resolves.toEqual({
+    status: 'cancelled'
+  })
+})
+```
+
+同步更新 `code_review_electron/src/preload/index.test.ts`：
+
+- 在 electron mock 中补充 `webUtils.getPathForFile`。
+- 新增测试确认 `api.getPathForPastedFile(file)` 会调用 `webUtils.getPathForFile(file)`。
+
+```ts
+const getPathForFileMock = vi.hoisted(() => vi.fn())
+
+vi.mock('electron', () => ({
+  contextBridge: {
+    exposeInMainWorld: exposeInMainWorldMock
+  },
+  ipcRenderer: {
+    invoke: invokeMock,
+    on: vi.fn(),
+    removeListener: vi.fn()
+  },
+  webUtils: {
+    getPathForFile: getPathForFileMock
+  }
+}))
+
+it('reads pasted file path through Electron webUtils', async () => {
+  getPathForFileMock.mockReturnValue('/tmp/产品开发需求表.xlsx')
+  await import('./index')
+  const api = exposeInMainWorldMock.mock.calls[0][1]
+  const file = new File(['x'], '产品开发需求表.xlsx')
+
+  expect(api.getPathForPastedFile(file)).toBe('/tmp/产品开发需求表.xlsx')
+  expect(getPathForFileMock).toHaveBeenCalledWith(file)
+})
 ```
 
 - [ ] **Step 4: 更新 TaskForm**
@@ -1936,6 +2105,8 @@ focus_direction_snapshot: payload.focus_direction_snapshot,
 (localTask.focus_direction_snapshot ?? undefined) === (serverTask.focus_direction_snapshot ?? undefined) &&
 (localTask.requirement_file_name ?? undefined) === (serverTask.requirement_file_name ?? undefined)
 ```
+
+执行时必须保证 `requirement_file_name` 在提交前已经过同一套安全文件名规则处理，至少要去掉目录分隔符并取 basename。`TaskForm` 的 `basenameLike` 输出要和后端 `save_requirement_upload` 的 `_safe_filename` 对普通 Windows/macOS 路径产生相同结果，避免同一任务因为文件名不一致而无法绑定服务端任务。
 
 - [ ] **Step 6: 运行 Electron 渲染层测试**
 
