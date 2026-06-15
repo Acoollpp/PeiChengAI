@@ -18,14 +18,16 @@ def _create_department(db: Session, name: str | None = None) -> Department:
     return department
 
 
-def _direction_payload(department_id: UUID) -> dict:
+def _direction_payload(department_id: UUID | None) -> dict:
     suffix = random_lower_string()
-    return {
+    payload = {
         "title": f"权限审查-{suffix}",
         "content": "重点检查权限边界和异常处理",
-        "department_id": str(department_id),
         "is_active": True,
     }
+    if department_id is not None:
+        payload["department_id"] = str(department_id)
+    return payload
 
 
 def _create_focus_direction(
@@ -117,6 +119,26 @@ def test_admin_can_create_and_list_focus_directions(
     assert any(direction["id"] == created["id"] for direction in content["data"])
 
 
+def test_admin_can_create_global_focus_direction_without_department(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    payload = _direction_payload(None)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=superuser_token_headers,
+        json=payload,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["title"] == payload["title"]
+    assert content["content"] == payload["content"]
+    assert content["department_id"] is None
+    assert content["department_name"] is None
+
+
 def test_normal_user_cannot_create_focus_direction(
     client: TestClient,
     db: Session,
@@ -163,6 +185,57 @@ def test_admin_can_update_focus_direction(
     assert content["department_name"] == department.name
     assert content["is_active"] is False
     assert content["updated_at"] != direction["updated_at"]
+
+
+def test_admin_can_clear_focus_direction_department(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    direction = _create_focus_direction(client, db, superuser_token_headers)
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/review-focus-directions/{direction['id']}",
+        headers=superuser_token_headers,
+        json={"department_id": None},
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["id"] == direction["id"]
+    assert content["department_id"] is None
+    assert content["department_name"] is None
+
+    db_direction = db.get(ReviewFocusDirection, UUID(direction["id"]))
+    assert db_direction is not None
+    assert db_direction.department_id is None
+
+
+def test_admin_update_without_department_keeps_existing_department(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    department = _create_department(db)
+    direction = _create_focus_direction(
+        client, db, superuser_token_headers, department=department
+    )
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/review-focus-directions/{direction['id']}",
+        headers=superuser_token_headers,
+        json={"title": f"安全审查-{random_lower_string()}"},
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["id"] == direction["id"]
+    assert content["department_id"] == str(department.id)
+    assert content["department_name"] == department.name
+
+    db_direction = db.get(ReviewFocusDirection, UUID(direction["id"]))
+    assert db_direction is not None
+    assert db_direction.department_id == department.id
 
 
 def test_delete_focus_direction_soft_deletes(
@@ -302,4 +375,26 @@ def test_admin_can_create_focus_direction_from_usage(
     assert content["content"] == "检查 权限 边界"
     assert content["department_id"] == str(department.id)
     assert content["department_name"] == department.name
+    assert content["is_active"] is True
+
+
+def test_admin_can_create_global_focus_direction_from_usage(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions/from-usage",
+        headers=superuser_token_headers,
+        json={
+            "title": "全局权限边界审查",
+            "content": "  检查   权限\n边界  ",
+        },
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["title"] == "全局权限边界审查"
+    assert content["content"] == "检查 权限 边界"
+    assert content["department_id"] is None
+    assert content["department_name"] is None
     assert content["is_active"] is True

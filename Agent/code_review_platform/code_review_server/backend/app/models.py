@@ -203,14 +203,14 @@ class ReviewFocusDirection(SQLModel, table=True):
 class ReviewFocusDirectionCreate(SQLModel):
     title: str = Field(min_length=1, max_length=255)
     content: str = Field(min_length=1, max_length=4096)
-    department_id: uuid.UUID
+    department_id: uuid.UUID | None = None
     is_active: bool = True
 
 
 class ReviewFocusDirectionUpdate(SQLModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     content: str | None = Field(default=None, min_length=1, max_length=4096)
-    department_id: uuid.UUID | None = None
+    department_id: uuid.UUID | None = Field(default=None)
     is_active: bool | None = None
 
 

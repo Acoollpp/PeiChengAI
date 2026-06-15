@@ -45,8 +45,10 @@ def _get_direction_or_404(
 
 
 def _get_department_or_400(
-    *, session: SessionDep, department_id: uuid.UUID
-) -> Department:
+    *, session: SessionDep, department_id: uuid.UUID | None
+) -> Department | None:
+    if department_id is None:
+        return None
     department = session.get(Department, department_id)
     if department is None:
         raise HTTPException(status_code=400, detail="部门不存在")
@@ -83,6 +85,7 @@ def _create_direction(
         direction_in,
         update={
             "content": content,
+            "department_id": direction_in.department_id,
             "created_by_user_id": current_user.id,
             "updated_at": get_datetime_utc(),
         },
