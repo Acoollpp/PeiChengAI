@@ -431,6 +431,55 @@ textarea:focus {
   font-size: 13px;
 }
 
+.result-panel {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.result-list {
+  display: grid;
+  gap: 8px;
+}
+
+.result-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.result-item strong,
+.result-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-item a {
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.result-item.failed {
+  grid-template-columns: 1fr;
+  border-color: rgba(220, 38, 38, 0.28);
+  background: var(--red-soft);
+}
+
+.result-item.failed span {
+  color: var(--red);
+  font-size: 13px;
+  white-space: normal;
+}
+
 .workbench-grid {
   display: grid;
   grid-template-columns: minmax(280px, 0.92fr) minmax(360px, 1.08fr);

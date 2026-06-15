@@ -4,7 +4,8 @@ const state = {
   user: null,
   flows: {},
   stepStatus: new Map(),
-  activeItems: [{ id: "item-1", title: "项目 1" }]
+  activeItems: [{ id: "item-1", title: "项目 1" }],
+  results: new Map()
 };
 
 const modeTitles = {
@@ -36,6 +37,7 @@ const el = {
   logoutBtn: document.querySelector("#logoutBtn"),
   modeTitle: document.querySelector("#modeTitle"),
   message: document.querySelector("#messageInput"),
+  projectUrlField: document.querySelector("#projectUrlField"),
   projectUrl: document.querySelector("#projectUrlInput"),
   pulse: document.querySelector(".pulse"),
   runBtn: document.querySelector("#runBtn"),
@@ -43,6 +45,8 @@ const el = {
   clearBtn: document.querySelector("#clearBtn"),
   runState: document.querySelector("#runState"),
   runId: document.querySelector("#runId"),
+  resultPanel: document.querySelector("#resultPanel"),
+  resultList: document.querySelector("#resultList"),
   workspace: document.querySelector("#workspace"),
   flowSteps: document.querySelector("#flowSteps"),
   flowSummary: document.querySelector("#flowSummary")
@@ -56,8 +60,10 @@ function setMode(mode) {
   el.modeTitle.textContent = modeTitles[mode];
   el.message.placeholder = modePlaceholders[mode];
   el.aiTestBtn.hidden = mode !== "create";
+  el.projectUrlField.hidden = mode === "create";
   resetFlowStatuses();
   renderFlowSteps();
+  clearResults();
 }
 
 function setUser(user) {
@@ -164,12 +170,14 @@ async function logout() {
   setUser(null);
   state.flows = {};
   state.stepStatus.clear();
+  state.results.clear();
   state.activeItems = [{ id: "item-1", title: "项目 1" }];
   el.flowSteps.innerHTML = "";
   el.flowSummary.textContent = "等待登录";
   el.historyList.textContent = "等待登录";
   el.runId.textContent = "未开始";
   el.runState.textContent = "等待输入";
+  clearResults();
 }
 
 function resetFlowStatuses() {
@@ -306,6 +314,51 @@ function renderHistory(history) {
   }
 }
 
+function clearResults() {
+  state.results.clear();
+  el.resultList.innerHTML = "";
+  el.resultPanel.hidden = true;
+}
+
+function updateResult(event) {
+  const itemId = event.itemId || "item-1";
+  const existing = state.results.get(itemId) || { itemTitle: event.itemTitle || itemId };
+  if (event.type === "result") {
+    existing.url = event.url;
+  } else if (event.type === "run_error") {
+    existing.error = event.message;
+  }
+  existing.itemTitle = event.itemTitle || existing.itemTitle;
+  state.results.set(itemId, existing);
+  renderResults();
+}
+
+function renderResults() {
+  el.resultPanel.hidden = state.results.size === 0;
+  el.resultList.innerHTML = "";
+  for (const result of state.results.values()) {
+    const row = document.createElement("div");
+    row.className = `result-item ${result.error ? "failed" : "success"}`;
+    const title = document.createElement("strong");
+    title.textContent = result.itemTitle;
+    row.append(title);
+    if (result.url) {
+      const link = document.createElement("a");
+      link.href = result.url;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = "查看项目";
+      row.append(link);
+    }
+    if (result.error) {
+      const error = document.createElement("span");
+      error.textContent = result.error;
+      row.append(error);
+    }
+    el.resultList.append(row);
+  }
+}
+
 async function runTask(options = {}) {
   if (state.running) return;
   const aiTest = Boolean(options.aiTest);
@@ -325,6 +378,7 @@ async function runTask(options = {}) {
 
   resetFlowStatuses();
   renderFlowSteps();
+  clearResults();
   el.runId.textContent = aiTest ? "准备 AI 测试" : "准备启动";
   setRunning(true);
   if (aiTest) el.runState.textContent = "AI测试创建会给项目名追加（AI测试）";
@@ -418,6 +472,8 @@ function handleStreamEvent(event) {
     el.runState.textContent = event.message;
   } else if (event.type === "error") {
     el.runState.textContent = event.error;
+  } else if (event.type === "result" || event.type === "run_error") {
+    updateResult(event);
   } else if (event.type === "done") {
     for (const stepId of event.failedSteps || []) updateCompositeStep(stepId, "failed");
     for (const stepId of event.missingSteps || []) {
@@ -489,8 +545,9 @@ el.loginKey.addEventListener("keydown", event => {
 el.runBtn.addEventListener("click", runTask);
 el.aiTestBtn.addEventListener("click", () => runTask({ aiTest: true }));
 el.clearBtn.addEventListener("click", () => {
-  el.message.value = "";
+    el.message.value = "";
   el.projectUrl.value = "";
+  clearResults();
   resetFlowStatuses();
   renderFlowSteps();
   el.runId.textContent = "未开始";

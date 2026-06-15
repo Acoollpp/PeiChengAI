@@ -93,8 +93,10 @@
               <label class="input-label" for="messageInput">任务内容</label>
               <textarea id="messageInput" spellcheck="false" placeholder="粘贴项目创建信息单，例如项目名称、项目编号、客户、项目工程师、售前/发起人、客户要求日期等。"></textarea>
 
-              <label class="input-label" for="projectUrlInput">项目地址（可选）</label>
-              <input id="projectUrlInput" class="url-input" type="url" placeholder="粘贴 Teambition / 钉钉项目地址，变更时优先用于定位项目" />
+              <div id="projectUrlField" class="project-url-field">
+                <label class="input-label" for="projectUrlInput">项目地址（可选）</label>
+                <input id="projectUrlInput" class="url-input" type="url" placeholder="粘贴 Teambition / 钉钉项目地址，变更时优先用于定位项目" />
+              </div>
 
               <div class="actions">
                 <button id="runBtn" class="primary" type="button">
@@ -104,6 +106,11 @@
                   AI测试创建
                 </button>
                 <span id="runState" class="run-state" aria-live="polite">等待输入</span>
+              </div>
+
+              <div class="result-panel" id="resultPanel" hidden>
+                <div class="section-title">执行结果</div>
+                <div id="resultList" class="result-list" aria-live="polite"></div>
               </div>
             </div>
 

@@ -135,7 +135,7 @@ async function withServer(fakeCodexSource, fn) {
       assert.strictEqual(run.body.includes("RAW_STDERR_SECRET"), false);
       assert.strictEqual(run.body.includes("[[TB_STEP:"), false);
       const events = parseNdjson(run.body);
-      assert.deepStrictEqual(events.map(event => event.type), ["start", "step", "log", "step", "done"]);
+      assert.deepStrictEqual(events.map(event => event.type), ["start", "step", "log", "step", "run_error", "done"]);
       assert.strictEqual(events[1].stepId, "step-1");
       assert.strictEqual(events[1].status, "running");
       assert.match(events[2].message, /sanitized progress/);

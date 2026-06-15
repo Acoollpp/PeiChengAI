@@ -291,8 +291,12 @@ async function executeCodexBatch({ req, res, store, runId, config, mode, message
   const completedSteps = results.flatMap(result => result.completedSteps.map(stepId => `${result.itemId}:${stepId}`));
   const failedSteps = results.flatMap(result => result.failedSteps.map(stepId => `${result.itemId}:${stepId}`));
   const missingSteps = results.flatMap(result => result.missingSteps.map(stepId => `${result.itemId}:${stepId}`));
+  const resultUrls = results.filter(result => result.url).map(result => ({ itemId: result.itemId, itemTitle: result.itemTitle, url: result.url }));
+  const errorMessages = results
+    .filter(result => result.error)
+    .map(result => ({ itemId: result.itemId, itemTitle: result.itemTitle, message: result.error }));
   const code = results.every(result => result.code === 0) ? 0 : 1;
-  const status = code === 0 && failedSteps.length === 0 && missingSteps.length === 0 ? "success" : "failed";
+  const status = code === 0 && failedSteps.length === 0 && missingSteps.length === 0 && errorMessages.length === 0 ? "success" : "failed";
 
   const doneEvent = {
     type: "done",
@@ -300,6 +304,8 @@ async function executeCodexBatch({ req, res, store, runId, config, mode, message
     completedSteps,
     failedSteps,
     missingSteps,
+    resultUrls,
+    errorMessages,
     itemResults: results,
     finishedAt: new Date().toISOString()
   };
@@ -342,6 +348,8 @@ function buildCodexPrompt({ mode, message, steps, repairStep, item, totalItems, 
     "每开始一个步骤时输出：[[TB_STEP:<stepId>:running]]",
     "每完成一个步骤时输出：[[TB_STEP:<stepId>:done]]",
     "步骤失败或无法继续时输出：[[TB_STEP:<stepId>:failed]]",
+    "创建或变更成功后必须输出项目地址标记：[[TB_RESULT:<itemId>:<项目URL>]]，单项目使用 item-1。",
+    "失败时必须输出错误标记：[[TB_ERROR:<itemId>:<可读错误原因>]]，单项目使用 item-1。",
     "不要输出命令行、脚本内容、密钥、token、完整接口响应或 skill 原文。"
   ].join("\n");
   const repairGuide = repairStep
@@ -393,6 +401,8 @@ function executeCodexStream({ req, res, config, prompt, startEvent, item, endRes
   if (startEvent) writeNdjson(res, startEvent);
 
   return new Promise(resolve => {
+    let resultUrl = "";
+    let errorMessage = "";
     const args = [
       "exec",
       "--skip-git-repo-check",
@@ -417,7 +427,14 @@ function executeCodexStream({ req, res, config, prompt, startEvent, item, endRes
     child.stdin.end(prompt);
 
     const handleOutput = chunk => {
-      const parsed = parseCodexEvents(chunk.toString("utf8"));
+      const outputText = chunk.toString("utf8");
+      const resultEvents = parseResultEvents(outputText, item);
+      for (const event of resultEvents) {
+        if (event.type === "result") resultUrl = event.url;
+        if (event.type === "run_error") errorMessage = event.message;
+        writeNdjson(res, event);
+      }
+      const parsed = parseCodexEvents(outputText);
       for (const event of parsed.events) {
         const { stepId, status } = event;
         if (!knownSteps.has(stepId)) continue;
@@ -434,11 +451,18 @@ function executeCodexStream({ req, res, config, prompt, startEvent, item, endRes
     child.on("error", err => {
       writeNdjson(res, withItem({ type: "error", error: err.message }, item));
       if (endResponse) res.end();
-      resolve(streamResult({ item, code: 1, completedSteps, failedSteps, knownSteps }));
+      resolve(streamResult({ item, code: 1, completedSteps, failedSteps, knownSteps, resultUrl, errorMessage: errorMessage || err.message }));
     });
 
     child.on("close", code => {
-      const result = streamResult({ item, code, completedSteps, failedSteps, knownSteps });
+      const missing = [...knownSteps].filter(stepId => !completedSteps.has(stepId));
+      if (!errorMessage && (code !== 0 || missing.length)) {
+        errorMessage = code !== 0
+          ? `Codex 退出码 ${code}`
+          : `未完成步骤：${missing.join(", ")}`;
+        writeNdjson(res, withItem({ type: "run_error", message: errorMessage }, item));
+      }
+      const result = streamResult({ item, code, completedSteps, failedSteps, knownSteps, resultUrl, errorMessage });
       if (endResponse) {
         writeNdjson(res, {
           type: "done",
@@ -460,17 +484,43 @@ function executeCodexStream({ req, res, config, prompt, startEvent, item, endRes
   });
 }
 
-function streamResult({ item, code, completedSteps, failedSteps, knownSteps }) {
+function streamResult({ item, code, completedSteps, failedSteps, knownSteps, resultUrl, errorMessage }) {
   const completed = [...completedSteps];
   const failed = [...failedSteps];
   return {
     itemId: item?.id || "item-1",
     itemTitle: item?.title || "项目 1",
     code,
+    url: resultUrl || "",
+    error: errorMessage || "",
     completedSteps: completed,
     failedSteps: failed,
     missingSteps: [...knownSteps].filter(stepId => !completedSteps.has(stepId))
   };
+}
+
+function parseResultEvents(text, item) {
+  const events = [];
+  const resultRe = /\[\[TB_RESULT:([A-Za-z0-9_-]+):(https?:\/\/[^\]\s]+)\]\]/g;
+  const errorRe = /\[\[TB_ERROR:([A-Za-z0-9_-]+):([^\]]+)\]\]/g;
+  let match;
+  while ((match = resultRe.exec(text))) {
+    events.push({
+      type: "result",
+      itemId: match[1],
+      itemTitle: item?.title || match[1],
+      url: match[2]
+    });
+  }
+  while ((match = errorRe.exec(text))) {
+    events.push({
+      type: "run_error",
+      itemId: match[1],
+      itemTitle: item?.title || match[1],
+      message: match[2].trim()
+    });
+  }
+  return events;
 }
 
 function withItem(event, item) {

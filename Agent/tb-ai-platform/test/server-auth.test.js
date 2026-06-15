@@ -49,6 +49,7 @@ function parseNdjson(raw) {
     [
       "#!/bin/sh",
       "echo '[[TB_STEP:step-1:done]]'",
+      "echo '[[TB_RESULT:item-1:https://www.teambition.com/project/demo/tasks/view/demo-task]]'",
       "echo 'RAW COMMAND SHOULD STAY SERVER SIDE'",
       "echo '[[TB_STEP:step-2:done]]'"
     ].join("\n"),
@@ -152,6 +153,8 @@ function parseNdjson(raw) {
     assert.strictEqual(runFlow.statusCode, 200);
     assert.match(runFlow.body, /"type":"start"/);
     assert.match(runFlow.body, /"type":"step"/);
+    assert.match(runFlow.body, /"type":"result"/);
+    assert.match(runFlow.body, /https:\/\/www\.teambition\.com\/project\/demo/);
     assert.match(runFlow.body, /step-1/);
     assert.doesNotMatch(runFlow.body, /RAW COMMAND SHOULD STAY SERVER SIDE/);
     assert.doesNotMatch(runFlow.body, /"type":"stdout"/);
