@@ -38,7 +38,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_department_name"), "department", ["name"], unique=False)
+    op.create_index(op.f("ix_department_name"), "department", ["name"], unique=True)
     op.create_index(
         op.f("ix_department_is_active"), "department", ["is_active"], unique=False
     )

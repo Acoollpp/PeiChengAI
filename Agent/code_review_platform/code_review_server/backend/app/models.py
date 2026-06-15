@@ -45,7 +45,7 @@ class FeedbackStatsRange(str, Enum):
 
 
 class DepartmentBase(SQLModel):
-    name: str = Field(min_length=1, max_length=255, index=True)
+    name: str = Field(min_length=1, max_length=255, unique=True, index=True)
     description: str | None = Field(default=None, max_length=1024)
     is_active: bool = Field(default=True, index=True)
 

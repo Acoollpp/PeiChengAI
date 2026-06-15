@@ -55,10 +55,13 @@ from app.main import app
 from app.models import (
     AuditLog,
     ClientRelease,
+    Department,
     Feedback,
     FeedbackScreenshot,
     Item,
+    ReviewFocusDirection,
     ReviewTask,
+    ReviewTaskRequirementFile,
     SkillPackage,
     User,
     UserApiKey,
@@ -85,30 +88,41 @@ def db() -> Generator[Session, None, None]:
         init_db(session)
         yield session
         _assert_test_database(session)
+        inspector = inspect(engine)
+        if inspector.has_table("review_task_requirement_file"):
+            statement = delete(ReviewTaskRequirementFile)
+            session.execute(statement)
+        if inspector.has_table("review_task"):
+            statement = delete(ReviewTask)
+            session.execute(statement)
+        if inspector.has_table("review_focus_direction"):
+            statement = delete(ReviewFocusDirection)
+            session.execute(statement)
         statement = delete(UserApiKey)
         session.execute(statement)
         statement = delete(UserSvnCredential)
         session.execute(statement)
         statement = delete(Item)
         session.execute(statement)
-        statement = delete(ReviewTask)
-        session.execute(statement)
         statement = delete(AuditLog)
         session.execute(statement)
-        if inspect(engine).has_table("client_release"):
+        if inspector.has_table("client_release"):
             statement = delete(ClientRelease)
             session.execute(statement)
-        if inspect(engine).has_table("skill_package"):
+        if inspector.has_table("skill_package"):
             statement = delete(SkillPackage)
             session.execute(statement)
-        if inspect(engine).has_table("feedback_screenshot"):
+        if inspector.has_table("feedback_screenshot"):
             statement = delete(FeedbackScreenshot)
             session.execute(statement)
-        if inspect(engine).has_table("feedback"):
+        if inspector.has_table("feedback"):
             statement = delete(Feedback)
             session.execute(statement)
         statement = delete(User)
         session.execute(statement)
+        if inspector.has_table("department"):
+            statement = delete(Department)
+            session.execute(statement)
         session.commit()
 
 
