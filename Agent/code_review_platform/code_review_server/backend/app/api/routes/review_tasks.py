@@ -16,6 +16,7 @@ from app.models import (
     ReviewTask,
     ReviewTaskCreate,
     ReviewTaskPublic,
+    ReviewTaskRequirementFile,
     ReviewTaskReportUserStatsPublic,
     ReviewTasksPublic,
     ReviewTaskStatsPublic,
@@ -319,6 +320,11 @@ def delete_review_task(
     task = _get_task_for_user(
         session=session, current_user=current_user, task_id=task_id
     )
+    requirement_files = session.exec(
+        select(ReviewTaskRequirementFile).where(
+            ReviewTaskRequirementFile.task_id == task.id
+        )
+    ).all()
     report_path = Path(task.report_path) if task.report_path else None
     if report_path and report_path.is_file():
         try:
@@ -335,7 +341,20 @@ def delete_review_task(
             raise HTTPException(
                 status_code=500, detail="Failed to delete review task PDF report"
             ) from exc
+    for requirement_file in requirement_files:
+        requirement_path = Path(requirement_file.file_path)
+        if not requirement_path.is_file():
+            continue
+        try:
+            requirement_path.unlink()
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500, detail="产品开发需求表附件删除失败"
+            ) from exc
 
+    for requirement_file in requirement_files:
+        session.delete(requirement_file)
+    session.flush()
     session.delete(task)
     session.commit()
     return {"message": "Review task deleted"}
@@ -415,6 +434,43 @@ async def upload_review_task_pdf_report(
     task.pdf_report_path = str(report_path)
     task.pdf_report_name = upload.filename or PDF_REPORT_FILE_NAME
     task.updated_at = now
+
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return task
+
+
+@router.post("/{task_id}/requirement-file", response_model=ReviewTaskPublic)
+async def upload_review_task_requirement_file(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    upload: UploadFile = File(...),
+) -> Any:
+    task = _get_task_for_user(
+        session=session, current_user=current_user, task_id=task_id
+    )
+    file_path, file_size, file_hash, safe_file_name = (
+        await report_service.save_requirement_upload(task_id, upload)
+    )
+    requirement_file = ReviewTaskRequirementFile(
+        task_id=task.id,
+        file_name=safe_file_name,
+        file_path=str(file_path),
+        content_type=upload.content_type,
+        file_size=file_size,
+        sha256=file_hash,
+    )
+    session.add(requirement_file)
+    session.flush()
+
+    task.requirement_file_id = requirement_file.id
+    task.requirement_file_name = safe_file_name
+    task.requirement_file_size = file_size
+    task.requirement_file_sha256 = file_hash
+    task.updated_at = _utcnow()
 
     session.add(task)
     session.commit()

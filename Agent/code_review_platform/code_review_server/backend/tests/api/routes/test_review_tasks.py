@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from urllib.parse import unquote
@@ -6,10 +7,16 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.core.config import settings
-from app.models import Department, ReviewTask, ReviewTaskStatus, UserRole
+from app.models import (
+    Department,
+    ReviewTask,
+    ReviewTaskRequirementFile,
+    ReviewTaskStatus,
+    UserRole,
+)
 from tests.utils.user import (
     authentication_token_from_key,
     create_key_user,
@@ -441,6 +448,171 @@ def test_download_review_task_pdf_report_requires_task_permission(
     )
 
     assert response.status_code == 403
+
+
+def test_upload_review_task_requirement_file_stores_metadata_and_record(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    content = b"requirement rows"
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/requirement-file",
+        headers=normal_user_token_headers,
+        files={
+            "upload": (
+                "产品开发需求表.xls",
+                content,
+                "application/vnd.ms-excel",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    uploaded = response.json()
+    expected_hash = hashlib.sha256(content).hexdigest()
+    assert uploaded["requirement_file_name"] == "产品开发需求表.xls"
+    assert uploaded["requirement_file_size"] == len(content)
+    assert uploaded["requirement_file_sha256"] == expected_hash
+
+    requirement_file = db.exec(
+        select(ReviewTaskRequirementFile).where(
+            ReviewTaskRequirementFile.task_id == UUID(task["id"])
+        )
+    ).one()
+    assert requirement_file.file_name == "产品开发需求表.xls"
+    assert requirement_file.file_size == len(content)
+    assert requirement_file.sha256 == expected_hash
+    assert Path(requirement_file.file_path).is_file()
+
+
+def test_upload_review_task_requirement_file_rejects_unsupported_extension(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/requirement-file",
+        headers=normal_user_token_headers,
+        files={"upload": ("需求表.txt", b"rows", "text/plain")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "产品开发需求表仅支持 .xls 或 .xlsx 文件。"
+
+
+def test_upload_review_task_requirement_file_rejects_empty_excel(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/requirement-file",
+        headers=normal_user_token_headers,
+        files={
+            "upload": (
+                "产品开发需求表.xlsx",
+                b"",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "产品开发需求表不能为空。"
+
+
+def test_delete_review_task_removes_requirement_file_and_record(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/requirement-file",
+        headers=normal_user_token_headers,
+        files={"upload": ("需求表.xls", b"rows", "application/vnd.ms-excel")},
+    )
+    assert upload_response.status_code == 200
+    requirement_file = db.exec(
+        select(ReviewTaskRequirementFile).where(
+            ReviewTaskRequirementFile.task_id == UUID(task["id"])
+        )
+    ).one()
+    requirement_file_id = requirement_file.id
+    requirement_path = Path(requirement_file.file_path)
+    assert requirement_path.is_file()
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert not requirement_path.exists()
+    db.expire_all()
+    assert db.get(ReviewTaskRequirementFile, requirement_file_id) is None
+    assert db.get(ReviewTask, UUID(task["id"])) is None
+
+
+def test_delete_review_task_keeps_task_when_requirement_file_delete_fails(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/requirement-file",
+        headers=normal_user_token_headers,
+        files={"upload": ("需求表.xlsx", b"rows", "application/vnd.ms-excel")},
+    )
+    assert upload_response.status_code == 200
+    requirement_file = db.exec(
+        select(ReviewTaskRequirementFile).where(
+            ReviewTaskRequirementFile.task_id == UUID(task["id"])
+        )
+    ).one()
+    requirement_file_id = requirement_file.id
+    requirement_path = Path(requirement_file.file_path)
+
+    original_unlink = Path.unlink
+
+    def fail_requirement_unlink(self: Path, missing_ok: bool = False) -> None:
+        if self == requirement_path:
+            raise OSError("cannot delete")
+        original_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", fail_requirement_unlink)
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "产品开发需求表附件删除失败"
+    db.expire_all()
+    assert db.get(ReviewTask, UUID(task["id"])) is not None
+    assert db.get(ReviewTaskRequirementFile, requirement_file_id) is not None
 
 
 def test_delete_review_task_removes_task_row(
