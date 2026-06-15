@@ -186,6 +186,19 @@ function parseNdjson(raw) {
     assert.strictEqual(incompleteChange.statusCode, 400);
     assert.match(incompleteChange.body, /项目变更请粘贴项目地址/);
 
+    const changeWithSeparateUrl = await request(port, {
+      method: "POST",
+      path: "/api/run",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        mode: "change",
+        message: "项目名称 60411，创建变更迭代",
+        projectUrl: "https://www.teambition.com/project/abc/tasks/view/def"
+      })
+    });
+    assert.strictEqual(changeWithSeparateUrl.statusCode, 200);
+    assert.match(changeWithSeparateUrl.body, /"type":"start"/);
+
     const changeWithFields = await request(port, {
       method: "POST",
       path: "/api/run",

@@ -98,10 +98,11 @@ function createServer({ config, store, syncState }) {
     const mode = modes[body.mode];
     const message = String(body.message || "").trim();
     const aiTest = body.mode === "create" && Boolean(body.aiTest);
+    const projectUrl = normalizeProjectUrl(body.projectUrl);
     if (!mode) return sendJson(res, 400, { error: "任务类型无效" });
     if (!message) return sendJson(res, 400, { error: "请输入任务内容" });
     const items = detectProjectItems(body.mode, message);
-    const validationError = validateTaskMessage(body.mode, mode, message, items);
+    const validationError = validateTaskMessage(body.mode, mode, message, items, projectUrl);
     if (validationError) return sendJson(res, 400, { error: validationError });
 
     const runId = crypto.randomUUID();
@@ -117,7 +118,8 @@ function createServer({ config, store, syncState }) {
         title: mode.title,
         messageLength: message.length,
         itemCount: items.length,
-        aiTest
+        aiTest,
+        hasProjectUrl: Boolean(projectUrl)
       }
     });
 
@@ -146,6 +148,7 @@ function createServer({ config, store, syncState }) {
       flow,
       items,
       aiTest,
+      projectUrl,
       startEvent: { type: "start", runId, mode: body.mode, title: mode.title, startedAt, steps: flow, items, aiTest }
     });
   }
@@ -163,9 +166,10 @@ function createServer({ config, store, syncState }) {
 
     const mode = modes[body.mode];
     const message = String(body.message || "").trim();
+    const projectUrl = normalizeProjectUrl(body.projectUrl);
     if (!mode) return sendJson(res, 400, { error: "任务类型无效" });
     if (!message) return sendJson(res, 400, { error: "请输入任务内容" });
-    const validationError = validateTaskMessage(body.mode, mode, message);
+    const validationError = validateTaskMessage(body.mode, mode, message, [], projectUrl);
     if (validationError) return sendJson(res, 400, { error: validationError });
 
     const flow = getModeFlow(body.mode, mode, config);
@@ -175,7 +179,7 @@ function createServer({ config, store, syncState }) {
 
     const runId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
-    const prompt = buildCodexPrompt({ mode, message, steps: [step], repairStep: step });
+    const prompt = buildCodexPrompt({ mode, message, steps: [step], repairStep: step, projectUrl });
 
     store.recordAuditLog({
       userId: currentUser.id,
@@ -260,7 +264,7 @@ function createServer({ config, store, syncState }) {
   return http.createServer(router);
 }
 
-async function executeCodexBatch({ req, res, store, runId, config, mode, message, flow, items, aiTest, startEvent }) {
+async function executeCodexBatch({ req, res, store, runId, config, mode, message, flow, items, aiTest, projectUrl, startEvent }) {
   writeNdjson(res, startEvent);
   const results = await Promise.all(
     items.map(item =>
@@ -274,7 +278,8 @@ async function executeCodexBatch({ req, res, store, runId, config, mode, message
           steps: flow,
           item,
           totalItems: items.length,
-          aiTest
+          aiTest,
+          projectUrl
         }),
         startEvent: null,
         item,
@@ -328,7 +333,7 @@ function normalizeStepId(stepId, index) {
   return /^[a-z0-9][a-z0-9_-]*$/i.test(clean) ? clean : `step-${index}`;
 }
 
-function buildCodexPrompt({ mode, message, steps, repairStep, item, totalItems, aiTest }) {
+function buildCodexPrompt({ mode, message, steps, repairStep, item, totalItems, aiTest, projectUrl }) {
   const stepList = steps.map(step => `- ${step.id}: ${step.label}`).join("\n");
   const markerGuide = [
     "你必须按下面的 skill 流程执行，并只用机器可解析标记汇报步骤状态：",
@@ -348,14 +353,22 @@ function buildCodexPrompt({ mode, message, steps, repairStep, item, totalItems, 
   const aiTestGuide = aiTest
     ? "\n这是 AI 测试创建：创建项目空间、迭代、文件夹、任务等所有会显示项目名的位置，项目名称都必须追加 `（AI测试）`；如果原信息单项目名已带该后缀，不要重复追加。"
     : "";
-  return `${mode.promptPrefix}\n\n${itemGuide}${aiTestGuide}\n\n${message}\n\n${markerGuide}${repairGuide}`;
+  const projectUrlGuide = projectUrl
+    ? `\n用户单独提供的项目地址：${projectUrl}\n如果这是项目变更任务，必须优先使用这个地址定位项目。`
+    : "";
+  return `${mode.promptPrefix}\n\n${itemGuide}${aiTestGuide}${projectUrlGuide}\n\n${message}\n\n${markerGuide}${repairGuide}`;
 }
 
-function validateTaskMessage(modeKey, mode, message, items = []) {
-  if (modeKey === "change" && !hasProjectUrl(message) && !hasChangeFields(message, items)) {
+function validateTaskMessage(modeKey, mode, message, items = [], projectUrl = "") {
+  if (modeKey === "change" && !hasProjectUrl(`${message}\n${projectUrl}`) && !hasChangeFields(message, items)) {
     return "项目变更请粘贴项目地址，或提供项目名称、原项目编号和新项目编号";
   }
   return "";
+}
+
+function normalizeProjectUrl(value) {
+  const text = String(value || "").trim();
+  return hasProjectUrl(text) ? text : "";
 }
 
 function hasProjectUrl(message) {

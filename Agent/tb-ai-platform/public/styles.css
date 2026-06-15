@@ -388,6 +388,7 @@ h2 {
 }
 
 .token-input,
+.url-input,
 textarea {
   width: 100%;
   border: 1px solid var(--line-strong);
@@ -402,6 +403,11 @@ textarea {
   padding: 0 13px;
 }
 
+.url-input {
+  height: 42px;
+  padding: 0 13px;
+}
+
 textarea {
   min-height: 142px;
   resize: vertical;
@@ -410,6 +416,7 @@ textarea {
 }
 
 .token-input:focus,
+.url-input:focus,
 textarea:focus {
   border-color: rgba(37, 99, 235, 0.72);
   box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);

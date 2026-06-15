@@ -36,6 +36,7 @@ const el = {
   logoutBtn: document.querySelector("#logoutBtn"),
   modeTitle: document.querySelector("#modeTitle"),
   message: document.querySelector("#messageInput"),
+  projectUrl: document.querySelector("#projectUrlInput"),
   pulse: document.querySelector(".pulse"),
   runBtn: document.querySelector("#runBtn"),
   aiTestBtn: document.querySelector("#aiTestBtn"),
@@ -309,12 +310,13 @@ async function runTask(options = {}) {
   if (state.running) return;
   const aiTest = Boolean(options.aiTest);
   const message = el.message.value.trim();
+  const projectUrl = el.projectUrl.value.trim();
   if (!message) {
     el.runState.textContent = "请先填写任务内容";
     el.message.focus();
     return;
   }
-  const validationError = validateMessage(message);
+  const validationError = validateMessage(message, projectUrl);
   if (validationError) {
     el.runState.textContent = validationError;
     el.message.focus();
@@ -331,7 +333,7 @@ async function runTask(options = {}) {
     const res = await fetch("/api/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: state.mode, message, aiTest })
+      body: JSON.stringify({ mode: state.mode, message, projectUrl, aiTest })
     });
     await consumeNdjson(res);
   } catch (err) {
@@ -344,12 +346,13 @@ async function runTask(options = {}) {
 async function repairStep(stepId) {
   if (state.running) return;
   const message = el.message.value.trim();
+  const projectUrl = el.projectUrl.value.trim();
   if (!message) {
     el.runState.textContent = "请保留原任务内容后再修复";
     el.message.focus();
     return;
   }
-  const validationError = validateMessage(message);
+  const validationError = validateMessage(message, projectUrl);
   if (validationError) {
     el.runState.textContent = validationError;
     el.message.focus();
@@ -362,7 +365,7 @@ async function repairStep(stepId) {
     const res = await fetch("/api/repair", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: state.mode, message, stepId })
+      body: JSON.stringify({ mode: state.mode, message, projectUrl, stepId })
     });
     await consumeNdjson(res);
   } catch (err) {
@@ -436,8 +439,9 @@ function cssEscape(value) {
   return value.replace(/"/g, '\\"');
 }
 
-function validateMessage(message) {
-  if (state.mode === "change" && !/https?:\/\/[^\s，。；;]+/i.test(message) && !hasChangeFields(message)) {
+function validateMessage(message, projectUrl = "") {
+  const urlText = `${message}\n${projectUrl}`;
+  if (state.mode === "change" && !/https?:\/\/[^\s，。；;]+/i.test(urlText) && !hasChangeFields(message)) {
     return "项目变更请粘贴项目地址，或提供项目名称、原项目编号和新项目编号";
   }
   return "";
@@ -486,6 +490,7 @@ el.runBtn.addEventListener("click", runTask);
 el.aiTestBtn.addEventListener("click", () => runTask({ aiTest: true }));
 el.clearBtn.addEventListener("click", () => {
   el.message.value = "";
+  el.projectUrl.value = "";
   resetFlowStatuses();
   renderFlowSteps();
   el.runId.textContent = "未开始";
