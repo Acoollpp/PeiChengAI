@@ -16,7 +16,9 @@ from app.models import (
     Department,
     Feedback,
     FeedbackScreenshot,
+    ReviewFocusDirection,
     ReviewTask,
+    ReviewTaskRequirementFile,
     SkillPackage,
     User,
     UserCreate,
@@ -280,6 +282,53 @@ def test_admin_update_user_department_is_visible_in_read_and_list(
     )
     assert listed_user["department_id"] == str(department.id)
     assert listed_user["department_name"] == "质量部门"
+
+
+def test_admin_update_user_omitted_department_keeps_existing_department(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    department = _create_department(db, "保留部门")
+    user = create_random_user(db)
+    user.department_id = department.id
+    db.add(user)
+    db.commit()
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/users/{user.id}",
+        headers=superuser_token_headers,
+        json={"full_name": "仅更新名称"},
+    )
+
+    assert response.status_code == 200
+    updated_user = response.json()
+    assert updated_user["full_name"] == "仅更新名称"
+    assert updated_user["department_id"] == str(department.id)
+    assert updated_user["department_name"] == "保留部门"
+
+
+def test_admin_update_user_null_department_clears_department(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    department = _create_department(db, "待清空部门")
+    user = create_random_user(db)
+    user.department_id = department.id
+    db.add(user)
+    db.commit()
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/users/{user.id}",
+        headers=superuser_token_headers,
+        json={"department_id": None},
+    )
+
+    assert response.status_code == 200
+    updated_user = response.json()
+    assert updated_user["department_id"] is None
+    assert updated_user["department_name"] is None
+    db.expire_all()
+    saved_user = db.get(User, user.id)
+    assert saved_user
+    assert saved_user.department_id is None
 
 
 def test_create_user_with_missing_department_returns_400(
@@ -671,6 +720,73 @@ def test_delete_user_with_feedback(
     assert r.json()["message"] == "User deleted successfully"
     assert db.exec(select(User).where(User.id == user_id)).first() is None
     assert db.exec(select(Feedback).where(Feedback.user_id == user_id)).first() is None
+
+
+def test_delete_user_nulls_created_review_focus_direction_user(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    user = create_random_user(db)
+    user_id = user.id
+    direction = ReviewFocusDirection(
+        title="删除用户时保留方向",
+        content="方向创建人应置空",
+        created_by_user_id=user_id,
+    )
+    db.add(direction)
+    db.commit()
+    direction_id = direction.id
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/users/{user_id}",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "User deleted successfully"
+    db.expire_all()
+    saved_direction = db.get(ReviewFocusDirection, direction_id)
+    assert saved_direction
+    assert saved_direction.created_by_user_id is None
+
+
+def test_delete_user_removes_review_task_requirement_files(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    user = create_random_user(db)
+    user_id = user.id
+    task = ReviewTask(
+        user_id=user_id,
+        svn_url="svn://example.com/project",
+        old_revision="10",
+        new_revision="11",
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    requirement_file = ReviewTaskRequirementFile(
+        task_id=task.id,
+        file_name="requirement.md",
+        file_path="/tmp/requirement.md",
+        content_type="text/markdown",
+        file_size=128,
+        sha256="a" * 64,
+    )
+    db.add(requirement_file)
+    db.commit()
+    task_id = task.id
+    requirement_file_id = requirement_file.id
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/users/{user_id}",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "User deleted successfully"
+    db.expire_all()
+    assert db.get(User, user_id) is None
+    assert db.get(ReviewTask, task_id) is None
+    assert db.get(ReviewTaskRequirementFile, requirement_file_id) is None
 
 
 def test_delete_user_not_found(

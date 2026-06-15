@@ -19,7 +19,9 @@ from app.models import (
     Feedback,
     Item,
     Message,
+    ReviewFocusDirection,
     ReviewTask,
+    ReviewTaskRequirementFile,
     SkillPackage,
     User,
     UserApiKey,
@@ -115,8 +117,22 @@ def _delete_user_with_related_data(*, session: SessionDep, user: User) -> None:
         .values(created_by_user_id=None)
     )
     session.exec(client_release_statement)
+    focus_direction_statement = (
+        update(ReviewFocusDirection)
+        .where(col(ReviewFocusDirection.created_by_user_id) == user.id)
+        .values(created_by_user_id=None)
+    )
+    session.exec(focus_direction_statement)
     feedback_statement = delete(Feedback).where(col(Feedback.user_id) == user.id)
     session.exec(feedback_statement)
+    review_task_ids = session.exec(
+        select(ReviewTask.id).where(col(ReviewTask.user_id) == user.id)
+    ).all()
+    if review_task_ids:
+        requirement_file_statement = delete(ReviewTaskRequirementFile).where(
+            col(ReviewTaskRequirementFile.task_id).in_(review_task_ids)
+        )
+        session.exec(requirement_file_statement)
     review_task_statement = delete(ReviewTask).where(col(ReviewTask.user_id) == user.id)
     session.exec(review_task_statement)
     credential_statement = delete(UserSvnCredential).where(
