@@ -491,6 +491,92 @@ def test_upload_review_task_requirement_file_stores_metadata_and_record(
     assert Path(requirement_file.file_path).is_file()
 
 
+def test_upload_review_task_requirement_file_keeps_duplicate_names_separate(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    first_content = b"first requirement rows"
+    second_content = b"second requirement rows"
+
+    first_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/requirement-file",
+        headers=normal_user_token_headers,
+        files={"upload": ("需求表.xls", first_content, "application/vnd.ms-excel")},
+    )
+    second_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/requirement-file",
+        headers=normal_user_token_headers,
+        files={"upload": ("需求表.xls", second_content, "application/vnd.ms-excel")},
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    requirement_files = db.exec(
+        select(ReviewTaskRequirementFile)
+        .where(ReviewTaskRequirementFile.task_id == UUID(task["id"]))
+    ).all()
+    assert len(requirement_files) == 2
+    requirement_file_by_hash = {file.sha256: file for file in requirement_files}
+    first_file = requirement_file_by_hash[hashlib.sha256(first_content).hexdigest()]
+    second_file = requirement_file_by_hash[hashlib.sha256(second_content).hexdigest()]
+    assert first_file.file_path != second_file.file_path
+    assert Path(first_file.file_path).read_bytes() == first_content
+    assert Path(second_file.file_path).read_bytes() == second_content
+
+    db.expire_all()
+    updated_task = db.get(ReviewTask, UUID(task["id"]))
+    assert updated_task is not None
+    assert updated_task.requirement_file_sha256 == hashlib.sha256(
+        second_content
+    ).hexdigest()
+    assert updated_task.requirement_file_size == len(second_content)
+
+
+def test_upload_review_task_requirement_file_sanitizes_unsafe_and_long_name(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    long_name = "../secret/\x00bad\nname" + ("很长" * 160) + " .xlsx"
+    content = b"requirement rows"
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/requirement-file",
+        headers=normal_user_token_headers,
+        files={
+            "upload": (
+                long_name,
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    requirement_file = db.exec(
+        select(ReviewTaskRequirementFile).where(
+            ReviewTaskRequirementFile.task_id == UUID(task["id"])
+        )
+    ).one()
+    stored_name = requirement_file.file_name
+    assert "/" not in stored_name
+    assert "\\" not in stored_name
+    assert "\x00" not in stored_name
+    assert not any(ord(char) < 32 or ord(char) == 127 for char in stored_name)
+    assert len(stored_name.encode("utf-8")) <= 255
+    assert stored_name.endswith(".xlsx")
+    assert Path(requirement_file.file_path).is_file()
+
+
 def test_upload_review_task_requirement_file_rejects_unsupported_extension(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
