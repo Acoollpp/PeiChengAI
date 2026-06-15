@@ -4,7 +4,6 @@ const path = require("path");
 
 const fallbackFlows = {
   create: [
-    "获取创建源数据",
     "提取项目字段",
     "判断项目集、模板和项目类别",
     "创建项目空间",
@@ -22,7 +21,7 @@ const fallbackFlows = {
   ],
   change: [
     "提取项目变更单关键信息",
-    "搜索并定位已存在项目",
+    "从用户提供的项目地址定位项目",
     "读取项目当前概览字段",
     "解析新项目编号版本号",
     "确认 PCB 沿用或变更",
@@ -36,6 +35,11 @@ const fallbackFlows = {
 const modeSections = {
   create: ["必须自动执行的步骤", "审批到项目一键流程"],
   change: ["项目变更主流程"]
+};
+
+const skipPatterns = {
+  create: [/获取创建源数据/, /审批.*查找/, /截图.*字段/, /回查审批详情/],
+  change: [/截图/, /审批.*查找/]
 };
 
 function defaultSkillRoot() {
@@ -52,8 +56,9 @@ function buildModeFlow(modeKey, mode, options = {}) {
     const parsed = text ? parseSkillSteps(text, { sectionNames: modeSections[modeKey] || [] }) : [];
     const sourceSteps = parsed.length ? parsed : fallbackFlows[modeKey] || [];
     sourceSteps.forEach((label, index) => {
-      const cleanLabel = normalizeLabel(label);
+      const cleanLabel = normalizeLabel(adaptStepLabel(modeKey, label));
       if (!cleanLabel) return;
+      if (shouldSkipStep(modeKey, cleanLabel)) return;
       steps.push({
         id: makeStepId(skillName, cleanLabel, index + 1),
         label: cleanLabel,
@@ -65,6 +70,18 @@ function buildModeFlow(modeKey, mode, options = {}) {
   }
 
   return dedupeSteps(steps);
+}
+
+function adaptStepLabel(modeKey, label) {
+  const value = String(label || "");
+  if (modeKey === "change" && /搜索.*项目|项目名称.*搜索|定位已存在项目/.test(value)) {
+    return "从用户提供的项目地址定位项目";
+  }
+  return value;
+}
+
+function shouldSkipStep(modeKey, label) {
+  return (skipPatterns[modeKey] || []).some(pattern => pattern.test(label));
 }
 
 function readSkillText(skillRootDir, skillName) {

@@ -22,8 +22,9 @@ const modes = {
     title: "创建项目变更迭代",
     skill: "通用-钉钉项目变更",
     skills: ["通用-钉钉项目变更"],
+    requireProjectUrl: true,
     promptPrefix:
-      "你正在通过网站后台执行钉钉 TB 项目变更任务。必须使用 skill `通用-钉钉项目变更`；如果需要先查审批信息，也要使用 `通用-审批信息查找`。不要泄露任何 AppSecret、accessToken 或完整敏感凭证。用户需求如下："
+      "你正在通过网站后台执行钉钉 TB 项目变更任务。用户会直接粘贴项目变更信息单，并必须提供对应的 Teambition/钉钉项目地址；不要只按项目名搜索项目。必须使用 skill `通用-钉钉项目变更`。不要泄露任何 AppSecret、accessToken 或完整敏感凭证。用户需求如下："
   }
 };
 
@@ -92,6 +93,8 @@ function createServer({ config, store, syncState }) {
     const message = String(body.message || "").trim();
     if (!mode) return sendJson(res, 400, { error: "任务类型无效" });
     if (!message) return sendJson(res, 400, { error: "请输入任务内容" });
+    const validationError = validateTaskMessage(body.mode, mode, message);
+    if (validationError) return sendJson(res, 400, { error: validationError });
 
     const runId = crypto.randomUUID();
     const flow = getModeFlow(body.mode, mode, config);
@@ -138,6 +141,8 @@ function createServer({ config, store, syncState }) {
     const message = String(body.message || "").trim();
     if (!mode) return sendJson(res, 400, { error: "任务类型无效" });
     if (!message) return sendJson(res, 400, { error: "请输入任务内容" });
+    const validationError = validateTaskMessage(body.mode, mode, message);
+    if (validationError) return sendJson(res, 400, { error: validationError });
 
     const flow = getModeFlow(body.mode, mode, config);
     const step = flow.find(item => item.id === body.stepId);
@@ -252,6 +257,17 @@ function buildCodexPrompt({ mode, message, steps, repairStep }) {
     ? `\n这是单步修复任务，只修复当前步骤 ${repairStep.id}（${repairStep.label}）。不要重复执行其他已完成步骤。`
     : "";
   return `${mode.promptPrefix}\n\n${message}\n\n${markerGuide}${repairGuide}`;
+}
+
+function validateTaskMessage(modeKey, mode, message) {
+  if (modeKey === "change" && mode.requireProjectUrl && !hasProjectUrl(message)) {
+    return "项目变更必须粘贴对应的项目地址，避免只按项目名查找失败";
+  }
+  return "";
+}
+
+function hasProjectUrl(message) {
+  return /https?:\/\/[^\s，。；;]+/i.test(String(message || ""));
 }
 
 function executeCodexStream({ req, res, config, prompt, startEvent }) {

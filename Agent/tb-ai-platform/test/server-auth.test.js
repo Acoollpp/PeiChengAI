@@ -159,6 +159,27 @@ function request(port, { method = "GET", path = "/", headers = {}, body = "" }) 
     assert.match(repairFlow.body, /"repairStepId":"step-2"/);
     assert.match(repairFlow.body, /"type":"step"/);
     assert.doesNotMatch(repairFlow.body, /RAW COMMAND SHOULD STAY SERVER SIDE/);
+
+    const changeWithoutUrl = await request(port, {
+      method: "POST",
+      path: "/api/run",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ mode: "change", message: "项目名称 60411，创建变更迭代" })
+    });
+    assert.strictEqual(changeWithoutUrl.statusCode, 400);
+    assert.match(changeWithoutUrl.body, /项目变更必须粘贴对应的项目地址/);
+
+    const changeWithUrl = await request(port, {
+      method: "POST",
+      path: "/api/run",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        mode: "change",
+        message: "项目地址 https://www.teambition.com/project/abc/tasks/view/def，创建变更迭代"
+      })
+    });
+    assert.strictEqual(changeWithUrl.statusCode, 200);
+    assert.match(changeWithUrl.body, /"type":"start"/);
   } finally {
     await new Promise(resolve => server.close(resolve));
     store.close();

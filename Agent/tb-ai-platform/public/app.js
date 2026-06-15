@@ -12,8 +12,8 @@ const modeTitles = {
 };
 
 const modePlaceholders = {
-  create: "例如：在刘虹谊的审批里查项目启动申请，项目号 60411，确认后创建到本月低压户储项目集。",
-  change: "例如：根据项目变更申请，原项目编号 P15S100A，新的 PLM 编号为 XXX，在原项目内创建变更迭代。"
+  create: "粘贴项目创建信息单，例如项目名称、项目编号、客户、项目工程师、售前/发起人、客户要求日期等。",
+  change: "粘贴项目变更信息单，并附上对应项目地址，例如 https://www.teambition.com/project/xxx/tasks/view/xxx"
 };
 
 const statusText = {
@@ -253,6 +253,12 @@ async function runTask() {
     el.message.focus();
     return;
   }
+  const validationError = validateMessage(message);
+  if (validationError) {
+    el.runState.textContent = validationError;
+    el.message.focus();
+    return;
+  }
 
   resetFlowStatuses();
   renderFlowSteps();
@@ -278,6 +284,12 @@ async function repairStep(stepId) {
   const message = el.message.value.trim();
   if (!message) {
     el.runState.textContent = "请保留原任务内容后再修复";
+    el.message.focus();
+    return;
+  }
+  const validationError = validateMessage(message);
+  if (validationError) {
+    el.runState.textContent = validationError;
     el.message.focus();
     return;
   }
@@ -349,6 +361,13 @@ function handleStreamEvent(event) {
 function cssEscape(value) {
   if (window.CSS?.escape) return CSS.escape(value);
   return value.replace(/"/g, '\\"');
+}
+
+function validateMessage(message) {
+  if (state.mode === "change" && !/https?:\/\/[^\s，。；;]+/i.test(message)) {
+    return "项目变更必须粘贴对应的项目地址";
+  }
+  return "";
 }
 
 document.querySelectorAll(".mode").forEach(btn => {

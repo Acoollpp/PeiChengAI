@@ -11,6 +11,7 @@ assert.match(html, /id="logoutBtn"/);
 assert.match(html, /id="workspace"/);
 assert.match(html, /id="flowSteps"/);
 assert.match(html, /id="flowSummary"/);
+assert.match(html, /项目地址/);
 assert.doesNotMatch(html, /id="output"/);
 assert.doesNotMatch(html, /<pre\b/i);
 
@@ -22,6 +23,7 @@ assert.ok(js.includes('fetch("/api/flows"'));
 assert.ok(js.includes('fetch("/api/repair"'));
 assert.ok(js.includes("renderFlowSteps"));
 assert.ok(js.includes("consumeNdjson"));
+assert.match(js, /项目变更必须粘贴对应的项目地址/);
 assert.doesNotMatch(js, /Authorization/);
 assert.doesNotMatch(js, /appendOutput/);
 assert.doesNotMatch(js, /event\.type === "stdout"/);
