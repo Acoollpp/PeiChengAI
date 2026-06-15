@@ -227,6 +227,52 @@ describe('useTaskQueue', () => {
     )
   })
 
+  it('新任务完成时把执行结果的 PDF 原文件名写入历史任务', async () => {
+    const deferred = createDeferred<ExecuteTaskResult>()
+    const onTaskSuccess = vi.fn()
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)
+
+    const { result } = renderHook(() => useTaskQueue({ executeTask, onTaskSuccess }))
+
+    await act(async () => {
+      await result.current.submitTask(basePayload(7))
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      deferred.resolve({
+        taskId: 'task-7',
+        status: 'success',
+        reportMarkdown: '# report 7',
+        reportPath: '/tmp/r7_r2审查报告_20260615_143000.md',
+        pdfPath: '/tmp/r7_r2审查报告_20260615_143000.pdf',
+        pdfReportName: 'r7_r2审查报告_20260615_143000.pdf'
+      })
+    })
+
+    await waitFor(() =>
+      expect(result.current.historyTasks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'task-7',
+            pdfPath: '/tmp/r7_r2审查报告_20260615_143000.pdf',
+            pdf_report_name: 'r7_r2审查报告_20260615_143000.pdf'
+          })
+        ])
+      )
+    )
+    expect(onTaskSuccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'task-7',
+        pdf_report_name: 'r7_r2审查报告_20260615_143000.pdf'
+      }),
+      expect.objectContaining({
+        pdfReportName: 'r7_r2审查报告_20260615_143000.pdf'
+      })
+    )
+  })
+
   it('进度事件只更新匹配 clientTaskId 的本地任务', async () => {
     const deferreds = [createDeferred<ExecuteTaskResult>(), createDeferred<ExecuteTaskResult>()]
     const executeTask = vi.fn((_: ExecuteTaskRequest) => {

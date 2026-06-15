@@ -190,6 +190,7 @@ export function useTaskQueue({
             id: result.taskId,
             status: result.status,
             report_path: result.reportPath,
+            pdf_report_name: result.pdfReportName ?? latestTask.pdf_report_name,
             reportMarkdown: result.reportMarkdown,
             pdfPath: result.pdfPath,
             progress_message:

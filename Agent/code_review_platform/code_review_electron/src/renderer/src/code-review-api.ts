@@ -61,6 +61,7 @@ export interface ExecuteTaskResult {
   reportMarkdown?: string
   reportPath?: string
   pdfPath?: string
+  pdfReportName?: string
 }
 
 export interface CancelTaskRequest {

@@ -1,4 +1,5 @@
 import { mkdir, readFile } from 'node:fs/promises'
+import { basename } from 'node:path'
 
 import type { ApiClient, CreateTaskRequest, UpdateTaskStatusRequest } from './api-client'
 import { checkEnvironment, type EnvironmentCheckResult } from './environment-checker'
@@ -54,6 +55,7 @@ export interface ExecuteReviewTaskResult {
   reportMarkdown?: string
   reportPath?: string
   pdfPath?: string
+  pdfReportName?: string
 }
 
 export interface TaskAgentApi {
@@ -267,7 +269,8 @@ export const executeReviewTask = async (
       status: 'success',
       reportMarkdown,
       reportPath: workspace.reportPath,
-      pdfPath: pdfResult.pdfPath
+      pdfPath: pdfResult.pdfPath,
+      pdfReportName: basename(pdfResult.pdfPath)
     }
   } catch (error) {
     if (isCancelledError(error) || input.signal?.aborted) {

@@ -277,7 +277,8 @@ describe('TaskPage', () => {
       status: 'success' as const,
       reportMarkdown: '# 本地报告',
       reportPath: '/app/reports/task-local-success.md',
-      pdfPath: '/app/reports/task-local-success.pdf'
+      pdfPath: '/app/reports/task-local-success.pdf',
+      pdfReportName: 'r7_r2审查报告_20260615_143000.pdf'
     }))
     window.codeReview.openPdfReport = vi.fn(async () => ({
       status: 'ready' as const,
@@ -294,7 +295,7 @@ describe('TaskPage', () => {
     expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
       taskId: 'task-local-success',
       localPdfPath: '/app/reports/task-local-success.pdf',
-      pdfReportName: undefined
+      pdfReportName: 'r7_r2审查报告_20260615_143000.pdf'
     })
   })
 
