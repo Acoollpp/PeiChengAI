@@ -16,6 +16,7 @@ assert.match(html, /id="aiTestBtn"/);
 assert.match(html, /id="projectUrlInput"/);
 assert.match(html, /AI测试创建/);
 assert.match(html, /项目地址/);
+assert.doesNotMatch(html, /审批查询/);
 assert.doesNotMatch(html, /id="output"/);
 assert.doesNotMatch(html, /<pre\b/i);
 

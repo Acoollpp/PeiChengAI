@@ -17,7 +17,7 @@ const modes = {
     skill: "通用-钉钉创建项目",
     skills: ["通用-钉钉创建项目"],
     promptPrefix:
-      "你正在通过网站后台执行钉钉 TB 项目创建任务。必须使用 skill `通用-钉钉创建项目`；如果需要先查审批信息，也要使用 `通用-审批信息查找`。不要泄露任何 AppSecret、accessToken 或完整敏感凭证。用户需求如下："
+      "你正在通过网站后台执行钉钉 TB 项目创建任务。用户会直接粘贴项目创建信息单；必须使用 skill `通用-钉钉创建项目`。不要泄露任何 AppSecret、accessToken 或完整敏感凭证。用户需求如下："
   },
   change: {
     title: "创建项目变更迭代",
