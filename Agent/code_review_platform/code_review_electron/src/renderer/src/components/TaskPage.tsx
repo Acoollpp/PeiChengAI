@@ -198,13 +198,13 @@ export function TaskPage({
 
     try {
       const reportMarkdown = await window.codeReview.readTaskReport(task.id)
-      if (!isMountedRef.current) {
+      if (!isMountedRef.current || selectedTaskIdRef.current !== task.id) {
         return
       }
       setMarkdown(reportMarkdown)
       setCurrentReportPath(undefined)
       setActivePdfPath(undefined)
-      setActivePdfReportName(currentPdfReportNameRef.current)
+      setActivePdfReportName(task.pdf_report_name)
     } catch (reportError) {
       if (!isMountedRef.current) {
         return

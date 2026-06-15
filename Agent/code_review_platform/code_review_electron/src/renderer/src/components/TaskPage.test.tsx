@@ -270,6 +270,69 @@ describe('TaskPage', () => {
     expect(await screen.findByText('PDF报告位置：/local/cache/task-history-2.pdf')).toBeInTheDocument()
   })
 
+  it('快速切换历史报告时忽略旧请求返回，避免覆盖当前 PDF 报告名', async () => {
+    const user = userEvent.setup()
+    const reportA = createDeferred<string>()
+    const reportB = createDeferred<string>()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-history-a',
+          svn_url: 'svn://repo/history-a',
+          old_revision: '1',
+          new_revision: '2',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history-a.md',
+          pdf_report_path: '/app/reports/task-history-a.pdf',
+          pdf_report_name: 'A审查报告_20260615_143000.pdf'
+        },
+        {
+          id: 'task-history-b',
+          svn_url: 'svn://repo/history-b',
+          old_revision: '3',
+          new_revision: '4',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history-b.md',
+          pdf_report_path: '/app/reports/task-history-b.pdf',
+          pdf_report_name: 'B审查报告_20260615_143000.pdf'
+        }
+      ],
+      count: 2
+    }))
+    window.codeReview.readTaskReport = vi.fn((taskId: string) => {
+      if (taskId === 'task-history-a') {
+        return reportA.promise
+      }
+
+      return reportB.promise
+    })
+    window.codeReview.openPdfReport = vi.fn(async () => ({
+      status: 'ready' as const,
+      pdfPath: '/local/cache/task-history-b.pdf'
+    }))
+
+    renderReadyTaskPage()
+
+    const historyPanel = await openHistoryTasks(user)
+    const viewButtons = within(historyPanel).getAllByRole('button', { name: '查看报告' })
+    await user.click(viewButtons[0])
+    await user.click(viewButtons[1])
+
+    reportB.resolve('# B 报告')
+    expect(await screen.findByRole('heading', { name: 'B 报告' })).toBeInTheDocument()
+
+    reportA.resolve('# A 报告')
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'A 报告' })).not.toBeInTheDocument())
+    expect(screen.getByRole('heading', { name: 'B 报告' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+
+    expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
+      taskId: 'task-history-b',
+      pdfReportName: 'B审查报告_20260615_143000.pdf'
+    })
+  })
+
   it('点击查看PDF报告时优先打开当前任务本地 PDF', async () => {
     const user = userEvent.setup()
     window.codeReview.executeTask = vi.fn(async () => ({
