@@ -8,41 +8,46 @@
   </head>
   <body>
     <main class="shell">
-      <section class="hero">
-        <div>
+      <section class="hero" aria-label="平台状态">
+        <div class="hero-copy">
           <p class="eyebrow">PACE · Codex 工作台</p>
           <h1>钉钉 TB 项目 AI 平台</h1>
           <p class="subtitle">把项目创建、项目变更和审批查询接到服务器 Codex，统一在网页里发起、跟踪和复查。</p>
         </div>
-        <div class="status-card">
-          <span class="pulse"></span>
-          <div>
-            <strong id="healthText">正在检查服务</strong>
-            <small>后台连接本机 Codex CLI</small>
+        <div class="hero-actions">
+          <div class="status-card">
+            <span class="pulse"></span>
+            <div>
+              <strong id="healthText">正在检查服务</strong>
+              <small>本机 Codex CLI</small>
+            </div>
           </div>
-        </div>
-        <div class="account-card" id="accountCard" hidden>
-          <div>
-            <strong id="accountName">未登录</strong>
-            <small>已使用 CCH key 登录</small>
+          <div class="account-card" id="accountCard" hidden>
+            <div>
+              <strong id="accountName">未登录</strong>
+              <small>CCH key 已认证</small>
+            </div>
+            <button class="ghost compact" id="logoutBtn" type="button">退出</button>
           </div>
-          <button class="ghost compact" id="logoutBtn" type="button">退出</button>
         </div>
       </section>
 
       <section class="panel login-panel" id="loginPanel">
-        <div>
+        <div class="login-copy">
           <div class="section-title">登录</div>
-          <h2>使用 CCH Key 进入</h2>
+          <h2>使用 CCH Key 进入工作台</h2>
+          <p>验证后才会显示任务创建区，key 只用于本次登录，不会保存在浏览器里。</p>
         </div>
-        <label class="input-label" for="loginKeyInput">CCH Key</label>
-        <input id="loginKeyInput" class="token-input" type="password" placeholder="请输入你的 CCH key" autocomplete="current-password" />
-        <div class="actions">
-          <button id="loginBtn" class="primary" type="button">
-            <span>登录</span>
-          </button>
-          <span id="loginState" class="run-state">等待登录</span>
-        </div>
+        <form class="login-form" onsubmit="return false;">
+          <label class="input-label" for="loginKeyInput">CCH Key</label>
+          <input id="loginKeyInput" class="token-input" type="password" placeholder="粘贴你的 CCH key" autocomplete="current-password" />
+          <div class="actions">
+            <button id="loginBtn" class="primary" type="button">
+              <span>登录</span>
+            </button>
+            <span id="loginState" class="run-state" aria-live="polite">等待登录</span>
+          </div>
+        </form>
       </section>
 
       <section class="workspace" id="workspace" hidden>
@@ -85,7 +90,7 @@
             <button id="runBtn" class="primary" type="button">
               <span>启动 Codex</span>
             </button>
-            <span id="runState" class="run-state">等待输入</span>
+            <span id="runState" class="run-state" aria-live="polite">等待输入</span>
           </div>
 
           <div class="output-wrap">
