@@ -77,28 +77,35 @@
         <section class="panel main-panel">
           <div class="toolbar">
             <div>
-              <div class="section-title">对话任务</div>
+              <div class="section-title">流程任务</div>
               <h2 id="modeTitle">创建钉钉 TB 项目</h2>
             </div>
             <button class="ghost" id="clearBtn" type="button">清空</button>
           </div>
 
-          <label class="input-label" for="messageInput">任务内容</label>
-          <textarea id="messageInput" spellcheck="false" placeholder="例如：在刘虹谊的审批里查项目启动申请，项目号 60411，确认后创建到本月低压户储项目集。"></textarea>
+          <div class="workbench-grid">
+            <div class="task-compose">
+              <label class="input-label" for="messageInput">任务内容</label>
+              <textarea id="messageInput" spellcheck="false" placeholder="例如：在刘虹谊的审批里查项目启动申请，项目号 60411，确认后创建到本月低压户储项目集。"></textarea>
 
-          <div class="actions">
-            <button id="runBtn" class="primary" type="button">
-              <span>启动 Codex</span>
-            </button>
-            <span id="runState" class="run-state" aria-live="polite">等待输入</span>
-          </div>
-
-          <div class="output-wrap">
-            <div class="output-head">
-              <span>运行输出</span>
-              <span id="runId">未开始</span>
+              <div class="actions">
+                <button id="runBtn" class="primary" type="button">
+                  <span>启动流程</span>
+                </button>
+                <span id="runState" class="run-state" aria-live="polite">等待输入</span>
+              </div>
             </div>
-            <pre id="output"></pre>
+
+            <div class="flow-board" aria-label="运行流程">
+              <div class="flow-head">
+                <div>
+                  <div class="section-title">流程状态</div>
+                  <strong id="flowSummary">等待流程配置</strong>
+                </div>
+                <span id="runId" class="run-chip">未开始</span>
+              </div>
+              <div id="flowSteps" class="flow-steps" aria-live="polite"></div>
+            </div>
           </div>
         </section>
       </section>

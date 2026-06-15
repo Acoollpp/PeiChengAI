@@ -1,7 +1,9 @@
 const state = {
   mode: "create",
   running: false,
-  user: null
+  user: null,
+  flows: {},
+  stepStatus: new Map()
 };
 
 const modeTitles = {
@@ -12,6 +14,13 @@ const modeTitles = {
 const modePlaceholders = {
   create: "例如：在刘虹谊的审批里查项目启动申请，项目号 60411，确认后创建到本月低压户储项目集。",
   change: "例如：根据项目变更申请，原项目编号 P15S100A，新的 PLM 编号为 XXX，在原项目内创建变更迭代。"
+};
+
+const statusText = {
+  pending: "未执行",
+  running: "执行中",
+  done: "已完成",
+  failed: "需修复"
 };
 
 const el = {
@@ -28,10 +37,11 @@ const el = {
   pulse: document.querySelector(".pulse"),
   runBtn: document.querySelector("#runBtn"),
   clearBtn: document.querySelector("#clearBtn"),
-  output: document.querySelector("#output"),
   runState: document.querySelector("#runState"),
   runId: document.querySelector("#runId"),
-  workspace: document.querySelector("#workspace")
+  workspace: document.querySelector("#workspace"),
+  flowSteps: document.querySelector("#flowSteps"),
+  flowSummary: document.querySelector("#flowSummary")
 };
 
 function setMode(mode) {
@@ -41,6 +51,8 @@ function setMode(mode) {
   });
   el.modeTitle.textContent = modeTitles[mode];
   el.message.placeholder = modePlaceholders[mode];
+  resetFlowStatuses();
+  renderFlowSteps();
 }
 
 function setUser(user) {
@@ -50,20 +62,16 @@ function setUser(user) {
   el.workspace.hidden = !loggedIn;
   el.accountCard.hidden = !loggedIn;
   el.accountName.textContent = user ? user.fullName || `CCH 用户 ${user.cchUserId}` : "未登录";
+  if (loggedIn) loadFlows();
   if (!loggedIn) el.loginKey.focus();
-}
-
-function appendOutput(text, kind = "stdout") {
-  const prefix = kind === "stderr" ? "\n[系统]\n" : "";
-  el.output.textContent += prefix + text;
-  el.output.scrollTop = el.output.scrollHeight;
 }
 
 function setRunning(running) {
   state.running = running;
   el.runBtn.disabled = running;
-  el.runBtn.querySelector("span").textContent = running ? "运行中" : "启动 Codex";
-  el.runState.textContent = running ? "Codex 正在处理" : "等待输入";
+  el.runBtn.querySelector("span").textContent = running ? "运行中" : "启动流程";
+  el.runState.textContent = running ? "Codex 正在按 skill 流程处理" : "等待输入";
+  updateRepairButtons();
 }
 
 async function checkHealth() {
@@ -86,6 +94,19 @@ async function checkSession() {
     setUser(data.user);
   } catch {
     setUser(null);
+  }
+}
+
+async function loadFlows() {
+  try {
+    const res = await fetch("/api/flows");
+    if (res.status === 401) return setUser(null);
+    if (!res.ok) throw new Error("流程配置读取失败");
+    state.flows = await res.json();
+    resetFlowStatuses();
+    renderFlowSteps();
+  } catch (err) {
+    el.flowSummary.textContent = err.message;
   }
 }
 
@@ -120,9 +141,108 @@ async function login() {
 async function logout() {
   await fetch("/api/logout", { method: "POST" }).catch(() => {});
   setUser(null);
-  el.output.textContent = "";
+  state.flows = {};
+  state.stepStatus.clear();
+  el.flowSteps.innerHTML = "";
+  el.flowSummary.textContent = "等待登录";
   el.runId.textContent = "未开始";
   el.runState.textContent = "等待输入";
+}
+
+function resetFlowStatuses() {
+  state.stepStatus.clear();
+  getCurrentSteps().forEach(step => state.stepStatus.set(step.id, "pending"));
+}
+
+function getCurrentSteps() {
+  return state.flows[state.mode]?.steps || [];
+}
+
+function renderFlowSteps() {
+  const steps = getCurrentSteps();
+  el.flowSteps.innerHTML = "";
+  if (!steps.length) {
+    el.flowSummary.textContent = "等待加载 skill 流程";
+    return;
+  }
+
+  for (const step of steps) {
+    const status = state.stepStatus.get(step.id) || "pending";
+    const row = document.createElement("article");
+    row.className = `flow-step ${status}`;
+    row.dataset.stepId = step.id;
+
+    const light = document.createElement("span");
+    light.className = `step-light step-signal ${status}`;
+    light.setAttribute("aria-hidden", "true");
+
+    const index = document.createElement("span");
+    index.className = "step-index";
+    index.textContent = String(step.order || el.flowSteps.children.length + 1).padStart(2, "0");
+
+    const content = document.createElement("div");
+    content.className = "step-copy";
+    const title = document.createElement("strong");
+    title.textContent = step.label;
+    const meta = document.createElement("small");
+    meta.textContent = `${step.skill} · ${statusText[status] || statusText.pending}`;
+    content.append(title, meta);
+
+    const badge = document.createElement("span");
+    badge.className = "step-badge";
+    badge.textContent = statusText[status] || statusText.pending;
+
+    const repair = document.createElement("button");
+    repair.className = "repair-step repair-btn";
+    repair.type = "button";
+    repair.textContent = "修复";
+    repair.dataset.stepId = step.id;
+    repair.hidden = !step.repairable;
+    repair.disabled = state.running || status === "done";
+    repair.addEventListener("click", () => repairStep(step.id));
+
+    row.append(light, index, content, badge, repair);
+    el.flowSteps.append(row);
+  }
+
+  updateFlowSummary();
+}
+
+function updateStep(stepId, status) {
+  if (!state.stepStatus.has(stepId)) return;
+  state.stepStatus.set(stepId, status);
+  const row = el.flowSteps.querySelector(`[data-step-id="${cssEscape(stepId)}"]`);
+  if (!row) return renderFlowSteps();
+  row.className = `flow-step ${status}`;
+  const light = row.querySelector(".step-light");
+  light.className = `step-light step-signal ${status}`;
+  const step = getCurrentSteps().find(item => item.id === stepId);
+  row.querySelector("small").textContent = `${step.skill} · ${statusText[status] || statusText.pending}`;
+  row.querySelector(".step-badge").textContent = statusText[status] || statusText.pending;
+  row.querySelector(".repair-step").disabled = state.running || status === "done";
+  updateFlowSummary();
+}
+
+function updateFlowSummary() {
+  const steps = getCurrentSteps();
+  const done = steps.filter(step => state.stepStatus.get(step.id) === "done").length;
+  const failed = steps.filter(step => state.stepStatus.get(step.id) === "failed").length;
+  const running = steps.some(step => state.stepStatus.get(step.id) === "running");
+  if (!steps.length) return;
+  if (running) {
+    el.flowSummary.textContent = `正在执行 ${done}/${steps.length}`;
+  } else if (failed) {
+    el.flowSummary.textContent = `${failed} 个步骤需要修复`;
+  } else {
+    el.flowSummary.textContent = `已完成 ${done}/${steps.length}`;
+  }
+}
+
+function updateRepairButtons() {
+  el.flowSteps.querySelectorAll(".repair-step").forEach(btn => {
+    const status = state.stepStatus.get(btn.dataset.stepId);
+    btn.disabled = state.running || status === "done";
+  });
 }
 
 async function runTask() {
@@ -134,60 +254,101 @@ async function runTask() {
     return;
   }
 
-  el.output.textContent = "";
+  resetFlowStatuses();
+  renderFlowSteps();
   el.runId.textContent = "准备启动";
   setRunning(true);
 
   try {
     const res = await fetch("/api/run", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: state.mode, message })
     });
-
-    if (res.status === 401) {
-      setUser(null);
-      throw new Error("登录已失效，请重新登录");
-    }
-    if (!res.ok || !res.body) {
-      const data = await res.json().catch(() => ({ error: "请求失败" }));
-      throw new Error(data.error || `请求失败：${res.status}`);
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        const event = JSON.parse(line);
-        if (event.type === "start") {
-          el.runId.textContent = event.runId;
-          appendOutput(`任务已启动：${event.title}\n\n`);
-        } else if (event.type === "stdout" || event.type === "stderr") {
-          appendOutput(event.data, event.type);
-        } else if (event.type === "error") {
-          appendOutput(`\n错误：${event.error}\n`, "stderr");
-        } else if (event.type === "done") {
-          appendOutput(`\n\n任务结束，退出码：${event.code}\n`);
-          el.runState.textContent = event.code === 0 ? "处理完成" : "处理异常";
-        }
-      }
-    }
+    await consumeNdjson(res);
   } catch (err) {
-    appendOutput(`错误：${err.message}\n`, "stderr");
-    el.runState.textContent = "请求失败";
+    el.runState.textContent = err.message;
   } finally {
     setRunning(false);
   }
+}
+
+async function repairStep(stepId) {
+  if (state.running) return;
+  const message = el.message.value.trim();
+  if (!message) {
+    el.runState.textContent = "请保留原任务内容后再修复";
+    el.message.focus();
+    return;
+  }
+
+  updateStep(stepId, "running");
+  setRunning(true);
+  try {
+    const res = await fetch("/api/repair", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: state.mode, message, stepId })
+    });
+    await consumeNdjson(res);
+  } catch (err) {
+    updateStep(stepId, "failed");
+    el.runState.textContent = err.message;
+  } finally {
+    setRunning(false);
+  }
+}
+
+async function consumeNdjson(res) {
+  if (res.status === 401) {
+    setUser(null);
+    throw new Error("登录已失效，请重新登录");
+  }
+  if (!res.ok || !res.body) {
+    const data = await res.json().catch(() => ({ error: "请求失败" }));
+    throw new Error(data.error || `请求失败：${res.status}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      handleStreamEvent(JSON.parse(line));
+    }
+  }
+}
+
+function handleStreamEvent(event) {
+  if (event.type === "start") {
+    el.runId.textContent = event.runId;
+    if (event.steps?.length === 1 && event.repairStepId) updateStep(event.repairStepId, "running");
+  } else if (event.type === "step") {
+    updateStep(event.stepId, event.status);
+  } else if (event.type === "log") {
+    el.runState.textContent = event.message;
+  } else if (event.type === "error") {
+    el.runState.textContent = event.error;
+  } else if (event.type === "done") {
+    for (const stepId of event.failedSteps || []) updateStep(stepId, "failed");
+    for (const stepId of event.missingSteps || []) {
+      if (state.stepStatus.get(stepId) !== "done") updateStep(stepId, "failed");
+    }
+    el.runState.textContent = event.code === 0 ? "流程结束" : "流程异常";
+    updateFlowSummary();
+  }
+}
+
+function cssEscape(value) {
+  if (window.CSS?.escape) return CSS.escape(value);
+  return value.replace(/"/g, '\\"');
 }
 
 document.querySelectorAll(".mode").forEach(btn => {
@@ -202,7 +363,8 @@ el.loginKey.addEventListener("keydown", event => {
 el.runBtn.addEventListener("click", runTask);
 el.clearBtn.addEventListener("click", () => {
   el.message.value = "";
-  el.output.textContent = "";
+  resetFlowStatuses();
+  renderFlowSteps();
   el.runId.textContent = "未开始";
   el.runState.textContent = "等待输入";
 });

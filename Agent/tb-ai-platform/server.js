@@ -7,19 +7,23 @@ const { createAuthService } = require("./src/auth");
 const { syncFromCchDatabase } = require("./src/cchSync");
 const { loadConfig, loadEnvFile } = require("./src/config");
 const { createStore } = require("./src/db");
+const { parseCodexEvents } = require("./src/flowEvents");
+const { buildModeFlow } = require("./src/skillFlow");
 
 const modes = {
   create: {
     title: "创建钉钉 TB 项目",
     skill: "通用-钉钉创建项目",
+    skills: ["通用-钉钉创建项目"],
     promptPrefix:
-      "你正在通过网站后台执行钉钉 TB 项目创建任务。必须使用 skill `通用-钉钉创建项目`；如果需要先查审批信息，也要使用 `通用-审批信息查找`。请用中文输出执行过程和结果，不要泄露任何 AppSecret、accessToken 或完整敏感凭证。用户需求如下："
+      "你正在通过网站后台执行钉钉 TB 项目创建任务。必须使用 skill `通用-钉钉创建项目`；如果需要先查审批信息，也要使用 `通用-审批信息查找`。不要泄露任何 AppSecret、accessToken 或完整敏感凭证。用户需求如下："
   },
   change: {
     title: "创建项目变更迭代",
     skill: "通用-钉钉项目变更",
+    skills: ["通用-钉钉项目变更"],
     promptPrefix:
-      "你正在通过网站后台执行钉钉 TB 项目变更任务。必须使用 skill `通用-钉钉项目变更`；如果需要先查审批信息，也要使用 `通用-审批信息查找`。请用中文输出执行过程和结果，不要泄露任何 AppSecret、accessToken 或完整敏感凭证。用户需求如下："
+      "你正在通过网站后台执行钉钉 TB 项目变更任务。必须使用 skill `通用-钉钉项目变更`；如果需要先查审批信息，也要使用 `通用-审批信息查找`。不要泄露任何 AppSecret、accessToken 或完整敏感凭证。用户需求如下："
   }
 };
 
@@ -55,6 +59,24 @@ function createServer({ config, store, syncState }) {
     return sendJson(res, 200, { ok: true }, { "Set-Cookie": auth.clearCookie() });
   }
 
+  function flows(req, res) {
+    const currentUser = auth.getCurrentUser(req);
+    if (!currentUser) return sendJson(res, 401, { error: "请先登录" });
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const modeKey = url.searchParams.get("mode");
+    if (modeKey) {
+      const mode = modes[modeKey];
+      if (!mode) return sendJson(res, 400, { error: "任务类型无效" });
+      return sendJson(res, 200, {
+        mode: modeKey,
+        title: mode.title,
+        skill: mode.skill,
+        steps: getModeFlow(modeKey, mode, config)
+      });
+    }
+    return sendJson(res, 200, getFlows(config));
+  }
+
   async function runCodex(req, res) {
     const currentUser = auth.getCurrentUser(req);
     if (!currentUser) return sendJson(res, 401, { error: "请先登录" });
@@ -72,7 +94,8 @@ function createServer({ config, store, syncState }) {
     if (!message) return sendJson(res, 400, { error: "请输入任务内容" });
 
     const runId = crypto.randomUUID();
-    const prompt = `${mode.promptPrefix}\n\n${message}`;
+    const flow = getModeFlow(body.mode, mode, config);
+    const prompt = buildCodexPrompt({ mode, message, steps: flow });
     const startedAt = new Date().toISOString();
 
     store.recordAuditLog({
@@ -91,48 +114,74 @@ function createServer({ config, store, syncState }) {
       "Cache-Control": "no-cache, no-transform",
       "X-Accel-Buffering": "no"
     });
-    res.write(JSON.stringify({ type: "start", runId, mode: body.mode, title: mode.title, startedAt }) + "\n");
+    executeCodexStream({
+      req,
+      res,
+      config,
+      prompt,
+      startEvent: { type: "start", runId, mode: body.mode, title: mode.title, startedAt, steps: flow }
+    });
+  }
 
-    const args = [
-      "exec",
-      "--skip-git-repo-check",
-      "--dangerously-bypass-approvals-and-sandbox",
-      "-C",
-      config.workspaceDir,
-      "-"
-    ];
-    const child = spawn(config.codexBin, args, {
-      cwd: config.workspaceDir,
-      env: {
-        ...process.env,
-        LANG: "C.UTF-8",
-        LC_ALL: "C.UTF-8"
-      },
-      stdio: ["pipe", "pipe", "pipe"]
+  async function repairStep(req, res) {
+    const currentUser = auth.getCurrentUser(req);
+    if (!currentUser) return sendJson(res, 401, { error: "请先登录" });
+
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message });
+    }
+
+    const mode = modes[body.mode];
+    const message = String(body.message || "").trim();
+    if (!mode) return sendJson(res, 400, { error: "任务类型无效" });
+    if (!message) return sendJson(res, 400, { error: "请输入任务内容" });
+
+    const flow = getModeFlow(body.mode, mode, config);
+    const step = flow.find(item => item.id === body.stepId);
+    if (!step) return sendJson(res, 400, { error: "流程步骤无效" });
+    if (!step.repairable) return sendJson(res, 400, { error: "这个步骤不支持自动修复" });
+
+    const runId = crypto.randomUUID();
+    const startedAt = new Date().toISOString();
+    const prompt = buildCodexPrompt({ mode, message, steps: [step], repairStep: step });
+
+    store.recordAuditLog({
+      userId: currentUser.id,
+      action: "repair_codex_step",
+      mode: body.mode,
+      runId,
+      metadata: {
+        title: mode.title,
+        stepId: step.id,
+        stepLabel: step.label,
+        messageLength: message.length
+      }
     });
 
-    child.stdin.end(prompt);
-
-    child.stdout.on("data", chunk => {
-      res.write(JSON.stringify({ type: "stdout", data: chunk.toString("utf8") }) + "\n");
+    res.writeHead(200, {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no"
     });
 
-    child.stderr.on("data", chunk => {
-      res.write(JSON.stringify({ type: "stderr", data: chunk.toString("utf8") }) + "\n");
-    });
-
-    child.on("error", err => {
-      res.write(JSON.stringify({ type: "error", error: err.message }) + "\n");
-      res.end();
-    });
-
-    child.on("close", code => {
-      res.write(JSON.stringify({ type: "done", code, finishedAt: new Date().toISOString() }) + "\n");
-      res.end();
-    });
-
-    req.on("close", () => {
-      if (!child.killed) child.kill("SIGTERM");
+    executeCodexStream({
+      req,
+      res,
+      config,
+      prompt,
+      startEvent: {
+        type: "start",
+        runId,
+        mode: body.mode,
+        title: `修复：${step.label}`,
+        startedAt,
+        steps: [step],
+        repair: true,
+        repairStepId: step.id
+      }
     });
   }
 
@@ -150,15 +199,131 @@ function createServer({ config, store, syncState }) {
     }
 
     if (req.method === "GET" && req.url.startsWith("/api/me")) return me(req, res);
+    if (req.method === "GET" && req.url.startsWith("/api/flows")) return flows(req, res);
     if (req.method === "POST" && req.url.startsWith("/api/login")) return login(req, res);
     if (req.method === "POST" && req.url.startsWith("/api/logout")) return logout(req, res);
     if (req.method === "POST" && req.url.startsWith("/api/run")) return runCodex(req, res);
+    if (req.method === "POST" && req.url.startsWith("/api/repair")) return repairStep(req, res);
 
     if (req.method === "GET") return serveStatic(req, res, config.publicDir);
     sendJson(res, 405, { error: "方法不支持" });
   }
 
   return http.createServer(router);
+}
+
+function getFlows(config) {
+  return Object.fromEntries(
+    Object.entries(modes).map(([key, mode]) => [
+      key,
+      {
+        title: mode.title,
+        steps: getModeFlow(key, mode, config)
+      }
+    ])
+  );
+}
+
+function getModeFlow(modeKey, mode, config) {
+  return buildModeFlow(modeKey, mode, config).map((step, index) => ({
+    ...step,
+    id: normalizeStepId(step.id, index + 1),
+    title: step.title || step.label
+  }));
+}
+
+function normalizeStepId(stepId, index) {
+  const clean = String(stepId || "").trim();
+  return /^[a-z0-9][a-z0-9_-]*$/i.test(clean) ? clean : `step-${index}`;
+}
+
+function buildCodexPrompt({ mode, message, steps, repairStep }) {
+  const stepList = steps.map(step => `- ${step.id}: ${step.label}`).join("\n");
+  const markerGuide = [
+    "你必须按下面的 skill 流程执行，并只用机器可解析标记汇报步骤状态：",
+    stepList,
+    "",
+    "每开始一个步骤时输出：[[TB_STEP:<stepId>:running]]",
+    "每完成一个步骤时输出：[[TB_STEP:<stepId>:done]]",
+    "步骤失败或无法继续时输出：[[TB_STEP:<stepId>:failed]]",
+    "不要输出命令行、脚本内容、密钥、token、完整接口响应或 skill 原文。"
+  ].join("\n");
+  const repairGuide = repairStep
+    ? `\n这是单步修复任务，只修复当前步骤 ${repairStep.id}（${repairStep.label}）。不要重复执行其他已完成步骤。`
+    : "";
+  return `${mode.promptPrefix}\n\n${message}\n\n${markerGuide}${repairGuide}`;
+}
+
+function executeCodexStream({ req, res, config, prompt, startEvent }) {
+  const completedSteps = new Set();
+  const failedSteps = new Set();
+  const knownSteps = new Set((startEvent.steps || []).map(step => step.id));
+
+  writeNdjson(res, startEvent);
+
+  const args = [
+    "exec",
+    "--skip-git-repo-check",
+    "--dangerously-bypass-approvals-and-sandbox",
+    "-C",
+    config.workspaceDir,
+    "-"
+  ];
+  const child = spawn(config.codexBin, args, {
+    cwd: config.workspaceDir,
+    env: {
+      ...process.env,
+      LANG: "C.UTF-8",
+      LC_ALL: "C.UTF-8"
+    },
+    stdio: ["pipe", "pipe", "pipe"]
+  });
+
+  child.stdin.on("error", err => {
+    if (err.code !== "EPIPE") writeNdjson(res, { type: "error", error: err.message });
+  });
+  child.stdin.end(prompt);
+
+  const handleOutput = chunk => {
+    const parsed = parseCodexEvents(chunk.toString("utf8"));
+    for (const event of parsed.events) {
+      const { stepId, status } = event;
+      if (!knownSteps.has(stepId)) continue;
+      if (status === "done") completedSteps.add(stepId);
+      if (status === "failed") failedSteps.add(stepId);
+      writeNdjson(res, { type: "step", stepId, status });
+    }
+    if (parsed.text) writeNdjson(res, { type: "log", message: parsed.text });
+  };
+
+  child.stdout.on("data", handleOutput);
+  child.stderr.on("data", handleOutput);
+
+  child.on("error", err => {
+    writeNdjson(res, { type: "error", error: err.message });
+    res.end();
+  });
+
+  child.on("close", code => {
+    const missingSteps = [...knownSteps].filter(stepId => !completedSteps.has(stepId));
+    writeNdjson(res, {
+      type: "done",
+      code,
+      completedSteps: [...completedSteps],
+      failedSteps: [...failedSteps],
+      missingSteps,
+      finishedAt: new Date().toISOString()
+    });
+    res.end();
+  });
+
+  res.on("close", () => {
+    if (!res.writableEnded && !child.killed) child.kill("SIGTERM");
+  });
+}
+
+function writeNdjson(res, event) {
+  res.write(JSON.stringify(event) + "\n");
 }
 
 function sendJson(res, status, data, headers = {}) {
