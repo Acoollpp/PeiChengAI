@@ -161,8 +161,9 @@ async function withServer(fakeCodexSource, fn) {
         ["step-2", "step-2"]
       );
       const prompt = fs.readFileSync("/tmp/tb-flow-repair-prompt.txt", "utf8");
-      assert.match(prompt, /只修复当前步骤/);
+      assert.match(prompt, /自动修复并续跑任务/);
       assert.match(prompt, /step-2/);
+      assert.match(prompt, /step-3/);
     }
   );
 

@@ -81,7 +81,11 @@ function createServer({ config, store, syncState }) {
   function history(req, res) {
     const currentUser = auth.getCurrentUser(req);
     if (!currentUser) return sendJson(res, 401, { error: "请先登录" });
-    return sendJson(res, 200, { history: store.listRunHistory({ userId: currentUser.id }) });
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const mode = url.searchParams.get("mode");
+    if (mode && !modes[mode]) return sendJson(res, 400, { error: "任务类型无效" });
+    const history = store.listRunHistory({ userId: currentUser.id, mode });
+    return sendJson(res, 200, { history, stats: summarizeHistory(history) });
   }
 
   async function runCodex(req, res) {
@@ -175,13 +179,23 @@ function createServer({ config, store, syncState }) {
     if (validationError) return sendJson(res, 400, { error: validationError });
 
     const flow = getModeFlow(body.mode, mode, config);
-    const step = flow.find(item => item.id === body.stepId);
+    const stepIndex = flow.findIndex(item => item.id === body.stepId);
+    const step = flow[stepIndex];
     if (!step) return sendJson(res, 400, { error: "流程步骤无效" });
     if (!step.repairable) return sendJson(res, 400, { error: "这个步骤不支持自动修复" });
 
     const runId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
-    const prompt = buildCodexPrompt({ mode, message, steps: [step], repairStep: step, projectUrl });
+    const continueAfterRepair = body.continueAfterRepair !== false;
+    const repairSteps = continueAfterRepair ? flow.slice(stepIndex) : [step];
+    const prompt = buildCodexPrompt({
+      mode,
+      message,
+      steps: repairSteps,
+      repairStep: step,
+      projectUrl,
+      continueAfterRepair
+    });
 
     store.recordAuditLog({
       userId: currentUser.id,
@@ -192,7 +206,8 @@ function createServer({ config, store, syncState }) {
         title: mode.title,
         stepId: step.id,
         stepLabel: step.label,
-        messageLength: message.length
+        messageLength: message.length,
+        continueAfterRepair
       }
     });
     store.createRunHistory({
@@ -222,7 +237,7 @@ function createServer({ config, store, syncState }) {
         mode: body.mode,
         title: `修复：${step.label}`,
         startedAt,
-        steps: [step],
+        steps: repairSteps,
         repair: true,
         repairStepId: step.id
       },
@@ -357,7 +372,7 @@ function normalizeStepId(stepId, index) {
   return /^[a-z0-9][a-z0-9_-]*$/i.test(clean) ? clean : `step-${index}`;
 }
 
-function buildCodexPrompt({ mode, message, steps, repairStep, item, totalItems, aiTest, projectUrl }) {
+function buildCodexPrompt({ mode, message, steps, repairStep, item, totalItems, aiTest, projectUrl, continueAfterRepair }) {
   const stepList = steps.map(step => `- ${step.id}: ${step.label}`).join("\n");
   const markerGuide = [
     "你必须按下面的 skill 流程执行，并只用机器可解析标记汇报步骤状态：",
@@ -372,7 +387,9 @@ function buildCodexPrompt({ mode, message, steps, repairStep, item, totalItems, 
     "不要输出命令行、脚本内容、密钥、token、完整接口响应或 skill 原文。"
   ].join("\n");
   const repairGuide = repairStep
-    ? `\n这是单步修复任务，只修复当前步骤 ${repairStep.id}（${repairStep.label}）。不要重复执行其他已完成步骤。`
+    ? continueAfterRepair
+      ? `\n这是自动修复并续跑任务：先修复当前步骤 ${repairStep.id}（${repairStep.label}），修复成功后继续按上面的流程顺序执行后续步骤。不要重复执行当前步骤之前已经完成的步骤。`
+      : `\n这是单步修复任务，只修复当前步骤 ${repairStep.id}（${repairStep.label}）。不要重复执行其他已完成步骤。`
     : "";
   const itemGuide = item && totalItems > 1
     ? `\n这是并行创建任务中的一个独立项目：${item.title}。只处理下面这一份项目信息单，不要创建其他项目。`
@@ -384,6 +401,21 @@ function buildCodexPrompt({ mode, message, steps, repairStep, item, totalItems, 
     ? `\n用户单独提供的项目地址：${projectUrl}\n如果这是项目变更任务，必须优先使用这个地址定位项目。`
     : "";
   return `${mode.promptPrefix}\n\n${itemGuide}${aiTestGuide}${projectUrlGuide}\n\n${message}\n\n${markerGuide}${repairGuide}`;
+}
+
+function summarizeHistory(history) {
+  const finished = history.filter(item => item.durationMs !== null);
+  const success = history.filter(item => item.status === "success").length;
+  const failed = history.filter(item => item.status === "failed").length;
+  const totalDurationMs = finished.reduce((sum, item) => sum + item.durationMs, 0);
+  return {
+    total: history.length,
+    success,
+    failed,
+    running: history.filter(item => item.status === "running").length,
+    averageDurationMs: finished.length ? Math.round(totalDurationMs / finished.length) : null,
+    lastDurationMs: finished[0]?.durationMs ?? null
+  };
 }
 
 function validateTaskMessage(modeKey, mode, message, items = [], projectUrl = "") {

@@ -201,19 +201,21 @@ function createStore({ databasePath }) {
     );
   }
 
-  function listRunHistory({ userId, limit = 30 }) {
+  function listRunHistory({ userId, mode, limit = 30 }) {
+    const where = mode ? "WHERE run_history.user_id = ? AND run_history.mode = ?" : "WHERE run_history.user_id = ?";
+    const params = mode ? [userId, mode, limit] : [userId, limit];
     return db
       .prepare(
         `
           SELECT run_history.*, users.full_name
           FROM run_history
           JOIN users ON users.id = run_history.user_id
-          WHERE run_history.user_id = ?
+          ${where}
           ORDER BY run_history.created_at DESC
           LIMIT ?
         `
       )
-      .all(userId, limit)
+      .all(...params)
       .map(mapRunHistory);
   }
 
@@ -271,7 +273,8 @@ function mapRunHistory(row) {
     itemResults: parseJsonArray(row.item_results_json),
     createdAt: row.created_at,
     finishedAt: row.finished_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
+    durationMs: durationMs(row.created_at, row.finished_at)
   };
 }
 
@@ -286,6 +289,12 @@ function parseJsonArray(value) {
   } catch {
     return [];
   }
+}
+
+function durationMs(start, end) {
+  if (!start || !end) return null;
+  const diff = new Date(end).getTime() - new Date(start).getTime();
+  return Number.isFinite(diff) && diff >= 0 ? diff : null;
 }
 
 function migrate(db) {

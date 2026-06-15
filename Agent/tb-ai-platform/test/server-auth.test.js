@@ -51,7 +51,8 @@ function parseNdjson(raw) {
       "echo '[[TB_STEP:step-1:done]]'",
       "echo '[[TB_RESULT:item-1:https://www.teambition.com/project/demo/tasks/view/demo-task]]'",
       "echo 'RAW COMMAND SHOULD STAY SERVER SIDE'",
-      "echo '[[TB_STEP:step-2:done]]'"
+      "echo '[[TB_STEP:step-2:done]]'",
+      "echo '[[TB_STEP:step-3:done]]'"
     ].join("\n"),
     { mode: 0o755 }
   );
@@ -60,7 +61,7 @@ function parseNdjson(raw) {
   fs.mkdirSync(path.join(skillRootDir, "通用-钉钉项目变更"), { recursive: true });
   fs.writeFileSync(
     path.join(skillRootDir, "通用-钉钉创建项目", "SKILL.md"),
-    "# 通用-钉钉创建项目\n\n## 必须自动执行的步骤\n\n1. 创建项目空间\n2. 回读验收\n"
+    "# 通用-钉钉创建项目\n\n## 必须自动执行的步骤\n\n1. 创建项目空间\n2. 回读验收\n3. 填写项目概览\n"
   );
   fs.writeFileSync(
     path.join(skillRootDir, "通用-钉钉项目变更", "SKILL.md"),
@@ -178,6 +179,7 @@ function parseNdjson(raw) {
     assert.strictEqual(repairFlow.statusCode, 200);
     assert.match(repairFlow.body, /"repairStepId":"step-2"/);
     assert.match(repairFlow.body, /"type":"step"/);
+    assert.match(repairFlow.body, /step-3/);
     assert.doesNotMatch(repairFlow.body, /RAW COMMAND SHOULD STAY SERVER SIDE/);
 
     const incompleteChange = await request(port, {
@@ -235,13 +237,21 @@ function parseNdjson(raw) {
     assert.ok(events.some(event => event.type === "step" && event.itemId === "item-1"));
     assert.ok(events.some(event => event.type === "step" && event.itemId === "item-2"));
 
-    const history = await request(port, { path: "/api/history", headers: { Cookie: cookie } });
+    const history = await request(port, { path: "/api/history?mode=create", headers: { Cookie: cookie } });
     assert.strictEqual(history.statusCode, 200);
     const historyBody = JSON.parse(history.body);
+    assert.ok(historyBody.stats.total >= 1);
+    assert.ok(historyBody.stats.averageDurationMs >= 0);
     assert.ok(historyBody.history.some(item => item.itemCount === 2 && item.mode === "create"));
     assert.ok(historyBody.history.some(item => /AI测试/.test(item.title)));
     assert.ok(historyBody.history.some(item => item.messageText && item.messageText.includes("项目名称")));
     assert.ok(historyBody.history.some(item => Array.isArray(item.resultUrls) && item.resultUrls.length > 0));
+    assert.ok(historyBody.history.every(item => item.mode === "create"));
+
+    const changeHistory = await request(port, { path: "/api/history?mode=change", headers: { Cookie: cookie } });
+    assert.strictEqual(changeHistory.statusCode, 200);
+    const changeHistoryBody = JSON.parse(changeHistory.body);
+    assert.ok(changeHistoryBody.history.every(item => item.mode === "change"));
   } finally {
     await new Promise(resolve => server.close(resolve));
     store.close();

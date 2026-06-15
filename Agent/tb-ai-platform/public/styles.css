@@ -310,6 +310,17 @@ h2 {
   font-size: 13px;
 }
 
+.history-stats {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(181, 194, 213, 0.72);
+  border-radius: var(--radius);
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .history-item {
   display: grid;
   gap: 3px;
@@ -322,6 +333,28 @@ h2 {
 .history-item strong,
 .history-item span,
 .history-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.history-links a {
+  max-width: 100%;
+  padding: 4px 7px;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  border-radius: 6px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -457,6 +490,19 @@ textarea:focus {
 .run-state {
   color: var(--muted);
   font-size: 13px;
+}
+
+.run-timer {
+  min-width: 54px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.74);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
 }
 
 .result-panel {

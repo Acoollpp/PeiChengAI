@@ -88,6 +88,7 @@ assert.strictEqual(history[0].status, "success");
 assert.strictEqual(history[0].messageText, "项目名称：A\n项目编号：P001");
 assert.strictEqual(history[0].projectUrl, "https://www.teambition.com/project/demo");
 assert.strictEqual(history[0].aiTest, true);
+assert.ok(history[0].durationMs >= 0);
 assert.deepStrictEqual(history[0].completedSteps, ["item-1:step-1"]);
 assert.deepStrictEqual(history[0].resultUrls, [{ itemId: "item-1", url: "https://www.teambition.com/project/demo" }]);
 assert.deepStrictEqual(history[0].itemResults, [{ itemId: "item-1", code: 0 }]);

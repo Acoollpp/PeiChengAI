@@ -5,7 +5,21 @@ const state = {
   flows: {},
   stepStatus: new Map(),
   activeItems: [{ id: "item-1", title: "项目 1" }],
-  results: new Map()
+  resultsByMode: {
+    create: new Map(),
+    change: new Map()
+  },
+  historyByMode: {
+    create: [],
+    change: []
+  },
+  historyStatsByMode: {
+    create: null,
+    change: null
+  },
+  runMode: "create",
+  runStartedAt: null,
+  timerId: null
 };
 
 const modeTitles = {
@@ -34,6 +48,7 @@ const el = {
   loginPanel: document.querySelector("#loginPanel"),
   loginState: document.querySelector("#loginState"),
   historyList: document.querySelector("#historyList"),
+  historyStats: document.querySelector("#historyStats"),
   logoutBtn: document.querySelector("#logoutBtn"),
   modeTitle: document.querySelector("#modeTitle"),
   message: document.querySelector("#messageInput"),
@@ -44,6 +59,7 @@ const el = {
   aiTestBtn: document.querySelector("#aiTestBtn"),
   clearBtn: document.querySelector("#clearBtn"),
   runState: document.querySelector("#runState"),
+  runTimer: document.querySelector("#runTimer"),
   runId: document.querySelector("#runId"),
   resultPanel: document.querySelector("#resultPanel"),
   resultList: document.querySelector("#resultList"),
@@ -63,7 +79,9 @@ function setMode(mode) {
   el.projectUrlField.hidden = mode === "create";
   resetFlowStatuses();
   renderFlowSteps();
-  clearResults();
+  renderResults();
+  renderHistory(state.historyByMode[mode] || [], state.historyStatsByMode[mode]);
+  loadHistory(mode);
 }
 
 function setUser(user) {
@@ -75,7 +93,7 @@ function setUser(user) {
   el.accountName.textContent = user ? user.fullName || `CCH 用户 ${user.cchUserId}` : "未登录";
   if (loggedIn) {
     loadFlows();
-    loadHistory();
+    loadHistory(state.mode);
   }
   if (!loggedIn) el.loginKey.focus();
 }
@@ -85,7 +103,12 @@ function setRunning(running) {
   el.runBtn.disabled = running;
   el.aiTestBtn.disabled = running;
   el.runBtn.querySelector("span").textContent = running ? "运行中" : "启动流程";
-  el.runState.textContent = running ? "Codex 正在按 skill 流程处理" : "等待输入";
+  if (running) {
+    startTimer();
+    el.runState.textContent = "Codex 正在按 skill 流程处理";
+  } else {
+    stopTimer();
+  }
   updateRepairButtons();
 }
 
@@ -133,13 +156,15 @@ async function loadFlows() {
   }
 }
 
-async function loadHistory() {
+async function loadHistory(mode = state.mode) {
   try {
-    const res = await fetch("/api/history");
+    const res = await fetch(`/api/history?mode=${encodeURIComponent(mode)}`);
     if (res.status === 401) return setUser(null);
     if (!res.ok) throw new Error("历史读取失败");
     const data = await res.json();
-    renderHistory(data.history || []);
+    state.historyByMode[mode] = data.history || [];
+    state.historyStatsByMode[mode] = data.stats || null;
+    if (mode === state.mode) renderHistory(state.historyByMode[mode], state.historyStatsByMode[mode]);
   } catch (err) {
     el.historyList.textContent = err.message;
   }
@@ -178,13 +203,14 @@ async function logout() {
   setUser(null);
   state.flows = {};
   state.stepStatus.clear();
-  state.results.clear();
+  Object.values(state.resultsByMode).forEach(results => results.clear());
   state.activeItems = [{ id: "item-1", title: "项目 1" }];
   el.flowSteps.innerHTML = "";
   el.flowSummary.textContent = "等待登录";
   el.historyList.textContent = "等待登录";
   el.runId.textContent = "未开始";
   el.runState.textContent = "等待输入";
+  el.runTimer.textContent = "00:00";
   clearResults();
 }
 
@@ -305,8 +331,9 @@ function updateRepairButtons() {
   });
 }
 
-function renderHistory(history) {
+function renderHistory(history, stats) {
   el.historyList.innerHTML = "";
+  renderHistoryStats(stats);
   if (!history.length) {
     el.historyList.textContent = "暂无使用记录";
     return;
@@ -317,37 +344,60 @@ function renderHistory(history) {
     const title = document.createElement("strong");
     title.textContent = `${modeTitles[item.mode] || item.title} · ${item.itemCount || 1} 项`;
     const meta = document.createElement("small");
-    meta.textContent = `${historyStatus(item.status)} · ${formatTime(item.createdAt)}`;
+    meta.textContent = `${historyStatus(item.status)} · ${formatTime(item.createdAt)} · ${formatDuration(item.durationMs)}`;
     const preview = document.createElement("span");
     preview.textContent = item.messagePreview || "无摘要";
     row.append(title, meta, preview);
+    const urls = item.resultUrls || [];
+    if (urls.length) {
+      const links = document.createElement("div");
+      links.className = "history-links";
+      for (const result of urls.slice(0, 4)) {
+        const link = document.createElement("a");
+        link.href = result.url;
+        link.target = "_blank";
+        link.rel = "noreferrer";
+        link.textContent = result.itemTitle || "查看项目";
+        links.append(link);
+      }
+      row.append(links);
+    }
     el.historyList.append(row);
   }
 }
 
+function renderHistoryStats(stats) {
+  if (!stats) {
+    el.historyStats.textContent = "暂无统计";
+    return;
+  }
+  el.historyStats.textContent = `共 ${stats.total} 次 · 成功 ${stats.success} · 异常 ${stats.failed} · 平均 ${formatDuration(stats.averageDurationMs)}`;
+}
+
 function clearResults() {
-  state.results.clear();
-  el.resultList.innerHTML = "";
-  el.resultPanel.hidden = true;
+  currentResults().clear();
+  renderResults();
 }
 
 function updateResult(event) {
   const itemId = event.itemId || "item-1";
-  const existing = state.results.get(itemId) || { itemTitle: event.itemTitle || itemId };
+  const results = state.resultsByMode[state.runMode] || currentResults();
+  const existing = results.get(itemId) || { itemTitle: event.itemTitle || itemId };
   if (event.type === "result") {
     existing.url = event.url;
   } else if (event.type === "run_error") {
     existing.error = event.message;
   }
   existing.itemTitle = event.itemTitle || existing.itemTitle;
-  state.results.set(itemId, existing);
-  renderResults();
+  results.set(itemId, existing);
+  if (state.runMode === state.mode) renderResults();
 }
 
 function renderResults() {
-  el.resultPanel.hidden = state.results.size === 0;
+  const results = currentResults();
+  el.resultPanel.hidden = results.size === 0;
   el.resultList.innerHTML = "";
-  for (const result of state.results.values()) {
+  for (const result of results.values()) {
     const row = document.createElement("div");
     row.className = `result-item ${result.error ? "failed" : "success"}`;
     const title = document.createElement("strong");
@@ -370,6 +420,10 @@ function renderResults() {
   }
 }
 
+function currentResults() {
+  return state.resultsByMode[state.mode] || state.resultsByMode.create;
+}
+
 async function runTask(options = {}) {
   if (state.running) return;
   const aiTest = Boolean(options.aiTest);
@@ -390,6 +444,7 @@ async function runTask(options = {}) {
   resetFlowStatuses();
   renderFlowSteps();
   clearResults();
+  state.runMode = state.mode;
   el.runId.textContent = aiTest ? "准备 AI 测试" : "准备启动";
   setRunning(true);
   if (aiTest) el.runState.textContent = "AI测试创建会给项目名追加（AI测试）";
@@ -400,7 +455,7 @@ async function runTask(options = {}) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: state.mode, message, projectUrl, aiTest })
     });
-    await consumeNdjson(res);
+    await consumeNdjson(res, { source: "run" });
   } catch (err) {
     el.runState.textContent = err.message;
   } finally {
@@ -425,14 +480,15 @@ async function repairStep(stepId) {
   }
 
   updateStep(stepId, "running");
+  state.runMode = state.mode;
   setRunning(true);
   try {
     const res = await fetch("/api/repair", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: state.mode, message, projectUrl, stepId })
+      body: JSON.stringify({ mode: state.mode, message, projectUrl, stepId, continueAfterRepair: true })
     });
-    await consumeNdjson(res);
+    await consumeNdjson(res, { source: "repair" });
   } catch (err) {
     updateStep(stepId, "failed");
     el.runState.textContent = err.message;
@@ -441,7 +497,7 @@ async function repairStep(stepId) {
   }
 }
 
-async function consumeNdjson(res) {
+async function consumeNdjson(res, context = {}) {
   if (res.status === 401) {
     setUser(null);
     throw new Error("登录已失效，请重新登录");
@@ -463,14 +519,18 @@ async function consumeNdjson(res) {
     buffer = lines.pop() || "";
     for (const line of lines) {
       if (!line.trim()) continue;
-      handleStreamEvent(JSON.parse(line));
+      handleStreamEvent(JSON.parse(line), context);
     }
   }
 }
 
-function handleStreamEvent(event) {
+function handleStreamEvent(event, context = {}) {
   if (event.type === "start") {
     el.runId.textContent = event.runId;
+    if (event.startedAt) {
+      state.runStartedAt = Date.parse(event.startedAt);
+      updateTimer();
+    }
     if (event.items?.length) {
       state.activeItems = event.items;
       resetFlowStatuses();
@@ -490,9 +550,11 @@ function handleStreamEvent(event) {
     for (const stepId of event.missingSteps || []) {
       if (state.stepStatus.get(stepId) !== "done") updateCompositeStep(stepId, "failed");
     }
-    el.runState.textContent = event.code === 0 ? "流程结束" : "流程异常";
+    el.runState.textContent = event.code === 0
+      ? context.source === "repair" ? "修复完成，后续步骤已继续执行" : "流程结束"
+      : "流程异常";
     updateFlowSummary();
-    loadHistory();
+    loadHistory(state.runMode);
   }
 }
 
@@ -542,6 +604,38 @@ function historyStatus(status) {
 function formatTime(value) {
   if (!value) return "";
   return new Date(value).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function startTimer() {
+  state.runStartedAt = Date.now();
+  updateTimer();
+  window.clearInterval(state.timerId);
+  state.timerId = window.setInterval(updateTimer, 1000);
+}
+
+function stopTimer() {
+  window.clearInterval(state.timerId);
+  state.timerId = null;
+  updateTimer();
+}
+
+function updateTimer() {
+  if (!state.runStartedAt) {
+    el.runTimer.textContent = "00:00";
+    return;
+  }
+  el.runTimer.textContent = formatDuration(Date.now() - state.runStartedAt);
+}
+
+function formatDuration(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "--:--";
+  const totalSeconds = Math.max(0, Math.round(Number(value) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  return `${hours}:${String(restMinutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 document.querySelectorAll(".mode").forEach(btn => {
