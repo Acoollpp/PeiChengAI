@@ -182,6 +182,97 @@ describe('ApiClient', () => {
     })
   })
 
+  it('reads current user with authorization header', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        id: 'user-1',
+        full_name: '张三',
+        svn_username: 'zhangsan',
+        department_id: null,
+        department_name: null,
+        role: 'user'
+      })
+    )
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    const result = await client.readCurrentUser('token-123')
+
+    expect(result).toMatchObject({
+      id: 'user-1',
+      department_id: null
+    })
+    expect(fetchMock).toHaveBeenCalledWith('https://server.example/api/v1/users/me', {
+      method: 'GET',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer token-123'
+      }
+    })
+  })
+
+  it('lists available departments with authorization header', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: [
+          {
+            id: 'dept-1',
+            name: '研发部',
+            description: null,
+            is_active: true
+          }
+        ],
+        count: 1
+      })
+    )
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    const result = await client.listAvailableDepartments('token-123')
+
+    expect(result).toMatchObject({
+      data: [{ id: 'dept-1', name: '研发部' }],
+      count: 1
+    })
+    expect(fetchMock).toHaveBeenCalledWith('https://server.example/api/v1/departments/available', {
+      method: 'GET',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer token-123'
+      }
+    })
+  })
+
+  it('sets current user department once with authorization header', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        id: 'user-1',
+        full_name: '张三',
+        svn_username: 'zhangsan',
+        department_id: 'dept-1',
+        department_name: '研发部',
+        role: 'user'
+      })
+    )
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    const result = await client.setMyDepartment('token-123', 'dept-1')
+
+    expect(result).toMatchObject({
+      id: 'user-1',
+      department_id: 'dept-1',
+      department_name: '研发部'
+    })
+    expect(fetchMock).toHaveBeenCalledWith('https://server.example/api/v1/users/me/department', {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer token-123'
+      },
+      body: JSON.stringify({
+        department_id: 'dept-1'
+      })
+    })
+  })
+
   it('reads a review task report as markdown text', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response('# Review\n\nLooks good.\n', {

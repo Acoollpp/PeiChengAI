@@ -83,6 +83,23 @@ def read_departments(session: SessionDep, skip: int = 0, limit: int = 100) -> An
     )
 
 
+@router.get("/available", response_model=DepartmentsPublic)
+def read_available_departments(session: SessionDep) -> Any:
+    statement = (
+        select(Department)
+        .where(Department.is_active == True)  # noqa: E712
+        .order_by(col(Department.name).asc())
+    )
+    departments = session.exec(statement).all()
+    return DepartmentsPublic(
+        data=[
+            DepartmentPublic.model_validate(department)
+            for department in departments
+        ],
+        count=len(departments),
+    )
+
+
 @router.post(
     "",
     dependencies=[Depends(_ensure_admin)],

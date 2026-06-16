@@ -19,6 +19,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -169,7 +170,8 @@ h2 {
   color: rgb(245 247 251 / 48%);
 }
 
-.field input {
+.field input,
+.field select {
   width: 100%;
   min-height: 42px;
   border: 1px solid #ccd6db;
@@ -180,7 +182,17 @@ h2 {
   outline: none;
 }
 
-.auth-field input {
+.field select {
+  appearance: none;
+  padding-right: 38px;
+  background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 16 16' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 6.25L8 9.75L11.5 6.25' stroke='%23C8D0D6' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: calc(100% - 12px) 50%;
+  background-size: 16px 16px;
+  background-repeat: no-repeat;
+}
+
+.auth-field input,
+.auth-field select {
   min-height: 40px;
   border-color: rgb(255 255 255 / 12%);
   border-radius: 8px;
@@ -188,7 +200,25 @@ h2 {
   background: rgb(8 10 12 / 72%);
 }
 
-.task-form .field input {
+.auth-field select {
+  background-color: rgb(8 10 12 / 72%);
+  background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 16 16' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 6.25L8 9.75L11.5 6.25' stroke='%23C8D0D6' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: calc(100% - 12px) 50%;
+  background-size: 16px 16px;
+  background-repeat: no-repeat;
+}
+
+.auth-field select option {
+  color: #f5f7fb;
+  background: #1a1b20;
+}
+
+.field select:disabled {
+  color: rgb(245 247 251 / 42%);
+}
+
+.task-form .field input,
+.task-form .field select {
   border-color: rgb(255 255 255 / 12%);
   color: #f5f7fb;
   background: rgb(8 10 12 / 68%);
@@ -222,6 +252,7 @@ h2 {
 }
 
 .task-form .field input:focus,
+.task-form .field select:focus,
 .task-form .field textarea:focus {
   border-color: #12b978;
   box-shadow: 0 0 0 3px rgb(18 185 120 / 18%);
@@ -278,12 +309,14 @@ h2 {
   color: rgb(245 247 251 / 34%);
 }
 
-.auth-field input:focus {
+.auth-field input:focus,
+.auth-field select:focus {
   border-color: #12b978;
   box-shadow: 0 0 0 3px rgb(18 185 120 / 18%);
 }
 
-.field input:focus {
+.field input:focus,
+.field select:focus {
   border-color: #24799a;
   box-shadow: 0 0 0 3px rgb(36 121 154 / 14%);
 }
@@ -1145,6 +1178,11 @@ h2 {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   margin-top: 4px;
+}
+
+.dialog-actions.single-action {
+  grid-template-columns: 1fr;
+  margin-top: 14px;
 }
 
 .dialog-actions .primary-button,

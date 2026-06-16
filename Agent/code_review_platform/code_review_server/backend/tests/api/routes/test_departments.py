@@ -75,6 +75,35 @@ def test_normal_user_cannot_create_department(
     assert response.json()["detail"] == "没有足够权限"
 
 
+def test_normal_user_can_list_available_departments(
+    client: TestClient,
+    db: Session,
+    normal_user_token_headers: dict[str, str],
+) -> None:
+    active_department = Department(
+        name=f"可选部门-{random_lower_string()}",
+        is_active=True,
+    )
+    inactive_department = Department(
+        name=f"停用部门-{random_lower_string()}",
+        is_active=False,
+    )
+    db.add(active_department)
+    db.add(inactive_department)
+    db.commit()
+
+    response = client.get(
+        f"{settings.API_V1_STR}/departments/available",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    department_ids = {department["id"] for department in content["data"]}
+    assert str(active_department.id) in department_ids
+    assert str(inactive_department.id) not in department_ids
+
+
 def test_admin_can_update_department(
     client: TestClient, superuser_token_headers: dict[str, str]
 ) -> None:

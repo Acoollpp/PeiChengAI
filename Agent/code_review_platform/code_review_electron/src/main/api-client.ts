@@ -1,6 +1,6 @@
 import type { ReviewTemplateKey } from '../shared/review-templates'
 import { REVIEW_REPORT_FILE_NAME } from '../shared/report-artifacts'
-import type { ReviewTask } from '../shared/types'
+import type { CurrentUser, DepartmentsResponse, ReviewTask } from '../shared/types'
 
 export interface TokenPair {
   access_token: string
@@ -145,6 +145,30 @@ export class ApiClient {
     return this.request<ReviewTasksResponse>('/api/v1/review-tasks', {
       method: 'GET',
       headers: this.authHeaders(token)
+    })
+  }
+
+  readCurrentUser(token: string): Promise<CurrentUser> {
+    return this.request<CurrentUser>('/api/v1/users/me', {
+      method: 'GET',
+      headers: this.authHeaders(token)
+    })
+  }
+
+  listAvailableDepartments(token: string): Promise<DepartmentsResponse> {
+    return this.request<DepartmentsResponse>('/api/v1/departments/available', {
+      method: 'GET',
+      headers: this.authHeaders(token)
+    })
+  }
+
+  setMyDepartment(token: string, departmentId: string): Promise<CurrentUser> {
+    return this.request<CurrentUser>('/api/v1/users/me/department', {
+      method: 'PATCH',
+      headers: this.authHeaders(token),
+      body: JSON.stringify({
+        department_id: departmentId
+      })
     })
   }
 

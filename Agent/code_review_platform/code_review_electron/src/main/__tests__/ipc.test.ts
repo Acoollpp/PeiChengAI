@@ -54,6 +54,9 @@ describe('registerIpcHandlers', () => {
       'auth:key-login',
       'auth:svn-login',
       'svn:bind-credential',
+      'user:me',
+      'department:list-available',
+      'user:set-department',
       'credentials:save',
       'credentials:load',
       'credentials:clear',
@@ -140,6 +143,60 @@ describe('registerIpcHandlers', () => {
     expect(appUpdateService.check).toHaveBeenCalledTimes(1)
     expect(appUpdateService.download).toHaveBeenCalledTimes(1)
     expect(appUpdateService.install).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes user and department IPC calls through to the API client', async () => {
+    const api = {
+      readCurrentUser: vi.fn(async () => ({
+        id: 'user-1',
+        full_name: '张三',
+        svn_username: 'zhangsan',
+        department_id: null,
+        department_name: null,
+        role: 'user'
+      })),
+      listAvailableDepartments: vi.fn(async () => ({
+        data: [{ id: 'dept-1', name: '研发部', is_active: true }],
+        count: 1
+      })),
+      setMyDepartment: vi.fn(async () => ({
+        id: 'user-1',
+        full_name: '张三',
+        svn_username: 'zhangsan',
+        department_id: 'dept-1',
+        department_name: '研发部',
+        role: 'user'
+      }))
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123' })),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never
+    })
+
+    const readUserHandler = handleMock.mock.calls.find(([channel]) => channel === 'user:me')?.[1]
+    const listDepartmentsHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'department:list-available'
+    )?.[1]
+    const setDepartmentHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'user:set-department'
+    )?.[1]
+
+    await expect(readUserHandler()).resolves.toMatchObject({ id: 'user-1' })
+    await expect(listDepartmentsHandler()).resolves.toMatchObject({ count: 1 })
+    await expect(
+      setDepartmentHandler({}, { department_id: 'dept-1' })
+    ).resolves.toMatchObject({
+      department_id: 'dept-1'
+    })
+    expect(api.readCurrentUser).toHaveBeenCalledWith('token-123')
+    expect(api.listAvailableDepartments).toHaveBeenCalledWith('token-123')
+    expect(api.setMyDepartment).toHaveBeenCalledWith('token-123', 'dept-1')
   })
 
   it('loads the default server config for the login page', async () => {

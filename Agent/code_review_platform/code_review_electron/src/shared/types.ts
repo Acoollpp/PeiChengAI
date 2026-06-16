@@ -21,6 +21,27 @@ export interface SyncedSkill {
   installed_at: string
 }
 
+export interface CurrentUser {
+  id: string
+  full_name?: string | null
+  svn_username?: string | null
+  department_id?: string | null
+  department_name?: string | null
+  role?: 'admin' | 'user'
+}
+
+export interface DepartmentPublic {
+  id: string
+  name: string
+  description?: string | null
+  is_active: boolean
+}
+
+export interface DepartmentsResponse {
+  data: DepartmentPublic[]
+  count: number
+}
+
 export type ReviewTaskStatus =
   | 'created'
   | 'checking_environment'

@@ -28,6 +28,7 @@ from app.models import (
     UserCreate,
     UserPublic,
     UserRole,
+    UserDepartmentUpdate,
     UserSvnCredential,
     UsersPublic,
     UserUpdate,
@@ -249,6 +250,33 @@ def update_user_me(
         current_user,
         department_name=_department_name_for_user(session=session, user=current_user),
     )
+
+
+@router.patch("/me/department", response_model=UserPublic)
+def update_user_me_department(
+    *,
+    session: SessionDep,
+    department_in: UserDepartmentUpdate,
+    current_user: CurrentUser,
+) -> Any:
+    """
+    Bind current user's department once.
+    """
+    if current_user.department_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="当前账号已绑定部门，请联系管理员修改。",
+        )
+
+    department = session.get(Department, department_in.department_id)
+    if department is None or not department.is_active:
+        raise HTTPException(status_code=400, detail="部门不存在或已停用。")
+
+    current_user.department_id = department.id
+    session.add(current_user)
+    session.commit()
+    session.refresh(current_user)
+    return _user_public(current_user, department_name=department.name)
 
 
 @router.get("/me", response_model=UserPublic)

@@ -33,6 +33,26 @@ const setupCodeReviewApi = (): void => {
     clearCredentials: vi.fn(),
     keyLogin: vi.fn(async () => ({ needSvnBinding: false })),
     svnLogin: vi.fn(),
+    getCurrentUser: vi.fn(async () => ({
+      id: 'user-1',
+      full_name: 'Key 用户',
+      svn_username: null,
+      department_id: 'dept-bound',
+      department_name: '已绑定部门',
+      role: 'user'
+    })),
+    listAvailableDepartments: vi.fn(async () => ({
+      data: [{ id: 'dept-1', name: '研发部', is_active: true }],
+      count: 1
+    })),
+    setDepartment: vi.fn(async () => ({
+      id: 'user-1',
+      full_name: 'Key 用户',
+      svn_username: null,
+      department_id: 'dept-1',
+      department_name: '研发部',
+      role: 'user'
+    })),
     listTasks: vi.fn(async () => ({ data: [], count: 0 })),
     readTaskReport: vi.fn(),
     executeTask: vi.fn(),
@@ -74,6 +94,46 @@ afterEach(() => {
 })
 
 describe('App update flow', () => {
+  it('requires department selection before entering the task page when current user has no department', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.getCurrentUser).mockResolvedValueOnce({
+      id: 'user-1',
+      full_name: 'Key 用户',
+      svn_username: null,
+      department_id: null,
+      department_name: null,
+      role: 'user'
+    })
+    render(<App />)
+
+    await user.type(await screen.findByLabelText('Key'), 'sk-cch-test')
+    await user.click(screen.getByRole('button', { name: 'Key 登录' }))
+
+    expect(await screen.findByRole('heading', { name: '选择部门' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '任务工作台' })).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('部门'), 'dept-1')
+    await user.click(screen.getByRole('button', { name: '确认选择' }))
+
+    await waitFor(() => {
+      expect(window.codeReview.setDepartment).toHaveBeenCalledWith({
+        department_id: 'dept-1'
+      })
+    })
+    expect(await screen.findByRole('heading', { name: '任务工作台' })).toBeInTheDocument()
+  })
+
+  it('enters the task page directly when current user already has a department', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.type(await screen.findByLabelText('Key'), 'sk-cch-test')
+    await user.click(screen.getByRole('button', { name: 'Key 登录' }))
+
+    expect(await screen.findByRole('heading', { name: '任务工作台' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '选择部门' })).not.toBeInTheDocument()
+  })
+
   it('keeps download progress in background after the user hides the downloading dialog', async () => {
     const user = userEvent.setup()
     render(<App />)

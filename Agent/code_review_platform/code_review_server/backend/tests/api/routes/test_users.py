@@ -452,6 +452,98 @@ def test_update_user_me(
     assert user_db.svn_username != data["svn_username"]
 
 
+def test_current_user_can_set_department_once(
+    client: TestClient, db: Session
+) -> None:
+    department = _create_department(db, "首次选择部门")
+    user = create_random_user(db)
+    user.department_id = None
+    db.add(user)
+    db.commit()
+    headers = auth_headers_for_user_id(user.id)
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/users/me/department",
+        headers=headers,
+        json={"department_id": str(department.id)},
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["department_id"] == str(department.id)
+    assert content["department_name"] == "首次选择部门"
+    db.expire_all()
+    saved_user = db.get(User, user.id)
+    assert saved_user
+    assert saved_user.department_id == department.id
+
+
+def test_current_user_cannot_set_department_again(
+    client: TestClient, db: Session
+) -> None:
+    original_department = _create_department(db, "原部门")
+    target_department = _create_department(db, "目标部门")
+    user = create_random_user(db)
+    user.department_id = original_department.id
+    db.add(user)
+    db.commit()
+    headers = auth_headers_for_user_id(user.id)
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/users/me/department",
+        headers=headers,
+        json={"department_id": str(target_department.id)},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "当前账号已绑定部门，请联系管理员修改。"
+    db.expire_all()
+    saved_user = db.get(User, user.id)
+    assert saved_user
+    assert saved_user.department_id == original_department.id
+
+
+def test_current_user_cannot_set_inactive_department(
+    client: TestClient, db: Session
+) -> None:
+    department = _create_department(db, "停用不可选部门")
+    department.is_active = False
+    user = create_random_user(db)
+    user.department_id = None
+    db.add(department)
+    db.add(user)
+    db.commit()
+    headers = auth_headers_for_user_id(user.id)
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/users/me/department",
+        headers=headers,
+        json={"department_id": str(department.id)},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "部门不存在或已停用。"
+
+
+def test_current_user_cannot_set_missing_department(
+    client: TestClient, db: Session
+) -> None:
+    user = create_random_user(db)
+    user.department_id = None
+    db.add(user)
+    db.commit()
+    headers = auth_headers_for_user_id(user.id)
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/users/me/department",
+        headers=headers,
+        json={"department_id": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "部门不存在或已停用。"
+
+
 def test_update_password_me_route_removed(
     client: TestClient, superuser_token_headers: dict[str, str]
 ) -> None:

@@ -2,6 +2,8 @@ import type { ReviewTemplateKey } from '../../shared/review-templates'
 import type {
   EnvironmentProgressEvent,
   EnvironmentStatus,
+  CurrentUser,
+  DepartmentsResponse,
   ReviewTask,
   ReviewTaskStatus,
   SyncedSkill,
@@ -9,6 +11,7 @@ import type {
 } from '../../shared/types'
 
 export type { EnvironmentProgressEvent, TaskProgressEvent }
+export type { CurrentUser, DepartmentsResponse }
 
 export interface KeyLoginRequest {
   server_url: string
@@ -174,6 +177,9 @@ export interface AppUpdateError {
 export interface CodeReviewApi {
   keyLogin(payload: KeyLoginRequest): Promise<KeyLoginResult>
   svnLogin(payload: SvnLoginRequest): Promise<unknown>
+  getCurrentUser(): Promise<CurrentUser>
+  listAvailableDepartments(): Promise<DepartmentsResponse>
+  setDepartment(payload: { department_id: string }): Promise<CurrentUser>
   saveCredentials(payload: RememberedCredentials): Promise<unknown>
   loadCredentials(): Promise<RememberedCredentials | null>
   clearCredentials(): Promise<unknown>

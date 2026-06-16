@@ -7,8 +7,11 @@ import type {
   EnvironmentCheckResult,
   EnvironmentProgressEvent,
   KeyLoginRequest,
-  SvnLoginRequest
+  SvnLoginRequest,
+  CurrentUser,
+  DepartmentsResponse
 } from './code-review-api'
+import { DepartmentSelectionDialog } from './components/DepartmentSelectionDialog'
 import { LoginPage } from './components/LoginPage'
 import { SvnBindingDialog } from './components/SvnBindingDialog'
 import { TaskPage } from './components/TaskPage'
@@ -18,12 +21,23 @@ type AuthSession = {
   displayName: string
 }
 
+type PendingDepartmentSession = {
+  displayName: string
+  needSvnBinding: boolean
+}
+
 const fallbackEnvironment: EnvironmentCheckResult = {
   status: 'failed'
 }
 
 export function App(): React.JSX.Element {
   const [session, setSession] = useState<AuthSession | null>(null)
+  const [pendingDepartmentSession, setPendingDepartmentSession] =
+    useState<PendingDepartmentSession | null>(null)
+  const [departments, setDepartments] = useState<DepartmentsResponse['data']>([])
+  const [isLoadingDepartments, setIsLoadingDepartments] = useState(false)
+  const [isSavingDepartment, setIsSavingDepartment] = useState(false)
+  const [departmentError, setDepartmentError] = useState('')
   const [environment, setEnvironment] = useState<EnvironmentCheckResult | null>(null)
   const [isCheckingEnvironment, setIsCheckingEnvironment] = useState(false)
   const [environmentProgress, setEnvironmentProgress] =
@@ -156,25 +170,94 @@ export function App(): React.JSX.Element {
     []
   )
 
-  const authActions = useMemo(
-    () => ({
-      async keyLogin(payload: KeyLoginRequest): Promise<void> {
-        const result = await window.codeReview.keyLogin(payload)
-        setSession({ displayName: 'Key 用户' })
-        if (result.needSvnBinding) {
+  const startAuthenticatedSession = useCallback(
+    async ({
+      displayName,
+      needSvnBinding,
+      currentUser
+    }: {
+      displayName: string
+      needSvnBinding: boolean
+      currentUser: CurrentUser
+    }): Promise<void> => {
+      if (!currentUser.department_id) {
+        setPendingDepartmentSession({ displayName, needSvnBinding })
+        setDepartmentError('')
+        setIsLoadingDepartments(true)
+        try {
+          const result = await window.codeReview.listAvailableDepartments()
+          setDepartments(result.data)
+        } catch (error) {
+          setDepartments([])
+          setDepartmentError(error instanceof Error ? error.message : '部门列表加载失败，请重试。')
+        } finally {
+          setIsLoadingDepartments(false)
+        }
+        return
+      }
+
+      setPendingDepartmentSession(null)
+      setDepartments([])
+      setSession({ displayName })
+      if (needSvnBinding) {
+        setNeedSvnBinding(true)
+      }
+      await checkEnvironment()
+      void checkForUpdate()
+    },
+    [checkEnvironment, checkForUpdate]
+  )
+
+  const saveDepartment = useCallback(
+    async (departmentId: string): Promise<void> => {
+      if (!pendingDepartmentSession) {
+        return
+      }
+
+      setDepartmentError('')
+      setIsSavingDepartment(true)
+      try {
+        await window.codeReview.setDepartment({ department_id: departmentId })
+        const nextSession = pendingDepartmentSession
+        setPendingDepartmentSession(null)
+        setDepartments([])
+        setSession({ displayName: nextSession.displayName })
+        if (nextSession.needSvnBinding) {
           setNeedSvnBinding(true)
         }
         await checkEnvironment()
         void checkForUpdate()
+      } catch (error) {
+        setDepartmentError(error instanceof Error ? error.message : '部门保存失败，请重试。')
+      } finally {
+        setIsSavingDepartment(false)
+      }
+    },
+    [checkEnvironment, checkForUpdate, pendingDepartmentSession]
+  )
+
+  const authActions = useMemo(
+    () => ({
+      async keyLogin(payload: KeyLoginRequest): Promise<void> {
+        const result = await window.codeReview.keyLogin(payload)
+        const currentUser = await window.codeReview.getCurrentUser()
+        await startAuthenticatedSession({
+          displayName: 'Key 用户',
+          needSvnBinding: result.needSvnBinding,
+          currentUser
+        })
       },
       async svnLogin(payload: SvnLoginRequest): Promise<void> {
         await window.codeReview.svnLogin(payload)
-        setSession({ displayName: payload.svn_username })
-        await checkEnvironment()
-        void checkForUpdate()
+        const currentUser = await window.codeReview.getCurrentUser()
+        await startAuthenticatedSession({
+          displayName: payload.svn_username,
+          needSvnBinding: false,
+          currentUser
+        })
       }
     }),
-    [checkEnvironment, checkForUpdate]
+    [startAuthenticatedSession]
   )
 
   useEffect(() => {
@@ -219,6 +302,15 @@ export function App(): React.JSX.Element {
     return (
       <main className="app-shell auth-shell">
         <LoginPage onKeyLogin={authActions.keyLogin} onSvnLogin={authActions.svnLogin} />
+        {pendingDepartmentSession && (
+          <DepartmentSelectionDialog
+            departments={departments}
+            isLoading={isLoadingDepartments}
+            isSubmitting={isSavingDepartment}
+            error={departmentError}
+            onSubmit={saveDepartment}
+          />
+        )}
       </main>
     )
   }

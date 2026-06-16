@@ -32,6 +32,7 @@ import { uploadPdfReportFile, uploadReportFile, uploadRequirementFile } from './
 import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
 import { ServerConfigStore, normalizeServerUrl } from './server-config-store'
 import { createSkillSyncService, type SkillSyncResult } from './skill-sync'
+import type { CurrentUser, DepartmentsResponse } from '../shared/types'
 
 interface SerializedFeedbackScreenshot {
   name: string
@@ -211,6 +212,16 @@ const toSubmitFeedbackRequest = (payload: SubmitFeedbackIpcPayload): SubmitFeedb
   screenshotNames: (payload.screenshots ?? []).map((screenshot) => screenshot.name)
 })
 
+const loadAccessToken = async (authStore: AuthStore): Promise<string> => {
+  const tokens = await authStore.load()
+
+  if (!tokens) {
+    throw new Error('Not authenticated')
+  }
+
+  return tokens.access_token
+}
+
 const imageContentTypes: Record<string, string> = {
   '.gif': 'image/gif',
   '.jpeg': 'image/jpeg',
@@ -365,16 +376,32 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   })
 
   ipcMain.handle('svn:bind-credential', async (_event, body: { svn_username: string; svn_password: string }): Promise<true> => {
-    const tokens = await authStore.load()
-
-    if (!tokens) {
-      throw new Error('Not authenticated')
-    }
-
+    const token = await loadAccessToken(authStore)
     const api = await createApiClient()
-    await api.updateSvnCredential(tokens.access_token, body)
+    await api.updateSvnCredential(token, body)
     return true
   })
+
+  ipcMain.handle('user:me', async (): Promise<CurrentUser> => {
+    const token = await loadAccessToken(authStore)
+    const api = await createApiClient()
+    return api.readCurrentUser(token)
+  })
+
+  ipcMain.handle('department:list-available', async (): Promise<DepartmentsResponse> => {
+    const token = await loadAccessToken(authStore)
+    const api = await createApiClient()
+    return api.listAvailableDepartments(token)
+  })
+
+  ipcMain.handle(
+    'user:set-department',
+    async (_event, body: { department_id: string }): Promise<CurrentUser> => {
+      const token = await loadAccessToken(authStore)
+      const api = await createApiClient()
+      return api.setMyDepartment(token, body.department_id)
+    }
+  )
 
   ipcMain.handle('credentials:save', async (_event, payload: RememberedCredentials): Promise<true> => {
     await credentialStore.save(payload)

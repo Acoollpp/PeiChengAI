@@ -111,6 +111,10 @@ class UserUpdateMe(SQLModel):
     full_name: str | None = Field(default=None, max_length=255)
 
 
+class UserDepartmentUpdate(SQLModel):
+    department_id: uuid.UUID
+
+
 class UpdatePassword(SQLModel):
     current_password: str = Field(min_length=8, max_length=128)
     new_password: str = Field(min_length=8, max_length=128)

@@ -4,6 +4,7 @@ import type {
   AppUpdateError,
   AppUpdateInfo,
   AppUpdateProgress,
+  CodeReviewApi,
   EnvironmentCheckResult,
   EnvironmentProgressEvent,
   CancelTaskRequest,
@@ -57,9 +58,17 @@ const serializeFeedbackPayload = async (
 
 contextBridge.exposeInMainWorld('codeReview', {
   keyLogin: (payload: KeyLoginRequest): Promise<KeyLoginResult> =>
-    ipcRenderer.invoke('auth:key-login', payload),
+  ipcRenderer.invoke('auth:key-login', payload),
   svnLogin: (payload: SvnLoginRequest): Promise<unknown> =>
     ipcRenderer.invoke('auth:svn-login', payload),
+  getCurrentUser: (): ReturnType<CodeReviewApi['getCurrentUser']> =>
+    ipcRenderer.invoke('user:me'),
+  listAvailableDepartments: (): ReturnType<CodeReviewApi['listAvailableDepartments']> =>
+    ipcRenderer.invoke('department:list-available'),
+  setDepartment: (
+    payload: Parameters<CodeReviewApi['setDepartment']>[0]
+  ): ReturnType<CodeReviewApi['setDepartment']> =>
+    ipcRenderer.invoke('user:set-department', payload),
   saveCredentials: (payload: RememberedCredentials): Promise<unknown> =>
     ipcRenderer.invoke('credentials:save', payload),
   loadCredentials: (): Promise<RememberedCredentials | null> =>

@@ -140,6 +140,21 @@ describe('preload codeReview API', () => {
     expect(invokeMock).toHaveBeenCalledWith('requirement-file:select')
   })
 
+  it('invokes user and department IPC channels', async () => {
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+
+    await api.getCurrentUser()
+    await api.listAvailableDepartments()
+    await api.setDepartment({ department_id: 'dept-1' })
+
+    expect(invokeMock).toHaveBeenCalledWith('user:me')
+    expect(invokeMock).toHaveBeenCalledWith('department:list-available')
+    expect(invokeMock).toHaveBeenCalledWith('user:set-department', {
+      department_id: 'dept-1'
+    })
+  })
+
   it('reads pasted file path through Electron webUtils', async () => {
     getPathForFileMock.mockReturnValue('/tmp/产品开发需求表.xlsx')
     await import('./index')
