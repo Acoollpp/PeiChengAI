@@ -286,7 +286,7 @@ function renderFlowSteps() {
       repair.textContent = "修复";
       repair.dataset.stepId = step.id;
       repair.hidden = !step.repairable || state.activeItems.length > 1;
-      repair.disabled = state.running || status === "done";
+      repair.disabled = !canRepairStep(step, status);
       repair.addEventListener("click", event => {
         flashButton(event.currentTarget);
         repairStep(step.id);
@@ -314,7 +314,7 @@ function updateStep(stepId, status, itemId = "item-1") {
   const step = getCurrentSteps().find(item => item.id === stepId);
   row.querySelector("small").textContent = `${step.skill} · ${statusText[status] || statusText.pending}`;
   row.querySelector(".step-badge").textContent = statusText[status] || statusText.pending;
-  row.querySelector(".repair-step").disabled = state.running || status === "done";
+  row.querySelector(".repair-step").disabled = !canRepairStep(step, status);
   updateFlowSummary();
 }
 
@@ -338,8 +338,13 @@ function updateRepairButtons() {
   el.flowSteps.querySelectorAll(".repair-step").forEach(btn => {
     const itemId = btn.closest(".flow-step")?.dataset.itemId || "item-1";
     const status = state.stepStatus.get(stepKey(itemId, btn.dataset.stepId));
-    btn.disabled = state.running || status === "done";
+    const step = getCurrentSteps().find(item => item.id === btn.dataset.stepId);
+    btn.disabled = !canRepairStep(step, status);
   });
+}
+
+function canRepairStep(step, status) {
+  return Boolean(step?.repairable) && !state.running && status === "failed" && state.activeItems.length === 1;
 }
 
 function renderHistory(history, stats) {
@@ -441,7 +446,7 @@ async function runTask(options = {}) {
   const message = el.message.value.trim();
   const projectUrl = el.projectUrl.value.trim();
   if (!message) {
-    el.runState.textContent = "请先填写任务内容";
+    el.runState.textContent = "请输入任务内容";
     el.message.focus();
     return;
   }
@@ -480,6 +485,12 @@ async function runTask(options = {}) {
 
 async function repairStep(stepId) {
   if (state.running) return;
+  const currentStatus = state.stepStatus.get(stepKey("item-1", stepId));
+  const step = getCurrentSteps().find(item => item.id === stepId);
+  if (!canRepairStep(step, currentStatus)) {
+    el.runState.textContent = "只有执行失败的步骤才需要修复";
+    return;
+  }
   const message = el.message.value.trim();
   const projectUrl = el.projectUrl.value.trim();
   if (!message) {

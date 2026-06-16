@@ -41,12 +41,18 @@ assert.match(login.cookie, /tb_session=/);
 assert.match(login.cookie, /HttpOnly/);
 assert.match(login.cookie, /SameSite=Lax/);
 
-const currentUser = auth.getCurrentUser({ headers: { cookie: login.cookie } });
+const currentUser = auth.getCurrentUser(
+  { headers: { cookie: login.cookie } },
+  new Date("2026-06-15T01:00:00.000Z")
+);
 assert.strictEqual(currentUser.fullName, "Auth User");
 
 const sessionId = auth.sessionIdFromRequest({ headers: { cookie: login.cookie } });
 auth.logout(sessionId);
-assert.strictEqual(auth.getCurrentUser({ headers: { cookie: login.cookie } }), null);
+assert.strictEqual(
+  auth.getCurrentUser({ headers: { cookie: login.cookie } }, new Date("2026-06-15T01:00:00.000Z")),
+  null
+);
 
 store.close();
 console.log("ok - auth service logs in with active keys and resolves sessions");
