@@ -26,7 +26,8 @@ const state = {
   lastRunId: "",
   failedStepIds: new Set(),
   preview: null,
-  previewConfirmed: false
+  previewConfirmed: false,
+  projectView: ""
 };
 
 const modeTitles = {
@@ -57,6 +58,9 @@ const el = {
   rememberKey: document.querySelector("#rememberKeyInput"),
   loginPanel: document.querySelector("#loginPanel"),
   loginState: document.querySelector("#loginState"),
+  projectLauncher: document.querySelector("#projectLauncher"),
+  extensionProjectBtn: document.querySelector("#extensionProjectBtn"),
+  rdProjectBtn: document.querySelector("#rdProjectBtn"),
   historyList: document.querySelector("#historyList"),
   historyStats: document.querySelector("#historyStats"),
   logoutBtn: document.querySelector("#logoutBtn"),
@@ -110,16 +114,30 @@ function setUser(user) {
   state.user = user;
   const loggedIn = Boolean(user);
   el.loginPanel.hidden = loggedIn;
-  el.workspace.hidden = !loggedIn;
+  el.projectLauncher.hidden = !loggedIn;
+  el.workspace.hidden = true;
   el.accountCard.hidden = !loggedIn;
   el.accountName.textContent = user ? user.fullName || `CCH 用户 ${user.cchUserId}` : "未登录";
   if (loggedIn) {
+    openProjectView("");
     loadFlows();
     loadHistory(state.mode);
     loadCredentialHealth();
     loadAuditLogs();
   }
   if (!loggedIn) el.loginKey.focus();
+}
+
+function openProjectView(view) {
+  state.projectView = view;
+  el.extensionProjectBtn.classList.toggle("active", view === "extension");
+  el.rdProjectBtn.classList.toggle("active", view === "rd");
+  el.workspace.hidden = view !== "extension";
+  if (view === "extension") {
+    renderFlowSteps();
+    renderResults();
+    loadHistory(state.mode);
+  }
 }
 
 function setRunning(running) {
@@ -286,6 +304,7 @@ function saveRememberedKey(key) {
 async function logout() {
   await fetch("/api/logout", { method: "POST" }).catch(() => {});
   setUser(null);
+  openProjectView("");
   state.flows = {};
   state.stepStatus.clear();
   Object.values(state.resultsByMode).forEach(results => results.clear());
@@ -937,6 +956,14 @@ el.loginKey.addEventListener("keydown", event => {
 });
 el.rememberKey.addEventListener("change", () => {
   if (!el.rememberKey.checked) localStorage.removeItem(rememberKeyStorageKey);
+});
+el.extensionProjectBtn.addEventListener("click", event => {
+  flashButton(event.currentTarget);
+  openProjectView("extension");
+});
+el.rdProjectBtn.addEventListener("click", event => {
+  flashButton(event.currentTarget);
+  openProjectView("rd");
 });
 el.runBtn.addEventListener("click", event => {
   flashButton(event.currentTarget);

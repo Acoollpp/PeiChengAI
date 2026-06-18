@@ -254,7 +254,56 @@ h2 {
   accent-color: var(--primary);
 }
 
+.launcher {
+  width: min(280px, 100%);
+  margin-top: 18px;
+}
+
+.launcher-side {
+  padding: 18px;
+}
+
+.project-entry {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.78);
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-entry.active {
+  border-color: rgba(37, 99, 235, 0.46);
+  background: linear-gradient(135deg, #f4f8ff, #ffffff);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.project-entry small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.mode-icon.rd {
+  background: linear-gradient(135deg, #0f766e, #2563eb);
+  font-size: 16px;
+}
+
+.launcher-ops {
+  margin-top: 22px;
+}
+
 .workspace {
+  margin-top: 18px;
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   gap: 18px;

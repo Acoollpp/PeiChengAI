@@ -54,6 +54,32 @@
         </form>
       </section>
 
+      <section class="launcher" id="projectLauncher" hidden>
+        <aside class="panel launcher-side">
+          <div class="section-title">项目入口</div>
+          <button class="project-entry" id="extensionProjectBtn" type="button">
+            <span class="mode-icon">＋</span>
+            <span>
+              <strong>扩展项目</strong>
+              <small>打开创建、变更和流程修复工作台</small>
+            </span>
+          </button>
+          <button class="project-entry" id="rdProjectBtn" type="button">
+            <span class="mode-icon rd">研</span>
+            <span>
+              <strong>研发项目</strong>
+              <small>研发项目入口</small>
+            </span>
+          </button>
+
+          <div class="ops-panel launcher-ops">
+            <div class="section-title">运行状态</div>
+            <div id="credentialHealth" class="history-stats">等待登录</div>
+            <div id="auditList" class="history-list">等待登录</div>
+          </div>
+        </aside>
+      </section>
+
       <section class="workspace" id="workspace" hidden>
         <aside class="panel side">
           <div class="section-title">任务类型</div>
@@ -81,12 +107,6 @@
             <div class="section-title">历史记录</div>
             <div id="historyStats" class="history-stats">暂无统计</div>
             <div id="historyList" class="history-list" aria-live="polite">等待登录</div>
-          </div>
-
-          <div class="ops-panel">
-            <div class="section-title">运行状态</div>
-            <div id="credentialHealth" class="history-stats">等待登录</div>
-            <div id="auditList" class="history-list">等待登录</div>
           </div>
         </aside>
 
