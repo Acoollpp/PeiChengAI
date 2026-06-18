@@ -47,6 +47,8 @@ Copy `.env.example` to `.env` on the server and set the runtime values:
 - `SESSION_SECRET`: random secret for signed session cookies
 - `SESSION_TTL_HOURS`: login lifetime, default 24
 - `CCH_SYNC_INTERVAL_MS`: CCH user/key sync interval, default 60000
+- `TEAMBITION_APP_KEY`, `TEAMBITION_CLIENT_ID`, `TEAMBITION_TOKEN`: optional
+  Teambition credential indicators used by the web health panel
 
 The CCH database URL used inside Docker may contain an internal container
 hostname. For the PM2 deployment, use the host-published localhost port instead.
@@ -56,6 +58,14 @@ hostname. For the PM2 deployment, use the host-published localhost port instead.
 Users log in with their CCH key. The service syncs CCH `users` and `keys` into a
 local SQLite database at startup and every minute afterward. Runtime state lives
 under `data/` and is not committed.
+
+## Operator Features
+
+- Task preview extracts likely projects and key fields before execution.
+- Large batches require confirmation before `/api/run` accepts them.
+- Runs are tracked as `running`, `success`, `failed`, or `aborted`.
+- History entries expose detail/retry actions and generated project links.
+- The sidebar shows credential health and recent audit actions.
 
 The design for CCH key-based login and one-minute user/key synchronization is in:
 

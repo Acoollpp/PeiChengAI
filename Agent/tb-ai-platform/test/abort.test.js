@@ -140,7 +140,7 @@ function login(port) {
     await new Promise(resolve => setTimeout(resolve, 200));
     const history = store.listRunHistory({ userId: user.id, mode: "create" });
     assert.strictEqual(history[0].runId, runId);
-    assert.strictEqual(history[0].status, "failed");
+    assert.strictEqual(history[0].status, "aborted");
     assert.ok(history[0].errorMessages.some(item => /用户已中止/.test(item.message)));
   } finally {
     await new Promise(resolve => server.close(resolve));

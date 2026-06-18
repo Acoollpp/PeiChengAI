@@ -201,6 +201,19 @@ function createStore({ databasePath }) {
     );
   }
 
+  function getRunHistory({ userId, runId }) {
+    return mapRunHistory(db
+      .prepare(
+        `
+          SELECT run_history.*, users.full_name
+          FROM run_history
+          JOIN users ON users.id = run_history.user_id
+          WHERE run_history.user_id = ? AND run_history.run_id = ?
+        `
+      )
+      .get(userId, runId));
+  }
+
   function listRunHistory({ userId, mode, limit = 30 }) {
     const where = mode ? "WHERE run_history.user_id = ? AND run_history.mode = ?" : "WHERE run_history.user_id = ?";
     const params = mode ? [userId, mode, limit] : [userId, limit];
@@ -219,6 +232,22 @@ function createStore({ databasePath }) {
       .map(mapRunHistory);
   }
 
+  function listAuditLogs({ userId, limit = 30 }) {
+    return db
+      .prepare(
+        `
+          SELECT audit_logs.*, users.full_name
+          FROM audit_logs
+          JOIN users ON users.id = audit_logs.user_id
+          WHERE audit_logs.user_id = ?
+          ORDER BY audit_logs.created_at DESC
+          LIMIT ?
+        `
+      )
+      .all(userId, limit)
+      .map(mapAuditLog);
+  }
+
   return {
     db,
     upsertUser,
@@ -230,7 +259,9 @@ function createStore({ databasePath }) {
     recordAuditLog,
     createRunHistory,
     finishRunHistory,
+    getRunHistory,
     listRunHistory,
+    listAuditLogs,
     close: () => db.close()
   };
 }
@@ -278,6 +309,19 @@ function mapRunHistory(row) {
   };
 }
 
+function mapAuditLog(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    userName: row.full_name,
+    action: row.action,
+    mode: row.mode,
+    runId: row.run_id,
+    metadata: parseJsonObject(row.metadata_json),
+    createdAt: row.created_at
+  };
+}
+
 function previewText(value) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, 220);
 }
@@ -288,6 +332,15 @@ function parseJsonArray(value) {
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
+  }
+}
+
+function parseJsonObject(value) {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
   }
 }
 

@@ -22,7 +22,11 @@ const state = {
   timerId: null,
   currentRunId: "",
   abortController: null,
-  abortRequested: false
+  abortRequested: false,
+  lastRunId: "",
+  failedStepIds: new Set(),
+  preview: null,
+  previewConfirmed: false
 };
 
 const modeTitles = {
@@ -58,6 +62,12 @@ const el = {
   projectUrlField: document.querySelector("#projectUrlField"),
   projectUrl: document.querySelector("#projectUrlInput"),
   pulse: document.querySelector(".pulse"),
+  credentialHealth: document.querySelector("#credentialHealth"),
+  auditList: document.querySelector("#auditList"),
+  previewBtn: document.querySelector("#previewBtn"),
+  previewPanel: document.querySelector("#previewPanel"),
+  previewSummary: document.querySelector("#previewSummary"),
+  previewList: document.querySelector("#previewList"),
   runBtn: document.querySelector("#runBtn"),
   aiTestBtn: document.querySelector("#aiTestBtn"),
   abortBtn: document.querySelector("#abortBtn"),
@@ -67,6 +77,8 @@ const el = {
   runId: document.querySelector("#runId"),
   resultPanel: document.querySelector("#resultPanel"),
   resultList: document.querySelector("#resultList"),
+  detailPanel: document.querySelector("#detailPanel"),
+  detailBody: document.querySelector("#detailBody"),
   workspace: document.querySelector("#workspace"),
   flowSteps: document.querySelector("#flowSteps"),
   flowSummary: document.querySelector("#flowSummary")
@@ -81,6 +93,9 @@ function setMode(mode) {
   el.message.placeholder = modePlaceholders[mode];
   el.aiTestBtn.hidden = mode !== "create";
   el.projectUrlField.hidden = mode === "create";
+  state.preview = null;
+  state.previewConfirmed = false;
+  el.previewPanel.hidden = true;
   resetFlowStatuses();
   renderFlowSteps();
   renderResults();
@@ -98,6 +113,8 @@ function setUser(user) {
   if (loggedIn) {
     loadFlows();
     loadHistory(state.mode);
+    loadCredentialHealth();
+    loadAuditLogs();
   }
   if (!loggedIn) el.loginKey.focus();
 }
@@ -179,6 +196,45 @@ async function loadHistory(mode = state.mode) {
   }
 }
 
+async function loadCredentialHealth() {
+  try {
+    const res = await fetch("/api/credential-health");
+    if (res.status === 401) return setUser(null);
+    if (!res.ok) throw new Error("凭证状态读取失败");
+    const data = await res.json();
+    el.credentialHealth.textContent = `Codex ${data.codexBin ? "正常" : "异常"} · CCH ${data.cchSync ? "正常" : "异常"} · TB凭证 ${data.teambitionCredential ? "已配置" : "未检测到"}`;
+  } catch (err) {
+    el.credentialHealth.textContent = err.message;
+  }
+}
+
+async function loadAuditLogs() {
+  try {
+    const res = await fetch("/api/audit");
+    if (res.status === 401) return setUser(null);
+    if (!res.ok) throw new Error("审计日志读取失败");
+    const data = await res.json();
+    el.auditList.innerHTML = "";
+    const logs = data.logs || [];
+    if (!logs.length) {
+      el.auditList.textContent = "暂无审计记录";
+      return;
+    }
+    for (const log of logs.slice(0, 5)) {
+      const row = document.createElement("div");
+      row.className = "history-item";
+      const title = document.createElement("strong");
+      title.textContent = auditAction(log.action);
+      const meta = document.createElement("small");
+      meta.textContent = `${modeTitles[log.mode] || log.mode || "系统"} · ${formatTime(log.createdAt)}`;
+      row.append(title, meta);
+      el.auditList.append(row);
+    }
+  } catch (err) {
+    el.auditList.textContent = err.message;
+  }
+}
+
 async function login() {
   const key = el.loginKey.value.trim();
   if (!key) {
@@ -217,11 +273,15 @@ async function logout() {
   el.flowSteps.innerHTML = "";
   el.flowSummary.textContent = "等待登录";
   el.historyList.textContent = "等待登录";
+  el.credentialHealth.textContent = "等待登录";
+  el.auditList.textContent = "等待登录";
   el.runId.textContent = "未开始";
   el.runState.textContent = "等待输入";
   el.runTimer.textContent = "00:00";
   el.abortBtn.hidden = true;
   el.abortBtn.disabled = true;
+  el.previewPanel.hidden = true;
+  el.detailPanel.hidden = true;
   clearResults();
 }
 
@@ -378,6 +438,20 @@ function renderHistory(history, stats) {
       }
       row.append(links);
     }
+    const actions = document.createElement("div");
+    actions.className = "history-actions";
+    const detail = document.createElement("button");
+    detail.className = "mini-btn";
+    detail.type = "button";
+    detail.textContent = "详情";
+    detail.addEventListener("click", () => showHistoryDetail(item.runId));
+    const retry = document.createElement("button");
+    retry.className = "mini-btn";
+    retry.type = "button";
+    retry.textContent = "重跑";
+    retry.addEventListener("click", () => retryHistory(item));
+    actions.append(detail, retry);
+    row.append(actions);
     el.historyList.append(row);
   }
 }
@@ -387,7 +461,39 @@ function renderHistoryStats(stats) {
     el.historyStats.textContent = "暂无统计";
     return;
   }
-  el.historyStats.textContent = `共 ${stats.total} 次 · 成功 ${stats.success} · 异常 ${stats.failed} · 平均 ${formatDuration(stats.averageDurationMs)}`;
+  el.historyStats.textContent = `今日 ${stats.todayRuns || 0} · 共 ${stats.total} 次 · 成功 ${stats.success} · 异常 ${stats.failed} · 中止 ${stats.aborted || 0} · 成功率 ${stats.successRate ?? "--"}% · 平均 ${formatDuration(stats.averageDurationMs)}`;
+}
+
+async function showHistoryDetail(runId) {
+  try {
+    const res = await fetch(`/api/history/detail?runId=${encodeURIComponent(runId)}`);
+    if (res.status === 401) return setUser(null);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "详情读取失败");
+    const item = data.item;
+    el.detailPanel.hidden = false;
+    const errors = (item.errorMessages || []).map(error => error.message).join("；") || "无";
+    const urls = (item.resultUrls || []).map(result => result.url).join("\n") || "无";
+    el.detailBody.textContent = [
+      `${historyStatus(item.status)} · ${formatDuration(item.durationMs)} · ${item.itemCount || 1} 项`,
+      `错误：${errors}`,
+      `链接：${urls}`,
+      `输入：${item.messageText || item.messagePreview || ""}`
+    ].join("\n");
+  } catch (err) {
+    el.runState.textContent = err.message;
+  }
+}
+
+function retryHistory(item) {
+  setMode(item.mode || state.mode);
+  el.message.value = item.messageText || "";
+  el.projectUrl.value = item.projectUrl || "";
+  state.preview = null;
+  state.previewConfirmed = false;
+  el.previewPanel.hidden = true;
+  el.runState.textContent = "已载入历史任务，可重新解析或启动";
+  el.message.focus();
 }
 
 function clearResults() {
@@ -440,6 +546,58 @@ function currentResults() {
   return state.resultsByMode[state.mode] || state.resultsByMode.create;
 }
 
+async function previewTask() {
+  const message = el.message.value.trim();
+  const projectUrl = el.projectUrl.value.trim();
+  if (!message) {
+    el.runState.textContent = "请输入任务内容";
+    el.message.focus();
+    return null;
+  }
+  try {
+    const res = await fetch("/api/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: state.mode, message, projectUrl })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "解析预览失败");
+    state.preview = data.preview;
+    state.previewConfirmed = false;
+    renderPreview(data.preview, data.validationError);
+    if (data.preview.suggestedMode !== state.mode) {
+      el.runState.textContent = `内容更像${data.preview.suggestedMode === "change" ? "变更" : "创建"}任务，请确认任务类型`;
+    } else {
+      el.runState.textContent = data.validationError || `已识别 ${data.preview.itemCount} 个项目`;
+    }
+    return data;
+  } catch (err) {
+    el.runState.textContent = err.message;
+    return null;
+  }
+}
+
+function renderPreview(preview, validationError = "") {
+  el.previewPanel.hidden = false;
+  const warnings = [...(preview.warnings || [])];
+  if (validationError) warnings.unshift(validationError);
+  el.previewSummary.textContent = `${modeTitles[preview.mode]} · 识别 ${preview.itemCount} 项${preview.requiresConfirmation ? " · 需要确认" : ""}${warnings.length ? ` · ${warnings.join("；")}` : ""}`;
+  el.previewList.innerHTML = "";
+  for (const item of preview.items.slice(0, 12)) {
+    const row = document.createElement("div");
+    row.className = "preview-item";
+    const title = document.createElement("strong");
+    title.textContent = item.title;
+    const fields = document.createElement("small");
+    fields.textContent = Object.entries(item.fields || {})
+      .filter(([, value]) => value)
+      .map(([key, value]) => `${fieldLabel(key)}：${value}`)
+      .join(" · ") || "未提取到关键字段";
+    row.append(title, fields);
+    el.previewList.append(row);
+  }
+}
+
 async function runTask(options = {}) {
   if (state.running) return;
   const aiTest = Boolean(options.aiTest);
@@ -454,6 +612,17 @@ async function runTask(options = {}) {
   if (validationError) {
     el.runState.textContent = validationError;
     el.message.focus();
+    return;
+  }
+  const previewData = state.preview && state.preview.mode === state.mode ? { preview: state.preview } : await previewTask();
+  if (!previewData) return;
+  const needsConfirm =
+    previewData.preview.requiresConfirmation ||
+    previewData.preview.suggestedMode !== state.mode ||
+    (previewData.preview.warnings || []).length > 0;
+  if (needsConfirm && !state.previewConfirmed) {
+    state.previewConfirmed = true;
+    el.runState.textContent = "请确认解析预览无误后再次点击启动";
     return;
   }
 
@@ -471,7 +640,7 @@ async function runTask(options = {}) {
     const res = await fetch("/api/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: state.mode, message, projectUrl, aiTest }),
+      body: JSON.stringify({ mode: state.mode, message, projectUrl, aiTest, confirmed: state.previewConfirmed }),
       signal: state.abortController.signal
     });
     await consumeNdjson(res, { source: "run" });
@@ -479,7 +648,9 @@ async function runTask(options = {}) {
     el.runState.textContent = state.abortRequested ? "已中止生成" : err.message;
   } finally {
     setRunning(false);
+    state.previewConfirmed = false;
     loadHistory(state.runMode);
+    loadAuditLogs();
   }
 }
 
@@ -514,7 +685,7 @@ async function repairStep(stepId) {
     const res = await fetch("/api/repair", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: state.mode, message, projectUrl, stepId, continueAfterRepair: true }),
+      body: JSON.stringify({ mode: state.mode, message, projectUrl, stepId, continueAfterRepair: true, sourceRunId: state.lastRunId }),
       signal: state.abortController.signal
     });
     await consumeNdjson(res, { source: "repair" });
@@ -593,13 +764,18 @@ function handleStreamEvent(event, context = {}) {
   } else if (event.type === "result" || event.type === "run_error") {
     updateResult(event);
   } else if (event.type === "done") {
+    state.lastRunId = state.currentRunId || state.lastRunId;
+    state.failedStepIds = new Set();
     for (const stepId of event.failedSteps || []) updateCompositeStep(stepId, "failed");
     for (const stepId of event.missingSteps || []) {
       if (state.stepStatus.get(stepId) !== "done") updateCompositeStep(stepId, "failed");
     }
+    [...(event.failedSteps || []), ...(event.missingSteps || [])].forEach(value => {
+      state.failedStepIds.add(String(value).split(":").pop());
+    });
     el.runState.textContent = event.code === 0
       ? context.source === "repair" ? "修复完成，后续步骤已继续执行" : "流程结束"
-      : "流程异常";
+      : event.code === 130 ? "流程已中止" : "流程异常";
     updateFlowSummary();
     loadHistory(state.runMode);
   }
@@ -621,6 +797,22 @@ function validateMessage(message, projectUrl = "") {
     return "项目变更请粘贴项目地址，或提供项目名称、原项目编号和新项目编号";
   }
   return "";
+}
+
+function resetPreviewState() {
+  state.preview = null;
+  state.previewConfirmed = false;
+  el.previewPanel.hidden = true;
+}
+
+function maybeSuggestMode() {
+  const text = el.message.value;
+  if (!text.trim()) return;
+  if (state.mode === "create" && /项目变更申请|原项目编号|新项目编号|变更类别/.test(text)) {
+    el.runState.textContent = "检测到变更单内容，建议切换到变更视图";
+  } else if (state.mode === "change" && /项目启动申请|启动类别|项目编号/.test(text) && !/原项目编号|新项目编号/.test(text)) {
+    el.runState.textContent = "检测到创建单内容，建议切换到创建视图";
+  }
 }
 
 function hasChangeFields(message) {
@@ -645,7 +837,27 @@ function stepKey(itemId, stepId) {
 }
 
 function historyStatus(status) {
-  return { running: "运行中", success: "成功", failed: "异常" }[status] || status;
+  return { running: "运行中", success: "成功", failed: "异常", aborted: "已中止" }[status] || status;
+}
+
+function auditAction(action) {
+  return {
+    run_codex: "启动任务",
+    repair_codex_step: "修复步骤",
+    abort_codex_run: "中止任务"
+  }[action] || action;
+}
+
+function fieldLabel(key) {
+  return {
+    projectName: "项目",
+    projectCode: "编号",
+    oldCode: "原编号",
+    newCode: "新编号",
+    customer: "客户",
+    engineer: "工程师",
+    date: "日期"
+  }[key] || key;
 }
 
 function formatTime(value) {
@@ -724,7 +936,20 @@ el.clearBtn.addEventListener("click", event => {
   renderFlowSteps();
   el.runId.textContent = "未开始";
   el.runState.textContent = "等待输入";
+  resetPreviewState();
 });
+
+el.previewBtn.addEventListener("click", event => {
+  flashButton(event.currentTarget);
+  previewTask();
+});
+
+el.message.addEventListener("input", () => {
+  resetPreviewState();
+  maybeSuggestMode();
+});
+
+el.projectUrl.addEventListener("input", resetPreviewState);
 
 el.message.addEventListener("keydown", event => {
   if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {

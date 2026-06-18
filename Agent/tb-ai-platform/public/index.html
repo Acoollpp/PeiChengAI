@@ -78,6 +78,12 @@
             <div id="historyStats" class="history-stats">暂无统计</div>
             <div id="historyList" class="history-list" aria-live="polite">等待登录</div>
           </div>
+
+          <div class="ops-panel">
+            <div class="section-title">运行状态</div>
+            <div id="credentialHealth" class="history-stats">等待登录</div>
+            <div id="auditList" class="history-list">等待登录</div>
+          </div>
         </aside>
 
         <section class="panel main-panel">
@@ -99,7 +105,16 @@
                 <input id="projectUrlInput" class="url-input" type="url" placeholder="粘贴 Teambition / 钉钉项目地址，变更时优先用于定位项目" />
               </div>
 
+              <div class="preview-panel" id="previewPanel" hidden>
+                <div class="section-title">解析预览</div>
+                <div id="previewSummary" class="preview-summary"></div>
+                <div id="previewList" class="preview-list"></div>
+              </div>
+
               <div class="actions">
+                <button id="previewBtn" class="ghost" type="button">
+                  解析预览
+                </button>
                 <button id="runBtn" class="primary" type="button">
                   <span>启动流程</span>
                 </button>
@@ -116,6 +131,11 @@
               <div class="result-panel" id="resultPanel" hidden>
                 <div class="section-title">执行结果</div>
                 <div id="resultList" class="result-list" aria-live="polite"></div>
+              </div>
+
+              <div class="detail-panel" id="detailPanel" hidden>
+                <div class="section-title">历史详情</div>
+                <div id="detailBody" class="detail-body"></div>
               </div>
             </div>
 

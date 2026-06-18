@@ -145,6 +145,24 @@ function parseNdjson(raw) {
     assert.match(flows.body, /创建项目空间/);
     assert.match(flows.body, /回读验收/);
 
+    const credentialHealth = await request(port, { path: "/api/credential-health", headers: { Cookie: cookie } });
+    assert.strictEqual(credentialHealth.statusCode, 200);
+    assert.strictEqual(typeof JSON.parse(credentialHealth.body).codexBin, "boolean");
+
+    const preview = await request(port, {
+      method: "POST",
+      path: "/api/preview",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        mode: "change",
+        message: "项目名称\nA\n原项目编号\nA-1\n新项目编号\nA-2"
+      })
+    });
+    assert.strictEqual(preview.statusCode, 200);
+    const previewBody = JSON.parse(preview.body);
+    assert.strictEqual(previewBody.preview.suggestedMode, "change");
+    assert.strictEqual(previewBody.preview.items[0].fields.oldCode, "A-1");
+
     const runFlow = await request(port, {
       method: "POST",
       path: "/api/run",
@@ -247,6 +265,17 @@ function parseNdjson(raw) {
     assert.ok(historyBody.history.some(item => item.messageText && item.messageText.includes("项目名称")));
     assert.ok(historyBody.history.some(item => Array.isArray(item.resultUrls) && item.resultUrls.length > 0));
     assert.ok(historyBody.history.every(item => item.mode === "create"));
+    assert.ok(historyBody.stats.successRate >= 0);
+    assert.ok("aborted" in historyBody.stats);
+
+    const detailRun = historyBody.history.find(item => item.resultUrls.length);
+    const detail = await request(port, { path: `/api/history/detail?runId=${encodeURIComponent(detailRun.runId)}`, headers: { Cookie: cookie } });
+    assert.strictEqual(detail.statusCode, 200);
+    assert.strictEqual(JSON.parse(detail.body).item.runId, detailRun.runId);
+
+    const audit = await request(port, { path: "/api/audit", headers: { Cookie: cookie } });
+    assert.strictEqual(audit.statusCode, 200);
+    assert.ok(JSON.parse(audit.body).logs.some(log => log.action === "run_codex"));
 
     const changeHistory = await request(port, { path: "/api/history?mode=change", headers: { Cookie: cookie } });
     assert.strictEqual(changeHistory.statusCode, 200);

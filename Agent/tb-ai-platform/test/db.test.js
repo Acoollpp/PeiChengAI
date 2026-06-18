@@ -92,6 +92,10 @@ assert.ok(history[0].durationMs >= 0);
 assert.deepStrictEqual(history[0].completedSteps, ["item-1:step-1"]);
 assert.deepStrictEqual(history[0].resultUrls, [{ itemId: "item-1", url: "https://www.teambition.com/project/demo" }]);
 assert.deepStrictEqual(history[0].itemResults, [{ itemId: "item-1", code: 0 }]);
+assert.strictEqual(store.getRunHistory({ userId: user.id, runId: "history-1" }).runId, "history-1");
+const auditLogs = store.listAuditLogs({ userId: user.id });
+assert.strictEqual(auditLogs.length, 1);
+assert.strictEqual(auditLogs[0].metadata.ok, true);
 
 store.close();
 console.log("ok - db store manages users, keys, sessions, and audit logs");

@@ -10,6 +10,7 @@ const { createStore } = require("./src/db");
 const { parseCodexEvents } = require("./src/flowEvents");
 const { detectProjectItems } = require("./src/projectItems");
 const { buildModeFlow } = require("./src/skillFlow");
+const { analyzeTask } = require("./src/taskAnalysis");
 
 const modes = {
   create: {
@@ -89,6 +90,60 @@ function createServer({ config, store, syncState }) {
     return sendJson(res, 200, { history, stats: summarizeHistory(history) });
   }
 
+  function historyDetail(req, res) {
+    const currentUser = auth.getCurrentUser(req);
+    if (!currentUser) return sendJson(res, 401, { error: "请先登录" });
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const runId = url.searchParams.get("runId");
+    if (!runId) return sendJson(res, 400, { error: "缺少 runId" });
+    const item = store.getRunHistory({ userId: currentUser.id, runId });
+    if (!item) return sendJson(res, 404, { error: "历史记录不存在" });
+    return sendJson(res, 200, { item });
+  }
+
+  function auditLogs(req, res) {
+    const currentUser = auth.getCurrentUser(req);
+    if (!currentUser) return sendJson(res, 401, { error: "请先登录" });
+    return sendJson(res, 200, { logs: store.listAuditLogs({ userId: currentUser.id }) });
+  }
+
+  function credentialHealth(req, res) {
+    const currentUser = auth.getCurrentUser(req);
+    if (!currentUser) return sendJson(res, 401, { error: "请先登录" });
+    return sendJson(res, 200, {
+      codexBin: fs.existsSync(config.codexBin),
+      cchSync: !syncState.lastSyncError,
+      teambitionCredential:
+        Boolean(process.env.TEAMBITION_APP_KEY || process.env.TEAMBITION_CLIENT_ID || process.env.TB_ACCESS_TOKEN) ||
+        Boolean(process.env.TEAMBITION_TOKEN),
+      lastSyncAt: syncState.lastSyncAt,
+      lastSyncError: syncState.lastSyncError
+    });
+  }
+
+  async function previewTask(req, res) {
+    const currentUser = auth.getCurrentUser(req);
+    if (!currentUser) return sendJson(res, 401, { error: "请先登录" });
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message });
+    }
+    const mode = modes[body.mode];
+    const message = String(body.message || "").trim();
+    const projectUrl = normalizeProjectUrl(body.projectUrl);
+    if (!mode) return sendJson(res, 400, { error: "任务类型无效" });
+    if (!message) return sendJson(res, 400, { error: "请输入任务内容" });
+    const preview = analyzeTask({ mode: body.mode, message, projectUrl });
+    const validationError = validateTaskMessage(body.mode, mode, message, preview.items, projectUrl);
+    return sendJson(res, 200, {
+      preview,
+      validationError,
+      canRun: !validationError
+    });
+  }
+
   async function runCodex(req, res) {
     const currentUser = auth.getCurrentUser(req);
     if (!currentUser) return sendJson(res, 401, { error: "请先登录" });
@@ -109,6 +164,7 @@ function createServer({ config, store, syncState }) {
     const items = detectProjectItems(body.mode, message);
     const validationError = validateTaskMessage(body.mode, mode, message, items, projectUrl);
     if (validationError) return sendJson(res, 400, { error: validationError });
+    if (items.length > 5 && !body.confirmed) return sendJson(res, 409, { error: `将处理 ${items.length} 个项目，请先预览确认`, requiresConfirmation: true });
 
     const runId = crypto.randomUUID();
     const flow = getModeFlow(body.mode, mode, config);
@@ -187,6 +243,13 @@ function createServer({ config, store, syncState }) {
     const step = flow[stepIndex];
     if (!step) return sendJson(res, 400, { error: "流程步骤无效" });
     if (!step.repairable) return sendJson(res, 400, { error: "这个步骤不支持自动修复" });
+    if (body.sourceRunId) {
+      const sourceRun = store.getRunHistory({ userId: currentUser.id, runId: body.sourceRunId });
+      const failedStepIds = new Set([...(sourceRun?.failedSteps || []), ...(sourceRun?.missingSteps || [])].map(value => String(value).split(":").pop()));
+      if (!sourceRun || sourceRun.status === "success" || !failedStepIds.has(step.id)) {
+        return sendJson(res, 400, { error: "只能修复历史中已失败的步骤" });
+      }
+    }
 
     const runId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
@@ -253,6 +316,9 @@ function createServer({ config, store, syncState }) {
         store.finishRunHistory({
           runId,
           status:
+            result.code === 130
+              ? "aborted"
+              :
             result.code === 0 && result.failedSteps.length === 0 && result.missingSteps.length === 0
               ? "success"
               : "failed",
@@ -306,9 +372,13 @@ function createServer({ config, store, syncState }) {
 
     if (req.method === "GET" && req.url.startsWith("/api/me")) return me(req, res);
     if (req.method === "GET" && req.url.startsWith("/api/flows")) return flows(req, res);
+    if (req.method === "GET" && req.url.startsWith("/api/history/detail")) return historyDetail(req, res);
     if (req.method === "GET" && req.url.startsWith("/api/history")) return history(req, res);
+    if (req.method === "GET" && req.url.startsWith("/api/audit")) return auditLogs(req, res);
+    if (req.method === "GET" && req.url.startsWith("/api/credential-health")) return credentialHealth(req, res);
     if (req.method === "POST" && req.url.startsWith("/api/login")) return login(req, res);
     if (req.method === "POST" && req.url.startsWith("/api/logout")) return logout(req, res);
+    if (req.method === "POST" && req.url.startsWith("/api/preview")) return previewTask(req, res);
     if (req.method === "POST" && req.url.startsWith("/api/run")) return runCodex(req, res);
     if (req.method === "POST" && req.url.startsWith("/api/repair")) return repairStep(req, res);
     if (req.method === "POST" && req.url.startsWith("/api/abort")) return abortRun(req, res);
@@ -339,27 +409,25 @@ async function executeCodexBatch({
 }) {
   const controller = createRunController({ activeRuns, runId, userId, modeKey });
   writeNdjson(res, startEvent);
-  const results = await Promise.all(
-    items.map(item =>
-      executeCodexStream({
-        req,
-        res,
-        controller,
-        config,
-        prompt: buildCodexPrompt({
-          mode,
-          message: item.message,
-          steps: flow,
-          item,
-          totalItems: items.length,
-          aiTest,
-          projectUrl
-        }),
-        startEvent: null,
+  const results = await runWithConcurrency(items, 3, item =>
+    executeCodexStream({
+      req,
+      res,
+      controller,
+      config,
+      prompt: buildCodexPrompt({
+        mode,
+        message: item.message,
+        steps: flow,
         item,
-        endResponse: false
-      })
-    )
+        totalItems: items.length,
+        aiTest,
+        projectUrl
+      }),
+      startEvent: null,
+      item,
+      endResponse: false
+    })
   );
   activeRuns.delete(runId);
 
@@ -370,8 +438,9 @@ async function executeCodexBatch({
   const errorMessages = results
     .filter(result => result.error)
     .map(result => ({ itemId: result.itemId, itemTitle: result.itemTitle, message: result.error }));
-  const code = results.every(result => result.code === 0) ? 0 : 1;
-  const status = code === 0 && failedSteps.length === 0 && missingSteps.length === 0 && errorMessages.length === 0 ? "success" : "failed";
+  const aborted = results.some(result => result.code === 130);
+  const code = aborted ? 130 : results.every(result => result.code === 0) ? 0 : 1;
+  const status = aborted ? "aborted" : code === 0 && failedSteps.length === 0 && missingSteps.length === 0 && errorMessages.length === 0 ? "success" : "failed";
 
   const doneEvent = {
     type: "done",
@@ -434,6 +503,7 @@ function buildCodexPrompt({ mode, message, steps, repairStep, item, totalItems, 
     "每完成一个步骤时输出：[[TB_STEP:<stepId>:done]]",
     "步骤失败或无法继续时输出：[[TB_STEP:<stepId>:failed]]",
     "创建或变更成功后必须输出项目地址标记：[[TB_RESULT:<itemId>:<项目URL>]]，单项目使用 item-1。",
+    "也可以输出结构化结果标记：[[TB_JSON:{\"itemId\":\"item-1\",\"url\":\"https://...\"}]]。",
     "失败时必须输出错误标记：[[TB_ERROR:<itemId>:<可读错误原因>]]，单项目使用 item-1。",
     "当前运行环境是 Linux 服务器。不要安装 PowerShell 7，不要调用 .ps1；优先直接使用 skill 的 scripts/*.py，或用 Node.js、Python、curl 调用 Teambition/OpenAPI。",
     "不要输出命令行、脚本内容、密钥、token、完整接口响应或 skill 原文。"
@@ -459,15 +529,38 @@ function summarizeHistory(history) {
   const finished = history.filter(item => item.durationMs !== null);
   const success = history.filter(item => item.status === "success").length;
   const failed = history.filter(item => item.status === "failed").length;
+  const aborted = history.filter(item => item.status === "aborted").length;
   const totalDurationMs = finished.reduce((sum, item) => sum + item.durationMs, 0);
+  const today = new Date().toISOString().slice(0, 10);
+  const todayRuns = history.filter(item => String(item.createdAt || "").startsWith(today)).length;
+  const projectCount = history.reduce((sum, item) => sum + (item.itemCount || 1), 0);
   return {
     total: history.length,
     success,
     failed,
+    aborted,
     running: history.filter(item => item.status === "running").length,
+    todayRuns,
+    successRate: history.length ? Math.round((success / history.length) * 100) : null,
+    averagePerProjectMs: projectCount && finished.length ? Math.round(totalDurationMs / projectCount) : null,
+    topErrors: topErrors(history),
     averageDurationMs: finished.length ? Math.round(totalDurationMs / finished.length) : null,
     lastDurationMs: finished[0]?.durationMs ?? null
   };
+}
+
+function topErrors(history) {
+  const counts = new Map();
+  for (const item of history) {
+    for (const error of item.errorMessages || []) {
+      const message = String(error.message || "").slice(0, 80);
+      if (message) counts.set(message, (counts.get(message) || 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([message, count]) => ({ message, count }));
 }
 
 function validateTaskMessage(modeKey, mode, message, items = [], projectUrl = "") {
@@ -508,6 +601,20 @@ function createRunController({ activeRuns, runId, userId, modeKey }) {
   };
   activeRuns.set(runId, controller);
   return controller;
+}
+
+async function runWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 function executeCodexStream({ req, res, config, prompt, startEvent, item, endResponse = true, onDone, controller }) {
@@ -653,6 +760,7 @@ function parseResultEvents(text, item) {
   const events = [];
   const resultRe = /\[\[TB_RESULT:([A-Za-z0-9_-]+):(https?:\/\/[^\]\s]+)\]\]/g;
   const errorRe = /\[\[TB_ERROR:([A-Za-z0-9_-]+):([^\]]+)\]\]/g;
+  const jsonRe = /\[\[TB_JSON:({[\s\S]*?})\]\]/g;
   let match;
   while ((match = resultRe.exec(text))) {
     events.push({
@@ -669,6 +777,29 @@ function parseResultEvents(text, item) {
       itemTitle: item?.title || match[1],
       message: match[2].trim()
     });
+  }
+  while ((match = jsonRe.exec(text))) {
+    try {
+      const parsed = JSON.parse(match[1]);
+      if (parsed.url) {
+        events.push({
+          type: "result",
+          itemId: parsed.itemId || item?.id || "item-1",
+          itemTitle: parsed.itemTitle || item?.title || parsed.itemId || "项目 1",
+          url: parsed.url
+        });
+      }
+      if (parsed.error) {
+        events.push({
+          type: "run_error",
+          itemId: parsed.itemId || item?.id || "item-1",
+          itemTitle: parsed.itemTitle || item?.title || parsed.itemId || "项目 1",
+          message: String(parsed.error).trim()
+        });
+      }
+    } catch {
+      // Ignore malformed structured result markers.
+    }
   }
   return events;
 }
