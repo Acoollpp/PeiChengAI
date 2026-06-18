@@ -6,6 +6,9 @@ const path = require("path");
 const { createStore } = require("../src/db");
 const { createServer } = require("../server");
 
+process.env.TEAMBITION_APP_ID = "test-app-id";
+process.env.TEAMBITION_APP_SECRET = "test-app-secret";
+
 function request(port, { method = "GET", path = "/", headers = {}, body = "" }) {
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -147,7 +150,9 @@ function parseNdjson(raw) {
 
     const credentialHealth = await request(port, { path: "/api/credential-health", headers: { Cookie: cookie } });
     assert.strictEqual(credentialHealth.statusCode, 200);
-    assert.strictEqual(typeof JSON.parse(credentialHealth.body).codexBin, "boolean");
+    const credentialHealthBody = JSON.parse(credentialHealth.body);
+    assert.strictEqual(typeof credentialHealthBody.codexBin, "boolean");
+    assert.strictEqual(credentialHealthBody.teambitionCredential, true);
 
     const preview = await request(port, {
       method: "POST",

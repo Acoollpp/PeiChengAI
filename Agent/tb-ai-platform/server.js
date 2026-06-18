@@ -114,6 +114,8 @@ function createServer({ config, store, syncState }) {
       codexBin: fs.existsSync(config.codexBin),
       cchSync: !syncState.lastSyncError,
       teambitionCredential:
+        Boolean(process.env.TEAMBITION_APP_ID && process.env.TEAMBITION_APP_SECRET) ||
+        Boolean(process.env.TEAMBITION_APP_ACCESS_TOKEN) ||
         Boolean(process.env.TEAMBITION_APP_KEY || process.env.TEAMBITION_CLIENT_ID || process.env.TB_ACCESS_TOKEN) ||
         Boolean(process.env.TEAMBITION_TOKEN),
       lastSyncAt: syncState.lastSyncAt,
