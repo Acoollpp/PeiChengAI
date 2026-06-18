@@ -6,6 +6,7 @@ const js = fs.readFileSync("public/app.js", "utf8");
 
 assert.match(html, /id="loginPanel"/);
 assert.match(html, /id="loginKeyInput"/);
+assert.match(html, /id="rememberKeyInput"/);
 assert.match(html, /id="accountName"/);
 assert.match(html, /id="logoutBtn"/);
 assert.match(html, /id="workspace"/);
@@ -64,6 +65,9 @@ assert.ok(js.includes("function canRepairStep"));
 assert.ok(js.includes("function previewTask"));
 assert.ok(js.includes("function retryHistory"));
 assert.ok(js.includes("function maybeSuggestMode"));
+assert.ok(js.includes("rememberedCchKey"));
+assert.ok(js.includes("loadRememberedKey"));
+assert.ok(js.includes("saveRememberedKey"));
 assert.ok(js.includes("flashButton(event.currentTarget)"));
 assert.ok(js.includes("renderFlowSteps"));
 assert.ok(js.includes("consumeNdjson"));
@@ -76,6 +80,7 @@ assert.doesNotMatch(js, /appendOutput/);
 assert.doesNotMatch(js, /event\.type === "stdout"/);
 assert.doesNotMatch(js, /event\.type === "stderr"/);
 assert.ok(!js.includes('localStorage.setItem("tbAiToken"'));
+assert.ok(js.includes('localStorage.setItem(rememberKeyStorageKey'));
 
 console.log("ok - frontend has login state and flow panel without token or console output storage");
 

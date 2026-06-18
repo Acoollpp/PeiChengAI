@@ -46,12 +46,15 @@ const statusText = {
   failed: "需修复"
 };
 
+const rememberKeyStorageKey = "rememberedCchKey";
+
 const el = {
   accountCard: document.querySelector("#accountCard"),
   accountName: document.querySelector("#accountName"),
   healthText: document.querySelector("#healthText"),
   loginBtn: document.querySelector("#loginBtn"),
   loginKey: document.querySelector("#loginKeyInput"),
+  rememberKey: document.querySelector("#rememberKeyInput"),
   loginPanel: document.querySelector("#loginPanel"),
   loginState: document.querySelector("#loginState"),
   historyList: document.querySelector("#historyList"),
@@ -253,13 +256,30 @@ async function login() {
     });
     const data = await res.json().catch(() => ({ error: "登录失败" }));
     if (!res.ok) throw new Error(data.error || "登录失败");
-    el.loginKey.value = "";
+    saveRememberedKey(key);
+    if (!el.rememberKey.checked) el.loginKey.value = "";
     el.loginState.textContent = "登录成功";
     setUser(data.user);
   } catch (err) {
     el.loginState.textContent = err.message;
   } finally {
     el.loginBtn.disabled = false;
+  }
+}
+
+function loadRememberedKey() {
+  const rememberedCchKey = localStorage.getItem(rememberKeyStorageKey) || "";
+  if (!rememberedCchKey) return;
+  el.loginKey.value = rememberedCchKey;
+  el.rememberKey.checked = true;
+  el.loginState.textContent = "已填入本机保存的 CCH key";
+}
+
+function saveRememberedKey(key) {
+  if (el.rememberKey.checked) {
+    localStorage.setItem(rememberKeyStorageKey, key);
+  } else {
+    localStorage.removeItem(rememberKeyStorageKey);
   }
 }
 
@@ -915,6 +935,9 @@ el.logoutBtn.addEventListener("click", event => {
 el.loginKey.addEventListener("keydown", event => {
   if (event.key === "Enter") login();
 });
+el.rememberKey.addEventListener("change", () => {
+  if (!el.rememberKey.checked) localStorage.removeItem(rememberKeyStorageKey);
+});
 el.runBtn.addEventListener("click", event => {
   flashButton(event.currentTarget);
   runTask();
@@ -958,5 +981,6 @@ el.message.addEventListener("keydown", event => {
 });
 
 setMode("create");
+loadRememberedKey();
 checkHealth();
 checkSession();

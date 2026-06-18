@@ -237,6 +237,23 @@ h2 {
   margin-top: 22px;
 }
 
+.remember-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.remember-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
