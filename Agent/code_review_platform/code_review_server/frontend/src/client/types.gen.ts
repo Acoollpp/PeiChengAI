@@ -215,6 +215,7 @@ export type ReviewFocusDirectionCreate = {
     title: string;
     content: string;
     department_id?: (string | null);
+    department_ids?: (Array<(string)> | null);
     is_active?: boolean;
 };
 
@@ -224,6 +225,7 @@ export type ReviewFocusDirectionPublic = {
     content: string;
     department_id?: (string | null);
     department_name?: (string | null);
+    departments?: Array<DepartmentPublic>;
     is_active: boolean;
     usage_count: number;
     created_by_user_id?: (string | null);
@@ -240,7 +242,13 @@ export type ReviewFocusDirectionUpdate = {
     title?: (string | null);
     content?: (string | null);
     department_id?: (string | null);
+    department_ids?: (Array<(string)> | null);
     is_active?: (boolean | null);
+};
+
+export type ReviewFocusDirectionUsageStateUpdate = {
+    content: string;
+    is_used: boolean;
 };
 
 export type ReviewFocusDirectionUsageStatPublic = {
@@ -248,6 +256,7 @@ export type ReviewFocusDirectionUsageStatPublic = {
     usage_count: number;
     latest_used_at?: (string | null);
     departments?: Array<(string)>;
+    is_used?: boolean;
 };
 
 export type ReviewFocusDirectionUsageStatsPublic = {
@@ -379,6 +388,10 @@ export type UserCreate = {
     role?: UserRole;
 };
 
+export type UserDepartmentUpdate = {
+    department_id: string;
+};
+
 export type UserPublic = {
     is_active?: boolean;
     is_superuser?: boolean;
@@ -479,6 +492,8 @@ export type DepartmentsCreateDepartmentData = {
 };
 
 export type DepartmentsCreateDepartmentResponse = (DepartmentPublic);
+
+export type DepartmentsReadAvailableDepartmentsResponse = (DepartmentsPublic);
 
 export type DepartmentsUpdateDepartmentData = {
     departmentId: string;
@@ -594,7 +609,11 @@ export type PrivateCreateUserData = {
 export type PrivateCreateUserResponse = (UserPublic);
 
 export type ReviewFocusDirectionsReadReviewFocusDirectionsData = {
+    departmentId?: (string | null);
+    departmentScope?: string;
+    isActive?: (boolean | null);
     limit?: number;
+    search?: (string | null);
     skip?: number;
 };
 
@@ -606,7 +625,29 @@ export type ReviewFocusDirectionsCreateReviewFocusDirectionData = {
 
 export type ReviewFocusDirectionsCreateReviewFocusDirectionResponse = (ReviewFocusDirectionPublic);
 
+export type ReviewFocusDirectionsReadUsageStatsData = {
+    departmentId?: (string | null);
+    departmentScope?: string;
+    isUsed?: (boolean | null);
+    search?: (string | null);
+};
+
 export type ReviewFocusDirectionsReadUsageStatsResponse = (ReviewFocusDirectionUsageStatsPublic);
+
+export type ReviewFocusDirectionsUpdateUsageStateData = {
+    requestBody: ReviewFocusDirectionUsageStateUpdate;
+};
+
+export type ReviewFocusDirectionsUpdateUsageStateResponse = (Message);
+
+export type ReviewFocusDirectionsExportUsageStatsData = {
+    departmentId?: (string | null);
+    departmentScope?: string;
+    isUsed?: (boolean | null);
+    search?: (string | null);
+};
+
+export type ReviewFocusDirectionsExportUsageStatsResponse = (unknown);
 
 export type ReviewFocusDirectionsCreateReviewFocusDirectionFromUsageData = {
     requestBody: ReviewFocusDirectionCreate;
@@ -766,6 +807,12 @@ export type UsersUpdateUserMeData = {
 };
 
 export type UsersUpdateUserMeResponse = (UserPublic);
+
+export type UsersUpdateUserMeDepartmentData = {
+    requestBody: UserDepartmentUpdate;
+};
+
+export type UsersUpdateUserMeDepartmentResponse = (UserPublic);
 
 export type UsersReadUserByIdData = {
     userId: string;

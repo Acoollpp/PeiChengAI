@@ -1089,6 +1089,21 @@ export const ReviewFocusDirectionCreateSchema = {
             ],
             title: 'Department Id'
         },
+        department_ids: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string',
+                        format: 'uuid'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Department Ids'
+        },
         is_active: {
             type: 'boolean',
             title: 'Is Active',
@@ -1137,6 +1152,13 @@ export const ReviewFocusDirectionPublicSchema = {
                 }
             ],
             title: 'Department Name'
+        },
+        departments: {
+            items: {
+                '$ref': '#/components/schemas/DepartmentPublic'
+            },
+            type: 'array',
+            title: 'Departments'
         },
         is_active: {
             type: 'boolean',
@@ -1228,6 +1250,21 @@ export const ReviewFocusDirectionUpdateSchema = {
             ],
             title: 'Department Id'
         },
+        department_ids: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string',
+                        format: 'uuid'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Department Ids'
+        },
         is_active: {
             anyOf: [
                 {
@@ -1272,11 +1309,34 @@ export const ReviewFocusDirectionUsageStatPublicSchema = {
             },
             type: 'array',
             title: 'Departments'
+        },
+        is_used: {
+            type: 'boolean',
+            title: 'Is Used',
+            default: false
         }
     },
     type: 'object',
     required: ['content', 'usage_count'],
     title: 'ReviewFocusDirectionUsageStatPublic'
+} as const;
+
+export const ReviewFocusDirectionUsageStateUpdateSchema = {
+    properties: {
+        content: {
+            type: 'string',
+            maxLength: 4096,
+            minLength: 1,
+            title: 'Content'
+        },
+        is_used: {
+            type: 'boolean',
+            title: 'Is Used'
+        }
+    },
+    type: 'object',
+    required: ['content', 'is_used'],
+    title: 'ReviewFocusDirectionUsageStateUpdate'
 } as const;
 
 export const ReviewFocusDirectionUsageStatsPublicSchema = {
@@ -2083,6 +2143,19 @@ export const UserCreateSchema = {
     },
     type: 'object',
     title: 'UserCreate'
+} as const;
+
+export const UserDepartmentUpdateSchema = {
+    properties: {
+        department_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Department Id'
+        }
+    },
+    type: 'object',
+    required: ['department_id'],
+    title: 'UserDepartmentUpdate'
 } as const;
 
 export const UserPublicSchema = {

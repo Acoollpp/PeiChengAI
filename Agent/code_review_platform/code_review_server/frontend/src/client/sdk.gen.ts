@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { CchSyncSyncCchUsersResponse, ClientReleasesReadClientReleasesData, ClientReleasesReadClientReleasesResponse, ClientReleasesUploadClientReleaseData, ClientReleasesUploadClientReleaseResponse, ClientReleasesActivateClientReleaseData, ClientReleasesActivateClientReleaseResponse, ClientReleasesDownloadLatestYmlData, ClientReleasesDownloadLatestYmlResponse, ClientReleasesDownloadReleaseFileData, ClientReleasesDownloadReleaseFileResponse, CredentialsReadMySvnCredentialResponse, CredentialsUpdateMySvnCredentialData, CredentialsUpdateMySvnCredentialResponse, DepartmentsReadDepartmentsData, DepartmentsReadDepartmentsResponse, DepartmentsCreateDepartmentData, DepartmentsCreateDepartmentResponse, DepartmentsUpdateDepartmentData, DepartmentsUpdateDepartmentResponse, DepartmentsDeleteDepartmentData, DepartmentsDeleteDepartmentResponse, FeedbackCreateFeedbackData, FeedbackCreateFeedbackResponse, FeedbackReadFeedbackData, FeedbackReadFeedbackResponse, FeedbackReadFeedbackStatsData, FeedbackReadFeedbackStatsResponse, FeedbackReadFeedbackByIdData, FeedbackReadFeedbackByIdResponse, FeedbackReadFeedbackScreenshotData, FeedbackReadFeedbackScreenshotResponse, FeedbackReadFeedbackScreenshotByIdData, FeedbackReadFeedbackScreenshotByIdResponse, FeedbackUpdateFeedbackStatusData, FeedbackUpdateFeedbackStatusResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginSvnAccountData, LoginLoginSvnAccountResponse, LoginLoginWithKeyData, LoginLoginWithKeyResponse, LoginTestTokenResponse, PrivateCreateUserData, PrivateCreateUserResponse, ReviewFocusDirectionsReadReviewFocusDirectionsData, ReviewFocusDirectionsReadReviewFocusDirectionsResponse, ReviewFocusDirectionsCreateReviewFocusDirectionData, ReviewFocusDirectionsCreateReviewFocusDirectionResponse, ReviewFocusDirectionsReadUsageStatsResponse, ReviewFocusDirectionsCreateReviewFocusDirectionFromUsageData, ReviewFocusDirectionsCreateReviewFocusDirectionFromUsageResponse, ReviewFocusDirectionsUpdateReviewFocusDirectionData, ReviewFocusDirectionsUpdateReviewFocusDirectionResponse, ReviewFocusDirectionsDeleteReviewFocusDirectionData, ReviewFocusDirectionsDeleteReviewFocusDirectionResponse, ReviewTasksCreateReviewTaskData, ReviewTasksCreateReviewTaskResponse, ReviewTasksReadReviewTasksData, ReviewTasksReadReviewTasksResponse, ReviewTasksReadReviewTaskStatsData, ReviewTasksReadReviewTaskStatsResponse, ReviewTasksReadReviewTaskData, ReviewTasksReadReviewTaskResponse, ReviewTasksDeleteReviewTaskData, ReviewTasksDeleteReviewTaskResponse, ReviewTasksUpdateReviewTaskStatusData, ReviewTasksUpdateReviewTaskStatusResponse, ReviewTasksUploadReviewTaskReportData, ReviewTasksUploadReviewTaskReportResponse, ReviewTasksReadReviewTaskReportData, ReviewTasksReadReviewTaskReportResponse, ReviewTasksUploadReviewTaskPdfReportData, ReviewTasksUploadReviewTaskPdfReportResponse, ReviewTasksUploadReviewTaskRequirementFileData, ReviewTasksUploadReviewTaskRequirementFileResponse, ReviewTasksDownloadReviewTaskReportData, ReviewTasksDownloadReviewTaskReportResponse, ReviewTasksDownloadReviewTaskPdfReportData, ReviewTasksDownloadReviewTaskPdfReportResponse, SkillsReadSkillsData, SkillsReadSkillsResponse, SkillsUploadSkillData, SkillsUploadSkillResponse, SkillsActivateSkillData, SkillsActivateSkillResponse, SkillsDeactivateSkillData, SkillsDeactivateSkillResponse, SkillsReadActiveSkillsResponse, SkillsDownloadActiveSkillResponse, SkillsDownloadSkillData, SkillsDownloadSkillResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { CchSyncSyncCchUsersResponse, ClientReleasesReadClientReleasesData, ClientReleasesReadClientReleasesResponse, ClientReleasesUploadClientReleaseData, ClientReleasesUploadClientReleaseResponse, ClientReleasesActivateClientReleaseData, ClientReleasesActivateClientReleaseResponse, ClientReleasesDownloadLatestYmlData, ClientReleasesDownloadLatestYmlResponse, ClientReleasesDownloadReleaseFileData, ClientReleasesDownloadReleaseFileResponse, CredentialsReadMySvnCredentialResponse, CredentialsUpdateMySvnCredentialData, CredentialsUpdateMySvnCredentialResponse, DepartmentsReadDepartmentsData, DepartmentsReadDepartmentsResponse, DepartmentsCreateDepartmentData, DepartmentsCreateDepartmentResponse, DepartmentsReadAvailableDepartmentsResponse, DepartmentsUpdateDepartmentData, DepartmentsUpdateDepartmentResponse, DepartmentsDeleteDepartmentData, DepartmentsDeleteDepartmentResponse, FeedbackCreateFeedbackData, FeedbackCreateFeedbackResponse, FeedbackReadFeedbackData, FeedbackReadFeedbackResponse, FeedbackReadFeedbackStatsData, FeedbackReadFeedbackStatsResponse, FeedbackReadFeedbackByIdData, FeedbackReadFeedbackByIdResponse, FeedbackReadFeedbackScreenshotData, FeedbackReadFeedbackScreenshotResponse, FeedbackReadFeedbackScreenshotByIdData, FeedbackReadFeedbackScreenshotByIdResponse, FeedbackUpdateFeedbackStatusData, FeedbackUpdateFeedbackStatusResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginSvnAccountData, LoginLoginSvnAccountResponse, LoginLoginWithKeyData, LoginLoginWithKeyResponse, LoginTestTokenResponse, PrivateCreateUserData, PrivateCreateUserResponse, ReviewFocusDirectionsReadReviewFocusDirectionsData, ReviewFocusDirectionsReadReviewFocusDirectionsResponse, ReviewFocusDirectionsCreateReviewFocusDirectionData, ReviewFocusDirectionsCreateReviewFocusDirectionResponse, ReviewFocusDirectionsReadUsageStatsData, ReviewFocusDirectionsReadUsageStatsResponse, ReviewFocusDirectionsUpdateUsageStateData, ReviewFocusDirectionsUpdateUsageStateResponse, ReviewFocusDirectionsExportUsageStatsData, ReviewFocusDirectionsExportUsageStatsResponse, ReviewFocusDirectionsCreateReviewFocusDirectionFromUsageData, ReviewFocusDirectionsCreateReviewFocusDirectionFromUsageResponse, ReviewFocusDirectionsUpdateReviewFocusDirectionData, ReviewFocusDirectionsUpdateReviewFocusDirectionResponse, ReviewFocusDirectionsDeleteReviewFocusDirectionData, ReviewFocusDirectionsDeleteReviewFocusDirectionResponse, ReviewTasksCreateReviewTaskData, ReviewTasksCreateReviewTaskResponse, ReviewTasksReadReviewTasksData, ReviewTasksReadReviewTasksResponse, ReviewTasksReadReviewTaskStatsData, ReviewTasksReadReviewTaskStatsResponse, ReviewTasksReadReviewTaskData, ReviewTasksReadReviewTaskResponse, ReviewTasksDeleteReviewTaskData, ReviewTasksDeleteReviewTaskResponse, ReviewTasksUpdateReviewTaskStatusData, ReviewTasksUpdateReviewTaskStatusResponse, ReviewTasksUploadReviewTaskReportData, ReviewTasksUploadReviewTaskReportResponse, ReviewTasksReadReviewTaskReportData, ReviewTasksReadReviewTaskReportResponse, ReviewTasksUploadReviewTaskPdfReportData, ReviewTasksUploadReviewTaskPdfReportResponse, ReviewTasksUploadReviewTaskRequirementFileData, ReviewTasksUploadReviewTaskRequirementFileResponse, ReviewTasksDownloadReviewTaskReportData, ReviewTasksDownloadReviewTaskReportResponse, ReviewTasksDownloadReviewTaskPdfReportData, ReviewTasksDownloadReviewTaskPdfReportResponse, SkillsReadSkillsData, SkillsReadSkillsResponse, SkillsUploadSkillData, SkillsUploadSkillResponse, SkillsActivateSkillData, SkillsActivateSkillResponse, SkillsDeactivateSkillData, SkillsDeactivateSkillResponse, SkillsReadActiveSkillsResponse, SkillsDownloadActiveSkillResponse, SkillsDownloadSkillData, SkillsDownloadSkillResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdateUserMeDepartmentData, UsersUpdateUserMeDepartmentResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class CchSyncService {
     /**
@@ -41,7 +41,7 @@ export class ClientReleasesService {
             }
         });
     }
-
+    
     /**
      * Upload Client Release
      * @param data The data for the request.
@@ -60,7 +60,7 @@ export class ClientReleasesService {
             }
         });
     }
-
+    
     /**
      * Activate Client Release
      * @param data The data for the request.
@@ -80,7 +80,7 @@ export class ClientReleasesService {
             }
         });
     }
-
+    
     /**
      * Download Latest Yml
      * @param data The data for the request.
@@ -102,7 +102,7 @@ export class ClientReleasesService {
             }
         });
     }
-
+    
     /**
      * Download Release File
      * @param data The data for the request.
@@ -140,7 +140,7 @@ export class CredentialsService {
             url: '/api/v1/me/svn-credential'
         });
     }
-
+    
     /**
      * Update My Svn Credential
      * @param data The data for the request.
@@ -183,7 +183,7 @@ export class DepartmentsService {
             }
         });
     }
-
+    
     /**
      * Create Department
      * @param data The data for the request.
@@ -202,7 +202,19 @@ export class DepartmentsService {
             }
         });
     }
-
+    
+    /**
+     * Read Available Departments
+     * @returns DepartmentsPublic Successful Response
+     * @throws ApiError
+     */
+    public static readAvailableDepartments(): CancelablePromise<DepartmentsReadAvailableDepartmentsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/departments/available'
+        });
+    }
+    
     /**
      * Update Department
      * @param data The data for the request.
@@ -225,7 +237,7 @@ export class DepartmentsService {
             }
         });
     }
-
+    
     /**
      * Delete Department
      * @param data The data for the request.
@@ -266,7 +278,7 @@ export class FeedbackService {
             }
         });
     }
-
+    
     /**
      * Read Feedback
      * @param data The data for the request.
@@ -294,7 +306,7 @@ export class FeedbackService {
             }
         });
     }
-
+    
     /**
      * Read Feedback Stats
      * @param data The data for the request.
@@ -314,7 +326,7 @@ export class FeedbackService {
             }
         });
     }
-
+    
     /**
      * Read Feedback By Id
      * @param data The data for the request.
@@ -334,7 +346,7 @@ export class FeedbackService {
             }
         });
     }
-
+    
     /**
      * Read Feedback Screenshot
      * @param data The data for the request.
@@ -354,7 +366,7 @@ export class FeedbackService {
             }
         });
     }
-
+    
     /**
      * Read Feedback Screenshot By Id
      * @param data The data for the request.
@@ -376,7 +388,7 @@ export class FeedbackService {
             }
         });
     }
-
+    
     /**
      * Update Feedback Status
      * @param data The data for the request.
@@ -424,7 +436,7 @@ export class ItemsService {
             }
         });
     }
-
+    
     /**
      * Create Item
      * Create new item.
@@ -444,7 +456,7 @@ export class ItemsService {
             }
         });
     }
-
+    
     /**
      * Read Item
      * Get item by ID.
@@ -465,7 +477,7 @@ export class ItemsService {
             }
         });
     }
-
+    
     /**
      * Update Item
      * Update an item.
@@ -489,7 +501,7 @@ export class ItemsService {
             }
         });
     }
-
+    
     /**
      * Delete Item
      * Delete an item.
@@ -532,7 +544,7 @@ export class LoginService {
             }
         });
     }
-
+    
     /**
      * Login With Key
      * Authenticate with a locally stored API key.
@@ -552,7 +564,7 @@ export class LoginService {
             }
         });
     }
-
+    
     /**
      * Test Token
      * Test access token.
@@ -595,6 +607,10 @@ export class ReviewFocusDirectionsService {
      * @param data The data for the request.
      * @param data.skip
      * @param data.limit
+     * @param data.search
+     * @param data.departmentScope
+     * @param data.departmentId
+     * @param data.isActive
      * @returns ReviewFocusDirectionsPublic Successful Response
      * @throws ApiError
      */
@@ -604,14 +620,18 @@ export class ReviewFocusDirectionsService {
             url: '/api/v1/review-focus-directions',
             query: {
                 skip: data.skip,
-                limit: data.limit
+                limit: data.limit,
+                search: data.search,
+                department_scope: data.departmentScope,
+                department_id: data.departmentId,
+                is_active: data.isActive
             },
             errors: {
                 422: 'Validation Error'
             }
         });
     }
-
+    
     /**
      * Create Review Focus Direction
      * @param data The data for the request.
@@ -630,19 +650,78 @@ export class ReviewFocusDirectionsService {
             }
         });
     }
-
+    
     /**
      * Read Usage Stats
+     * @param data The data for the request.
+     * @param data.search
+     * @param data.departmentScope
+     * @param data.departmentId
+     * @param data.isUsed
      * @returns ReviewFocusDirectionUsageStatsPublic Successful Response
      * @throws ApiError
      */
-    public static readUsageStats(): CancelablePromise<ReviewFocusDirectionsReadUsageStatsResponse> {
+    public static readUsageStats(data: ReviewFocusDirectionsReadUsageStatsData = {}): CancelablePromise<ReviewFocusDirectionsReadUsageStatsResponse> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/v1/review-focus-directions/usage-stats'
+            url: '/api/v1/review-focus-directions/usage-stats',
+            query: {
+                search: data.search,
+                department_scope: data.departmentScope,
+                department_id: data.departmentId,
+                is_used: data.isUsed
+            },
+            errors: {
+                422: 'Validation Error'
+            }
         });
     }
-
+    
+    /**
+     * Update Usage State
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns Message Successful Response
+     * @throws ApiError
+     */
+    public static updateUsageState(data: ReviewFocusDirectionsUpdateUsageStateData): CancelablePromise<ReviewFocusDirectionsUpdateUsageStateResponse> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/api/v1/review-focus-directions/usage-stats/state',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Export Usage Stats
+     * @param data The data for the request.
+     * @param data.search
+     * @param data.departmentScope
+     * @param data.departmentId
+     * @param data.isUsed
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static exportUsageStats(data: ReviewFocusDirectionsExportUsageStatsData = {}): CancelablePromise<ReviewFocusDirectionsExportUsageStatsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/review-focus-directions/usage-stats/export',
+            query: {
+                search: data.search,
+                department_scope: data.departmentScope,
+                department_id: data.departmentId,
+                is_used: data.isUsed
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
     /**
      * Create Review Focus Direction From Usage
      * @param data The data for the request.
@@ -661,7 +740,7 @@ export class ReviewFocusDirectionsService {
             }
         });
     }
-
+    
     /**
      * Update Review Focus Direction
      * @param data The data for the request.
@@ -684,7 +763,7 @@ export class ReviewFocusDirectionsService {
             }
         });
     }
-
+    
     /**
      * Delete Review Focus Direction
      * @param data The data for the request.
@@ -725,7 +804,7 @@ export class ReviewTasksService {
             }
         });
     }
-
+    
     /**
      * Read Review Tasks
      * @param data The data for the request.
@@ -751,7 +830,7 @@ export class ReviewTasksService {
             }
         });
     }
-
+    
     /**
      * Read Review Task Stats
      * @param data The data for the request.
@@ -771,7 +850,7 @@ export class ReviewTasksService {
             }
         });
     }
-
+    
     /**
      * Read Review Task
      * @param data The data for the request.
@@ -791,7 +870,7 @@ export class ReviewTasksService {
             }
         });
     }
-
+    
     /**
      * Delete Review Task
      * @param data The data for the request.
@@ -811,7 +890,7 @@ export class ReviewTasksService {
             }
         });
     }
-
+    
     /**
      * Update Review Task Status
      * @param data The data for the request.
@@ -834,7 +913,7 @@ export class ReviewTasksService {
             }
         });
     }
-
+    
     /**
      * Upload Review Task Report
      * @param data The data for the request.
@@ -857,7 +936,7 @@ export class ReviewTasksService {
             }
         });
     }
-
+    
     /**
      * Read Review Task Report
      * @param data The data for the request.
@@ -877,7 +956,7 @@ export class ReviewTasksService {
             }
         });
     }
-
+    
     /**
      * Upload Review Task Pdf Report
      * @param data The data for the request.
@@ -900,7 +979,7 @@ export class ReviewTasksService {
             }
         });
     }
-
+    
     /**
      * Upload Review Task Requirement File
      * @param data The data for the request.
@@ -923,7 +1002,7 @@ export class ReviewTasksService {
             }
         });
     }
-
+    
     /**
      * Download Review Task Report
      * @param data The data for the request.
@@ -943,7 +1022,7 @@ export class ReviewTasksService {
             }
         });
     }
-
+    
     /**
      * Download Review Task Pdf Report
      * @param data The data for the request.
@@ -987,7 +1066,7 @@ export class SkillsService {
             }
         });
     }
-
+    
     /**
      * Upload Skill
      * @param data The data for the request.
@@ -1006,7 +1085,7 @@ export class SkillsService {
             }
         });
     }
-
+    
     /**
      * Activate Skill
      * @param data The data for the request.
@@ -1026,7 +1105,7 @@ export class SkillsService {
             }
         });
     }
-
+    
     /**
      * Deactivate Skill
      * @param data The data for the request.
@@ -1046,7 +1125,7 @@ export class SkillsService {
             }
         });
     }
-
+    
     /**
      * Read Active Skills
      * @returns SkillPackagesPublic Successful Response
@@ -1058,7 +1137,7 @@ export class SkillsService {
             url: '/api/v1/skills/active'
         });
     }
-
+    
     /**
      * Download Active Skill
      * @returns unknown Successful Response
@@ -1070,7 +1149,7 @@ export class SkillsService {
             url: '/api/v1/skills/active/download'
         });
     }
-
+    
     /**
      * Download Skill
      * @param data The data for the request.
@@ -1117,7 +1196,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Create User
      * Create new user.
@@ -1137,7 +1216,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Read User Me
      * Get current user.
@@ -1150,7 +1229,7 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-
+    
     /**
      * Delete User Me
      * Delete own user.
@@ -1163,7 +1242,7 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-
+    
     /**
      * Update User Me
      * Update own user.
@@ -1183,7 +1262,27 @@ export class UsersService {
             }
         });
     }
-
+    
+    /**
+     * Update User Me Department
+     * Bind current user's department once.
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns UserPublic Successful Response
+     * @throws ApiError
+     */
+    public static updateUserMeDepartment(data: UsersUpdateUserMeDepartmentData): CancelablePromise<UsersUpdateUserMeDepartmentResponse> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/api/v1/users/me/department',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
     /**
      * Read User By Id
      * Get a specific user by id.
@@ -1204,7 +1303,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Update User
      * Update a user.
@@ -1228,7 +1327,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Delete User
      * Delete a user.
@@ -1272,7 +1371,7 @@ export class UtilsService {
             }
         });
     }
-
+    
     /**
      * Health Check
      * @returns boolean Successful Response
