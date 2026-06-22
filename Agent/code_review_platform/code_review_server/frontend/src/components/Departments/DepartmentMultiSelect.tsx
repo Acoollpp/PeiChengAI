@@ -1,14 +1,13 @@
 import { useQuery } from "@tanstack/react-query"
-import { Check, ChevronsUpDown } from "lucide-react"
+import { ChevronsUpDown } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import { DepartmentsService } from "@/client"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
@@ -16,12 +15,16 @@ interface DepartmentMultiSelectProps {
   value: string[]
   onChange: (value: string[]) => void
   disabled?: boolean
+  id?: string
+  "aria-labelledby"?: string
 }
 
 export function DepartmentMultiSelect({
   value,
   onChange,
   disabled = false,
+  id,
+  "aria-labelledby": ariaLabelledBy,
 }: DepartmentMultiSelectProps) {
   const [open, setOpen] = useState(false)
   const { data, isLoading } = useQuery({
@@ -52,46 +55,39 @@ export function DepartmentMultiSelect({
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button
+          id={id}
           type="button"
           variant="outline"
           className="w-full justify-between"
           disabled={disabled || isLoading}
           aria-label="选择部门"
+          aria-labelledby={ariaLabelledBy}
         >
           <span className="truncate">{label}</span>
           <ChevronsUpDown className="size-4 opacity-60" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-72">
-        <DropdownMenuItem
+        <DropdownMenuCheckboxItem
+          checked={value.length === 0}
           onSelect={(event) => {
             event.preventDefault()
             onChange([])
           }}
         >
-          <Checkbox
-            checked={value.length === 0}
-            className="mr-2"
-            aria-label="全局"
-          />
           全局
-        </DropdownMenuItem>
+        </DropdownMenuCheckboxItem>
         {departments.map((department) => (
-          <DropdownMenuItem
+          <DropdownMenuCheckboxItem
             key={department.id}
+            checked={value.includes(department.id)}
             onSelect={(event) => {
               event.preventDefault()
               toggleDepartment(department.id)
             }}
           >
-            <Checkbox
-              checked={value.includes(department.id)}
-              className="mr-2"
-              aria-label={department.name}
-            />
             <span className="flex-1 truncate">{department.name}</span>
-            {value.includes(department.id) && <Check className="size-4" />}
-          </DropdownMenuItem>
+          </DropdownMenuCheckboxItem>
         ))}
       </DropdownMenuContent>
     </DropdownMenu>

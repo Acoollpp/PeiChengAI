@@ -90,9 +90,12 @@ function buildUsageExportUrl({
     params.set("search", normalizedSearch)
   }
 
-  params.set("department_scope", departmentScope)
+  const effectiveDepartmentScope =
+    departmentScope === "department" && !departmentId ? "all" : departmentScope
 
-  if (departmentScope === "department" && departmentId) {
+  params.set("department_scope", effectiveDepartmentScope)
+
+  if (effectiveDepartmentScope === "department" && departmentId) {
     params.set("department_id", departmentId)
   }
 
@@ -199,8 +202,10 @@ function DirectionFormDialog({
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="focus-direction-department">部门</Label>
+              <Label id="focus-direction-department-label">部门</Label>
               <DepartmentMultiSelect
+                id="focus-direction-department"
+                aria-labelledby="focus-direction-department-label focus-direction-department"
                 value={form.department_ids}
                 onChange={(departmentIds) =>
                   setForm((current) => ({
@@ -398,14 +403,26 @@ export function ReviewFocusDirectionsPage() {
     null,
   )
   const [usageUsedFilter, setUsageUsedFilter] = useState<UsedFilter>("all")
+  const normalizedDirectionSearch = directionSearch.trim()
+  const normalizedUsageSearch = usageSearch.trim()
+  const effectiveDirectionDepartmentScope =
+    directionDepartmentScope === "department" && !directionDepartmentId
+      ? "all"
+      : directionDepartmentScope
+  const effectiveUsageDepartmentScope =
+    usageDepartmentScope === "department" && !usageDepartmentId
+      ? "all"
+      : usageDepartmentScope
+  const canExportUsageStats =
+    usageDepartmentScope !== "department" || Boolean(usageDepartmentId)
 
   const directionsQuery = useQuery({
     queryFn: () =>
       ReviewFocusDirectionsService.readReviewFocusDirections({
-        search: directionSearch.trim() || undefined,
-        departmentScope: directionDepartmentScope,
+        search: normalizedDirectionSearch || undefined,
+        departmentScope: effectiveDirectionDepartmentScope,
         departmentId:
-          directionDepartmentScope === "department"
+          effectiveDirectionDepartmentScope === "department"
             ? directionDepartmentId
             : undefined,
         isActive:
@@ -416,8 +433,8 @@ export function ReviewFocusDirectionsPage() {
     queryKey: [
       "review-focus-directions",
       "directions",
-      directionSearch,
-      directionDepartmentScope,
+      normalizedDirectionSearch,
+      effectiveDirectionDepartmentScope,
       directionDepartmentId,
       directionActiveFilter,
     ],
@@ -425,18 +442,20 @@ export function ReviewFocusDirectionsPage() {
   const usageStatsQuery = useQuery({
     queryFn: () =>
       ReviewFocusDirectionsService.readUsageStats({
-        search: usageSearch.trim() || undefined,
-        departmentScope: usageDepartmentScope,
+        search: normalizedUsageSearch || undefined,
+        departmentScope: effectiveUsageDepartmentScope,
         departmentId:
-          usageDepartmentScope === "department" ? usageDepartmentId : undefined,
+          effectiveUsageDepartmentScope === "department"
+            ? usageDepartmentId
+            : undefined,
         isUsed:
           usageUsedFilter === "all" ? undefined : usageUsedFilter === "used",
       }),
     queryKey: [
       "review-focus-directions",
       "usage-stats",
-      usageSearch,
-      usageDepartmentScope,
+      normalizedUsageSearch,
+      effectiveUsageDepartmentScope,
       usageDepartmentId,
       usageUsedFilter,
     ],
@@ -839,7 +858,11 @@ export function ReviewFocusDirectionsPage() {
                 >
                   重置
                 </Button>
-                <Button type="button" onClick={() => void exportUsageStats()}>
+                <Button
+                  type="button"
+                  disabled={!canExportUsageStats}
+                  onClick={() => void exportUsageStats()}
+                >
                   <Download />
                   导出 Excel
                 </Button>
