@@ -1,13 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Edit, Plus, Trash2 } from "lucide-react"
+import { Download, Edit, Plus, Search, Trash2 } from "lucide-react"
 import { type FormEvent, useEffect, useMemo, useState } from "react"
 
 import {
+  OpenAPI,
   type ReviewFocusDirectionCreate,
   type ReviewFocusDirectionPublic,
-  type ReviewFocusDirectionUsageStatPublic,
   ReviewFocusDirectionsService,
+  type ReviewFocusDirectionUpdate,
+  type ReviewFocusDirectionUsageStatPublic,
 } from "@/client"
+import { DepartmentMultiSelect } from "@/components/Departments/DepartmentMultiSelect"
 import { DepartmentSelect } from "@/components/Departments/DepartmentSelect"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -31,6 +34,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { LoadingButton } from "@/components/ui/loading-button"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   Table,
   TableBody,
   TableCell,
@@ -38,24 +48,62 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useCustomToast from "@/hooks/useCustomToast"
 import { cn } from "@/lib/utils"
 import { handleError } from "@/utils"
 
 type DirectionFormMode = "create" | "edit" | "usage"
+type DepartmentScope = "all" | "global" | "department"
+type ActiveFilter = "all" | "active" | "inactive"
+type UsedFilter = "all" | "used" | "unused"
 
 type DirectionFormState = {
   title: string
   content: string
-  department_id: string | null
+  department_ids: string[]
   is_active: boolean
 }
 
 const emptyForm: DirectionFormState = {
   title: "",
   content: "",
-  department_id: null,
+  department_ids: [],
   is_active: true,
+}
+
+function buildUsageExportUrl({
+  search,
+  departmentScope,
+  departmentId,
+  isUsed,
+}: {
+  search: string
+  departmentScope: DepartmentScope
+  departmentId: string | null
+  isUsed: UsedFilter
+}) {
+  const params = new URLSearchParams()
+  const normalizedSearch = search.trim()
+
+  if (normalizedSearch) {
+    params.set("search", normalizedSearch)
+  }
+
+  params.set("department_scope", departmentScope)
+
+  if (departmentScope === "department" && departmentId) {
+    params.set("department_id", departmentId)
+  }
+
+  if (isUsed !== "all") {
+    params.set("is_used", String(isUsed === "used"))
+  }
+
+  const query = params.toString()
+  return `${OpenAPI.BASE}/api/v1/review-focus-directions/usage-stats/export${
+    query ? `?${query}` : ""
+  }`
 }
 
 function createTitleFromUsage(content: string) {
@@ -152,13 +200,12 @@ function DirectionFormDialog({
 
             <div className="grid gap-2">
               <Label htmlFor="focus-direction-department">部门</Label>
-              <DepartmentSelect
-                id="focus-direction-department"
-                value={form.department_id}
-                onChange={(departmentId) =>
+              <DepartmentMultiSelect
+                value={form.department_ids}
+                onChange={(departmentIds) =>
                   setForm((current) => ({
                     ...current,
-                    department_id: departmentId,
+                    department_ids: departmentIds,
                   }))
                 }
               />
@@ -195,75 +242,91 @@ function DirectionRows({
   if (directions.length === 0) {
     return (
       <TableRow>
-        <TableCell colSpan={6} className="h-28 text-center text-muted-foreground">
+        <TableCell
+          colSpan={6}
+          className="h-28 text-center text-muted-foreground"
+        >
           暂无重点审查方向。
         </TableCell>
       </TableRow>
     )
   }
 
-  return directions.map((direction) => (
-    <TableRow key={direction.id}>
-      <TableCell className="font-medium">{direction.title}</TableCell>
-      <TableCell className="max-w-md text-muted-foreground">
-        <span className="line-clamp-2">{direction.content}</span>
-      </TableCell>
-      <TableCell className="text-muted-foreground">
-        {direction.department_name || "全局"}
-      </TableCell>
-      <TableCell>
-        <Badge variant={direction.is_active ? "secondary" : "outline"}>
-          {direction.is_active ? "启用" : "停用"}
-        </Badge>
-      </TableCell>
-      <TableCell className="text-muted-foreground">
-        {direction.usage_count}
-      </TableCell>
-      <TableCell>
-        <div className="flex justify-end gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => onEdit(direction)}
-          >
-            <Edit />
-            编辑
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => onToggle(direction)}
-          >
-            {direction.is_active ? "停用" : "启用"}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="destructive"
-            onClick={() => onDelete(direction)}
-          >
-            <Trash2 />
-            删除
-          </Button>
-        </div>
-      </TableCell>
-    </TableRow>
-  ))
+  return directions.map((direction) => {
+    const departmentNames =
+      direction.departments?.map((department) => department.name) ?? []
+    const departmentText = departmentNames.length
+      ? departmentNames.join("、")
+      : "全局"
+
+    return (
+      <TableRow key={direction.id}>
+        <TableCell className="font-medium">{direction.title}</TableCell>
+        <TableCell className="max-w-md text-muted-foreground">
+          <span className="line-clamp-2">{direction.content}</span>
+        </TableCell>
+        <TableCell className="text-muted-foreground">
+          {departmentText}
+        </TableCell>
+        <TableCell>
+          <Badge variant={direction.is_active ? "secondary" : "outline"}>
+            {direction.is_active ? "启用" : "停用"}
+          </Badge>
+        </TableCell>
+        <TableCell className="text-muted-foreground">
+          {direction.usage_count}
+        </TableCell>
+        <TableCell>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => onEdit(direction)}
+            >
+              <Edit />
+              编辑
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => onToggle(direction)}
+            >
+              {direction.is_active ? "停用" : "启用"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              onClick={() => onDelete(direction)}
+            >
+              <Trash2 />
+              删除
+            </Button>
+          </div>
+        </TableCell>
+      </TableRow>
+    )
+  })
 }
 
 function UsageStatRows({
   stats,
   onSettle,
+  onToggleUsed,
 }: {
   stats: ReviewFocusDirectionUsageStatPublic[]
   onSettle: (stat: ReviewFocusDirectionUsageStatPublic) => void
+  onToggleUsed: (stat: ReviewFocusDirectionUsageStatPublic) => void
 }) {
   if (stats.length === 0) {
     return (
       <TableRow>
-        <TableCell colSpan={4} className="h-28 text-center text-muted-foreground">
+        <TableCell
+          colSpan={5}
+          className="h-28 text-center text-muted-foreground"
+        >
           暂无用户输入统计。
         </TableCell>
       </TableRow>
@@ -271,7 +334,7 @@ function UsageStatRows({
   }
 
   return stats.map((stat) => (
-    <TableRow key={`${stat.content}-${stat.usage_count}`}>
+    <TableRow key={stat.content}>
       <TableCell className="max-w-xl text-muted-foreground">
         <span className="line-clamp-2">{stat.content}</span>
       </TableCell>
@@ -280,14 +343,27 @@ function UsageStatRows({
         {stat.departments?.length ? stat.departments.join("、") : "全局"}
       </TableCell>
       <TableCell>
-        <div className="flex justify-end">
+        <Badge variant={stat.is_used ? "secondary" : "outline"}>
+          {stat.is_used ? "已使用" : "未使用"}
+        </Badge>
+      </TableCell>
+      <TableCell>
+        <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => onToggleUsed(stat)}
+          >
+            {stat.is_used ? "标记未使用" : "标记已使用"}
+          </Button>
           <Button
             type="button"
             size="sm"
             variant="outline"
             onClick={() => onSettle(stat)}
           >
-            沉淀为方向
+            沉淀
           </Button>
         </div>
       </TableCell>
@@ -306,14 +382,64 @@ export function ReviewFocusDirectionsPage() {
     useState<DirectionFormState>(emptyForm)
   const [deletingDirection, setDeletingDirection] =
     useState<ReviewFocusDirectionPublic | null>(null)
+  const [activeTab, setActiveTab] = useState("directions")
+  const [directionSearch, setDirectionSearch] = useState("")
+  const [directionDepartmentScope, setDirectionDepartmentScope] =
+    useState<DepartmentScope>("all")
+  const [directionDepartmentId, setDirectionDepartmentId] = useState<
+    string | null
+  >(null)
+  const [directionActiveFilter, setDirectionActiveFilter] =
+    useState<ActiveFilter>("all")
+  const [usageSearch, setUsageSearch] = useState("")
+  const [usageDepartmentScope, setUsageDepartmentScope] =
+    useState<DepartmentScope>("all")
+  const [usageDepartmentId, setUsageDepartmentId] = useState<string | null>(
+    null,
+  )
+  const [usageUsedFilter, setUsageUsedFilter] = useState<UsedFilter>("all")
 
   const directionsQuery = useQuery({
-    queryFn: () => ReviewFocusDirectionsService.readReviewFocusDirections(),
-    queryKey: ["review-focus-directions"],
+    queryFn: () =>
+      ReviewFocusDirectionsService.readReviewFocusDirections({
+        search: directionSearch.trim() || undefined,
+        departmentScope: directionDepartmentScope,
+        departmentId:
+          directionDepartmentScope === "department"
+            ? directionDepartmentId
+            : undefined,
+        isActive:
+          directionActiveFilter === "all"
+            ? undefined
+            : directionActiveFilter === "active",
+      }),
+    queryKey: [
+      "review-focus-directions",
+      "directions",
+      directionSearch,
+      directionDepartmentScope,
+      directionDepartmentId,
+      directionActiveFilter,
+    ],
   })
   const usageStatsQuery = useQuery({
-    queryFn: () => ReviewFocusDirectionsService.readUsageStats(),
-    queryKey: ["review-focus-directions", "usage-stats"],
+    queryFn: () =>
+      ReviewFocusDirectionsService.readUsageStats({
+        search: usageSearch.trim() || undefined,
+        departmentScope: usageDepartmentScope,
+        departmentId:
+          usageDepartmentScope === "department" ? usageDepartmentId : undefined,
+        isUsed:
+          usageUsedFilter === "all" ? undefined : usageUsedFilter === "used",
+      }),
+    queryKey: [
+      "review-focus-directions",
+      "usage-stats",
+      usageSearch,
+      usageDepartmentScope,
+      usageDepartmentId,
+      usageUsedFilter,
+    ],
   })
 
   const directions = directionsQuery.data?.data ?? []
@@ -340,6 +466,7 @@ export function ReviewFocusDirectionsPage() {
     onSuccess: async () => {
       showSuccessToast("方向创建成功")
       setDialogOpen(false)
+      setEditingDirection(null)
       await invalidateDirections()
     },
     onError: handleError.bind(showErrorToast),
@@ -351,7 +478,7 @@ export function ReviewFocusDirectionsPage() {
       requestBody,
     }: {
       directionId: string
-      requestBody: ReviewFocusDirectionCreate
+      requestBody: ReviewFocusDirectionUpdate
     }) =>
       ReviewFocusDirectionsService.updateReviewFocusDirection({
         directionId,
@@ -390,11 +517,25 @@ export function ReviewFocusDirectionsPage() {
     onError: handleError.bind(showErrorToast),
   })
 
+  const updateUsageStateMutation = useMutation({
+    mutationFn: (stat: ReviewFocusDirectionUsageStatPublic) =>
+      ReviewFocusDirectionsService.updateUsageState({
+        requestBody: {
+          content: stat.content,
+          is_used: !stat.is_used,
+        },
+      }),
+    onSuccess: async () => {
+      showSuccessToast("使用状态更新成功")
+      await queryClient.invalidateQueries({
+        queryKey: ["review-focus-directions", "usage-stats"],
+      })
+    },
+    onError: handleError.bind(showErrorToast),
+  })
+
   const isSaving = createMutation.isPending || updateMutation.isPending
-  const dialogInitialValue = useMemo(
-    () => formInitialValue,
-    [formInitialValue],
-  )
+  const dialogInitialValue = useMemo(() => formInitialValue, [formInitialValue])
 
   const openCreateDialog = () => {
     setDialogMode("create")
@@ -409,7 +550,8 @@ export function ReviewFocusDirectionsPage() {
     setFormInitialValue({
       title: direction.title,
       content: direction.content,
-      department_id: direction.department_id ?? null,
+      department_ids:
+        direction.departments?.map((department) => department.id) ?? [],
       is_active: direction.is_active,
     })
     setDialogOpen(true)
@@ -421,10 +563,60 @@ export function ReviewFocusDirectionsPage() {
     setFormInitialValue({
       title: createTitleFromUsage(stat.content),
       content: stat.content,
-      department_id: null,
+      department_ids: [],
       is_active: true,
     })
     setDialogOpen(true)
+  }
+
+  const resetDirectionFilters = () => {
+    setDirectionSearch("")
+    setDirectionDepartmentScope("all")
+    setDirectionDepartmentId(null)
+    setDirectionActiveFilter("all")
+  }
+
+  const resetUsageFilters = () => {
+    setUsageSearch("")
+    setUsageDepartmentScope("all")
+    setUsageDepartmentId(null)
+    setUsageUsedFilter("all")
+  }
+
+  const exportUsageStats = async () => {
+    try {
+      const token = localStorage.getItem("access_token")
+      const response = await fetch(
+        buildUsageExportUrl({
+          search: usageSearch,
+          departmentScope: usageDepartmentScope,
+          departmentId: usageDepartmentId,
+          isUsed: usageUsedFilter,
+        }),
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        },
+      )
+
+      if (!response.ok) {
+        throw new Error("导出失败")
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `重点审查方向用户输入统计_${new Date()
+        .toISOString()
+        .replace(/[-:]/g, "")
+        .slice(0, 13)}.xlsx`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      showErrorToast("导出失败，请稍后重试。")
+    }
   }
 
   const handleSubmit = (value: DirectionFormState) => {
@@ -436,7 +628,7 @@ export function ReviewFocusDirectionsPage() {
     const payload: ReviewFocusDirectionCreate = {
       title: value.title,
       content: value.content,
-      department_id: value.department_id,
+      department_ids: value.department_ids,
       is_active: value.is_active,
     }
 
@@ -453,95 +645,241 @@ export function ReviewFocusDirectionsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">重点审查方向</h1>
-          <p className="text-muted-foreground">
-            管理方向库条目，并将用户常用输入沉淀为可复用方向。
-          </p>
-        </div>
-        <Button type="button" onClick={openCreateDialog}>
-          <Plus />
-          新增方向
-        </Button>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">重点审查方向</h1>
+        <p className="text-muted-foreground">
+          管理方向库条目，并将用户常用输入沉淀为可复用方向。
+        </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>方向库</CardTitle>
-          <CardDescription>
-            部门为空时表示全局方向，所有用户都可使用。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>标题</TableHead>
-                <TableHead>内容</TableHead>
-                <TableHead>部门</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>使用次数</TableHead>
-                <TableHead className="text-right">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {directionsQuery.isLoading ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="h-28 text-center text-muted-foreground"
-                  >
-                    正在加载方向库...
-                  </TableCell>
-                </TableRow>
-              ) : (
-                <DirectionRows
-                  directions={directions}
-                  onEdit={openEditDialog}
-                  onDelete={setDeletingDirection}
-                  onToggle={(direction) => toggleMutation.mutate(direction)}
-                />
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
+        <TabsList>
+          <TabsTrigger value="directions">方向库</TabsTrigger>
+          <TabsTrigger value="usage-stats">用户输入统计</TabsTrigger>
+        </TabsList>
 
-      <Card data-testid="review-focus-usage-stats">
-        <CardHeader>
-          <CardTitle>用户输入统计</CardTitle>
-          <CardDescription>
-            根据用户提交任务时输入的重点方向聚合统计。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>内容</TableHead>
-                <TableHead>使用次数</TableHead>
-                <TableHead>涉及部门</TableHead>
-                <TableHead className="text-right">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {usageStatsQuery.isLoading ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={4}
-                    className="h-28 text-center text-muted-foreground"
+        <TabsContent value="directions">
+          <Card>
+            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <CardTitle>方向库</CardTitle>
+                <CardDescription>
+                  部门为空时表示全局方向，所有用户都可使用。
+                </CardDescription>
+              </div>
+              <Button type="button" onClick={openCreateDialog}>
+                <Plus />
+                新增方向
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_180px_140px_auto]">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    aria-label="方向库关键词"
+                    className="pl-9"
+                    placeholder="搜索标题或内容"
+                    value={directionSearch}
+                    onChange={(event) => setDirectionSearch(event.target.value)}
+                  />
+                </div>
+                <Select
+                  value={directionDepartmentScope}
+                  onValueChange={(value) => {
+                    const nextValue = value as DepartmentScope
+                    setDirectionDepartmentScope(nextValue)
+                    if (nextValue !== "department") {
+                      setDirectionDepartmentId(null)
+                    }
+                  }}
+                >
+                  <SelectTrigger aria-label="方向库部门范围" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部部门范围</SelectItem>
+                    <SelectItem value="global">全局</SelectItem>
+                    <SelectItem value="department">指定部门</SelectItem>
+                  </SelectContent>
+                </Select>
+                <DepartmentSelect
+                  value={directionDepartmentId}
+                  onChange={setDirectionDepartmentId}
+                  disabled={directionDepartmentScope !== "department"}
+                />
+                <Select
+                  value={directionActiveFilter}
+                  onValueChange={(value) =>
+                    setDirectionActiveFilter(value as ActiveFilter)
+                  }
+                >
+                  <SelectTrigger aria-label="方向库状态" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部状态</SelectItem>
+                    <SelectItem value="active">启用</SelectItem>
+                    <SelectItem value="inactive">停用</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={resetDirectionFilters}
+                >
+                  重置
+                </Button>
+              </div>
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>标题</TableHead>
+                    <TableHead>内容</TableHead>
+                    <TableHead>部门</TableHead>
+                    <TableHead>状态</TableHead>
+                    <TableHead>使用次数</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {directionsQuery.isLoading ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={6}
+                        className="h-28 text-center text-muted-foreground"
+                      >
+                        正在加载方向库...
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    <DirectionRows
+                      directions={directions}
+                      onEdit={openEditDialog}
+                      onDelete={setDeletingDirection}
+                      onToggle={(direction) => toggleMutation.mutate(direction)}
+                    />
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="usage-stats">
+          <Card data-testid="review-focus-usage-stats">
+            <CardHeader>
+              <CardTitle>用户输入统计</CardTitle>
+              <CardDescription>
+                根据用户提交任务时输入的重点方向聚合统计。
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_180px_140px_auto_auto]">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    aria-label="用户输入统计关键词"
+                    className="pl-9"
+                    placeholder="搜索用户输入内容"
+                    value={usageSearch}
+                    onChange={(event) => setUsageSearch(event.target.value)}
+                  />
+                </div>
+                <Select
+                  value={usageDepartmentScope}
+                  onValueChange={(value) => {
+                    const nextValue = value as DepartmentScope
+                    setUsageDepartmentScope(nextValue)
+                    if (nextValue !== "department") {
+                      setUsageDepartmentId(null)
+                    }
+                  }}
+                >
+                  <SelectTrigger
+                    aria-label="用户输入统计部门范围"
+                    className="w-full"
                   >
-                    正在加载用户输入统计...
-                  </TableCell>
-                </TableRow>
-              ) : (
-                <UsageStatRows stats={usageStats} onSettle={openUsageDialog} />
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部部门范围</SelectItem>
+                    <SelectItem value="global">全局</SelectItem>
+                    <SelectItem value="department">指定部门</SelectItem>
+                  </SelectContent>
+                </Select>
+                <DepartmentSelect
+                  value={usageDepartmentId}
+                  onChange={setUsageDepartmentId}
+                  disabled={usageDepartmentScope !== "department"}
+                />
+                <Select
+                  value={usageUsedFilter}
+                  onValueChange={(value) =>
+                    setUsageUsedFilter(value as UsedFilter)
+                  }
+                >
+                  <SelectTrigger
+                    aria-label="用户输入统计使用状态"
+                    className="w-full"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部使用状态</SelectItem>
+                    <SelectItem value="used">已使用</SelectItem>
+                    <SelectItem value="unused">未使用</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={resetUsageFilters}
+                >
+                  重置
+                </Button>
+                <Button type="button" onClick={() => void exportUsageStats()}>
+                  <Download />
+                  导出 Excel
+                </Button>
+              </div>
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>内容</TableHead>
+                    <TableHead>使用次数</TableHead>
+                    <TableHead>涉及部门</TableHead>
+                    <TableHead>使用状态</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {usageStatsQuery.isLoading ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={5}
+                        className="h-28 text-center text-muted-foreground"
+                      >
+                        正在加载用户输入统计...
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    <UsageStatRows
+                      stats={usageStats}
+                      onSettle={openUsageDialog}
+                      onToggleUsed={(stat) =>
+                        updateUsageStateMutation.mutate(stat)
+                      }
+                    />
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       <DirectionFormDialog
         open={dialogOpen}
