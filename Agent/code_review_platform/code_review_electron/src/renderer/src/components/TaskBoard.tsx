@@ -25,6 +25,44 @@ const statusText: Record<ReviewTask['status'], string> = {
   cancelled: '已取消'
 }
 
+const reviewReportNamePattern = /_审查报告(?:_\d{8}_\d{6})?\.(?:md|pdf)$/i
+
+function basenameLike(value: string): string {
+  return value.split(/[\\/]/).filter(Boolean).at(-1) ?? value
+}
+
+function extractSoftwareVersionFromReportName(value?: string | null): string | null {
+  if (!value) {
+    return null
+  }
+
+  const fileName = basenameLike(value)
+  const softwareVersion = fileName.replace(reviewReportNamePattern, '')
+  if (!softwareVersion || softwareVersion === fileName) {
+    return null
+  }
+
+  return softwareVersion
+}
+
+function formatRevisionLabel(value: string): string {
+  const revision = value.trim().replace(/^[rR]+/, '')
+  return revision ? `r${revision}` : ''
+}
+
+function buildTaskDisplayName(task: TaskViewItem): string {
+  const softwareVersion =
+    extractSoftwareVersionFromReportName(task.report_name) ??
+    extractSoftwareVersionFromReportName(task.pdf_report_name)
+  const revision = formatRevisionLabel(task.new_revision)
+
+  if (softwareVersion && revision) {
+    return `${softwareVersion}_${revision}`
+  }
+
+  return softwareVersion ?? task.id
+}
+
 function formatTaskDateTime(value?: string | null): string {
   if (!value) {
     return '-'
@@ -69,7 +107,7 @@ function TaskCard({
   return (
     <article className={`task-card${task.id === selectedTaskId ? ' is-selected' : ''}`}>
       <div className="task-card-header">
-        <strong>{task.id}</strong>
+        <strong>{buildTaskDisplayName(task)}</strong>
         <span className={`task-status task-status-${task.status}`}>{statusText[task.status]}</span>
       </div>
       <p className="task-url">{task.svn_url}</p>

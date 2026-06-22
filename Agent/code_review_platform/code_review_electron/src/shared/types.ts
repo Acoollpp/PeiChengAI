@@ -68,8 +68,9 @@ export interface ReviewTask {
   requirement_file_sha256?: string | null
   status: ReviewTaskStatus
   report_path?: string
+  report_name?: string | null
   pdf_report_path?: string
-  pdf_report_name?: string
+  pdf_report_name?: string | null
   started_at?: string | null
   finished_at?: string | null
   error_message?: string

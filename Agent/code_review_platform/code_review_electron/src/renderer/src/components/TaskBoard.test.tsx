@@ -97,6 +97,33 @@ describe('TaskBoard', () => {
     expect(screen.queryByText('task-history')).not.toBeInTheDocument()
   })
 
+  it('任务卡片优先显示软件版本加检出版本', () => {
+    const taskWithReportName: TaskViewItem = {
+      ...runningTasks[0],
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      report_name: 'P16S100A-41662-1.30-000_审查报告.md',
+      new_revision: '45216'
+    }
+
+    renderTaskBoard({ runningTasks: [taskWithReportName], queuedTasks: [], historyTasks: [] })
+
+    expect(screen.getByText('P16S100A-41662-1.30-000_r45216')).toBeInTheDocument()
+    expect(screen.queryByText('550e8400-e29b-41d4-a716-446655440000')).not.toBeInTheDocument()
+  })
+
+  it('任务卡片可从 PDF 报告名兜底显示软件版本', () => {
+    const taskWithPdfReportName: TaskViewItem = {
+      ...runningTasks[0],
+      id: 'task-with-pdf-name',
+      pdf_report_name: 'P16S200A-41662-1.30-000_审查报告_20260615_143000.pdf',
+      new_revision: 'r45217'
+    }
+
+    renderTaskBoard({ runningTasks: [taskWithPdfReportName], queuedTasks: [], historyTasks: [] })
+
+    expect(screen.getByText('P16S200A-41662-1.30-000_r45217')).toBeInTheDocument()
+  })
+
   it('切换到等待中任务后显示排队序号', async () => {
     const user = userEvent.setup()
     renderTaskBoard()

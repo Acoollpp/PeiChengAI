@@ -86,7 +86,7 @@ export function TaskPage({
     setSelectedTaskId(task.id)
     selectedTaskIdRef.current = task.id
     setActivePdfPath(task.pdfPath)
-    setActivePdfReportName(task.pdf_report_name)
+    setActivePdfReportName(task.pdf_report_name ?? undefined)
     if (task.report_path) {
       setCurrentReportPath(task.report_path)
       setReportMessage(`报告已生成：${task.report_path}`)
@@ -188,13 +188,13 @@ export function TaskPage({
       setMarkdown(task.reportMarkdown)
       setCurrentReportPath(task.report_path)
       setActivePdfPath(task.pdfPath)
-      setActivePdfReportName(task.pdf_report_name)
+      setActivePdfReportName(task.pdf_report_name ?? undefined)
       return
     }
 
     setLoadingReportTaskId(task.id)
     setActivePdfPath(undefined)
-    setActivePdfReportName(task.pdf_report_name)
+    setActivePdfReportName(task.pdf_report_name ?? undefined)
 
     try {
       const reportMarkdown = await window.codeReview.readTaskReport(task.id)
@@ -204,7 +204,7 @@ export function TaskPage({
       setMarkdown(reportMarkdown)
       setCurrentReportPath(undefined)
       setActivePdfPath(undefined)
-      setActivePdfReportName(task.pdf_report_name)
+      setActivePdfReportName(task.pdf_report_name ?? undefined)
     } catch (reportError) {
       if (!isMountedRef.current) {
         return

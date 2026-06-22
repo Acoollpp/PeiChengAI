@@ -27,6 +27,8 @@ describe('TaskForm', () => {
     expect(screen.getByLabelText('SVN 地址')).toBeInTheDocument()
     expect(screen.getByLabelText('旧版本号')).toBeInTheDocument()
     expect(screen.getByLabelText('新版本号')).toBeInTheDocument()
+    expect(screen.getByText('产品开发需求表（可选）')).toBeInTheDocument()
+    expect(screen.getByText('重点审查方向（可选）')).toBeInTheDocument()
     expect(screen.getByLabelText('模板一')).toBeChecked()
     expect(screen.getByLabelText('模板二')).not.toBeChecked()
 

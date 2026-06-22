@@ -163,7 +163,7 @@ export function TaskForm({
       </div>
 
       <label className="field">
-        <span>产品开发需求表</span>
+        <span>产品开发需求表（可选）</span>
         <div className="file-input-row">
           <input
             aria-label="产品开发需求表"
@@ -190,7 +190,7 @@ export function TaskForm({
       </label>
 
       <label className="field">
-        <span>重点审查方向</span>
+        <span>重点审查方向（可选）</span>
         <textarea
           aria-label="重点审查方向"
           maxLength={4096}
