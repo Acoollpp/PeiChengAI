@@ -17,6 +17,7 @@ from app.models import (
     Feedback,
     FeedbackScreenshot,
     ReviewFocusDirection,
+    ReviewFocusDirectionUsageState,
     ReviewTask,
     ReviewTaskRequirementFile,
     SkillPackage,
@@ -839,6 +840,33 @@ def test_delete_user_nulls_created_review_focus_direction_user(
     saved_direction = db.get(ReviewFocusDirection, direction_id)
     assert saved_direction
     assert saved_direction.created_by_user_id is None
+
+
+def test_delete_user_nulls_review_focus_direction_usage_state_user(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    user = create_random_user(db)
+    user_id = user.id
+    usage_state = ReviewFocusDirectionUsageState(
+        normalized_content="删除管理员时保留统计状态",
+        is_used=True,
+        updated_by_user_id=user_id,
+    )
+    db.add(usage_state)
+    db.commit()
+    usage_state_id = usage_state.id
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/users/{user_id}",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "User deleted successfully"
+    db.expire_all()
+    saved_usage_state = db.get(ReviewFocusDirectionUsageState, usage_state_id)
+    assert saved_usage_state
+    assert saved_usage_state.updated_by_user_id is None
 
 
 def test_delete_user_removes_review_task_requirement_files(

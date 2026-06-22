@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 from urllib.parse import unquote
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 from sqlmodel import Session
 
 from app.core.config import settings
@@ -548,12 +550,20 @@ def test_admin_can_export_filtered_usage_stats_excel(
     superuser_token_headers: dict[str, str],
 ) -> None:
     department = _create_department(db, "导出部门-" + random_lower_string())
+    other_department = _create_department(db, "导出未命中部门-" + random_lower_string())
     _create_task_with_focus_snapshot(
         client=client,
         db=db,
         department=department,
         snapshot="导出检查项",
         minutes_ago=1,
+    )
+    _create_task_with_focus_snapshot(
+        client=client,
+        db=db,
+        department=other_department,
+        snapshot="不应导出的检查项",
+        minutes_ago=2,
     )
 
     response = client.get(
@@ -570,6 +580,15 @@ def test_admin_can_export_filtered_usage_stats_excel(
         response.headers["content-disposition"]
     )
     assert len(response.content) > 100
+    workbook = load_workbook(BytesIO(response.content))
+    sheet = workbook.active
+    rows = list(sheet.iter_rows(values_only=True))
+    assert rows[0] == ("内容", "使用次数", "涉及部门", "最新使用时间", "是否已使用")
+    assert len(rows) == 2
+    assert rows[1][0] == "导出检查项"
+    assert rows[1][1] == 1
+    assert rows[1][2] == department.name
+    assert rows[1][4] == "未使用"
 
 
 def test_admin_can_create_focus_direction_from_usage(

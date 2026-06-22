@@ -20,17 +20,18 @@ from app.models import (
     Item,
     Message,
     ReviewFocusDirection,
+    ReviewFocusDirectionUsageState,
     ReviewTask,
     ReviewTaskRequirementFile,
     SkillPackage,
     User,
     UserApiKey,
     UserCreate,
+    UserDepartmentUpdate,
     UserPublic,
     UserRole,
-    UserDepartmentUpdate,
-    UserSvnCredential,
     UsersPublic,
+    UserSvnCredential,
     UserUpdate,
     UserUpdateMe,
 )
@@ -124,6 +125,12 @@ def _delete_user_with_related_data(*, session: SessionDep, user: User) -> None:
         .values(created_by_user_id=None)
     )
     session.exec(focus_direction_statement)
+    usage_state_statement = (
+        update(ReviewFocusDirectionUsageState)
+        .where(col(ReviewFocusDirectionUsageState.updated_by_user_id) == user.id)
+        .values(updated_by_user_id=None)
+    )
+    session.exec(usage_state_statement)
     feedback_statement = delete(Feedback).where(col(Feedback.user_id) == user.id)
     session.exec(feedback_statement)
     review_task_ids = session.exec(
