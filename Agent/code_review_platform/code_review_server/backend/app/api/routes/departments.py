@@ -14,6 +14,7 @@ from app.models import (
     DepartmentUpdate,
     Message,
     ReviewFocusDirection,
+    ReviewFocusDirectionDepartment,
     ReviewTask,
     User,
 )
@@ -55,6 +56,9 @@ def _has_department_links(*, session: SessionDep, department_id: uuid.UUID) -> b
         exists().where(col(User.department_id) == department_id),
         exists().where(col(ReviewTask.department_id) == department_id),
         exists().where(col(ReviewFocusDirection.department_id) == department_id),
+        exists().where(
+            col(ReviewFocusDirectionDepartment.department_id) == department_id
+        ),
     )
     return any(session.exec(select(check)).one() for check in checks)
 

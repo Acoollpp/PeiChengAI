@@ -204,10 +204,61 @@ class ReviewFocusDirection(SQLModel, table=True):
     )
 
 
+class ReviewFocusDirectionDepartment(SQLModel, table=True):
+    __tablename__ = "review_focus_direction_department"
+    __table_args__ = (
+        Index(
+            "uq_review_focus_direction_department",
+            "direction_id",
+            "department_id",
+            unique=True,
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    direction_id: uuid.UUID = Field(
+        foreign_key="review_focus_direction.id",
+        nullable=False,
+        index=True,
+    )
+    department_id: uuid.UUID = Field(
+        foreign_key="department.id",
+        nullable=False,
+        index=True,
+    )
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class ReviewFocusDirectionUsageState(SQLModel, table=True):
+    __tablename__ = "review_focus_direction_usage_state"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    normalized_content: str = Field(
+        min_length=1,
+        max_length=4096,
+        unique=True,
+        index=True,
+    )
+    is_used: bool = Field(default=False, index=True)
+    updated_by_user_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
 class ReviewFocusDirectionCreate(SQLModel):
     title: str = Field(min_length=1, max_length=255)
     content: str = Field(min_length=1, max_length=4096)
     department_id: uuid.UUID | None = None
+    department_ids: list[uuid.UUID] | None = None
     is_active: bool = True
 
 
@@ -215,6 +266,7 @@ class ReviewFocusDirectionUpdate(SQLModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     content: str | None = Field(default=None, min_length=1, max_length=4096)
     department_id: uuid.UUID | None = Field(default=None)
+    department_ids: list[uuid.UUID] | None = None
     is_active: bool | None = None
 
 
@@ -224,6 +276,7 @@ class ReviewFocusDirectionPublic(SQLModel):
     content: str
     department_id: uuid.UUID | None = None
     department_name: str | None = None
+    departments: list[DepartmentPublic] = Field(default_factory=list)
     is_active: bool
     usage_count: int
     created_by_user_id: uuid.UUID | None = None
@@ -241,6 +294,12 @@ class ReviewFocusDirectionUsageStatPublic(SQLModel):
     usage_count: int
     latest_used_at: datetime | None = None
     departments: list[str] = Field(default_factory=list)
+    is_used: bool = False
+
+
+class ReviewFocusDirectionUsageStateUpdate(SQLModel):
+    content: str = Field(min_length=1, max_length=4096)
+    is_used: bool
 
 
 class ReviewFocusDirectionUsageStatsPublic(SQLModel):

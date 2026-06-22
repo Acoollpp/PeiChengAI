@@ -60,6 +60,8 @@ from app.models import (
     FeedbackScreenshot,
     Item,
     ReviewFocusDirection,
+    ReviewFocusDirectionDepartment,
+    ReviewFocusDirectionUsageState,
     ReviewTask,
     ReviewTaskRequirementFile,
     SkillPackage,
@@ -94,6 +96,12 @@ def db() -> Generator[Session, None, None]:
             session.execute(statement)
         if inspector.has_table("review_task"):
             statement = delete(ReviewTask)
+            session.execute(statement)
+        if inspector.has_table("review_focus_direction_department"):
+            statement = delete(ReviewFocusDirectionDepartment)
+            session.execute(statement)
+        if inspector.has_table("review_focus_direction_usage_state"):
+            statement = delete(ReviewFocusDirectionUsageState)
             session.execute(statement)
         if inspector.has_table("review_focus_direction"):
             statement = delete(ReviewFocusDirection)

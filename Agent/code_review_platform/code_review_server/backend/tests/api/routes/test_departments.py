@@ -215,6 +215,35 @@ def test_delete_linked_department_returns_409(
     )
 
 
+def test_delete_department_linked_by_focus_direction_department_returns_409(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    department_payload = _create_department(client, superuser_token_headers)
+    response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=superuser_token_headers,
+        json={
+            "title": "关联部门方向",
+            "content": "检查部门关联删除保护",
+            "department_ids": [department_payload["id"]],
+            "is_active": True,
+        },
+    )
+    assert response.status_code == 200
+
+    delete_response = client.delete(
+        f"{settings.API_V1_STR}/departments/{department_payload['id']}",
+        headers=superuser_token_headers,
+    )
+
+    assert delete_response.status_code == 409
+    assert (
+        delete_response.json()["detail"]
+        == "该部门已关联用户、任务或重点审查方向，不能删除，请先停用。"
+    )
+
+
 def test_delete_unlinked_department_returns_success_message(
     client: TestClient,
     db: Session,

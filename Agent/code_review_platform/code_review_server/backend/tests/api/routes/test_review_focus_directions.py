@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
@@ -137,6 +138,62 @@ def test_admin_can_create_global_focus_direction_without_department(
     assert content["content"] == payload["content"]
     assert content["department_id"] is None
     assert content["department_name"] is None
+
+
+def test_admin_can_create_focus_direction_with_multiple_departments(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    department_a = _create_department(db, "多部门A-" + random_lower_string())
+    department_b = _create_department(db, "多部门B-" + random_lower_string())
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=superuser_token_headers,
+        json={
+            "title": "多部门方向",
+            "content": "检查跨部门公共逻辑",
+            "department_ids": [str(department_a.id), str(department_b.id)],
+            "is_active": True,
+        },
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["title"] == "多部门方向"
+    assert content["department_id"] is None
+    assert content["department_name"] is None
+    assert {item["id"] for item in content["departments"]} == {
+        str(department_a.id),
+        str(department_b.id),
+    }
+    assert {item["name"] for item in content["departments"]} == {
+        department_a.name,
+        department_b.name,
+    }
+
+
+def test_admin_can_create_global_focus_direction_with_empty_department_ids(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=superuser_token_headers,
+        json={
+            "title": "全局方向",
+            "content": "检查所有部门通用风险",
+            "department_ids": [],
+            "is_active": True,
+        },
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["department_id"] is None
+    assert content["department_name"] is None
+    assert content["departments"] == []
 
 
 def test_normal_user_cannot_create_focus_direction(
@@ -297,6 +354,53 @@ def test_create_or_update_with_missing_department_returns_400(
     assert update_response.json()["detail"] == "部门不存在"
 
 
+def test_admin_can_filter_focus_directions(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    department_a = _create_department(db, "筛选部门A-" + random_lower_string())
+    department_b = _create_department(db, "筛选部门B-" + random_lower_string())
+    active_response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=superuser_token_headers,
+        json={
+            "title": "缓存穿透审查",
+            "content": "检查缓存穿透和慢查询",
+            "department_ids": [str(department_a.id)],
+            "is_active": True,
+        },
+    )
+    inactive_response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=superuser_token_headers,
+        json={
+            "title": "权限边界审查",
+            "content": "检查权限边界",
+            "department_ids": [str(department_b.id)],
+            "is_active": False,
+        },
+    )
+    assert active_response.status_code == 200
+    assert inactive_response.status_code == 200
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=superuser_token_headers,
+        params={
+            "search": "缓存",
+            "department_scope": "department",
+            "department_id": str(department_a.id),
+            "is_active": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 1
+    assert payload["data"][0]["title"] == "缓存穿透审查"
+
+
 def test_admin_can_read_usage_stats_grouped_by_normalized_content(
     client: TestClient,
     db: Session,
@@ -350,6 +454,122 @@ def test_admin_can_read_usage_stats_grouped_by_normalized_content(
     assert payload["data"][1]["content"] == "检查 SQL 注入"
     assert payload["data"][1]["usage_count"] == 1
     assert payload["data"][1]["departments"] == [department_a.name]
+
+
+def test_admin_can_mark_usage_stat_used_state(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    department = _create_department(db, "统计状态部门-" + random_lower_string())
+    _create_task_with_focus_snapshot(
+        client=client,
+        db=db,
+        department=department,
+        snapshot="检查空指针和越界",
+        minutes_ago=1,
+    )
+
+    stats_response = client.get(
+        f"{settings.API_V1_STR}/review-focus-directions/usage-stats",
+        headers=superuser_token_headers,
+        params={"search": "空指针"},
+    )
+    assert stats_response.status_code == 200
+    stat = stats_response.json()["data"][0]
+    assert stat["content"] == "检查空指针和越界"
+    assert stat["is_used"] is False
+
+    mark_response = client.patch(
+        f"{settings.API_V1_STR}/review-focus-directions/usage-stats/state",
+        headers=superuser_token_headers,
+        json={"content": " 检查空指针和越界 ", "is_used": True},
+    )
+    assert mark_response.status_code == 200
+    assert mark_response.json()["message"] == "使用状态更新成功"
+
+    used_response = client.get(
+        f"{settings.API_V1_STR}/review-focus-directions/usage-stats",
+        headers=superuser_token_headers,
+        params={"search": "空指针", "is_used": True},
+    )
+    assert used_response.status_code == 200
+    assert used_response.json()["count"] == 1
+    assert used_response.json()["data"][0]["is_used"] is True
+
+
+def test_admin_can_filter_usage_stats_by_department_and_used_state(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    department_a = _create_department(db, "统计筛选A-" + random_lower_string())
+    department_b = _create_department(db, "统计筛选B-" + random_lower_string())
+    _create_task_with_focus_snapshot(
+        client=client,
+        db=db,
+        department=department_a,
+        snapshot="检查状态机跳转",
+        minutes_ago=2,
+    )
+    _create_task_with_focus_snapshot(
+        client=client,
+        db=db,
+        department=department_b,
+        snapshot="检查协议兼容",
+        minutes_ago=1,
+    )
+    mark_response = client.patch(
+        f"{settings.API_V1_STR}/review-focus-directions/usage-stats/state",
+        headers=superuser_token_headers,
+        json={"content": "检查状态机跳转", "is_used": True},
+    )
+    assert mark_response.status_code == 200
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-focus-directions/usage-stats",
+        headers=superuser_token_headers,
+        params={
+            "department_scope": "department",
+            "department_id": str(department_a.id),
+            "is_used": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 1
+    assert payload["data"][0]["content"] == "检查状态机跳转"
+
+
+def test_admin_can_export_filtered_usage_stats_excel(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    department = _create_department(db, "导出部门-" + random_lower_string())
+    _create_task_with_focus_snapshot(
+        client=client,
+        db=db,
+        department=department,
+        snapshot="导出检查项",
+        minutes_ago=1,
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-focus-directions/usage-stats/export",
+        headers=superuser_token_headers,
+        params={"search": "导出检查"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert "重点审查方向用户输入统计_" in unquote(
+        response.headers["content-disposition"]
+    )
+    assert len(response.content) > 100
 
 
 def test_admin_can_create_focus_direction_from_usage(
