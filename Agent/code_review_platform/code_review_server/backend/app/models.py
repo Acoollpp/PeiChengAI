@@ -13,6 +13,7 @@ def get_datetime_utc() -> datetime:
 
 class UserRole(str, Enum):
     admin = "admin"
+    department_admin = "department_admin"
     user = "user"
 
 
@@ -139,6 +140,15 @@ class User(UserBase, table=True):
         sa_type=DateTime(timezone=True),  # type: ignore
     )
     items: list["Item"] = Relationship(back_populates="owner", cascade_delete=True)
+
+    def __init__(self, **data: Any) -> None:
+        super().__init__(**data)
+        if (
+            self.role == UserRole.department_admin
+            and self.department_id is None
+            and "department_id" not in data
+        ):
+            self.department_id = uuid.uuid4()
 
 
 class UserSvnCredential(SQLModel, table=True):
