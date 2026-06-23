@@ -1,22 +1,27 @@
-import {
-  useMutation,
-  useQueryClient,
-  useSuspenseQuery,
-} from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { PaginationState } from "@tanstack/react-table"
 import { Loader2, RefreshCw, Search, X } from "lucide-react"
-import { type FormEvent, Suspense, useState } from "react"
+import { type FormEvent, useState } from "react"
 
-import { CchSyncService, type UserPublic, UsersService } from "@/client"
+import {
+  ApiError,
+  CchSyncService,
+  type UserPublic,
+  UsersService,
+} from "@/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import useAuth from "@/hooks/useAuth"
 import useCustomToast from "@/hooks/useCustomToast"
+import {
+  hasDepartmentAdminPrivileges,
+  hasPlatformAdminPrivileges,
+} from "@/lib/authz"
 import { handleError } from "@/utils"
 import { DataTable } from "../Common/DataTable"
 import PendingUsers from "../Pending/PendingUsers"
 import AddUser from "./AddUser"
-import { columns, type UserTableData } from "./columns"
+import { getUserColumns, type UserTableData } from "./columns"
 
 function getUsersQueryOptions(pagination: PaginationState, search: string) {
   return {
@@ -63,18 +68,47 @@ function SyncCchUsersButton() {
 }
 
 function UsersTableContent({
+  canManageUsers,
   pagination,
   search,
   setPagination,
 }: {
+  canManageUsers: boolean
   pagination: PaginationState
   search: string
   setPagination: (pagination: PaginationState) => void
 }) {
   const { user: currentUser } = useAuth()
-  const { data: users } = useSuspenseQuery(
-    getUsersQueryOptions(pagination, search),
-  )
+  const usersQuery = useQuery(getUsersQueryOptions(pagination, search))
+
+  if (usersQuery.isLoading) {
+    return <PendingUsers />
+  }
+
+  if (usersQuery.isError) {
+    const error = usersQuery.error
+    const detail =
+      error instanceof ApiError
+        ? (error.body as { detail?: unknown })?.detail
+        : null
+    const message =
+      error instanceof ApiError &&
+      error.status === 403 &&
+      detail === "当前账号未绑定部门，请联系超级管理员。"
+        ? detail
+        : "用户列表加载失败，请稍后重试。"
+
+    return (
+      <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+        {message}
+      </div>
+    )
+  }
+
+  const users = usersQuery.data
+  if (!users) {
+    return <PendingUsers />
+  }
 
   const tableData: UserTableData[] = users.data.map((user: UserPublic) => ({
     ...user,
@@ -83,7 +117,7 @@ function UsersTableContent({
 
   return (
     <DataTable
-      columns={columns}
+      columns={getUserColumns({ canManageUsers })}
       data={tableData}
       manualPagination
       onPaginationChange={setPagination}
@@ -95,26 +129,30 @@ function UsersTableContent({
 }
 
 function UsersTable({
+  canManageUsers,
   pagination,
   search,
   setPagination,
 }: {
+  canManageUsers: boolean
   pagination: PaginationState
   search: string
   setPagination: (pagination: PaginationState) => void
 }) {
   return (
-    <Suspense fallback={<PendingUsers />}>
-      <UsersTableContent
-        pagination={pagination}
-        search={search}
-        setPagination={setPagination}
-      />
-    </Suspense>
+    <UsersTableContent
+      canManageUsers={canManageUsers}
+      pagination={pagination}
+      search={search}
+      setPagination={setPagination}
+    />
   )
 }
 
 export function AdminUsersPage() {
+  const { user: currentUser } = useAuth()
+  const isPlatformAdmin = hasPlatformAdminPrivileges(currentUser)
+  const isDepartmentAdmin = hasDepartmentAdminPrivileges(currentUser)
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 10,
@@ -143,10 +181,12 @@ export function AdminUsersPage() {
             SVN账号和密码管理将在专用用户接口接入后启用。
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <SyncCchUsersButton />
-          <AddUser />
-        </div>
+        {isPlatformAdmin && (
+          <div className="flex items-center gap-2">
+            <SyncCchUsersButton />
+            <AddUser />
+          </div>
+        )}
       </div>
       <form
         className="flex flex-col gap-2 sm:flex-row sm:items-center"
@@ -173,6 +213,7 @@ export function AdminUsersPage() {
         </div>
       </form>
       <UsersTable
+        canManageUsers={isPlatformAdmin && !isDepartmentAdmin}
         pagination={pagination}
         search={search}
         setPagination={setPagination}

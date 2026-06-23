@@ -8,7 +8,7 @@ import { DataTable } from "@/components/Common/DataTable"
 import AddDepartment from "@/components/Departments/AddDepartment"
 import { columns } from "@/components/Departments/columns"
 import PendingItems from "@/components/Pending/PendingItems"
-import { requireAdminUser } from "@/lib/admin-route"
+import { requirePlatformAdminUser } from "@/lib/admin-route"
 
 function getDepartmentsQueryOptions() {
   return {
@@ -20,7 +20,7 @@ function getDepartmentsQueryOptions() {
 export const Route = createFileRoute("/_layout/items")({
   component: Items,
   beforeLoad: async () => {
-    await requireAdminUser()
+    await requirePlatformAdminUser()
   },
   head: () => ({
     meta: [

@@ -1,18 +1,14 @@
 import { redirect } from "@tanstack/react-router"
 
 import { ApiError, UsersService } from "@/client"
-import { hasAdminPrivileges } from "@/lib/authz"
+import {
+  hasManagementPrivileges,
+  hasPlatformAdminPrivileges,
+} from "@/lib/authz"
 
-export async function requireAdminUser() {
+export async function readCurrentUserOrRedirect() {
   try {
     const user = await UsersService.readUserMe()
-
-    if (!hasAdminPrivileges(user)) {
-      throw redirect({
-        to: "/",
-      })
-    }
-
     return user
   } catch (error) {
     if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
@@ -25,3 +21,29 @@ export async function requireAdminUser() {
     throw error
   }
 }
+
+export async function requirePlatformAdminUser() {
+  const user = await readCurrentUserOrRedirect()
+
+  if (!hasPlatformAdminPrivileges(user)) {
+    throw redirect({
+      to: "/",
+    })
+  }
+
+  return user
+}
+
+export async function requireManagementUser() {
+  const user = await readCurrentUserOrRedirect()
+
+  if (!hasManagementPrivileges(user)) {
+    throw redirect({
+      to: "/",
+    })
+  }
+
+  return user
+}
+
+export const requireAdminUser = requirePlatformAdminUser

@@ -2283,7 +2283,7 @@ export const UserPublicSchema = {
 
 export const UserRoleSchema = {
     type: 'string',
-    enum: ['admin', 'user'],
+    enum: ['admin', 'department_admin', 'user'],
     title: 'UserRole'
 } as const;
 

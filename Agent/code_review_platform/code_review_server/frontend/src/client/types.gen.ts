@@ -408,7 +408,7 @@ export type UserPublic = {
     created_at?: (string | null);
 };
 
-export type UserRole = 'admin' | 'user';
+export type UserRole = 'admin' | 'department_admin' | 'user';
 
 export type UsersPublic = {
     data: Array<UserPublic>;

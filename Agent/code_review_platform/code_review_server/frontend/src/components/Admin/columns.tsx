@@ -15,7 +15,13 @@ export type UserTableData = UserPublic & {
   department_name?: string | null
 }
 
-export const columns: ColumnDef<UserTableData>[] = [
+const roleLabels: Record<string, string> = {
+  admin: "超级管理员",
+  department_admin: "部门管理员",
+  user: "普通用户",
+}
+
+const baseColumns: ColumnDef<UserTableData>[] = [
   {
     accessorKey: "full_name",
     header: "姓名",
@@ -89,7 +95,7 @@ export const columns: ColumnDef<UserTableData>[] = [
     header: "角色",
     cell: ({ row }) => (
       <Badge variant={row.original.role === "admin" ? "default" : "secondary"}>
-        {row.original.role === "admin" ? "管理员" : "用户"}
+        {roleLabels[row.original.role ?? "user"] ?? row.original.role}
       </Badge>
     ),
   },
@@ -110,13 +116,24 @@ export const columns: ColumnDef<UserTableData>[] = [
       </div>
     ),
   },
-  {
-    id: "actions",
-    header: () => <span className="sr-only">操作</span>,
-    cell: ({ row }) => (
-      <div className="flex justify-end">
-        <UserActionsMenu user={row.original} />
-      </div>
-    ),
-  },
 ]
+
+const actionsColumn: ColumnDef<UserTableData> = {
+  id: "actions",
+  header: () => <span className="sr-only">操作</span>,
+  cell: ({ row }) => (
+    <div className="flex justify-end">
+      <UserActionsMenu user={row.original} />
+    </div>
+  ),
+}
+
+export function getUserColumns({
+  canManageUsers,
+}: {
+  canManageUsers: boolean
+}): ColumnDef<UserTableData>[] {
+  return canManageUsers ? [...baseColumns, actionsColumn] : baseColumns
+}
+
+export const columns = getUserColumns({ canManageUsers: true })
