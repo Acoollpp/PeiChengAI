@@ -235,9 +235,7 @@ def create_review_task(
     old_revision = _normalize_revision(task_in.old_revision)
     new_revision = _normalize_revision(task_in.new_revision)
     if old_revision == new_revision:
-        raise HTTPException(
-            status_code=400, detail="Old and new revisions must differ"
-        )
+        raise HTTPException(status_code=400, detail="Old and new revisions must differ")
 
     department = (
         session.get(Department, current_user.department_id)
@@ -308,8 +306,10 @@ def read_review_task_stats(
         *_range_filters(range),
     ]
 
-    statement = select(ReviewTask.status, func.count()).where(*filters).group_by(
-        ReviewTask.status
+    statement = (
+        select(ReviewTask.status, func.count())
+        .where(*filters)
+        .group_by(ReviewTask.status)
     )
     rows = session.exec(statement).all()
     by_status = dict.fromkeys(ReviewTaskStatus, 0)
@@ -332,7 +332,9 @@ def read_review_task_stats(
             and finished_at >= started_at
         )
     ]
-    average_duration_seconds = int(sum(durations) / len(durations)) if durations else None
+    average_duration_seconds = (
+        int(sum(durations) / len(durations)) if durations else None
+    )
 
     reports_by_user: list[ReviewTaskReportUserStatsPublic] = []
     if (
@@ -361,9 +363,7 @@ def read_review_task_stats(
         total=sum(by_status.values()),
         success=by_status[ReviewTaskStatus.success],
         running=sum(by_status[status] for status in _RUNNING_STATUSES),
-        failed_or_error=sum(
-            by_status[status] for status in _FAILED_OR_ERROR_STATUSES
-        ),
+        failed_or_error=sum(by_status[status] for status in _FAILED_OR_ERROR_STATUSES),
         average_duration_seconds=average_duration_seconds,
         by_status=by_status,
         reports_by_user=reports_by_user,
@@ -399,7 +399,10 @@ def delete_review_task(
         for file_path in (
             report_path,
             pdf_report_path,
-            *(Path(requirement_file.file_path) for requirement_file in requirement_files),
+            *(
+                Path(requirement_file.file_path)
+                for requirement_file in requirement_files
+            ),
         )
         if file_path is not None
     ]
@@ -515,9 +518,12 @@ async def upload_review_task_requirement_file(
         Path(old_requirement_file.file_path)
         for old_requirement_file in old_requirement_files
     ]
-    file_path, file_size, file_hash, safe_file_name = (
-        await report_service.save_requirement_upload(task_id, upload)
-    )
+    (
+        file_path,
+        file_size,
+        file_hash,
+        safe_file_name,
+    ) = await report_service.save_requirement_upload(task_id, upload)
     requirement_file = ReviewTaskRequirementFile(
         task_id=task.id,
         file_name=safe_file_name,

@@ -55,7 +55,8 @@ class CchSyncService:
                     table_names, ("cch_user", "cch_users", "users", "user")
                 )
                 key_table = self._first_existing_table(
-                    table_names, ("cch_key", "cch_keys", "user_api_key", "api_keys", "keys")
+                    table_names,
+                    ("cch_key", "cch_keys", "user_api_key", "api_keys", "keys"),
                 )
                 user_rows = [
                     self._parse_user_row(dict(row._mapping))
@@ -155,7 +156,9 @@ class CchSyncService:
             is_active = disabled_reason is None
 
             if api_key is None:
-                api_key = UserApiKey(user_id=user.id, cch_key_id=row.cch_key_id, key=row.key)
+                api_key = UserApiKey(
+                    user_id=user.id, cch_key_id=row.cch_key_id, key=row.key
+                )
                 session.add(api_key)
                 result.created += 1
             else:
@@ -176,24 +179,35 @@ class CchSyncService:
         result.finished_at = datetime.now(timezone.utc)
         return result
 
-    def _first_existing_table(self, table_names: set[str], candidates: tuple[str, ...]) -> str:
+    def _first_existing_table(
+        self, table_names: set[str], candidates: tuple[str, ...]
+    ) -> str:
         for candidate in candidates:
             if candidate in table_names:
                 return candidate
-        raise RuntimeError(f"CCH database is missing expected tables: {', '.join(candidates)}")
+        raise RuntimeError(
+            f"CCH database is missing expected tables: {', '.join(candidates)}"
+        )
 
     def _parse_user_row(self, row: dict[str, Any]) -> CchUserRow:
         return CchUserRow(
             cch_user_id=int(self._value(row, "cch_user_id", "id", "user_id")),
             full_name=self._value(row, "full_name", "name", "username", required=False),
             role=self._value(row, "role", required=False) or UserRole.user,
-            is_superuser=self._bool(self._value(row, "is_superuser", "is_admin", required=False)),
-            is_active=self._bool(self._value(row, "is_active", "active", "is_enabled", required=False), default=True),
+            is_superuser=self._bool(
+                self._value(row, "is_superuser", "is_admin", required=False)
+            ),
+            is_active=self._bool(
+                self._value(row, "is_active", "active", "is_enabled", required=False),
+                default=True,
+            ),
             is_deleted=self._bool(
                 self._value(row, "is_deleted", "deleted", required=False)
             )
             or self._value(row, "deleted_at", required=False) is not None,
-            expires_at=self._datetime(self._value(row, "expires_at", "expired_at", required=False)),
+            expires_at=self._datetime(
+                self._value(row, "expires_at", "expired_at", required=False)
+            ),
         )
 
     def _parse_key_row(self, row: dict[str, Any]) -> CchKeyRow:
@@ -202,12 +216,17 @@ class CchSyncService:
             cch_user_id=int(self._value(row, "cch_user_id", "user_id")),
             key=str(self._value(row, "key", "api_key", "token")),
             name=self._value(row, "name", "key_name", required=False),
-            is_active=self._bool(self._value(row, "is_active", "active", "is_enabled", required=False), default=True),
+            is_active=self._bool(
+                self._value(row, "is_active", "active", "is_enabled", required=False),
+                default=True,
+            ),
             is_deleted=self._bool(
                 self._value(row, "is_deleted", "deleted", required=False)
             )
             or self._value(row, "deleted_at", required=False) is not None,
-            expires_at=self._datetime(self._value(row, "expires_at", "expired_at", required=False)),
+            expires_at=self._datetime(
+                self._value(row, "expires_at", "expired_at", required=False)
+            ),
         )
 
     def _value(self, row: dict[str, Any], *names: str, required: bool = True) -> Any:

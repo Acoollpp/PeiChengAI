@@ -110,9 +110,7 @@ def _ensure_department_admin_active_department(
 def _ensure_department_admin_role_has_department(
     *, session: SessionDep, role: UserRole | None, department_id: uuid.UUID | None
 ) -> Department | None:
-    department = _ensure_department_exists(
-        session=session, department_id=department_id
-    )
+    department = _ensure_department_exists(session=session, department_id=department_id)
     if role == UserRole.department_admin:
         if department is None:
             raise HTTPException(status_code=400, detail="部门管理员必须绑定部门。")
@@ -282,9 +280,7 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
     """
     Create new user.
     """
-    _ensure_svn_username_available(
-        session=session, svn_username=user_in.svn_username
-    )
+    _ensure_svn_username_available(session=session, svn_username=user_in.svn_username)
     department = _ensure_department_admin_role_has_department(
         session=session,
         role=user_in.role,

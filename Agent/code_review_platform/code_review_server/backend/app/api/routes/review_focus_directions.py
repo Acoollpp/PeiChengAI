@@ -60,9 +60,7 @@ def _ensure_department_admin_active_department(
         )
 
 
-def _ensure_management_user(
-    *, session: SessionDep, current_user: CurrentUser
-) -> None:
+def _ensure_management_user(*, session: SessionDep, current_user: CurrentUser) -> None:
     if current_user.role == UserRole.department_admin:
         _ensure_department_admin_active_department(
             session=session,
@@ -210,8 +208,7 @@ def _direction_public(
         "department_id": legacy_department.id if legacy_department else None,
         "department_name": legacy_department.name if legacy_department else None,
         "departments": [
-            DepartmentPublic.model_validate(department)
-            for department in departments
+            DepartmentPublic.model_validate(department) for department in departments
         ],
     }
     if usage_count is not None:
@@ -342,8 +339,7 @@ def read_review_focus_directions(
     elif department_scope == "global":
         conditions.append(
             ~exists().where(
-                ReviewFocusDirectionDepartment.direction_id
-                == ReviewFocusDirection.id
+                ReviewFocusDirectionDepartment.direction_id == ReviewFocusDirection.id
             )
         )
     elif department_scope == "department":
@@ -472,9 +468,7 @@ def _build_usage_stats(
     if stats:
         state_rows = session.exec(
             select(ReviewFocusDirectionUsageState).where(
-                col(ReviewFocusDirectionUsageState.normalized_content).in_(
-                    stats.keys()
-                )
+                col(ReviewFocusDirectionUsageState.normalized_content).in_(stats.keys())
             )
         ).all()
         states = {state.normalized_content: state for state in state_rows}
@@ -592,8 +586,7 @@ def export_usage_stats(
     workbook.save(output)
     output.seek(0)
     file_name = (
-        "重点审查方向用户输入统计_"
-        f"{get_datetime_utc().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        f"重点审查方向用户输入统计_{get_datetime_utc().strftime('%Y%m%d_%H%M%S')}.xlsx"
     )
     return StreamingResponse(
         output,
