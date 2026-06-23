@@ -245,16 +245,19 @@ code_review_platform/
 **Electron 端（历史 bug 集中区，无质量门兜底）**：
 1. **PDF 报告打开/下载流程**（`report:open-pdf` / `report:download-current`）：多级 fallback（本地 PDF→工作区→服务端下载）、文件名解析、路径回退——git log 里密集修复过多次。
 2. **异步任务状态切换**（`hooks/useTaskQueue.ts` / `TaskPage.tsx`）：并发、取消、切换历史报告时的状态污染（"修复历史报告异步切换状态污染"）。
-3. **任务时间显示**（`started_at`/`finished_at`）：注意这是后端派生字段（§3.4-#2）。
-4. **错误码映射**（`task-agent.ts` 的 `codexErrorMessages`）必须与 `codex-runner.ts` 的 `CodexErrorCodes` 一一对应。
-5. **IPC 三层契约**（§4.3）：改一处忘同步另两处 = 运行时炸。
+3. **审查完成提醒**：任务完成后不要自动切换右侧报告；前台用应用内右下角提醒，后台/最小化/失焦才走系统通知。前台判断固定为 `document.visibilityState === "visible" && document.hasFocus()`。
+4. **系统通知链路**：Windows 必须 `app.setAppUserModelId("com.peicheng.code-review")`；通知 payload 不带 `reportMarkdown`；主进程点击通知后恢复/显示/聚焦窗口，并发送 `notification:task-completed-clicked`。Electron 39.2.6 类型里没有 `Notification.handleActivation`，当前靠实例 `click` 事件 + `activeNotifications` 保留实例；`failed` 事件必须返回 failed 以触发应用内兜底。
+5. **历史任务排序**：`historyTasks` 按 `finished_at -> started_at -> createdAtMs` 倒序，别使用不存在的 `updated_at`。
+6. **任务时间显示**（`started_at`/`finished_at`）：注意这是后端派生字段（§3.4-#2）。
+7. **错误码映射**（`task-agent.ts` 的 `codexErrorMessages`）必须与 `codex-runner.ts` 的 `CodexErrorCodes` 一一对应。
+8. **IPC 三层契约**（§4.3）：改一处忘同步另两处 = 运行时炸。
 
 **跨端契约（§3.4 全表，尤其 #1/#2/#4）**。
 
 **后端**：
-6. **用户删除是手动级联**（`ReviewTask.user_id` 无 `ON DELETE CASCADE`）：`users.py` 的 `_delete_user_with_related_data` 显式置 NULL 再删，改用户模型/删除逻辑时要同步维护。
-7. **Skill 激活互斥**（按 name）：激活一个会停用同名其它；下载要求恰好一个 active，否则 409。
-8. **反馈双接口镜像**（§3.4-#8）。
+9. **用户删除是手动级联**（`ReviewTask.user_id` 无 `ON DELETE CASCADE`）：`users.py` 的 `_delete_user_with_related_data` 显式置 NULL 再删，改用户模型/删除逻辑时要同步维护。
+10. **Skill 激活互斥**（按 name）：激活一个会停用同名其它；下载要求恰好一个 active，否则 409。
+11. **反馈双接口镜像**（§3.4-#8）。
 
 ## 9. 不要做的事
 

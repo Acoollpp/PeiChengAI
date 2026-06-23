@@ -244,6 +244,12 @@ Electron 没有和后端一样稳定的 CI 兜底，改完必须手动跑类型�
 - 后端不执行 Codex、不跑 SVN diff、不生成审查报告；这些属于 Electron 本机职责。
 - 上传 Markdown 报告会决定任务成功状态；PDF 上传不负责置成功。
 - `started_at`、`finished_at` 由后端派生，客户端不要直接写。
+- Electron 历史任务列表按 `finished_at -> started_at -> createdAtMs` 倒序展示，不要引入不存在的 `updated_at` 兜底。
+- Electron 审查完成后不自动切换右侧报告预览；用户要看报告时通过应用内提醒、系统通知点击或历史任务“查看报告”显式打开。
+- Electron 审查完成提醒规则：渲染层用 `document.visibilityState === "visible" && document.hasFocus()` 判断前台；前台只显示应用内右下角提醒，后台/最小化/失焦才调用系统通知。
+- 系统通知 payload 不传 `reportMarkdown`；只传任务 ID、SVN 地址、旧新版本、报告路径和 PDF 信息，报告正文从渲染层任务状态按 ID 回查。
+- Windows 系统通知必须设置 `app.setAppUserModelId("com.peicheng.code-review")`；通知点击由主进程恢复/显示/聚焦窗口，再通过 `notification:task-completed-clicked` 回传渲染层。
+- Electron 39.2.6 的本地类型没有 `Notification.handleActivation`；当前通知点击使用实例 `click` 事件，并用主进程 `activeNotifications` 保留实例。系统通知 `failed` 事件必须返回 `failed`，让渲染层显示应用内兜底提醒。
 - `SVN_CREDENTIAL_MASTER_KEY` 上线后不可变。
 - `REPORT_STORAGE_DIR`、`SKILL_STORAGE_DIR`、`CLIENT_RELEASE_STORAGE_DIR`、`FEEDBACK_STORAGE_DIR` 改路径会影响历史文件读取。
 - Feedback 需要兼容旧单图字段和新多图结构。
