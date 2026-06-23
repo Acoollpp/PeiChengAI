@@ -103,3 +103,26 @@ export type TaskProgressEvent =
       stream: 'stdout' | 'stderr'
       message: string
     }
+
+export interface TaskCompletionNotificationPayload {
+  taskId: string
+  localTaskId?: string
+  svn_url: string
+  old_revision: string
+  new_revision: string
+  reportPath?: string
+  pdfPath?: string
+  pdfReportName?: string | null
+}
+
+export type TaskCompletionNotificationResult =
+  | {
+      status: 'shown'
+    }
+  | {
+      status: 'unsupported'
+    }
+  | {
+      status: 'failed'
+      message: string
+    }

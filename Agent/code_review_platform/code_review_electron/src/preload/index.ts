@@ -26,6 +26,8 @@ import type {
   SvnLoginRequest,
   ReviewTasksResponse,
   SelectRequirementFileResult,
+  TaskCompletionNotificationPayload,
+  TaskCompletionNotificationResult,
   TaskProgressEvent
 } from '../renderer/src/code-review-api'
 
@@ -100,6 +102,13 @@ contextBridge.exposeInMainWorld('codeReview', {
     ipcRenderer.invoke('report:open-pdf', payload),
   readReportAsset: (payload: ReadReportAssetRequest): Promise<ReadReportAssetResult> =>
     ipcRenderer.invoke('report:asset', payload),
+  showTaskCompletionNotification: (
+    payload: TaskCompletionNotificationPayload
+  ): Promise<TaskCompletionNotificationResult> =>
+    ipcRenderer.invoke('notification:show-task-completed', payload),
+  onTaskCompletionNotificationClicked: (
+    callback: (payload: TaskCompletionNotificationPayload) => void
+  ): (() => void) => listen('notification:task-completed-clicked', callback),
   bindSvnCredential: (payload: SvnCredentialPayload): Promise<true> =>
     ipcRenderer.invoke('svn:bind-credential', payload),
   installCodex: (): Promise<EnvironmentCheckResult> => ipcRenderer.invoke('codex:install'),

@@ -7,11 +7,17 @@ import type {
   ReviewTask,
   ReviewTaskStatus,
   SyncedSkill,
+  TaskCompletionNotificationPayload,
+  TaskCompletionNotificationResult,
   TaskProgressEvent
 } from '../../shared/types'
 
 export type { EnvironmentProgressEvent, TaskProgressEvent }
 export type { CurrentUser, DepartmentsResponse }
+export type {
+  TaskCompletionNotificationPayload,
+  TaskCompletionNotificationResult
+} from '../../shared/types'
 
 export interface KeyLoginRequest {
   server_url: string
@@ -194,6 +200,12 @@ export interface CodeReviewApi {
   downloadCurrentReport(taskId?: string): Promise<DownloadCurrentReportResult>
   openPdfReport(payload: OpenPdfReportRequest): Promise<OpenPdfReportResult>
   readReportAsset(payload: ReadReportAssetRequest): Promise<ReadReportAssetResult>
+  showTaskCompletionNotification(
+    payload: TaskCompletionNotificationPayload
+  ): Promise<TaskCompletionNotificationResult>
+  onTaskCompletionNotificationClicked(
+    callback: (payload: TaskCompletionNotificationPayload) => void
+  ): () => void
   installCodex(): Promise<EnvironmentCheckResult>
   installSvn(): Promise<EnvironmentCheckResult>
   installSkill(): Promise<EnvironmentCheckResult>

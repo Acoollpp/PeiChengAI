@@ -164,4 +164,54 @@ describe('preload codeReview API', () => {
     expect(api.getPathForPastedFile(file)).toBe('/tmp/产品开发需求表.xlsx')
     expect(getPathForFileMock).toHaveBeenCalledWith(file)
   })
+
+  it('invokes task completion notification IPC', async () => {
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+
+    await api.showTaskCompletionNotification({
+      taskId: 'task-1',
+      localTaskId: 'local-1',
+      svn_url: 'svn://repo/project',
+      old_revision: 'r10',
+      new_revision: 'r12',
+      reportPath: '/tmp/report.md',
+      pdfPath: '/tmp/report.pdf',
+      pdfReportName: 'r10_r12审查报告.pdf'
+    })
+
+    expect(invokeMock).toHaveBeenCalledWith('notification:show-task-completed', {
+      taskId: 'task-1',
+      localTaskId: 'local-1',
+      svn_url: 'svn://repo/project',
+      old_revision: 'r10',
+      new_revision: 'r12',
+      reportPath: '/tmp/report.md',
+      pdfPath: '/tmp/report.pdf',
+      pdfReportName: 'r10_r12审查报告.pdf'
+    })
+  })
+
+  it('subscribes to task completion notification click IPC', async () => {
+    const onMock = vi.mocked((await import('electron')).ipcRenderer.on)
+    const removeListenerMock = vi.mocked((await import('electron')).ipcRenderer.removeListener)
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+    const callback = vi.fn()
+
+    const unsubscribe = api.onTaskCompletionNotificationClicked(callback)
+    const listener = onMock.mock.calls.find(
+      ([channel]) => channel === 'notification:task-completed-clicked'
+    )?.[1]
+
+    expect(listener).toBeDefined()
+    listener({}, { taskId: 'task-1', svn_url: 'svn://repo/project' })
+    expect(callback).toHaveBeenCalledWith({ taskId: 'task-1', svn_url: 'svn://repo/project' })
+
+    unsubscribe()
+    expect(removeListenerMock).toHaveBeenCalledWith(
+      'notification:task-completed-clicked',
+      listener
+    )
+  })
 })
