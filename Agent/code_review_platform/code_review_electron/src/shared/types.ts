@@ -27,7 +27,7 @@ export interface CurrentUser {
   svn_username?: string | null
   department_id?: string | null
   department_name?: string | null
-  role?: 'admin' | 'user'
+  role?: 'admin' | 'department_admin' | 'user'
 }
 
 export interface DepartmentPublic {

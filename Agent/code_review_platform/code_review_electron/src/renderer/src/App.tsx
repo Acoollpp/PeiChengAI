@@ -181,6 +181,13 @@ export function App(): React.JSX.Element {
       currentUser: CurrentUser
     }): Promise<void> => {
       if (!currentUser.department_id) {
+        if (currentUser.role === 'department_admin') {
+          setPendingDepartmentSession(null)
+          setDepartments([])
+          setDepartmentError('')
+          throw new Error('当前账号未绑定部门，请联系超级管理员。')
+        }
+
         setPendingDepartmentSession({ displayName, needSvnBinding })
         setDepartmentError('')
         setIsLoadingDepartments(true)
