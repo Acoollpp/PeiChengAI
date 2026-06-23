@@ -10,7 +10,12 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 from sqlmodel import col, func, select
 
-from app.api.deps import CurrentUser, SessionDep, has_admin_privileges
+from app.api.deps import (
+    CurrentUser,
+    SessionDep,
+    ensure_department_admin_has_department,
+    has_admin_privileges,
+)
 from app.models import (
     Department,
     FeedbackStatsRange,
@@ -25,6 +30,7 @@ from app.models import (
     ReviewTaskStatusUpdate,
     ReviewTaskTrendPointPublic,
     User,
+    UserRole,
 )
 from app.services import report_service
 
@@ -53,9 +59,12 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _task_scope_filters(current_user: CurrentUser) -> list[Any]:
+def _task_read_scope_filters(current_user: CurrentUser) -> list[Any]:
     if has_admin_privileges(current_user):
         return []
+    if current_user.role == UserRole.department_admin:
+        ensure_department_admin_has_department(current_user)
+        return [ReviewTask.department_id == current_user.department_id]
     return [ReviewTask.user_id == current_user.id]
 
 
@@ -142,13 +151,35 @@ def _normalize_revision(revision: str) -> str:
     return f"r{match.group(1)}"
 
 
-def _get_task_for_user(
+def _can_write_task(current_user: CurrentUser, task: ReviewTask) -> bool:
+    return has_admin_privileges(current_user) or task.user_id == current_user.id
+
+
+def _get_task_for_read(
     *, session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
 ) -> ReviewTask:
     task = session.get(ReviewTask, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Review task not found")
-    if not has_admin_privileges(current_user) and task.user_id != current_user.id:
+    if has_admin_privileges(current_user):
+        return task
+    if current_user.role == UserRole.department_admin:
+        ensure_department_admin_has_department(current_user)
+        if task.department_id == current_user.department_id:
+            return task
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    if task.user_id == current_user.id:
+        return task
+    raise HTTPException(status_code=403, detail="Not enough permissions")
+
+
+def _get_task_for_write(
+    *, session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
+) -> ReviewTask:
+    task = session.get(ReviewTask, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Review task not found")
+    if not _can_write_task(current_user, task):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return task
 
@@ -219,9 +250,7 @@ def read_review_tasks(
     user_name: str | None = None,
     svn_username: str | None = None,
 ) -> Any:
-    filters = []
-    if not has_admin_privileges(current_user):
-        filters.append(ReviewTask.user_id == current_user.id)
+    filters = _task_read_scope_filters(current_user)
     if user_name and user_name.strip():
         filters.append(col(User.full_name).ilike(f"%{user_name.strip()}%"))
     if svn_username and svn_username.strip():
@@ -255,7 +284,7 @@ def read_review_task_stats(
     range: FeedbackStatsRange = FeedbackStatsRange.today,
 ) -> Any:
     filters = [
-        *_task_scope_filters(current_user),
+        *_task_read_scope_filters(current_user),
         *_range_filters(range),
     ]
 
@@ -286,7 +315,10 @@ def read_review_task_stats(
     average_duration_seconds = int(sum(durations) / len(durations)) if durations else None
 
     reports_by_user: list[ReviewTaskReportUserStatsPublic] = []
-    if has_admin_privileges(current_user):
+    if (
+        has_admin_privileges(current_user)
+        or current_user.role == UserRole.department_admin
+    ):
         report_count = func.count(ReviewTask.id)
         report_rows = session.exec(
             select(User.full_name, User.svn_username, report_count)
@@ -323,7 +355,7 @@ def read_review_task_stats(
 def read_review_task(
     session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
 ) -> Any:
-    return _get_task_for_user(
+    return _get_task_for_read(
         session=session, current_user=current_user, task_id=task_id
     )
 
@@ -332,7 +364,7 @@ def read_review_task(
 def delete_review_task(
     session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
 ) -> dict[str, str]:
-    task = _get_task_for_user(
+    task = _get_task_for_write(
         session=session, current_user=current_user, task_id=task_id
     )
     requirement_files = session.exec(
@@ -370,7 +402,7 @@ def update_review_task_status(
     task_id: uuid.UUID,
     status_in: ReviewTaskStatusUpdate,
 ) -> Any:
-    task = _get_task_for_user(
+    task = _get_task_for_write(
         session=session, current_user=current_user, task_id=task_id
     )
     now = _utcnow()
@@ -401,7 +433,7 @@ async def upload_review_task_report(
     task_id: uuid.UUID,
     upload: UploadFile = File(...),
 ) -> Any:
-    task = _get_task_for_user(
+    task = _get_task_for_write(
         session=session, current_user=current_user, task_id=task_id
     )
     report_path = await report_service.save_upload(task_id, upload)
@@ -428,7 +460,7 @@ async def upload_review_task_pdf_report(
     task_id: uuid.UUID,
     upload: UploadFile = File(...),
 ) -> Any:
-    task = _get_task_for_user(
+    task = _get_task_for_write(
         session=session, current_user=current_user, task_id=task_id
     )
     report_path = await report_service.save_pdf_upload(task_id, upload)
@@ -451,7 +483,7 @@ async def upload_review_task_requirement_file(
     task_id: uuid.UUID,
     upload: UploadFile = File(...),
 ) -> Any:
-    task = _get_task_for_user(
+    task = _get_task_for_write(
         session=session, current_user=current_user, task_id=task_id
     )
     old_requirement_files = session.exec(
@@ -499,7 +531,7 @@ async def upload_review_task_requirement_file(
 def read_review_task_report(
     session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
 ) -> PlainTextResponse:
-    task = _get_task_for_user(
+    task = _get_task_for_read(
         session=session, current_user=current_user, task_id=task_id
     )
     report_path = _read_report_path(task)
@@ -512,7 +544,7 @@ def read_review_task_report(
 def download_review_task_report(
     session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
 ) -> FileResponse:
-    task = _get_task_for_user(
+    task = _get_task_for_read(
         session=session, current_user=current_user, task_id=task_id
     )
     report_path = _read_report_path(task)
@@ -527,7 +559,7 @@ def download_review_task_report(
 def download_review_task_pdf_report(
     session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
 ) -> FileResponse:
-    task = _get_task_for_user(
+    task = _get_task_for_read(
         session=session, current_user=current_user, task_id=task_id
     )
     report_path = _read_pdf_report_path(task)
