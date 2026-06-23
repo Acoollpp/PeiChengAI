@@ -2091,3 +2091,62 @@ def test_unbound_department_admin_read_scope_returns_403(
     assert list_response.json()["detail"] == "当前账号未绑定部门，请联系超级管理员。"
     assert stats_response.status_code == 403
     assert stats_response.json()["detail"] == "当前账号未绑定部门，请联系超级管理员。"
+
+
+def test_inactive_department_admin_read_scope_returns_403(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    department = _create_department(db)
+    department.is_active = False
+    db.add(department)
+    db.commit()
+    db.refresh(department)
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+        role=UserRole.department_admin,
+    )
+    member_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+    )
+    task = _create_review_task(client, member_headers, old_revision="7171")
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=member_headers,
+        files={"upload": ("report.md", b"# Inactive Department\n", "text/markdown")},
+    )
+    assert upload_response.status_code == 200
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=admin_headers,
+    )
+    detail_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=admin_headers,
+    )
+    download_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/download",
+        headers=admin_headers,
+    )
+    stats_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=admin_headers,
+    )
+
+    expected_detail = "当前账号未绑定部门，请联系超级管理员。"
+    assert list_response.status_code == 403
+    assert list_response.json()["detail"] == expected_detail
+    assert detail_response.status_code == 403
+    assert detail_response.json()["detail"] == expected_detail
+    assert download_response.status_code == 403
+    assert download_response.json()["detail"] == expected_detail
+    assert stats_response.status_code == 403
+    assert stats_response.json()["detail"] == expected_detail

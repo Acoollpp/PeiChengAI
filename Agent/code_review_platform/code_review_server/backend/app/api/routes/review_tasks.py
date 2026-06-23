@@ -59,11 +59,29 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _task_read_scope_filters(current_user: CurrentUser) -> list[Any]:
+def _ensure_department_admin_active_department(
+    *, session: SessionDep, current_user: CurrentUser
+) -> None:
+    if current_user.role != UserRole.department_admin:
+        return
+    ensure_department_admin_has_department(current_user)
+    department = session.get(Department, current_user.department_id)
+    if department is None or not department.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="当前账号未绑定部门，请联系超级管理员。",
+        )
+
+
+def _task_read_scope_filters(
+    *, session: SessionDep, current_user: CurrentUser
+) -> list[Any]:
     if has_admin_privileges(current_user):
         return []
     if current_user.role == UserRole.department_admin:
-        ensure_department_admin_has_department(current_user)
+        _ensure_department_admin_active_department(
+            session=session, current_user=current_user
+        )
         return [ReviewTask.department_id == current_user.department_id]
     return [ReviewTask.user_id == current_user.id]
 
@@ -164,7 +182,9 @@ def _get_task_for_read(
     if has_admin_privileges(current_user):
         return task
     if current_user.role == UserRole.department_admin:
-        ensure_department_admin_has_department(current_user)
+        _ensure_department_admin_active_department(
+            session=session, current_user=current_user
+        )
         if task.department_id == current_user.department_id:
             return task
         raise HTTPException(status_code=403, detail="Not enough permissions")
@@ -250,7 +270,7 @@ def read_review_tasks(
     user_name: str | None = None,
     svn_username: str | None = None,
 ) -> Any:
-    filters = _task_read_scope_filters(current_user)
+    filters = _task_read_scope_filters(session=session, current_user=current_user)
     if user_name and user_name.strip():
         filters.append(col(User.full_name).ilike(f"%{user_name.strip()}%"))
     if svn_username and svn_username.strip():
@@ -284,7 +304,7 @@ def read_review_task_stats(
     range: FeedbackStatsRange = FeedbackStatsRange.today,
 ) -> Any:
     filters = [
-        *_task_read_scope_filters(current_user),
+        *_task_read_scope_filters(session=session, current_user=current_user),
         *_range_filters(range),
     ]
 
