@@ -61,6 +61,8 @@ def has_department_admin_privileges(user: User) -> bool:
     return user.role == UserRole.department_admin and user.department_id is not None
 
 
+# Only checks whether the role is a management role. Entry points must still
+# validate department binding via ensure_department_admin_has_department().
 def has_management_privileges(user: User) -> bool:
     return user.role in {UserRole.admin, UserRole.department_admin}
 
