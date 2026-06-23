@@ -1,7 +1,11 @@
+import uuid
+
 from fastapi import HTTPException
 
 from app.api.deps import (
     ensure_department_admin_has_department,
+    get_current_active_admin,
+    get_current_active_management_user,
     has_admin_privileges,
     has_department_admin_privileges,
     has_management_privileges,
@@ -49,7 +53,7 @@ def test_department_admin_requires_department_for_department_privileges() -> Non
 
 
 def test_department_admin_with_department_has_department_privileges() -> None:
-    user = User(role=UserRole.department_admin)
+    user = User(role=UserRole.department_admin, department_id=uuid.uuid4())
 
     assert user.department_id is not None
     assert has_department_admin_privileges(user) is True
@@ -64,5 +68,58 @@ def test_ensure_department_admin_has_department_rejects_unbound_admin() -> None:
     except HTTPException as exc:
         assert exc.status_code == 403
         assert exc.detail == "当前账号未绑定部门，请联系超级管理员。"
+    else:
+        raise AssertionError("Expected HTTPException")
+
+
+def test_department_admin_without_department_stays_unbound() -> None:
+    user = User(role=UserRole.department_admin)
+
+    assert user.department_id is None
+
+
+def test_get_current_active_management_user_allows_platform_admin() -> None:
+    user = User(role=UserRole.admin)
+
+    assert get_current_active_management_user(user) is user
+
+
+def test_get_current_active_management_user_allows_bound_department_admin() -> None:
+    user = User(role=UserRole.department_admin, department_id=uuid.uuid4())
+
+    assert get_current_active_management_user(user) is user
+
+
+def test_get_current_active_management_user_rejects_regular_user() -> None:
+    user = User(role=UserRole.user)
+
+    try:
+        get_current_active_management_user(user)
+    except HTTPException as exc:
+        assert exc.status_code == 403
+        assert exc.detail == "没有足够权限"
+    else:
+        raise AssertionError("Expected HTTPException")
+
+
+def test_get_current_active_management_user_rejects_unbound_department_admin() -> None:
+    user = User(role=UserRole.department_admin, department_id=None)
+
+    try:
+        get_current_active_management_user(user)
+    except HTTPException as exc:
+        assert exc.status_code == 403
+        assert exc.detail == "当前账号未绑定部门，请联系超级管理员。"
+    else:
+        raise AssertionError("Expected HTTPException")
+
+
+def test_get_current_active_admin_rejects_department_admin() -> None:
+    user = User(role=UserRole.department_admin, department_id=uuid.uuid4())
+
+    try:
+        get_current_active_admin(user)
+    except HTTPException as exc:
+        assert exc.status_code == 403
     else:
         raise AssertionError("Expected HTTPException")
