@@ -4,78 +4,178 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>钉钉 TB 项目 AI 平台</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=20260623-workspace-top" />
   </head>
   <body>
     <main class="shell">
-      <section class="hero">
-        <div>
+      <section class="hero" aria-label="平台状态">
+        <div class="hero-copy">
           <p class="eyebrow">PACE · Codex 工作台</p>
           <h1>钉钉 TB 项目 AI 平台</h1>
-          <p class="subtitle">把项目创建、项目变更和审批查询接到服务器 Codex，统一在网页里发起、跟踪和复查。</p>
+          <p class="subtitle">把项目创建和项目变更接到服务器 Codex，统一在网页里发起、跟踪和复查。</p>
         </div>
-        <div class="status-card">
-          <span class="pulse"></span>
-          <div>
-            <strong id="healthText">正在检查服务</strong>
-            <small>后台连接本机 Codex CLI</small>
+        <div class="hero-actions">
+          <div class="status-card">
+            <span class="pulse"></span>
+            <div>
+              <strong id="healthText">正在检查服务</strong>
+              <small>本机 Codex CLI</small>
+            </div>
+          </div>
+          <div class="account-card" id="accountCard" hidden>
+            <div>
+              <strong id="accountName">未登录</strong>
+              <small>CCH key 已认证</small>
+            </div>
+            <button class="ghost compact" id="logoutBtn" type="button">退出</button>
           </div>
         </div>
       </section>
 
-      <section class="workspace">
-        <aside class="panel side">
-          <div class="section-title">任务类型</div>
-          <button class="mode active" data-mode="create">
-            <span class="mode-icon">＋</span>
-            <span>
-              <strong>创建</strong>
-              <small>根据审批或输入创建 TB 项目</small>
-            </span>
-          </button>
-          <button class="mode" data-mode="change">
-            <span class="mode-icon">↻</span>
-            <span>
-              <strong>变更</strong>
-              <small>定位项目并创建变更迭代</small>
-            </span>
-          </button>
+      <section class="panel login-panel" id="loginPanel">
+        <div class="login-copy">
+          <div class="section-title">登录</div>
+          <h2>使用 CCH Key 进入工作台</h2>
+          <p>验证后才会显示任务创建区，key 只用于本次登录，不会保存在浏览器里。</p>
+        </div>
+        <form class="login-form" onsubmit="return false;">
+          <label class="input-label" for="loginKeyInput">CCH Key</label>
+          <input id="loginKeyInput" class="token-input" type="password" placeholder="粘贴你的 CCH key" autocomplete="current-password" />
+          <label class="remember-row" for="rememberKeyInput">
+            <input id="rememberKeyInput" type="checkbox" />
+            <span>记住 CCH Key</span>
+          </label>
+          <div class="actions">
+            <button id="loginBtn" class="primary" type="button">
+              <span>登录</span>
+            </button>
+            <span id="loginState" class="run-state" aria-live="polite">等待登录</span>
+          </div>
+        </form>
+      </section>
 
+      <section class="launcher" id="projectLauncher" hidden>
+        <aside class="panel launcher-side">
+          <div class="section-title">项目入口</div>
+          <article class="project-card" data-project="extension">
+            <div class="project-card-head">
+              <span class="mode-icon">＋</span>
+              <span>
+                <strong>扩展项目</strong>
+                <small>普通 TB 项目创建和变更</small>
+              </span>
+            </div>
+            <div class="project-actions" aria-label="扩展项目入口">
+              <button class="project-action" id="extensionCreateBtn" type="button">创建</button>
+              <button class="project-action" id="extensionChangeBtn" type="button">变更</button>
+            </div>
+          </article>
+          <article class="project-card" data-project="research">
+            <div class="project-card-head">
+              <span class="mode-icon rd">研</span>
+              <span>
+                <strong>研发项目</strong>
+                <small>研发项目立项开发流程</small>
+              </span>
+            </div>
+            <div class="project-actions" aria-label="研发项目入口">
+              <button class="project-action" id="researchCreateBtn" type="button">创建</button>
+              <button class="project-action pending" id="researchChangeBtn" type="button" disabled>变更</button>
+            </div>
+            <small class="project-note">研发变更待补充</small>
+          </article>
+
+          <div class="ops-panel launcher-ops">
+            <div class="section-title">运行状态</div>
+            <div id="credentialHealth" class="history-stats">等待登录</div>
+            <div id="auditList" class="history-list">等待登录</div>
+          </div>
+          
           <div class="tips">
             <div class="section-title">输入建议</div>
-            <p>可以粘贴审批标题、项目编号、项目名称、发起人、变更说明，也可以直接写“查刘虹谊审批并创建”。</p>
+            <p>扩展创建时粘贴项目创建信息单。扩展变更时粘贴项目变更信息单；有项目地址时一并粘贴。研发创建请从项目入口选择研发项目的创建。</p>
+          </div>
+
+          <div class="history-panel">
+            <div class="section-title">历史记录</div>
+            <div id="historyStats" class="history-stats">暂无统计</div>
+            <div id="historyList" class="history-list" aria-live="polite">等待登录</div>
           </div>
         </aside>
 
+        <section class="workspace" id="workspace" hidden>
         <section class="panel main-panel">
           <div class="toolbar">
             <div>
-              <div class="section-title">对话任务</div>
+              <div class="section-title">流程任务</div>
               <h2 id="modeTitle">创建钉钉 TB 项目</h2>
             </div>
             <button class="ghost" id="clearBtn" type="button">清空</button>
           </div>
 
-          <label class="input-label" for="messageInput">任务内容</label>
-          <textarea id="messageInput" spellcheck="false" placeholder="例如：在刘虹谊的审批里查项目启动申请，项目号 60411，确认后创建到本月低压户储项目集。"></textarea>
+          <div class="workbench-grid">
+            <div class="task-compose">
+              <label class="input-label" for="messageInput">任务内容</label>
+              <textarea id="messageInput" spellcheck="false" placeholder="粘贴项目创建信息单，例如项目名称、项目编号、客户、项目工程师、售前/发起人、客户要求日期等。"></textarea>
 
-          <div class="actions">
-            <button id="runBtn" class="primary" type="button">
-              <span>启动 Codex</span>
-            </button>
-            <span id="runState" class="run-state">等待输入</span>
-          </div>
+              <div id="projectUrlField" class="project-url-field">
+                <label class="input-label" for="projectUrlInput">项目地址（可选）</label>
+                <input id="projectUrlInput" class="url-input" type="url" placeholder="粘贴 Teambition / 钉钉项目地址，变更时优先用于定位项目" />
+              </div>
 
-          <div class="output-wrap">
-            <div class="output-head">
-              <span>运行输出</span>
-              <span id="runId">未开始</span>
+              <div class="preview-panel" id="previewPanel" hidden>
+                <div class="section-title">解析预览</div>
+                <div id="previewSummary" class="preview-summary"></div>
+                <div id="previewList" class="preview-list"></div>
+              </div>
+
+              <div class="actions">
+                <div class="action-buttons">
+                  <button id="previewBtn" class="ghost" type="button">
+                    解析预览
+                  </button>
+                  <button id="runBtn" class="primary" type="button">
+                    <span>启动流程</span>
+                  </button>
+                  <button id="aiTestBtn" class="ghost ai-test" type="button">
+                    AI测试创建
+                  </button>
+                  <button id="abortBtn" class="danger" type="button" hidden>
+                    中止
+                  </button>
+                </div>
+                <div class="action-status">
+                  <span id="runState" class="run-state" aria-live="polite">等待输入</span>
+                  <span id="runTimer" class="run-timer">00:00</span>
+                </div>
+              </div>
+
+              <div class="result-panel" id="resultPanel" hidden>
+                <div class="section-title">执行结果</div>
+                <div id="resultList" class="result-list" aria-live="polite"></div>
+              </div>
+
+              <div class="detail-panel" id="detailPanel" hidden>
+                <div class="section-title">历史详情</div>
+                <div id="detailBody" class="detail-body"></div>
+              </div>
             </div>
-            <pre id="output"></pre>
+
+            <div class="flow-board" aria-label="运行流程">
+              <div class="flow-head">
+                <div>
+                  <div class="section-title">流程状态</div>
+                  <strong id="flowSummary">等待流程配置</strong>
+                </div>
+                <span id="runId" class="run-chip">未开始</span>
+              </div>
+              <div id="flowSteps" class="flow-steps" aria-live="polite"></div>
+            </div>
           </div>
+        </section>
         </section>
       </section>
     </main>
-    <script src="/app.js"></script>
+    <script src="/app.js?v=20260623-workspace-top"></script>
   </body>
 </html>
