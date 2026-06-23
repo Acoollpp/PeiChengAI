@@ -18,6 +18,7 @@ Electron 客户端的任务看板分为运行中、等待中、历史任务。�
 3. 通知内容包含历史任务卡片中核心信息：SVN 地址、旧版本、新版本。
 4. 用户点击通知后，恢复并聚焦 Electron 窗口，同时打开该任务的审查报告。
 5. 系统通知不可用或应用前台可见时，提供应用内右下角提醒作为兜底。
+6. Windows 打包环境下通知必须稳定可用，启动时设置 AppUserModelID。
 
 ## 非目标
 
@@ -43,7 +44,6 @@ Electron 客户端的任务看板分为运行中、等待中、历史任务。�
 2. 历史任务按完成时间倒序。
 3. 排序时间优先级：
    - `finished_at`
-   - `updated_at`
    - `started_at`
    - `createdAtMs`
 4. 时间无法解析时按 `createdAtMs` 兜底。
@@ -61,6 +61,12 @@ Electron 客户端的任务看板分为运行中、等待中、历史任务。�
 只在本机本次发起的任务成功完成时触发。具体触发点在 `useTaskQueue` 的本地 `executeTask` 成功回调中，也就是当前已经调用 `onTaskSuccess` 的位置。
 
 不在 `setServerTasks` 中触发通知，避免应用启动或刷新任务列表时对历史成功任务弹窗。
+
+通知触发必须和“自动切换当前报告预览”拆开。`TaskPage` 当前的成功回调会在已有选中报告时早返回，这是为了避免打断用户正在查看的报告；通知不能受这个 UI 状态影响。设计要求：
+
+1. 任务成功后始终执行通知触发逻辑。
+2. 自动切换到刚完成报告的逻辑保留现有早返回条件。
+3. 实现时可以在 `useTaskQueue` 成功分支新增独立回调，例如 `onLocalTaskSuccess`，或在 `TaskPage` 中先执行通知再判断是否自动切换报告；但最终代码必须保证通知不会被 `selectedTaskIdRef.current` 吞掉。
 
 ### 通知内容
 
@@ -80,12 +86,19 @@ Electron 客户端的任务看板分为运行中、等待中、历史任务。�
 - `svn_url`
 - `old_revision`
 - `new_revision`
-- `reportMarkdown`
 - `reportPath`
 - `pdfPath`
 - `pdfReportName`
 
-其中 `reportMarkdown/reportPath/pdfPath/pdfReportName` 用于通知点击后尽量直接打开当前本地报告；如果缺失，则回退到现有按任务 ID 读取服务端报告的逻辑。
+通知 payload 不携带 `reportMarkdown`。报告正文可能较大，不应通过 renderer -> main -> renderer 来回复制。点击通知后，渲染层按 `taskId/localTaskId` 从当前任务状态中查找任务对象，再复用现有报告打开逻辑；如果任务状态中没有报告正文，则回退到按任务 ID 读取服务端报告。
+
+## Windows 通知前置条件
+
+当前项目使用 Electron + `electron-builder` NSIS 打包，`package.json` 中 `build.appId` 为 `com.peicheng.code-review`。Windows 系统通知依赖 AppUserModelID；在 NSIS 场景下不能只依赖打包配置，主进程启动时需要显式调用：
+
+- `app.setAppUserModelId("com.peicheng.code-review")`
+
+调用位置放在 `main/index.ts` 的应用启动阶段，早于发送任何系统通知。这样 Windows 通知在安装包环境下能以正确应用身份展示，并降低通知被系统静默丢弃或显示为 Electron 的风险。
 
 ## IPC 与数据流
 
@@ -98,6 +111,14 @@ Electron 客户端的任务看板分为运行中、等待中、历史任务。�
 payload 包含通知展示所需文本和点击后定位任务所需的任务 ID。
 
 渲染层在本地任务成功完成后调用该方法。调用失败时不影响任务成功状态，只显示应用内兜底提醒。
+
+新增 IPC 需要同步更新三层：
+
+- `main/ipc.ts`：注册 `ipcMain.handle("notification:task-completed", ...)`。
+- `preload/index.ts`：暴露 `window.codeReview.showTaskCompletionNotification` 和 `window.codeReview.onTaskCompletionNotificationClicked`。
+- `renderer/src/code-review-api.ts`：补充 `CodeReviewApi` 类型、通知 payload/result 类型。
+
+`ipc.test.ts` 对 renderer-facing IPC 通道顺序有硬编码断言，新增 invoke 通道时必须同步更新断言。
 
 ### 主进程通知
 
@@ -113,6 +134,13 @@ payload 包含通知展示所需文本和点击后定位任务所需的任务 ID
 6. 通过 `webContents.send("task:completion-notification-clicked", payload)` 通知渲染层打开对应报告。
 
 如果系统通知不支持或发送失败，主进程返回失败结果，渲染层显示应用内兜底提醒。
+
+通知点击事件来自系统，不带 IPC `event.sender`。主进程必须能独立拿到主窗口句柄。设计要求：
+
+- `main/index.ts` 保存当前 `mainWindow`。
+- `registerIpcHandlers` 增加依赖注入项 `getMainWindow: () => BrowserWindow | undefined`。
+- 通知点击时通过 `getMainWindow()` 获取窗口，执行恢复、显示、聚焦和 `webContents.send`。
+- 测试中注入假的窗口对象，避免依赖 `BrowserWindow.getAllWindows()` 这种不可控全局状态。
 
 ### 主进程到渲染层
 
@@ -136,7 +164,8 @@ preload 增加监听方法，例如：
 
 1. 本机任务成功完成后尝试系统通知。
 2. 如果系统通知发送失败，显示应用内右下角提醒。
-3. 如果应用当前处于前台，也可以同时显示应用内提醒，便于用户直接点击“查看报告”。
+3. 如果应用当前处于前台，优先显示应用内右下角提醒，避免系统通知和应用内提醒重复打扰。
+4. 如果应用最小化或后台，优先显示系统通知；系统通知失败时再显示应用内兜底提醒。
 
 内容：
 
@@ -171,7 +200,7 @@ preload 增加监听方法，例如：
 
 职责：
 
-- 接收 `onTaskSuccess`。
+- 接收本地任务成功事件，并保证通知触发不被“自动切换报告”的早返回逻辑吞掉。
 - 请求主进程发送系统通知。
 - 管理应用内兜底提醒状态。
 - 处理通知点击事件并打开报告。
@@ -184,6 +213,7 @@ preload 增加监听方法，例如：
 - 处理系统通知点击。
 - 恢复和聚焦窗口。
 - 向渲染层广播通知点击事件。
+- 通过注入的 `getMainWindow` 获取窗口。
 
 ## 错误处理
 
@@ -204,10 +234,12 @@ preload 增加监听方法，例如：
 ### TaskPage 测试
 
 - 本机任务成功完成后调用 `showTaskCompletionNotification`，payload 包含 SVN 地址和新旧版本。
+- 用户正在查看历史报告时，本机新任务完成仍会调用 `showTaskCompletionNotification`。
 - 系统通知失败时显示应用内右下角提醒。
 - 点击应用内 `查看报告` 会打开刚完成任务报告。
 - 收到主进程通知点击事件后，会打开对应任务报告。
 - 服务端 `listTasks()` 加载出的成功历史任务不会触发通知。
+- 通知 payload 不包含 `reportMarkdown`。
 
 ### 主进程 / preload 测试
 
@@ -215,6 +247,8 @@ preload 增加监听方法，例如：
 - 主进程收到通知请求后创建系统通知。
 - 通知点击后恢复窗口并向渲染层发送点击事件。
 - `Notification.isSupported()` 为 false 时返回失败结果。
+- `main/index.ts` 启动时调用 `app.setAppUserModelId("com.peicheng.code-review")`。
+- `registerIpcHandlers` 使用注入的 `getMainWindow` 处理通知点击。
 
 ## 验收标准
 
