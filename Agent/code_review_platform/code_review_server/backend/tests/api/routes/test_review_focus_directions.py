@@ -395,6 +395,48 @@ def test_inactive_department_admin_cannot_manage_focus_directions(
     ]
 
 
+def test_unbound_department_admin_cannot_manage_focus_directions(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    department = _create_department(db, "未绑定校验方向部门-" + random_lower_string())
+    headers = _department_admin_headers(client, db, None)
+    direction = _create_focus_direction(
+        client, db, superuser_token_headers, department=department
+    )
+    expected_detail = "当前账号未绑定部门，请联系超级管理员。"
+
+    responses = [
+        client.get(
+            f"{settings.API_V1_STR}/review-focus-directions",
+            headers=headers,
+        ),
+        client.post(
+            f"{settings.API_V1_STR}/review-focus-directions",
+            headers=headers,
+            json=_direction_payload(department.id),
+        ),
+        client.patch(
+            f"{settings.API_V1_STR}/review-focus-directions/{direction['id']}",
+            headers=headers,
+            json={"title": "未绑定部门不应更新方向"},
+        ),
+        client.delete(
+            f"{settings.API_V1_STR}/review-focus-directions/{direction['id']}",
+            headers=headers,
+        ),
+    ]
+
+    assert [response.status_code for response in responses] == [403, 403, 403, 403]
+    assert [response.json()["detail"] for response in responses] == [
+        expected_detail,
+        expected_detail,
+        expected_detail,
+        expected_detail,
+    ]
+
+
 def test_department_admin_lists_only_own_department_focus_directions(
     client: TestClient,
     db: Session,

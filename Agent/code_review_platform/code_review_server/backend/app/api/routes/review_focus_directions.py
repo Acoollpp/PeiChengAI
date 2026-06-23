@@ -15,7 +15,6 @@ from app.api.deps import (
     SessionDep,
     ensure_department_admin_has_department,
     has_admin_privileges,
-    has_management_privileges,
 )
 from app.models import (
     Department,
@@ -64,12 +63,14 @@ def _ensure_department_admin_active_department(
 def _ensure_management_user(
     *, session: SessionDep, current_user: CurrentUser
 ) -> None:
-    if not has_management_privileges(current_user):
+    if current_user.role == UserRole.department_admin:
+        _ensure_department_admin_active_department(
+            session=session,
+            current_user=current_user,
+        )
+        return
+    if not has_admin_privileges(current_user):
         raise HTTPException(status_code=403, detail="没有足够权限")
-    _ensure_department_admin_active_department(
-        session=session,
-        current_user=current_user,
-    )
 
 
 def _ensure_department_admin_direction_input(
