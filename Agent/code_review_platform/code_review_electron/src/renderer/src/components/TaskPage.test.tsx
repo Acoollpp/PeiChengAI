@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TaskPage } from './TaskPage'
-import type { CodeReviewApi } from '../code-review-api'
+import type { CodeReviewApi, TaskCompletionNotificationPayload } from '../code-review-api'
 
 const setupCodeReviewApi = (): void => {
   window.codeReview = {
@@ -27,6 +27,8 @@ const setupCodeReviewApi = (): void => {
     onTaskProgress: vi.fn(() => vi.fn()),
     downloadCurrentReport: vi.fn(),
     openPdfReport: vi.fn(),
+    showTaskCompletionNotification: vi.fn(async () => ({ status: 'shown' })),
+    onTaskCompletionNotificationClicked: vi.fn(() => vi.fn()),
     installCodex: vi.fn(),
     installSvn: vi.fn(),
     installSkill: vi.fn(),
@@ -93,6 +95,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
 })
 
 describe('TaskPage', () => {
@@ -352,6 +355,8 @@ describe('TaskPage', () => {
 
     await fillTaskForm(user, '7')
     await user.click(screen.getByRole('button', { name: '开始审查' }))
+    const notice = await screen.findByRole('status', { name: '审查完成提醒' })
+    await user.click(within(notice).getByRole('button', { name: '查看报告' }))
     await screen.findByText('本地报告')
     await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
 
@@ -360,6 +365,162 @@ describe('TaskPage', () => {
       localPdfPath: '/app/reports/task-local-success.pdf',
       pdfReportName: 'r7_r2审查报告_20260615_143000.pdf'
     })
+  })
+
+  it('任务完成后不自动切换右侧报告预览', async () => {
+    const user = userEvent.setup()
+    window.codeReview.executeTask = vi.fn(async () => ({
+      taskId: 'task-local-success',
+      status: 'success' as const,
+      reportMarkdown: '# 本地报告',
+      reportPath: '/app/reports/task-local-success.md',
+      pdfPath: '/app/reports/task-local-success.pdf',
+      pdfReportName: 'r7_r2审查报告_20260615_143000.pdf'
+    }))
+
+    renderReadyTaskPage()
+
+    await fillTaskForm(user, '7')
+    await user.click(screen.getByRole('button', { name: '开始审查' }))
+
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText('本地报告')).not.toBeInTheDocument()
+    expect(await screen.findByText('审查完成')).toBeInTheDocument()
+  })
+
+  it('前台任务完成时显示应用内提醒且不发送系统通知', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    window.codeReview.executeTask = vi.fn(async () => ({
+      taskId: 'task-notice',
+      status: 'success' as const,
+      reportMarkdown: '# 完成报告',
+      reportPath: '/tmp/done.md'
+    }))
+
+    renderReadyTaskPage()
+
+    await fillTaskForm(user, '8')
+    await user.click(screen.getByRole('button', { name: '开始审查' }))
+
+    const notice = await screen.findByRole('status', { name: '审查完成提醒' })
+    expect(within(notice).getByText('svn://repo/project-8')).toBeInTheDocument()
+    expect(within(notice).getByText('80 → 81')).toBeInTheDocument()
+    expect(window.codeReview.showTaskCompletionNotification).not.toHaveBeenCalled()
+  })
+
+  it('后台任务完成时发送系统通知且payload不包含报告正文', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+    window.codeReview.executeTask = vi.fn(async () => ({
+      taskId: 'task-background',
+      status: 'success' as const,
+      reportMarkdown: '# 后台报告',
+      reportPath: '/tmp/background.md',
+      pdfPath: '/tmp/background.pdf',
+      pdfReportName: '后台审查报告.pdf'
+    }))
+
+    renderReadyTaskPage()
+
+    await fillTaskForm(user, '9')
+    await user.click(screen.getByRole('button', { name: '开始审查' }))
+
+    await waitFor(() => expect(window.codeReview.showTaskCompletionNotification).toHaveBeenCalledTimes(1))
+    expect(window.codeReview.showTaskCompletionNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'task-background',
+        svn_url: 'svn://repo/project-9',
+        old_revision: '90',
+        new_revision: '91',
+        reportPath: '/tmp/background.md',
+        pdfPath: '/tmp/background.pdf',
+        pdfReportName: '后台审查报告.pdf'
+      })
+    )
+    expect(window.codeReview.showTaskCompletionNotification).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reportMarkdown: expect.any(String) })
+    )
+  })
+
+  it('点击应用内提醒查看报告后打开刚完成任务报告', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    window.codeReview.executeTask = vi.fn(async () => ({
+      taskId: 'task-open-from-notice',
+      status: 'success' as const,
+      reportMarkdown: '# 提醒打开报告',
+      reportPath: '/tmp/notice-report.md'
+    }))
+
+    renderReadyTaskPage()
+
+    await fillTaskForm(user, '10')
+    await user.click(screen.getByRole('button', { name: '开始审查' }))
+
+    const notice = await screen.findByRole('status', { name: '审查完成提醒' })
+    await user.click(within(notice).getByRole('button', { name: '查看报告' }))
+
+    expect(await screen.findByRole('heading', { name: '提醒打开报告' })).toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: '审查完成提醒' })).not.toBeInTheDocument()
+  })
+
+  it('后台系统通知失败时显示应用内兜底提醒', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+    window.codeReview.showTaskCompletionNotification = vi.fn(async () => ({
+      status: 'unsupported' as const
+    }))
+    window.codeReview.executeTask = vi.fn(async () => ({
+      taskId: 'task-fallback',
+      status: 'success' as const,
+      reportMarkdown: '# 兜底报告',
+      reportPath: '/tmp/fallback.md'
+    }))
+
+    renderReadyTaskPage()
+
+    await fillTaskForm(user, '11')
+    await user.click(screen.getByRole('button', { name: '开始审查' }))
+
+    expect(await screen.findByRole('status', { name: '审查完成提醒' })).toBeInTheDocument()
+  })
+
+  it('收到系统通知点击事件后打开对应任务报告', async () => {
+    const user = userEvent.setup()
+    let notificationClickHandler: ((payload: TaskCompletionNotificationPayload) => void) | undefined
+    window.codeReview.onTaskCompletionNotificationClicked = vi.fn((callback) => {
+      notificationClickHandler = callback
+      return vi.fn()
+    })
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+    window.codeReview.executeTask = vi.fn(async () => ({
+      taskId: 'task-clicked',
+      status: 'success' as const,
+      reportMarkdown: '# 点击通知报告',
+      reportPath: '/tmp/clicked.md'
+    }))
+
+    renderReadyTaskPage()
+
+    await fillTaskForm(user, '12')
+    await user.click(screen.getByRole('button', { name: '开始审查' }))
+    await waitFor(() => expect(window.codeReview.showTaskCompletionNotification).toHaveBeenCalled())
+
+    notificationClickHandler?.({
+      taskId: 'task-clicked',
+      svn_url: 'svn://repo/project-12',
+      old_revision: '120',
+      new_revision: '121',
+      reportPath: '/tmp/clicked.md'
+    })
+
+    expect(await screen.findByRole('heading', { name: '点击通知报告' })).toBeInTheDocument()
   })
 
   it('未选中任务时右侧显示当前审查模板，切换模板后不打开最新报告位置', async () => {

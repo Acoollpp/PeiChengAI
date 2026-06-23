@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { IpcRendererEvent } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const invokeMock = vi.hoisted(() => vi.fn())
@@ -205,8 +206,22 @@ describe('preload codeReview API', () => {
     )?.[1]
 
     expect(listener).toBeDefined()
-    listener({}, { taskId: 'task-1', svn_url: 'svn://repo/project' })
-    expect(callback).toHaveBeenCalledWith({ taskId: 'task-1', svn_url: 'svn://repo/project' })
+    if (!listener) {
+      throw new Error('未注册通知点击监听器')
+    }
+
+    listener({} as IpcRendererEvent, {
+      taskId: 'task-1',
+      svn_url: 'svn://repo/project',
+      old_revision: 'r10',
+      new_revision: 'r12'
+    })
+    expect(callback).toHaveBeenCalledWith({
+      taskId: 'task-1',
+      svn_url: 'svn://repo/project',
+      old_revision: 'r10',
+      new_revision: 'r12'
+    })
 
     unsubscribe()
     expect(removeListenerMock).toHaveBeenCalledWith(

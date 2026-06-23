@@ -27,6 +27,13 @@ type TaskPageProps = {
   onInstallSkill: () => Promise<void>
 }
 
+type CompletionNotice = {
+  task: TaskViewItem
+}
+
+const isRendererForeground = (): boolean =>
+  document.visibilityState === 'visible' && document.hasFocus()
+
 export function TaskPage({
   environment,
   isCheckingEnvironment,
@@ -50,6 +57,7 @@ export function TaskPage({
   const [selectedTaskId, setSelectedTaskId] = useState<string>()
   const [loadingReportTaskId, setLoadingReportTaskId] = useState<string>()
   const [showSubmitFeedback, setShowSubmitFeedback] = useState(false)
+  const [completionNotice, setCompletionNotice] = useState<CompletionNotice | null>(null)
   const selectedTaskIdRef = useRef<string | undefined>(undefined)
   const currentPdfPathRef = useRef<string | undefined>(undefined)
   const currentPdfReportNameRef = useRef<string | undefined>(undefined)
@@ -71,27 +79,47 @@ export function TaskPage({
     currentPdfReportNameRef.current = pdfReportName
   }, [])
 
+  const buildNotificationPayload = useCallback(
+    (task: TaskViewItem) => ({
+      taskId: task.id,
+      localTaskId: task.localTaskId,
+      svn_url: task.svn_url,
+      old_revision: task.old_revision,
+      new_revision: task.new_revision,
+      reportPath: task.report_path,
+      pdfPath: task.pdfPath,
+      pdfReportName: task.pdf_report_name ?? undefined
+    }),
+    []
+  )
+
   const handleTaskSuccess = useCallback((task: TaskViewItem): void => {
     if (!isMountedRef.current) {
       return
     }
 
-    if (selectedTaskIdRef.current) {
+    const showInAppNotice = (): void => {
+      if (isMountedRef.current) {
+        setCompletionNotice({ task })
+      }
+    }
+
+    if (isRendererForeground()) {
+      showInAppNotice()
       return
     }
 
-    if (task.reportMarkdown) {
-      setMarkdown(task.reportMarkdown)
-    }
-    setSelectedTaskId(task.id)
-    selectedTaskIdRef.current = task.id
-    setActivePdfPath(task.pdfPath)
-    setActivePdfReportName(task.pdf_report_name ?? undefined)
-    if (task.report_path) {
-      setCurrentReportPath(task.report_path)
-      setReportMessage(`报告已生成：${task.report_path}`)
-    }
-  }, [setActivePdfPath, setActivePdfReportName])
+    void window.codeReview
+      .showTaskCompletionNotification(buildNotificationPayload(task))
+      .then((result) => {
+        if (result.status !== 'shown') {
+          showInAppNotice()
+        }
+      })
+      .catch(() => {
+        showInAppNotice()
+      })
+  }, [buildNotificationPayload])
   const {
     runningTasks,
     queuedTasks,
@@ -175,7 +203,7 @@ export function TaskPage({
     await submitTask(payload)
   }
 
-  const handleViewReport = async (task: TaskViewItem): Promise<void> => {
+  const handleViewReport = useCallback(async (task: TaskViewItem): Promise<void> => {
     if (!isMountedRef.current) {
       return
     }
@@ -215,7 +243,34 @@ export function TaskPage({
         setLoadingReportTaskId(undefined)
       }
     }
-  }
+  }, [setActivePdfPath, setActivePdfReportName, updateSelectedTaskId])
+
+  const findTaskForNotification = useCallback(
+    (payload: { taskId: string; localTaskId?: string }): TaskViewItem | undefined =>
+      [...runningTasks, ...queuedTasks, ...historyTasks].find(
+        (task) => task.id === payload.taskId || task.localTaskId === payload.localTaskId
+      ),
+    [historyTasks, queuedTasks, runningTasks]
+  )
+
+  const handleOpenCompletionNotice = useCallback(
+    (task: TaskViewItem): void => {
+      setCompletionNotice(null)
+      void handleViewReport(task)
+    },
+    [handleViewReport]
+  )
+
+  useEffect(() => {
+    return window.codeReview.onTaskCompletionNotificationClicked((payload) => {
+      const task = findTaskForNotification(payload)
+      if (!task) {
+        return
+      }
+      setCompletionNotice(null)
+      void handleViewReport(task)
+    })
+  }, [findTaskForNotification, handleViewReport])
 
   const handleOpenPdfReport = async (): Promise<void> => {
     if (!isMountedRef.current) {
@@ -329,6 +384,33 @@ export function TaskPage({
         </div>
         <MarkdownPreview markdown={markdown} reportPath={currentReportPath} />
       </section>
+      {completionNotice && (
+        <aside className="completion-notice" role="status" aria-label="审查完成提醒">
+          <div>
+            <p className="completion-notice-title">审查完成</p>
+            <p className="completion-notice-url">{completionNotice.task.svn_url}</p>
+            <p className="completion-notice-revisions">
+              {completionNotice.task.old_revision} → {completionNotice.task.new_revision}
+            </p>
+          </div>
+          <div className="completion-notice-actions">
+            <button
+              className="task-action-button"
+              type="button"
+              onClick={() => handleOpenCompletionNotice(completionNotice.task)}
+            >
+              查看报告
+            </button>
+            <button
+              className="task-action-button"
+              type="button"
+              onClick={() => setCompletionNotice(null)}
+            >
+              关闭
+            </button>
+          </div>
+        </aside>
+      )}
       <SubmitFeedbackDialog open={showSubmitFeedback} onClose={() => setShowSubmitFeedback(false)} />
     </section>
   )
