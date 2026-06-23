@@ -246,6 +246,17 @@ def test_create_user_by_normal_user(
     assert r.status_code == 403
 
 
+def test_retrieve_users_by_normal_user_returns_403(
+    client: TestClient, normal_user_token_headers: dict[str, str]
+) -> None:
+    response = client.get(
+        f"{settings.API_V1_STR}/users/",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 403
+
+
 def test_department_admin_lists_only_own_department_users(
     client: TestClient,
     db: Session,
@@ -388,6 +399,48 @@ def test_create_department_admin_requires_department(
 
     assert response.status_code == 400
     assert response.json()["detail"] == "部门管理员必须绑定部门。"
+
+
+def test_create_department_admin_rejects_inactive_department(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    department = _create_department(db, "停用部门管理员部门")
+    department.is_active = False
+    db.add(department)
+    db.commit()
+
+    response = client.post(
+        f"{settings.API_V1_STR}/users/",
+        headers=superuser_token_headers,
+        json={
+            "svn_username": f"svn-{random_lower_string()}",
+            "role": "department_admin",
+            "department_id": str(department.id),
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "部门不存在或已停用。"
+
+
+def test_create_department_admin_rejects_missing_department(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/users/",
+        headers=superuser_token_headers,
+        json={
+            "svn_username": f"svn-{random_lower_string()}",
+            "role": "department_admin",
+            "department_id": str(uuid.uuid4()),
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "部门不存在"
 
 
 def test_retrieve_users(
@@ -537,6 +590,67 @@ def test_update_user_with_missing_department_returns_400(
     assert response.json()["detail"] == "部门不存在"
 
 
+def test_update_user_to_department_admin_requires_department(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    user = create_random_user(db)
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/users/{user.id}",
+        headers=superuser_token_headers,
+        json={"role": "department_admin"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "部门管理员必须绑定部门。"
+
+
+def test_update_user_to_department_admin_rejects_inactive_department(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    user = create_random_user(db)
+    department = _create_department(db, "停用更新部门管理员部门")
+    department.is_active = False
+    db.add(department)
+    db.commit()
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/users/{user.id}",
+        headers=superuser_token_headers,
+        json={
+            "role": "department_admin",
+            "department_id": str(department.id),
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "部门不存在或已停用。"
+
+
+def test_update_user_to_department_admin_rejects_missing_department(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    user = create_random_user(db)
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/users/{user.id}",
+        headers=superuser_token_headers,
+        json={
+            "role": "department_admin",
+            "department_id": str(uuid.uuid4()),
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "部门不存在"
+
+
 def test_retrieve_users_as_role_admin(client: TestClient, db: Session) -> None:
     admin = crud.create_user(
         session=db,
@@ -650,6 +764,22 @@ def test_current_user_can_set_department_once(
     saved_user = db.get(User, user.id)
     assert saved_user
     assert saved_user.department_id == department.id
+
+
+def test_department_admin_cannot_set_own_department(
+    client: TestClient, db: Session
+) -> None:
+    department = _create_department(db, "部门管理员不可自助绑定")
+    admin_context = _create_department_admin(client=client, db=db, department=None)
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/users/me/department",
+        headers=admin_context["headers"],
+        json={"department_id": str(department.id)},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "当前账号未绑定部门，请联系超级管理员。"
 
 
 def test_current_user_cannot_set_department_again(
