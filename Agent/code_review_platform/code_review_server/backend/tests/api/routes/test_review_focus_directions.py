@@ -8,7 +8,7 @@ from openpyxl import load_workbook
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.models import Department, ReviewFocusDirection, ReviewTask
+from app.models import Department, ReviewFocusDirection, ReviewTask, UserRole
 from tests.utils.user import authentication_token_from_key, create_key_user
 from tests.utils.utils import random_lower_string
 
@@ -48,6 +48,19 @@ def _create_focus_direction(
     )
     assert response.status_code == 200
     return response.json()
+
+
+def _department_admin_headers(
+    client: TestClient,
+    db: Session,
+    department: Department | None,
+) -> dict[str, str]:
+    user, api_key = create_key_user(db)
+    user.role = UserRole.department_admin
+    user.department_id = department.id if department is not None else None
+    db.add(user)
+    db.commit()
+    return authentication_token_from_key(client=client, key=api_key.key, db=db)
 
 
 def _create_task_with_focus_snapshot(
@@ -261,6 +274,270 @@ def test_normal_user_cannot_create_focus_direction(
     assert response.json()["detail"] == "没有足够权限"
 
 
+def test_department_admin_can_create_own_department_focus_direction(
+    client: TestClient,
+    db: Session,
+) -> None:
+    department = _create_department(db, "部门管理员方向-" + random_lower_string())
+    headers = _department_admin_headers(client, db, department)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=headers,
+        json=_direction_payload(department.id),
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["department_id"] == str(department.id)
+    assert [item["id"] for item in content["departments"]] == [str(department.id)]
+
+
+def test_department_admin_cannot_create_global_or_other_department_focus_direction(
+    client: TestClient,
+    db: Session,
+) -> None:
+    own_department = _create_department(db, "方向本部门-" + random_lower_string())
+    other_department = _create_department(db, "方向其他部门-" + random_lower_string())
+    headers = _department_admin_headers(client, db, own_department)
+
+    global_response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=headers,
+        json=_direction_payload(None),
+    )
+    other_response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=headers,
+        json=_direction_payload(other_department.id),
+    )
+
+    assert global_response.status_code == 403
+    assert global_response.json()["detail"] == "只能维护本部门审查方向。"
+    assert other_response.status_code == 403
+    assert other_response.json()["detail"] == "只能维护本部门审查方向。"
+
+
+def test_department_admin_lists_only_own_department_focus_directions(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    own_department = _create_department(db, "列表本部门-" + random_lower_string())
+    other_department = _create_department(db, "列表其他部门-" + random_lower_string())
+    headers = _department_admin_headers(client, db, own_department)
+    own_direction = _create_focus_direction(
+        client, db, superuser_token_headers, department=own_department
+    )
+    other_direction = _create_focus_direction(
+        client, db, superuser_token_headers, department=other_department
+    )
+    global_response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=superuser_token_headers,
+        json={
+            "title": "部门管理员不可见全局方向-" + random_lower_string(),
+            "content": "检查所有部门通用风险",
+            "department_ids": [],
+            "is_active": True,
+        },
+    )
+    shared_response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=superuser_token_headers,
+        json={
+            "title": "部门管理员可见共享方向-" + random_lower_string(),
+            "content": "检查跨部门公共逻辑",
+            "department_ids": [str(own_department.id), str(other_department.id)],
+            "is_active": True,
+        },
+    )
+    assert global_response.status_code == 200
+    assert shared_response.status_code == 200
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=headers,
+        params={
+            "department_scope": "global",
+            "department_id": str(other_department.id),
+        },
+    )
+
+    assert response.status_code == 200
+    ids = {item["id"] for item in response.json()["data"]}
+    assert own_direction["id"] in ids
+    assert shared_response.json()["id"] in ids
+    assert other_direction["id"] not in ids
+    assert global_response.json()["id"] not in ids
+
+
+def test_department_admin_can_update_and_delete_own_department_focus_direction(
+    client: TestClient,
+    db: Session,
+) -> None:
+    department = _create_department(db, "维护本部门-" + random_lower_string())
+    headers = _department_admin_headers(client, db, department)
+    create_response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=headers,
+        json=_direction_payload(department.id),
+    )
+    assert create_response.status_code == 200
+    direction = create_response.json()
+
+    update_response = client.patch(
+        f"{settings.API_V1_STR}/review-focus-directions/{direction['id']}",
+        headers=headers,
+        json={
+            "title": "部门管理员更新方向-" + random_lower_string(),
+            "department_ids": [str(department.id)],
+        },
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["department_id"] == str(department.id)
+
+    delete_response = client.delete(
+        f"{settings.API_V1_STR}/review-focus-directions/{direction['id']}",
+        headers=headers,
+    )
+
+    assert delete_response.status_code == 200
+    assert delete_response.json()["message"] == "重点审查方向已停用"
+    db_direction = db.get(ReviewFocusDirection, UUID(direction["id"]))
+    assert db_direction is not None
+    assert db_direction.is_active is False
+
+
+def test_department_admin_cannot_move_own_focus_direction_out_of_department(
+    client: TestClient,
+    db: Session,
+) -> None:
+    own_department = _create_department(db, "移动本部门-" + random_lower_string())
+    other_department = _create_department(db, "移动其他部门-" + random_lower_string())
+    headers = _department_admin_headers(client, db, own_department)
+    create_response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=headers,
+        json=_direction_payload(own_department.id),
+    )
+    assert create_response.status_code == 200
+    direction = create_response.json()
+
+    global_response = client.patch(
+        f"{settings.API_V1_STR}/review-focus-directions/{direction['id']}",
+        headers=headers,
+        json={"department_ids": []},
+    )
+    other_response = client.patch(
+        f"{settings.API_V1_STR}/review-focus-directions/{direction['id']}",
+        headers=headers,
+        json={"department_id": str(other_department.id)},
+    )
+
+    assert global_response.status_code == 403
+    assert global_response.json()["detail"] == "只能维护本部门审查方向。"
+    assert other_response.status_code == 403
+    assert other_response.json()["detail"] == "只能维护本部门审查方向。"
+
+
+def test_department_admin_cannot_edit_shared_focus_direction(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    own_department = _create_department(db, "共享本部门-" + random_lower_string())
+    other_department = _create_department(db, "共享其他部门-" + random_lower_string())
+    headers = _department_admin_headers(client, db, own_department)
+    create_response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=superuser_token_headers,
+        json={
+            "title": "共享方向-" + random_lower_string(),
+            "content": "检查跨部门公共逻辑",
+            "department_ids": [str(own_department.id), str(other_department.id)],
+            "is_active": True,
+        },
+    )
+    assert create_response.status_code == 200
+    direction = create_response.json()
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/review-focus-directions/{direction['id']}",
+        headers=headers,
+        json={"title": "部门管理员不应更新共享方向"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "共享方向只能由超级管理员维护。"
+
+
+def test_department_admin_cannot_delete_shared_focus_direction(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    own_department = _create_department(db, "删除共享本部门-" + random_lower_string())
+    other_department = _create_department(db, "删除共享其他部门-" + random_lower_string())
+    headers = _department_admin_headers(client, db, own_department)
+    create_response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=superuser_token_headers,
+        json={
+            "title": "删除共享方向-" + random_lower_string(),
+            "content": "检查跨部门公共逻辑",
+            "department_ids": [str(own_department.id), str(other_department.id)],
+            "is_active": True,
+        },
+    )
+    assert create_response.status_code == 200
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/review-focus-directions/{create_response.json()['id']}",
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "共享方向只能由超级管理员维护。"
+
+
+def test_department_admin_cannot_access_usage_stats_platform_apis(
+    client: TestClient,
+    db: Session,
+) -> None:
+    department = _create_department(db, "统计权限部门-" + random_lower_string())
+    headers = _department_admin_headers(client, db, department)
+    payload = {
+        "title": "统计生成方向",
+        "content": "检查权限边界",
+        "department_id": str(department.id),
+    }
+
+    responses = [
+        client.get(
+            f"{settings.API_V1_STR}/review-focus-directions/usage-stats",
+            headers=headers,
+        ),
+        client.patch(
+            f"{settings.API_V1_STR}/review-focus-directions/usage-stats/state",
+            headers=headers,
+            json={"content": "检查权限边界", "is_used": True},
+        ),
+        client.get(
+            f"{settings.API_V1_STR}/review-focus-directions/usage-stats/export",
+            headers=headers,
+        ),
+        client.post(
+            f"{settings.API_V1_STR}/review-focus-directions/from-usage",
+            headers=headers,
+            json=payload,
+        ),
+    ]
+
+    assert [response.status_code for response in responses] == [403, 403, 403, 403]
+
+
 def test_admin_can_update_focus_direction(
     client: TestClient,
     db: Session,
@@ -454,27 +731,28 @@ def test_admin_can_read_usage_stats_grouped_by_normalized_content(
     db: Session,
     superuser_token_headers: dict[str, str],
 ) -> None:
+    unique_marker = random_lower_string()
     department_a = _create_department(db, "研发一部-" + random_lower_string())
     department_b = _create_department(db, "研发二部-" + random_lower_string())
     _create_task_with_focus_snapshot(
         client=client,
         db=db,
         department=department_a,
-        snapshot="  检查   权限\n边界  ",
+        snapshot=f"  检查   权限\n边界  {unique_marker}",
         minutes_ago=30,
     )
     _create_task_with_focus_snapshot(
         client=client,
         db=db,
         department=department_b,
-        snapshot="检查 权限 边界",
+        snapshot=f"检查 权限 边界 {unique_marker}",
         minutes_ago=10,
     )
     _create_task_with_focus_snapshot(
         client=client,
         db=db,
         department=department_a,
-        snapshot="\t检查 SQL 注入\t",
+        snapshot=f"\t检查 SQL 注入 {unique_marker}\t",
         minutes_ago=20,
     )
     _create_task_with_focus_snapshot(
@@ -488,18 +766,19 @@ def test_admin_can_read_usage_stats_grouped_by_normalized_content(
     response = client.get(
         f"{settings.API_V1_STR}/review-focus-directions/usage-stats",
         headers=superuser_token_headers,
+        params={"search": unique_marker},
     )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["count"] == 2
-    assert payload["data"][0]["content"] == "检查 权限 边界"
+    assert payload["data"][0]["content"] == f"检查 权限 边界 {unique_marker}"
     assert payload["data"][0]["usage_count"] == 2
     assert payload["data"][0]["latest_used_at"] is not None
     assert payload["data"][0]["departments"] == sorted(
         [department_a.name, department_b.name]
     )
-    assert payload["data"][1]["content"] == "检查 SQL 注入"
+    assert payload["data"][1]["content"] == f"检查 SQL 注入 {unique_marker}"
     assert payload["data"][1]["usage_count"] == 1
     assert payload["data"][1]["departments"] == [department_a.name]
 
