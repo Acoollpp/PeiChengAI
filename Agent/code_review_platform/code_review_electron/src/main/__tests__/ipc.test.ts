@@ -198,6 +198,11 @@ describe('registerIpcHandlers', () => {
     }
 
     const result = handler({}, payload)
+    expect(NotificationMock).toHaveBeenCalledWith({
+      title: '审查完成',
+      body: 'svn://repo/project\nr10 → r12',
+      timeoutType: 'never'
+    })
     expect(notificationShowMock).toHaveBeenCalledWith()
     const showHandler = notificationOnceMock.mock.calls.find(([eventName]) => eventName === 'show')?.[1]
     expect(showHandler).toBeDefined()
@@ -292,6 +297,33 @@ describe('registerIpcHandlers', () => {
       status: 'failed',
       message: 'Windows toast failed'
     })
+  })
+
+  it('returns failed when task completion notification does not report a result', async () => {
+    vi.useFakeTimers()
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers()
+
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'notification:show-task-completed'
+    )?.[1]
+
+    const result = handler({}, {
+      taskId: 'task-1',
+      svn_url: 'svn://repo/project',
+      old_revision: 'r10',
+      new_revision: 'r12'
+    })
+
+    expect(notificationShowMock).toHaveBeenCalledWith()
+    await vi.advanceTimersByTimeAsync(5000)
+
+    await expect(result).resolves.toEqual({
+      status: 'failed',
+      message: '系统通知发送超时。'
+    })
+    vi.useRealTimers()
   })
 
   it('returns unsupported when task completion notification is unavailable', async () => {

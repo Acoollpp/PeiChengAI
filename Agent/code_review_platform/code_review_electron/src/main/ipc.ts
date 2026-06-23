@@ -88,6 +88,7 @@ interface OpenPdfReportResult {
 }
 
 const activeNotifications = new Set<Notification>()
+const NOTIFICATION_RESULT_TIMEOUT_MS = 5000
 
 interface ReadReportAssetRequest {
   reportPath: string
@@ -449,7 +450,8 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
         const notification = new Notification({
           title: '审查完成',
-          body: `${payload.svn_url}\n${payload.old_revision} → ${payload.new_revision}`
+          body: `${payload.svn_url}\n${payload.old_revision} → ${payload.new_revision}`,
+          timeoutType: 'never'
         })
         activeNotifications.add(notification)
 
@@ -479,12 +481,30 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
         })
 
         const result = new Promise<TaskCompletionNotificationResult>((resolve) => {
+          let isSettled = false
+          const resolveOnce = (value: TaskCompletionNotificationResult): void => {
+            if (isSettled) {
+              return
+            }
+
+            isSettled = true
+            clearTimeout(timeoutId)
+            resolve(value)
+          }
+          const timeoutId = setTimeout(() => {
+            activeNotifications.delete(notification)
+            resolveOnce({
+              status: 'failed',
+              message: '系统通知发送超时。'
+            })
+          }, NOTIFICATION_RESULT_TIMEOUT_MS)
+
           notification.once('show', () => {
-            resolve({ status: 'shown' })
+            resolveOnce({ status: 'shown' })
           })
           notification.once('failed', (_event, message) => {
             activeNotifications.delete(notification)
-            resolve({
+            resolveOnce({
               status: 'failed',
               message: message || '系统通知发送失败。'
             })
