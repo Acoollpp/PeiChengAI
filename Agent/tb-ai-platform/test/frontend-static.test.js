@@ -46,6 +46,8 @@ assert.match(cssText(), /\[hidden\][^{]*{[^}]*display:\s*none\s*!important/i);
 assert.match(cssText(), /button\.clicked/);
 assert.match(cssText(), /@keyframes clickPulse/);
 assert.match(cssText(), /\.history-links/);
+assert.match(cssText(), /\.history-list\s*\{[^}]*max-height:\s*408px/i);
+assert.match(cssText(), /\.history-list\s*\{[^}]*overflow-y:\s*auto/i);
 assert.match(cssText(), /\.preview-panel/);
 assert.match(cssText(), /\.detail-panel/);
 assert.match(cssText(), /\.run-timer/);

@@ -414,8 +414,21 @@ h2 {
 .history-list {
   display: grid;
   gap: 8px;
+  max-height: 408px;
+  overflow-y: auto;
+  padding-right: 4px;
   color: var(--muted);
   font-size: 13px;
+  scrollbar-gutter: stable;
+}
+
+.history-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.history-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.5);
 }
 
 .history-stats {

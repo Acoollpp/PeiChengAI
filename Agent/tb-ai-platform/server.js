@@ -32,7 +32,7 @@ const modes = {
     skill: "dingtalk-research-project-create",
     skills: ["dingtalk-research-project-create"],
     promptPrefix:
-      "你正在通过网站后台执行钉钉 TB 研发项目创建任务。用户会直接粘贴项目立项开发审批单；必须使用 skill `dingtalk-research-project-create`，按研发项目创建流程创建项目空间、迭代、文件夹、任务、项目概览和成员角色。不要执行研发变更流程，不要泄露任何 AppSecret、accessToken 或完整敏感凭证。用户需求如下："
+      "你正在通过网站后台执行钉钉 TB 研发项目创建任务。用户会直接粘贴项目立项开发审批单；必须使用 skill `dingtalk-research-project-create`，按研发项目创建流程创建项目空间、迭代、文件夹、任务、项目概览和成员角色。创建研发项目空间时不要给 create-teambition-project-from-template.py 传 --sprint-name；必须先创建项目空间并回查当前项目顶层 `1.0` 文件夹，再单独创建迭代和目标文件夹。研发文件夹替换必须从当前项目内顶层 `1.0` 文件夹复制一级子目录，调用 `copy-teambition-template-folders.py` 时必须传 `--template-folder-id <1.0文件夹ID>` 和 `--require-template-folder-id`，禁止退回顶层 `模板文件夹/文件模板/文件夹模板`。不要执行研发变更流程，不要泄露任何 AppSecret、accessToken 或完整敏感凭证。用户需求如下："
   }
 };
 
