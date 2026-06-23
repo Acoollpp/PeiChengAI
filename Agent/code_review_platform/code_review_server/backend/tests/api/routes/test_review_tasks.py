@@ -142,6 +142,21 @@ def _set_review_task_stats_fields(
     db.commit()
 
 
+def _set_review_task_pdf_report(
+    db: Session,
+    task_id: str,
+    *,
+    pdf_report_path: str,
+    pdf_report_name: str = "report.pdf",
+) -> None:
+    db_task = db.get(ReviewTask, UUID(task_id))
+    assert db_task is not None
+    db_task.pdf_report_path = pdf_report_path
+    db_task.pdf_report_name = pdf_report_name
+    db.add(db_task)
+    db.commit()
+
+
 def test_create_review_task_normalizes_revisions(
     client: TestClient, normal_user_token_headers: dict[str, str]
 ) -> None:
@@ -1805,6 +1820,82 @@ def test_department_admin_cannot_read_other_department_task_or_report(
     assert download_response.status_code == 403
 
 
+def test_department_admin_can_download_same_department_member_pdf_report(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+) -> None:
+    department = _create_department(db)
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+        role=UserRole.department_admin,
+    )
+    member_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+    )
+    task = _create_review_task(client, member_headers, old_revision="7132")
+    pdf_path = tmp_path / "same-department.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 same department\n")
+    _set_review_task_pdf_report(
+        db,
+        task["id"],
+        pdf_report_path=str(pdf_path),
+        pdf_report_name="same-department.pdf",
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf/download",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"%PDF-1.4 same department\n"
+    assert "same-department.pdf" in unquote(
+        response.headers["content-disposition"]
+    )
+
+
+def test_department_admin_cannot_download_other_department_pdf_report(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+) -> None:
+    department_a = _create_department(db, f"PDF部门A-{random_lower_string()}")
+    department_b = _create_department(db, f"PDF部门B-{random_lower_string()}")
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_a,
+        role=UserRole.department_admin,
+    )
+    other_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_b,
+    )
+    task = _create_review_task(client, other_headers, old_revision="7133")
+    pdf_path = tmp_path / "other-department.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 other department\n")
+    _set_review_task_pdf_report(
+        db,
+        task["id"],
+        pdf_report_path=str(pdf_path),
+        pdf_report_name="other-department.pdf",
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf/download",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Not enough permissions"
+
+
 def test_department_admin_cannot_delete_same_department_member_task(
     client: TestClient,
     db: Session,
@@ -1834,6 +1925,58 @@ def test_department_admin_cannot_delete_same_department_member_task(
 
     assert response.status_code == 403
     assert read_response.status_code == 200
+
+
+def test_department_admin_cannot_write_same_department_member_task(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    department = _create_department(db)
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+        role=UserRole.department_admin,
+    )
+    member_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+    )
+    task = _create_review_task(client, member_headers, old_revision="7142")
+
+    status_response = client.patch(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/status",
+        headers=admin_headers,
+        json={"status": "running_codex"},
+    )
+    markdown_upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=admin_headers,
+        files={"upload": ("report.md", b"# Forbidden\n", "text/markdown")},
+    )
+    pdf_upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf-report",
+        headers=admin_headers,
+        files={"upload": ("report.pdf", b"%PDF-1.4\n", "application/pdf")},
+    )
+    requirement_upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/requirement-file",
+        headers=admin_headers,
+        files={"upload": ("requirement.txt", b"forbidden", "text/plain")},
+    )
+
+    assert status_response.status_code == 403
+    assert status_response.json()["detail"] == "Not enough permissions"
+    assert markdown_upload_response.status_code == 403
+    assert markdown_upload_response.json()["detail"] == "Not enough permissions"
+    assert pdf_upload_response.status_code == 403
+    assert pdf_upload_response.json()["detail"] == "Not enough permissions"
+    assert requirement_upload_response.status_code == 403
+    assert requirement_upload_response.json()["detail"] == "Not enough permissions"
 
 
 def test_department_admin_can_update_own_task_status(
