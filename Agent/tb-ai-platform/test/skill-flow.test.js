@@ -52,5 +52,7 @@ const researchCreateFlow = buildModeFlow(
 );
 assert.ok(researchCreateFlow.some(step => step.label.includes("创建研发项目迭代")));
 assert.ok(researchCreateFlow.some(step => step.label.includes("设置研发任务标题前缀")));
+assert.ok(researchCreateFlow.some(step => step.label.includes("设置项目成员和角色")));
+assert.ok(!researchCreateFlow.some(step => step.label.includes("设置任务负责人")));
 
 console.log("ok - skill flow parser extracts scoped numbered steps");

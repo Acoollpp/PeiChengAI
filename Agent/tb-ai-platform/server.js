@@ -32,7 +32,7 @@ const modes = {
     skill: "dingtalk-research-project-create",
     skills: ["dingtalk-research-project-create"],
     promptPrefix:
-      "你正在通过网站后台执行钉钉 TB 研发项目创建任务。用户会直接粘贴项目立项开发审批单；必须使用 skill `dingtalk-research-project-create`，按研发项目创建流程创建项目空间、迭代、文件夹、任务、项目概览和成员角色。研发项目的售前工程师必须取审批提交人，也就是 `某某提交的项目立项开发` 里的某某；不要用客户负责人、商务或客户表负责人替代。创建研发项目空间时不要给 create-teambition-project-from-template.py 传 --sprint-name；必须先创建项目空间并回查当前项目顶层 `1.0` 文件夹，再单独创建迭代和目标文件夹。研发文件夹替换必须从当前项目内顶层 `1.0` 文件夹复制一级子目录，调用 `copy-teambition-template-folders.py` 时必须传 `--template-folder-id <1.0文件夹ID>` 和 `--require-template-folder-id`，禁止退回顶层 `模板文件夹/文件模板/文件夹模板`。项目概览必须写入项目重要等级；LPDT 暂不填写，不要传 `--lpdt-name` 或 `--lpdt-user-id`，也不要为了补齐字段把人员写成普通文本。项目编号和 PCB 必须按页面模板补 `-1.0` 多行格式，例如 `BMS: 编号-1.0`、`灯板编号为: 编号-1.0`、`BMS:（PCB=PCB-1.0）`、`灯板(PCB=PCB-1.0)`。不要执行研发变更流程，不要泄露任何 AppSecret、accessToken 或完整敏感凭证。用户需求如下："
+      "你正在通过网站后台执行钉钉 TB 研发项目创建任务。用户会直接粘贴项目立项开发审批单；必须使用 skill `dingtalk-research-project-create`，按研发项目创建流程创建项目空间、迭代、文件夹、任务、项目概览和项目级成员角色。研发项目创建阶段禁止主动设置、覆盖或清空任何任务执行者，不要根据项目负责人、硬件负责人、软件负责人、商务或售前工程师批量写入任务 executorId；模板任务自带执行者时只记录，不要替换。研发项目的售前工程师必须取审批提交人，也就是 `某某提交的项目立项开发` 里的某某；不要用客户负责人、商务或客户表负责人替代。创建研发项目空间时不要给 create-teambition-project-from-template.py 传 --sprint-name；必须先创建项目空间并回查当前项目顶层 `1.0` 文件夹，再单独创建迭代和目标文件夹。研发文件夹替换必须从当前项目内顶层 `1.0` 文件夹复制一级子目录，调用 `copy-teambition-template-folders.py` 时必须传 `--template-folder-id <1.0文件夹ID>` 和 `--require-template-folder-id`，禁止退回顶层 `模板文件夹/文件模板/文件夹模板`。项目概览必须写入项目重要等级；LPDT 暂不填写，不要传 `--lpdt-name` 或 `--lpdt-user-id`，也不要为了补齐字段把人员写成普通文本。项目编号和 PCB 必须按页面模板补 `-1.0` 多行格式，例如 `BMS: 编号-1.0`、`灯板编号为: 编号-1.0`、`BMS:（PCB=PCB-1.0）`、`灯板(PCB=PCB-1.0)`。不要执行研发变更流程，不要泄露任何 AppSecret、accessToken 或完整敏感凭证。用户需求如下："
   }
 };
 
