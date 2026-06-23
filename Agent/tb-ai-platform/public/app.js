@@ -31,7 +31,12 @@ const state = {
   failedStepIds: new Set(),
   preview: null,
   previewConfirmed: false,
-  projectView: ""
+  projectView: "",
+  modeViews: {
+    create: newModeView(),
+    change: newModeView(),
+    researchCreate: newModeView()
+  }
 };
 
 const modeTitles = {
@@ -99,8 +104,79 @@ const el = {
   flowSummary: document.querySelector("#flowSummary")
 };
 
+function newModeView() {
+  return {
+    stepStatus: new Map(),
+    activeItems: [{ id: "item-1", title: "项目 1" }],
+    activeItemDetails: new Map(),
+    preview: null,
+    previewConfirmed: false,
+    failedStepIds: new Set(),
+    runId: "未开始",
+    runState: "等待输入",
+    runStartedAt: null
+  };
+}
+
+function currentModeView(mode = state.mode) {
+  if (!state.modeViews[mode]) state.modeViews[mode] = newModeView();
+  return state.modeViews[mode];
+}
+
+function saveModeView(mode = state.mode) {
+  const view = currentModeView(mode);
+  view.stepStatus = new Map(state.stepStatus);
+  view.activeItems = state.activeItems.map(item => Object.assign({}, item));
+  view.activeItemDetails = new Map(state.activeItemDetails);
+  view.preview = state.preview;
+  view.previewConfirmed = state.previewConfirmed;
+  view.failedStepIds = new Set(state.failedStepIds);
+  view.runId = el.runId?.textContent || view.runId || "未开始";
+  view.runState = el.runState?.textContent || view.runState || "等待输入";
+  view.runStartedAt = state.runStartedAt;
+}
+
+function restoreModeView(mode = state.mode) {
+  const view = currentModeView(mode);
+  state.stepStatus = new Map(view.stepStatus);
+  state.activeItems = view.activeItems.map(item => Object.assign({}, item));
+  state.activeItemDetails = new Map(view.activeItemDetails);
+  state.preview = view.preview;
+  state.previewConfirmed = view.previewConfirmed;
+  state.failedStepIds = new Set(view.failedStepIds);
+  state.runStartedAt = view.runStartedAt;
+  el.runId.textContent = view.runId || "未开始";
+  el.runState.textContent = view.runState || "等待输入";
+  if (state.preview) {
+    renderPreview(state.preview);
+  } else {
+    el.previewPanel.hidden = true;
+  }
+  if (!state.stepStatus.size) resetFlowStatuses();
+}
+
+function renderRunControls() {
+  const visibleRun = state.running && state.runMode === state.mode;
+  const hiddenRun = state.running && state.runMode !== state.mode;
+  el.runBtn.disabled = state.running;
+  el.aiTestBtn.disabled = state.running;
+  el.abortBtn.hidden = !visibleRun;
+  el.abortBtn.disabled = !visibleRun;
+  el.runBtn.querySelector("span").textContent = visibleRun ? "运行中" : state.previewConfirmed ? "确认并启动" : "启动流程";
+  if (visibleRun) {
+    startTimer(state.runStartedAt || Date.now());
+  } else {
+    stopTimer(false);
+    if (hiddenRun) {
+      el.runState.textContent = `${modeTitles[state.runMode] || "任务"}正在后台执行，切回对应模块查看实时进度`;
+    }
+  }
+}
+
 function setMode(mode) {
+  saveModeView(state.mode);
   state.mode = mode;
+  restoreModeView(mode);
   document.querySelectorAll(".mode").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.mode === mode);
   });
@@ -108,12 +184,9 @@ function setMode(mode) {
   el.message.placeholder = modePlaceholders[mode] || modePlaceholders.create;
   el.aiTestBtn.hidden = !(mode === "create" || mode === "researchCreate");
   el.projectUrlField.hidden = mode !== "change";
-  state.preview = null;
-  state.previewConfirmed = false;
-  el.previewPanel.hidden = true;
-  resetFlowStatuses();
   renderFlowSteps();
   renderResults();
+  renderRunControls();
   renderHistory(state.historyByMode[mode] || [], state.historyStatsByMode[mode]);
   loadHistory(mode);
 }
@@ -170,13 +243,8 @@ function updateProjectActionState(view, mode) {
 
 function setRunning(running) {
   state.running = running;
-  el.runBtn.disabled = running;
-  el.aiTestBtn.disabled = running;
-  el.abortBtn.hidden = !running;
-  el.abortBtn.disabled = !running;
-  el.runBtn.querySelector("span").textContent = running ? "运行中" : state.previewConfirmed ? "确认并启动" : "启动流程";
   if (running) {
-    startTimer();
+    state.runStartedAt = state.runStartedAt || Date.now();
     el.runState.textContent = "Codex 正在按 skill 流程处理";
   } else {
     stopTimer();
@@ -184,6 +252,8 @@ function setRunning(running) {
     state.abortRequested = false;
     state.currentRunId = "";
   }
+  renderRunControls();
+  saveModeView(state.mode);
   updateRepairButtons();
 }
 
@@ -573,7 +643,7 @@ function updateResult(event) {
   const itemId = event.itemId || "item-1";
   const results = state.resultsByMode[state.runMode] || currentResults();
   const existing = results.get(itemId) || { itemTitle: event.itemTitle || itemId };
-  const itemDetail = state.activeItemDetails.get(itemId);
+  const itemDetail = (state.runMode === state.mode ? state.activeItemDetails : currentModeView(state.runMode).activeItemDetails).get(itemId);
   if (itemDetail) existing.item = itemDetail;
   if (event.type === "result") {
     existing.url = usableProjectUrl(event.url) || existing.url;
@@ -845,6 +915,10 @@ async function consumeNdjson(res, context = {}) {
 }
 
 function handleStreamEvent(event, context = {}) {
+  if (state.mode !== state.runMode) {
+    handleHiddenStreamEvent(event, context);
+    return;
+  }
   if (event.type === "start") {
     el.runId.textContent = event.runId;
     state.currentRunId = event.runId;
@@ -887,6 +961,64 @@ function handleStreamEvent(event, context = {}) {
     updateFlowSummary();
     loadHistory(state.runMode);
   }
+}
+
+function handleHiddenStreamEvent(event, context = {}) {
+  const mode = state.runMode;
+  const view = currentModeView(mode);
+  const steps = state.flows[mode]?.steps || [];
+  if (event.type === "start") {
+    view.runId = event.runId || view.runId;
+    state.currentRunId = event.runId || state.currentRunId;
+    if (event.startedAt) view.runStartedAt = Date.parse(event.startedAt);
+    if (event.items?.length) {
+      const previousItemDetails = view.activeItemDetails || new Map();
+      view.activeItems = event.items.map((item, index) => Object.assign({ id: item.id || "item-" + (index + 1) }, item));
+      view.activeItemDetails = new Map(view.activeItems.map((item, index) => {
+        const id = item.id || "item-" + (index + 1);
+        return [id, Object.assign({}, previousItemDetails.get(id), item)];
+      }));
+      view.stepStatus = new Map();
+      for (const item of view.activeItems) {
+        steps.forEach(step => view.stepStatus.set(stepKey(item.id, step.id), "pending"));
+      }
+    }
+    if (event.steps?.length === 1 && event.repairStepId) setViewStepStatus(view, "item-1", event.repairStepId, "running");
+  } else if (event.type === "step") {
+    setViewStepStatus(view, event.itemId || "item-1", event.stepId, event.status);
+  } else if (event.type === "log") {
+    view.runState = event.message;
+  } else if (event.type === "error") {
+    view.runState = event.error;
+  } else if (event.type === "result" || event.type === "run_error") {
+    updateResult(event);
+  } else if (event.type === "done") {
+    state.lastRunId = state.currentRunId || state.lastRunId;
+    view.failedStepIds = new Set();
+    for (const stepId of event.failedSteps || []) updateCompositeStepInView(view, stepId, "failed");
+    for (const stepId of event.missingSteps || []) {
+      updateCompositeStepInView(view, stepId, "failed");
+    }
+    [...(event.failedSteps || []), ...(event.missingSteps || [])].forEach(value => {
+      view.failedStepIds.add(String(value).split(":").pop());
+    });
+    view.runState = event.code === 0
+      ? context.source === "repair" ? "修复完成，后续步骤已继续执行" : "流程结束"
+      : event.code === 130 ? "流程已中止" : "流程异常";
+    loadHistory(mode);
+  }
+}
+
+function setViewStepStatus(view, itemId, stepId, status) {
+  const key = stepKey(itemId, stepId);
+  if (!view.stepStatus.has(key)) view.stepStatus.set(key, "pending");
+  view.stepStatus.set(key, status);
+}
+
+function updateCompositeStepInView(view, value, status) {
+  const [itemId, stepId] = String(value).includes(":") ? String(value).split(":") : ["item-1", value];
+  const key = stepKey(itemId, stepId);
+  if (view.stepStatus.get(key) !== "done") setViewStepStatus(view, itemId, stepId, status);
 }
 
 function updateCompositeStep(value, status) {
@@ -975,16 +1107,17 @@ function formatTime(value) {
   return new Date(value).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-function startTimer() {
-  state.runStartedAt = Date.now();
+function startTimer(startedAt = Date.now()) {
+  state.runStartedAt = startedAt;
   updateTimer();
   window.clearInterval(state.timerId);
   state.timerId = window.setInterval(updateTimer, 1000);
 }
 
-function stopTimer() {
+function stopTimer(reset = true) {
   window.clearInterval(state.timerId);
   state.timerId = null;
+  if (reset) state.runStartedAt = null;
   updateTimer();
 }
 
