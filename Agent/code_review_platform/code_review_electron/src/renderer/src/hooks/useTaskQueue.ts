@@ -86,6 +86,21 @@ const mapProgressStageToTaskStatus = (
 
 const isTerminalStatus = (status: ReviewTask['status']): boolean => terminalStatuses.has(status)
 
+const taskSortTime = (task: TaskViewItem): number => {
+  for (const value of [task.finished_at, task.started_at]) {
+    if (!value) {
+      continue
+    }
+
+    const timestamp = new Date(value).getTime()
+    if (!Number.isNaN(timestamp)) {
+      return timestamp
+    }
+  }
+
+  return task.createdAtMs
+}
+
 const isMatchingUnboundLocalTask = (
   localTask: TaskViewItem,
   serverTask: ReviewTask
@@ -482,7 +497,10 @@ export function useTaskQueue({
     [tasks]
   )
   const historyTasks = useMemo(
-    () => tasks.filter((task) => task.localQueueState === 'finished'),
+    () =>
+      [...tasks.filter((task) => task.localQueueState === 'finished')].sort(
+        (left, right) => taskSortTime(right) - taskSortTime(left)
+      ),
     [tasks]
   )
 

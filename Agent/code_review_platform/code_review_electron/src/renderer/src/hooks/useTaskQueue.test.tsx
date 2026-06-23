@@ -1096,4 +1096,74 @@ describe('useTaskQueue', () => {
       expect.objectContaining({ taskId: 'task-1', status: 'success' })
     )
   })
+
+  it('历史任务按完成时间倒序展示', () => {
+    const { result } = renderHook(() =>
+      useTaskQueue({
+        executeTask: vi.fn(),
+        initialTasks: [
+          {
+            id: 'task-old',
+            svn_url: 'svn://repo/old',
+            old_revision: '1',
+            new_revision: '2',
+            template_key: 'template_1',
+            skill_name: '通用-代码审查-模版一',
+            status: 'success',
+            finished_at: '2026-06-23T09:00:00.000Z'
+          },
+          {
+            id: 'task-new',
+            svn_url: 'svn://repo/new',
+            old_revision: '3',
+            new_revision: '4',
+            template_key: 'template_1',
+            skill_name: '通用-代码审查-模版一',
+            status: 'success',
+            finished_at: '2026-06-23T10:00:00.000Z'
+          }
+        ]
+      })
+    )
+
+    expect(result.current.historyTasks.map((task) => task.id)).toEqual([
+      'task-new',
+      'task-old'
+    ])
+  })
+
+  it('历史任务缺少完成时间时用开始时间和本地创建时间兜底排序', () => {
+    const { result } = renderHook(() =>
+      useTaskQueue({
+        executeTask: vi.fn(),
+        initialTasks: [
+          {
+            id: 'task-start-old',
+            svn_url: 'svn://repo/old',
+            old_revision: '1',
+            new_revision: '2',
+            template_key: 'template_1',
+            skill_name: '通用-代码审查-模版一',
+            status: 'success',
+            started_at: '2026-06-23T09:00:00.000Z'
+          },
+          {
+            id: 'task-start-new',
+            svn_url: 'svn://repo/new',
+            old_revision: '3',
+            new_revision: '4',
+            template_key: 'template_1',
+            skill_name: '通用-代码审查-模版一',
+            status: 'success',
+            started_at: '2026-06-23T10:00:00.000Z'
+          }
+        ]
+      })
+    )
+
+    expect(result.current.historyTasks.map((task) => task.id)).toEqual([
+      'task-start-new',
+      'task-start-old'
+    ])
+  })
 })
