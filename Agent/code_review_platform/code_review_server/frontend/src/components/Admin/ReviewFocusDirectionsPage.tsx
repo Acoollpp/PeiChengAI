@@ -126,6 +126,7 @@ function DirectionFormDialog({
   mode,
   initialValue,
   isPending,
+  canCreateGlobalDirection,
   canSelectDepartments,
   onOpenChange,
   onSubmit,
@@ -134,6 +135,7 @@ function DirectionFormDialog({
   mode: DirectionFormMode
   initialValue: DirectionFormState
   isPending: boolean
+  canCreateGlobalDirection: boolean
   canSelectDepartments: boolean
   onOpenChange: (open: boolean) => void
   onSubmit: (value: DirectionFormState) => void
@@ -148,7 +150,9 @@ function DirectionFormDialog({
   const description =
     mode === "usage"
       ? "将用户输入统计沉淀为可复用的重点审查方向。"
-      : "维护方向库条目，可绑定部门；不绑定部门时作为全局方向。"
+      : canCreateGlobalDirection
+        ? "维护方向库条目，可绑定部门；不绑定部门时作为全局方向。"
+        : "维护本部门方向库条目。"
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -773,7 +777,11 @@ export function ReviewFocusDirectionsPage() {
                   </CardDescription>
                 )}
               </div>
-              <Button type="button" onClick={openCreateDialog}>
+              <Button
+                type="button"
+                onClick={openCreateDialog}
+                disabled={isDepartmentAdmin && !currentDepartmentId}
+              >
                 <Plus />
                 新增方向
               </Button>
@@ -1022,6 +1030,7 @@ export function ReviewFocusDirectionsPage() {
         mode={dialogMode}
         initialValue={dialogInitialValue}
         isPending={isSaving}
+        canCreateGlobalDirection={isPlatformAdmin}
         canSelectDepartments={isPlatformAdmin}
         onOpenChange={setDialogOpen}
         onSubmit={handleSubmit}
