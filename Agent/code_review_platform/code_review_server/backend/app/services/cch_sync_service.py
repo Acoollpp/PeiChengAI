@@ -110,7 +110,7 @@ class CchSyncService:
             ).first()
             disabled_reason = self._user_disabled_reason(row, synced_at)
             is_active = disabled_reason is None
-            role = self._sync_role(row)
+            role = self._final_role_for_user(user, row)
 
             if user is None:
                 user = User(cch_user_id=row.cch_user_id, auth_source=AuthSource.cch)
@@ -125,7 +125,7 @@ class CchSyncService:
             user.auth_source = AuthSource.cch
             user.full_name = row.full_name
             user.role = role
-            user.is_superuser = row.is_superuser
+            user.is_superuser = role == UserRole.admin
             user.is_active = is_active
             user.disabled_reason = disabled_reason
             user.last_synced_at = synced_at
@@ -264,12 +264,21 @@ class CchSyncService:
             return role
         if role == UserRole.admin.value:
             return UserRole.admin
+        if role == UserRole.department_admin.value:
+            return UserRole.department_admin
         return UserRole.user
 
     def _sync_role(self, row: CchUserRow) -> UserRole:
         if row.cch_user_id in PERMANENT_ADMIN_CCH_USER_IDS:
             return UserRole.admin
         return self._normalize_role(row.role)
+
+    def _final_role_for_user(self, user: User | None, row: CchUserRow) -> UserRole:
+        synced_role = self._sync_role(row)
+        if user is not None and user.role == UserRole.department_admin:
+            if synced_role == UserRole.user:
+                return UserRole.department_admin
+        return synced_role
 
     def result_to_dict(self, result: CchSyncResult) -> dict[str, Any]:
         return asdict(result)
