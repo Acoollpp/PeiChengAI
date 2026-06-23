@@ -61,10 +61,12 @@ def has_department_admin_privileges(user: User) -> bool:
     return user.role == UserRole.department_admin and user.department_id is not None
 
 
-# Only checks whether the role is a management role. Entry points must still
-# validate department binding via ensure_department_admin_has_department().
-def has_management_privileges(user: User) -> bool:
+def has_management_role(user: User) -> bool:
     return user.role in {UserRole.admin, UserRole.department_admin}
+
+
+def has_management_privileges(user: User) -> bool:
+    return has_platform_admin_privileges(user) or has_department_admin_privileges(user)
 
 
 def ensure_department_admin_has_department(user: User) -> None:
@@ -84,9 +86,11 @@ def get_current_active_admin(current_user: CurrentUser) -> User:
 
 
 def get_current_active_management_user(current_user: CurrentUser) -> User:
-    if not has_management_privileges(current_user):
+    if current_user.role == UserRole.department_admin:
+        ensure_department_admin_has_department(current_user)
+        return current_user
+    if not has_platform_admin_privileges(current_user):
         raise HTTPException(status_code=403, detail="没有足够权限")
-    ensure_department_admin_has_department(current_user)
     return current_user
 
 

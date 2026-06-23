@@ -19,5 +19,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # PostgreSQL enum value cannot be safely removed without rebuilding the type.
+    # Downgrade intentionally keeps the enum value because PostgreSQL cannot remove enum values safely without rebuilding dependent columns.
     pass

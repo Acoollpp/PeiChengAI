@@ -9,6 +9,7 @@ from app.api.deps import (
     has_admin_privileges,
     has_department_admin_privileges,
     has_management_privileges,
+    has_management_role,
     has_platform_admin_privileges,
 )
 from app.models import ReviewTask, ReviewTaskStatus, User, UserPublic, UserRole
@@ -49,7 +50,8 @@ def test_department_admin_requires_department_for_department_privileges() -> Non
     user = User(role=UserRole.department_admin, department_id=None)
 
     assert has_department_admin_privileges(user) is False
-    assert has_management_privileges(user) is True
+    assert has_management_role(user) is True
+    assert has_management_privileges(user) is False
 
 
 def test_department_admin_with_department_has_department_privileges() -> None:
