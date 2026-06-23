@@ -3,6 +3,7 @@ const fs = require("fs");
 
 const html = fs.readFileSync("public/index.html", "utf8");
 const js = fs.readFileSync("public/app.js", "utf8");
+const server = fs.readFileSync("server.js", "utf8");
 
 assert.match(html, /id="loginPanel"/);
 assert.match(html, /id="loginKeyInput"/);
@@ -122,6 +123,8 @@ assert.doesNotMatch(js, /event\.type === "stdout"/);
 assert.doesNotMatch(js, /event\.type === "stderr"/);
 assert.ok(!js.includes('localStorage.setItem("tbAiToken"'));
 assert.ok(js.includes('localStorage.setItem(rememberKeyStorageKey'));
+assert.doesNotMatch(server, /项目概览必须写入项目重要等级和 LPDT/);
+assert.match(server, /LPDT 暂不填写/);
 
 console.log("ok - frontend has login state and flow panel without token or console output storage");
 
