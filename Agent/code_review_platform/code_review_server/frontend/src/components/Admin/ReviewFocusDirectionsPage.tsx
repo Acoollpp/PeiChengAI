@@ -754,7 +754,9 @@ export function ReviewFocusDirectionsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">重点审查方向</h1>
         <p className="text-muted-foreground">
-          管理方向库条目，并将用户常用输入沉淀为可复用方向。
+          {isPlatformAdmin
+            ? "管理方向库条目，并将用户常用输入沉淀为可复用方向。"
+            : "管理本部门方向库条目。"}
         </p>
       </div>
 
