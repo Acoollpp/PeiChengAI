@@ -12,11 +12,13 @@ const showOpenDialogMock = vi.hoisted(() => vi.fn())
 const notificationIsSupportedMock = vi.hoisted(() => vi.fn(() => true))
 const notificationShowMock = vi.hoisted(() => vi.fn())
 const notificationOnMock = vi.hoisted(() => vi.fn())
+const notificationOnceMock = vi.hoisted(() => vi.fn())
 
 const NotificationMock = vi.fn(function NotificationMock() {
   return {
     show: notificationShowMock,
-    on: notificationOnMock
+    on: notificationOnMock,
+    once: notificationOnceMock
   }
 })
 ;(NotificationMock as unknown as { isSupported: typeof notificationIsSupportedMock }).isSupported =
@@ -195,8 +197,13 @@ describe('registerIpcHandlers', () => {
       reportPath: '/tmp/report.md'
     }
 
-    await expect(handler({}, payload)).resolves.toEqual({ status: 'shown' })
+    const result = handler({}, payload)
     expect(notificationShowMock).toHaveBeenCalledWith()
+    const showHandler = notificationOnceMock.mock.calls.find(([eventName]) => eventName === 'show')?.[1]
+    expect(showHandler).toBeDefined()
+    showHandler()
+
+    await expect(result).resolves.toEqual({ status: 'shown' })
     const clickHandler = notificationOnMock.mock.calls.find(([eventName]) => eventName === 'click')?.[1]
     expect(clickHandler).toBeDefined()
 
@@ -244,7 +251,12 @@ describe('registerIpcHandlers', () => {
       new_revision: 'r12'
     }
 
-    await expect(handler({}, payload)).resolves.toEqual({ status: 'shown' })
+    const result = handler({}, payload)
+    const showHandler = notificationOnceMock.mock.calls.find(([eventName]) => eventName === 'show')?.[1]
+    expect(showHandler).toBeDefined()
+    showHandler()
+
+    await expect(result).resolves.toEqual({ status: 'shown' })
     const clickHandler = notificationOnMock.mock.calls.find(([eventName]) => eventName === 'click')?.[1]
     expect(clickHandler).toBeDefined()
 
@@ -253,6 +265,33 @@ describe('registerIpcHandlers', () => {
     expect(show).toHaveBeenCalledWith()
     expect(focus).not.toHaveBeenCalled()
     expect(send).not.toHaveBeenCalled()
+  })
+
+  it('returns failed when task completion notification emits failed', async () => {
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers()
+
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'notification:show-task-completed'
+    )?.[1]
+
+    const result = handler({}, {
+      taskId: 'task-1',
+      svn_url: 'svn://repo/project',
+      old_revision: 'r10',
+      new_revision: 'r12'
+    })
+    expect(notificationShowMock).toHaveBeenCalledWith()
+    const failedHandler = notificationOnceMock.mock.calls.find(([eventName]) => eventName === 'failed')?.[1]
+    expect(failedHandler).toBeDefined()
+
+    failedHandler({}, 'Windows toast failed')
+
+    await expect(result).resolves.toEqual({
+      status: 'failed',
+      message: 'Windows toast failed'
+    })
   })
 
   it('returns unsupported when task completion notification is unavailable', async () => {

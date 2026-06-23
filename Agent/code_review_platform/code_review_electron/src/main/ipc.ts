@@ -87,6 +87,8 @@ interface OpenPdfReportResult {
   pdfPath: string
 }
 
+const activeNotifications = new Set<Notification>()
+
 interface ReadReportAssetRequest {
   reportPath: string
   assetPath: string
@@ -449,6 +451,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
           title: '审查完成',
           body: `${payload.svn_url}\n${payload.old_revision} → ${payload.new_revision}`
         })
+        activeNotifications.add(notification)
 
         notification.on('click', () => {
           try {
@@ -471,9 +474,24 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
             return
           }
         })
+        notification.on('close', () => {
+          activeNotifications.delete(notification)
+        })
 
+        const result = new Promise<TaskCompletionNotificationResult>((resolve) => {
+          notification.once('show', () => {
+            resolve({ status: 'shown' })
+          })
+          notification.once('failed', (_event, message) => {
+            activeNotifications.delete(notification)
+            resolve({
+              status: 'failed',
+              message: message || '系统通知发送失败。'
+            })
+          })
+        })
         notification.show()
-        return { status: 'shown' }
+        return await result
       } catch (error) {
         return {
           status: 'failed',
