@@ -47,10 +47,29 @@ def _ensure_admin(current_user: CurrentUser) -> None:
         raise HTTPException(status_code=403, detail="没有足够权限")
 
 
-def _ensure_management_user(current_user: CurrentUser) -> None:
+def _ensure_department_admin_active_department(
+    *, session: SessionDep, current_user: CurrentUser
+) -> None:
+    if current_user.role != UserRole.department_admin:
+        return
+    ensure_department_admin_has_department(current_user)
+    department = session.get(Department, current_user.department_id)
+    if department is None or not department.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="当前账号未绑定部门，请联系超级管理员。",
+        )
+
+
+def _ensure_management_user(
+    *, session: SessionDep, current_user: CurrentUser
+) -> None:
     if not has_management_privileges(current_user):
         raise HTTPException(status_code=403, detail="没有足够权限")
-    ensure_department_admin_has_department(current_user)
+    _ensure_department_admin_active_department(
+        session=session,
+        current_user=current_user,
+    )
 
 
 def _ensure_department_admin_direction_input(
@@ -59,7 +78,8 @@ def _ensure_department_admin_direction_input(
     if current_user.role != UserRole.department_admin:
         return
     ensure_department_admin_has_department(current_user)
-    if department_ids != [current_user.department_id]:
+    unique_department_ids = list(dict.fromkeys(department_ids))
+    if unique_department_ids != [current_user.department_id]:
         raise HTTPException(status_code=403, detail="只能维护本部门审查方向。")
 
 
@@ -202,7 +222,10 @@ def _direction_public(
 
 
 def _usage_count_by_content(
-    *, session: SessionDep, contents: list[str]
+    *,
+    session: SessionDep,
+    contents: list[str],
+    department_id: uuid.UUID | None = None,
 ) -> dict[str, int]:
     normalized_contents = {
         normalized_content
@@ -212,11 +235,12 @@ def _usage_count_by_content(
     if not normalized_contents:
         return {}
 
-    rows = session.exec(
-        select(ReviewTask.focus_direction_snapshot).where(
-            ReviewTask.focus_direction_snapshot.is_not(None)
-        )
-    ).all()
+    statement = select(ReviewTask.focus_direction_snapshot).where(
+        ReviewTask.focus_direction_snapshot.is_not(None)
+    )
+    if department_id is not None:
+        statement = statement.where(ReviewTask.department_id == department_id)
+    rows = session.exec(statement).all()
     usage_counts = dict.fromkeys(normalized_contents, 0)
     for snapshot in rows:
         if snapshot is None:
@@ -289,7 +313,9 @@ def read_review_focus_directions(
     department_id: uuid.UUID | None = None,
     is_active: bool | None = None,
 ) -> Any:
-    _ensure_management_user(current_user)
+    _ensure_management_user(session=session, current_user=current_user)
+    if department_scope not in {"all", "global", "department"}:
+        raise HTTPException(status_code=400, detail="部门范围参数不正确。")
     conditions = []
     normalized_search = _normalize_search(search)
     if normalized_search:
@@ -328,8 +354,6 @@ def read_review_focus_directions(
                 & (ReviewFocusDirectionDepartment.department_id == department_id)
             )
         )
-    elif department_scope != "all":
-        raise HTTPException(status_code=400, detail="部门范围参数不正确。")
 
     count_statement = select(func.count()).select_from(ReviewFocusDirection)
     if conditions:
@@ -351,6 +375,11 @@ def read_review_focus_directions(
     usage_counts = _usage_count_by_content(
         session=session,
         contents=[direction.content for direction in directions],
+        department_id=(
+            current_user.department_id
+            if current_user.role == UserRole.department_admin
+            else None
+        ),
     )
     return ReviewFocusDirectionsPublic(
         data=[
@@ -375,7 +404,7 @@ def create_review_focus_direction(
     current_user: CurrentUser,
     direction_in: ReviewFocusDirectionCreate,
 ) -> Any:
-    _ensure_management_user(current_user)
+    _ensure_management_user(session=session, current_user=current_user)
     return _create_direction(
         session=session,
         current_user=current_user,
@@ -606,7 +635,7 @@ def update_review_focus_direction(
     direction_id: uuid.UUID,
     direction_in: ReviewFocusDirectionUpdate,
 ) -> Any:
-    _ensure_management_user(current_user)
+    _ensure_management_user(session=session, current_user=current_user)
     direction = _get_direction_or_404(
         session=session,
         direction_id=direction_id,
@@ -664,7 +693,7 @@ def delete_review_focus_direction(
     current_user: CurrentUser,
     direction_id: uuid.UUID,
 ) -> Message:
-    _ensure_management_user(current_user)
+    _ensure_management_user(session=session, current_user=current_user)
     direction = _get_direction_or_404(
         session=session,
         direction_id=direction_id,
