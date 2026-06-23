@@ -450,7 +450,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
         const notification = new Notification({
           title: '审查完成',
-          body: `${payload.svn_url}\n${payload.old_revision} → ${payload.new_revision}`,
+          body: `${payload.svn_url}\n${payload.old_revision} → ${payload.new_revision}\n点击打开报告`,
           timeoutType: 'never'
         })
         activeNotifications.add(notification)

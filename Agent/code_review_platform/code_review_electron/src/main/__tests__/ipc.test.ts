@@ -200,7 +200,7 @@ describe('registerIpcHandlers', () => {
     const result = handler({}, payload)
     expect(NotificationMock).toHaveBeenCalledWith({
       title: '审查完成',
-      body: 'svn://repo/project\nr10 → r12',
+      body: 'svn://repo/project\nr10 → r12\n点击打开报告',
       timeoutType: 'never'
     })
     expect(notificationShowMock).toHaveBeenCalledWith()
