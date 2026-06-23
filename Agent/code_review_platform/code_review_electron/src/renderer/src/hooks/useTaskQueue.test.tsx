@@ -666,6 +666,48 @@ describe('useTaskQueue', () => {
     )
   })
 
+  it('服务端刷新时可绑定尚未回填需求表名称的本地任务', async () => {
+    const deferred = createDeferred<ExecuteTaskResult>()
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)
+    const payload: ExecuteTaskRequest = {
+      ...basePayload(1),
+      requirement_file_path: '/tmp/产品开发需求表.xls',
+      requirement_file_name: '产品开发需求表.xls',
+      focus_direction_snapshot: '重点检查需求表'
+    }
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
+
+    await act(async () => {
+      await result.current.submitTask(payload)
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
+    const localTaskId = executeTask.mock.calls[0]![0].client_task_id
+
+    await act(async () => {
+      result.current.setServerTasks([
+        {
+          id: 'task-server-pending-requirement-upload',
+          svn_url: payload.svn_url,
+          old_revision: payload.old_revision,
+          new_revision: payload.new_revision,
+          template_key: payload.template_key,
+          skill_name: payload.skill_name,
+          requirement_file_name: null,
+          focus_direction_snapshot: payload.focus_direction_snapshot,
+          status: 'running_codex'
+        }
+      ])
+    })
+
+    expect(result.current.tasks).toEqual([
+      expect.objectContaining({
+        id: 'task-server-pending-requirement-upload',
+        localTaskId
+      })
+    ])
+  })
+
   it('服务端刷新同参数终态历史任务时不绑定本地运行任务且不释放并发槽位', async () => {
     const deferreds = [
       createDeferred<ExecuteTaskResult>(),

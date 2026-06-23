@@ -1,3 +1,4 @@
+import logging
 import re
 import uuid
 from datetime import datetime, time, timedelta, timezone
@@ -16,8 +17,8 @@ from app.models import (
     ReviewTask,
     ReviewTaskCreate,
     ReviewTaskPublic,
-    ReviewTaskRequirementFile,
     ReviewTaskReportUserStatsPublic,
+    ReviewTaskRequirementFile,
     ReviewTasksPublic,
     ReviewTaskStatsPublic,
     ReviewTaskStatus,
@@ -28,6 +29,7 @@ from app.models import (
 from app.services import report_service
 
 router = APIRouter(prefix="/review-tasks", tags=["review-tasks"])
+logger = logging.getLogger(__name__)
 REVIEW_REPORT_FILE_NAME = "代码审查报告.md"
 PDF_REPORT_FILE_NAME = "代码审查报告.pdf"
 TASK_STATS_TIMEZONE = ZoneInfo("Asia/Shanghai")
@@ -91,6 +93,19 @@ def _range_filters(stats_range: FeedbackStatsRange) -> list[Any]:
     if end is not None:
         filters.append(ReviewTask.created_at < end)
     return filters
+
+
+def _unlink_file_after_commit(file_path: Path) -> None:
+    if not file_path.is_file():
+        return
+    try:
+        file_path.unlink()
+    except OSError as exc:
+        logger.warning(
+            "Failed to remove review task file after database commit: %s",
+            file_path,
+            exc_info=exc,
+        )
 
 
 def _trend_points(
@@ -326,37 +341,24 @@ def delete_review_task(
         )
     ).all()
     report_path = Path(task.report_path) if task.report_path else None
-    if report_path and report_path.is_file():
-        try:
-            report_path.unlink()
-        except OSError as exc:
-            raise HTTPException(
-                status_code=500, detail="Failed to delete review task report"
-            ) from exc
     pdf_report_path = Path(task.pdf_report_path) if task.pdf_report_path else None
-    if pdf_report_path and pdf_report_path.is_file():
-        try:
-            pdf_report_path.unlink()
-        except OSError as exc:
-            raise HTTPException(
-                status_code=500, detail="Failed to delete review task PDF report"
-            ) from exc
-    for requirement_file in requirement_files:
-        requirement_path = Path(requirement_file.file_path)
-        if not requirement_path.is_file():
-            continue
-        try:
-            requirement_path.unlink()
-        except OSError as exc:
-            raise HTTPException(
-                status_code=500, detail="产品开发需求表附件删除失败"
-            ) from exc
+    files_to_remove = [
+        file_path
+        for file_path in (
+            report_path,
+            pdf_report_path,
+            *(Path(requirement_file.file_path) for requirement_file in requirement_files),
+        )
+        if file_path is not None
+    ]
 
     for requirement_file in requirement_files:
         session.delete(requirement_file)
     session.flush()
     session.delete(task)
     session.commit()
+    for file_path in files_to_remove:
+        _unlink_file_after_commit(file_path)
     return {"message": "Review task deleted"}
 
 
@@ -452,6 +454,15 @@ async def upload_review_task_requirement_file(
     task = _get_task_for_user(
         session=session, current_user=current_user, task_id=task_id
     )
+    old_requirement_files = session.exec(
+        select(ReviewTaskRequirementFile).where(
+            ReviewTaskRequirementFile.task_id == task.id
+        )
+    ).all()
+    old_requirement_paths = [
+        Path(old_requirement_file.file_path)
+        for old_requirement_file in old_requirement_files
+    ]
     file_path, file_size, file_hash, safe_file_name = (
         await report_service.save_requirement_upload(task_id, upload)
     )
@@ -466,6 +477,9 @@ async def upload_review_task_requirement_file(
     session.add(requirement_file)
     session.flush()
 
+    for old_requirement_file in old_requirement_files:
+        session.delete(old_requirement_file)
+
     task.requirement_file_id = requirement_file.id
     task.requirement_file_name = safe_file_name
     task.requirement_file_size = file_size
@@ -475,6 +489,9 @@ async def upload_review_task_requirement_file(
     session.add(task)
     session.commit()
     session.refresh(task)
+    for old_path in old_requirement_paths:
+        if old_path != file_path:
+            _unlink_file_after_commit(old_path)
     return task
 
 

@@ -133,20 +133,50 @@ def _departments_by_direction(
 def _direction_public(
     direction: ReviewFocusDirection,
     departments: list[Department] | None = None,
+    usage_count: int | None = None,
 ) -> ReviewFocusDirectionPublic:
     departments = departments or []
     legacy_department = departments[0] if len(departments) == 1 else None
+    update: dict[str, Any] = {
+        "department_id": legacy_department.id if legacy_department else None,
+        "department_name": legacy_department.name if legacy_department else None,
+        "departments": [
+            DepartmentPublic.model_validate(department)
+            for department in departments
+        ],
+    }
+    if usage_count is not None:
+        update["usage_count"] = usage_count
     return ReviewFocusDirectionPublic.model_validate(
         direction,
-        update={
-            "department_id": legacy_department.id if legacy_department else None,
-            "department_name": legacy_department.name if legacy_department else None,
-            "departments": [
-                DepartmentPublic.model_validate(department)
-                for department in departments
-            ],
-        },
+        update=update,
     )
+
+
+def _usage_count_by_content(
+    *, session: SessionDep, contents: list[str]
+) -> dict[str, int]:
+    normalized_contents = {
+        normalized_content
+        for content in contents
+        if (normalized_content := _normalize_content(content))
+    }
+    if not normalized_contents:
+        return {}
+
+    rows = session.exec(
+        select(ReviewTask.focus_direction_snapshot).where(
+            ReviewTask.focus_direction_snapshot.is_not(None)
+        )
+    ).all()
+    usage_counts = dict.fromkeys(normalized_contents, 0)
+    for snapshot in rows:
+        if snapshot is None:
+            continue
+        normalized_snapshot = _normalize_content(snapshot)
+        if normalized_snapshot in usage_counts:
+            usage_counts[normalized_snapshot] += 1
+    return usage_counts
 
 
 def _create_direction(
@@ -255,9 +285,17 @@ def read_review_focus_directions(
         session=session,
         direction_ids=[direction.id for direction in directions],
     )
+    usage_counts = _usage_count_by_content(
+        session=session,
+        contents=[direction.content for direction in directions],
+    )
     return ReviewFocusDirectionsPublic(
         data=[
-            _direction_public(direction, departments.get(direction.id, []))
+            _direction_public(
+                direction,
+                departments.get(direction.id, []),
+                usage_count=usage_counts.get(_normalize_content(direction.content), 0),
+            )
             for direction in directions
         ],
         count=count,

@@ -122,6 +122,52 @@ def test_admin_can_create_and_list_focus_directions(
     assert any(direction["id"] == created["id"] for direction in content["data"])
 
 
+def test_list_focus_directions_returns_dynamic_usage_count(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    department = _create_department(db, "列表统计部门-" + random_lower_string())
+    payload = {
+        "title": "列表统计方向-" + random_lower_string(),
+        "content": "重点检查权限边界和异常处理-" + random_lower_string(),
+        "department_id": str(department.id),
+        "is_active": True,
+    }
+    create_response = client.post(
+        f"{settings.API_V1_STR}/review-focus-directions",
+        headers=superuser_token_headers,
+        json=payload,
+    )
+    assert create_response.status_code == 200
+    created = create_response.json()
+
+    _create_task_with_focus_snapshot(
+        client=client,
+        db=db,
+        department=department,
+        snapshot=payload["content"],
+        minutes_ago=1,
+    )
+    _create_task_with_focus_snapshot(
+        client=client,
+        db=db,
+        department=department,
+        snapshot=f"  {payload['content']}  ",
+        minutes_ago=2,
+    )
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/review-focus-directions?skip=0&limit=100",
+        headers=superuser_token_headers,
+    )
+
+    assert list_response.status_code == 200
+    directions = list_response.json()["data"]
+    listed = next(direction for direction in directions if direction["id"] == created["id"])
+    assert listed["usage_count"] == 2
+
+
 def test_admin_can_create_global_focus_direction_without_department(
     client: TestClient,
     superuser_token_headers: dict[str, str],

@@ -102,8 +102,8 @@ const isMatchingUnboundLocalTask = (
   (localTask.focus_direction_id ?? undefined) === (serverTask.focus_direction_id ?? undefined) &&
   (localTask.focus_direction_snapshot ?? undefined) ===
     (serverTask.focus_direction_snapshot ?? undefined) &&
-  (localTask.requirement_file_name ?? undefined) ===
-    (serverTask.requirement_file_name ?? undefined)
+  (!serverTask.requirement_file_name ||
+    (localTask.requirement_file_name ?? undefined) === serverTask.requirement_file_name)
 
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : '审查任务执行失败。'

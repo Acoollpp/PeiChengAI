@@ -491,7 +491,7 @@ def test_upload_review_task_requirement_file_stores_metadata_and_record(
     assert Path(requirement_file.file_path).is_file()
 
 
-def test_upload_review_task_requirement_file_keeps_duplicate_names_separate(
+def test_upload_review_task_requirement_file_replaces_old_file_and_record(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
     db: Session,
@@ -508,33 +508,88 @@ def test_upload_review_task_requirement_file_keeps_duplicate_names_separate(
         headers=normal_user_token_headers,
         files={"upload": ("需求表.xls", first_content, "application/vnd.ms-excel")},
     )
+    assert first_response.status_code == 200
+    first_file = db.exec(
+        select(ReviewTaskRequirementFile).where(
+            ReviewTaskRequirementFile.task_id == UUID(task["id"])
+        )
+    ).one()
+    first_file_id = first_file.id
+    first_file_path = Path(first_file.file_path)
+    assert first_file_path.read_bytes() == first_content
+
     second_response = client.post(
         f"{settings.API_V1_STR}/review-tasks/{task['id']}/requirement-file",
         headers=normal_user_token_headers,
         files={"upload": ("需求表.xls", second_content, "application/vnd.ms-excel")},
     )
 
-    assert first_response.status_code == 200
     assert second_response.status_code == 200
+    db.expire_all()
     requirement_files = db.exec(
         select(ReviewTaskRequirementFile)
         .where(ReviewTaskRequirementFile.task_id == UUID(task["id"]))
     ).all()
-    assert len(requirement_files) == 2
-    requirement_file_by_hash = {file.sha256: file for file in requirement_files}
-    first_file = requirement_file_by_hash[hashlib.sha256(first_content).hexdigest()]
-    second_file = requirement_file_by_hash[hashlib.sha256(second_content).hexdigest()]
-    assert first_file.file_path != second_file.file_path
-    assert Path(first_file.file_path).read_bytes() == first_content
+    assert len(requirement_files) == 1
+    second_file = requirement_files[0]
+    assert second_file.id != first_file_id
+    assert second_file.sha256 == hashlib.sha256(second_content).hexdigest()
+    assert not first_file_path.exists()
     assert Path(second_file.file_path).read_bytes() == second_content
+    assert db.get(ReviewTaskRequirementFile, first_file_id) is None
 
-    db.expire_all()
     updated_task = db.get(ReviewTask, UUID(task["id"]))
     assert updated_task is not None
+    assert updated_task.requirement_file_id == second_file.id
     assert updated_task.requirement_file_sha256 == hashlib.sha256(
         second_content
     ).hexdigest()
     assert updated_task.requirement_file_size == len(second_content)
+
+
+def test_upload_review_task_requirement_file_replaces_duplicate_same_content(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    content = b"same requirement rows"
+
+    first_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/requirement-file",
+        headers=normal_user_token_headers,
+        files={"upload": ("需求表.xls", content, "application/vnd.ms-excel")},
+    )
+    assert first_response.status_code == 200
+    first_file = db.exec(
+        select(ReviewTaskRequirementFile).where(
+            ReviewTaskRequirementFile.task_id == UUID(task["id"])
+        )
+    ).one()
+    first_file_id = first_file.id
+    shared_path = Path(first_file.file_path)
+    assert shared_path.read_bytes() == content
+
+    second_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/requirement-file",
+        headers=normal_user_token_headers,
+        files={"upload": ("需求表.xls", content, "application/vnd.ms-excel")},
+    )
+
+    assert second_response.status_code == 200
+    db.expire_all()
+    requirement_file = db.exec(
+        select(ReviewTaskRequirementFile).where(
+            ReviewTaskRequirementFile.task_id == UUID(task["id"])
+        )
+    ).one()
+    assert requirement_file.id != first_file_id
+    assert Path(requirement_file.file_path) == shared_path
+    assert shared_path.read_bytes() == content
+    assert db.get(ReviewTaskRequirementFile, first_file_id) is None
 
 
 def test_upload_review_task_requirement_file_sanitizes_unsafe_and_long_name(
@@ -657,7 +712,7 @@ def test_delete_review_task_removes_requirement_file_and_record(
     assert db.get(ReviewTask, UUID(task["id"])) is None
 
 
-def test_delete_review_task_keeps_task_when_requirement_file_delete_fails(
+def test_delete_review_task_removes_task_when_requirement_file_delete_fails(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
     db: Session,
@@ -694,11 +749,11 @@ def test_delete_review_task_keeps_task_when_requirement_file_delete_fails(
         headers=normal_user_token_headers,
     )
 
-    assert response.status_code == 500
-    assert response.json()["detail"] == "产品开发需求表附件删除失败"
+    assert response.status_code == 200
     db.expire_all()
-    assert db.get(ReviewTask, UUID(task["id"])) is not None
-    assert db.get(ReviewTaskRequirementFile, requirement_file_id) is not None
+    assert db.get(ReviewTask, UUID(task["id"])) is None
+    assert db.get(ReviewTaskRequirementFile, requirement_file_id) is None
+    assert requirement_path.exists()
 
 
 def test_delete_review_task_removes_task_row(
@@ -780,7 +835,7 @@ def test_delete_review_task_succeeds_when_report_file_is_missing(
     assert response.json() == {"message": "Review task deleted"}
 
 
-def test_delete_review_task_keeps_task_when_report_file_delete_fails(
+def test_delete_review_task_removes_task_when_report_file_delete_fails(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
     tmp_path: Path,
@@ -813,14 +868,14 @@ def test_delete_review_task_keeps_task_when_report_file_delete_fails(
         headers=normal_user_token_headers,
     )
 
-    assert response.status_code == 500
-    assert response.json()["detail"] == "Failed to delete review task report"
+    assert response.status_code == 200
 
     read_response = client.get(
         f"{settings.API_V1_STR}/review-tasks/{task['id']}",
         headers=normal_user_token_headers,
     )
-    assert read_response.status_code == 200
+    assert read_response.status_code == 404
+    assert report_path.exists()
 
 
 def test_normal_user_cannot_delete_other_user_task(
