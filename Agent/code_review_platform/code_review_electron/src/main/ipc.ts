@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
 
-import { dialog, ipcMain, shell } from 'electron'
+import { dialog, ipcMain, Notification, shell, type BrowserWindow } from 'electron'
 
 import {
   ApiClient,
@@ -18,7 +18,13 @@ import { installCodexCli } from './codex-cli-installer'
 import { installSvnCli } from './svn-cli-installer'
 import { CredentialStore, type RememberedCredentials } from './credential-store'
 import { checkEnvironment } from './environment-checker'
-import type { EnvironmentProgressEvent } from '../shared/types'
+import type {
+  CurrentUser,
+  DepartmentsResponse,
+  EnvironmentProgressEvent,
+  TaskCompletionNotificationPayload,
+  TaskCompletionNotificationResult
+} from '../shared/types'
 import { generatePdfReport } from './report-pdf-generator'
 import {
   defaultPrepareWorkspace,
@@ -32,7 +38,6 @@ import { uploadPdfReportFile, uploadReportFile, uploadRequirementFile } from './
 import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
 import { ServerConfigStore, normalizeServerUrl } from './server-config-store'
 import { createSkillSyncService, type SkillSyncResult } from './skill-sync'
-import type { CurrentUser, DepartmentsResponse } from '../shared/types'
 
 interface SerializedFeedbackScreenshot {
   name: string
@@ -62,6 +67,7 @@ export interface IpcHandlerDependencies {
   uploadPdfReport?: TaskAgentDependencies['uploadPdfReport']
   runtimePaths?: RuntimePaths
   appUpdateService?: AppUpdateService
+  getMainWindow?: () => BrowserWindow | undefined
 }
 
 export interface DownloadCurrentReportResult {
@@ -315,6 +321,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   const serverConfigStore = dependencies.serverConfigStore ?? new ServerConfigStore()
   const appUpdateService =
     dependencies.appUpdateService ?? createAppUpdateService(authStore, serverConfigStore)
+  const getMainWindow = dependencies.getMainWindow ?? (() => undefined)
   const checkLocalEnvironment = dependencies.checkEnvironment ?? checkEnvironment
   const installLocalCodexCli = dependencies.installCodexCli ?? installCodexCli
   const installLocalSvnCli = dependencies.installSvnCli ?? installSvnCli
@@ -426,6 +433,55 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   ipcMain.handle('app-update:download', (): Promise<true> => appUpdateService.download())
 
   ipcMain.handle('app-update:install', (): true => appUpdateService.install())
+
+  ipcMain.handle(
+    'notification:show-task-completed',
+    async (
+      _event,
+      payload: TaskCompletionNotificationPayload
+    ): Promise<TaskCompletionNotificationResult> => {
+      try {
+        if (!Notification.isSupported()) {
+          return { status: 'unsupported' }
+        }
+
+        const notification = new Notification({
+          title: '审查完成',
+          body: `${payload.svn_url}\n${payload.old_revision} → ${payload.new_revision}`
+        })
+
+        notification.on('click', () => {
+          try {
+            const mainWindow = getMainWindow()
+            if (!mainWindow || mainWindow.isDestroyed()) {
+              return
+            }
+
+            if (mainWindow.isMinimized()) {
+              mainWindow.restore()
+            }
+            mainWindow.show()
+            mainWindow.focus()
+            sendToRenderer(
+              mainWindow.webContents,
+              'notification:task-completed-clicked',
+              payload
+            )
+          } catch (error) {
+            return
+          }
+        })
+
+        notification.show()
+        return { status: 'shown' }
+      } catch (error) {
+        return {
+          status: 'failed',
+          message: error instanceof Error ? error.message : '系统通知发送失败。'
+        }
+      }
+    }
+  )
 
   ipcMain.handle('task:list', async () => {
     const tokens = await authStore.load()

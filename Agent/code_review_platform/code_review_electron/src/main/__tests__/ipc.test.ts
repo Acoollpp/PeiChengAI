@@ -9,6 +9,18 @@ import type { SubmitFeedbackRequest } from '../api-client'
 const handleMock = vi.fn()
 const showItemInFolderMock = vi.fn()
 const showOpenDialogMock = vi.hoisted(() => vi.fn())
+const notificationIsSupportedMock = vi.hoisted(() => vi.fn(() => true))
+const notificationShowMock = vi.hoisted(() => vi.fn())
+const notificationOnMock = vi.hoisted(() => vi.fn())
+
+const NotificationMock = vi.fn(function NotificationMock() {
+  return {
+    show: notificationShowMock,
+    on: notificationOnMock
+  }
+})
+;(NotificationMock as unknown as { isSupported: typeof notificationIsSupportedMock }).isSupported =
+  notificationIsSupportedMock
 
 vi.mock('electron', () => ({
   app: {
@@ -29,6 +41,7 @@ vi.mock('electron', () => ({
   ipcMain: {
     handle: handleMock
   },
+  Notification: NotificationMock,
   shell: {
     showItemInFolder: showItemInFolderMock
   }
@@ -64,6 +77,7 @@ describe('registerIpcHandlers', () => {
       'app-update:check',
       'app-update:download',
       'app-update:install',
+      'notification:show-task-completed',
       'task:list',
       'task:report',
       'requirement-file:select',
@@ -143,6 +157,149 @@ describe('registerIpcHandlers', () => {
     expect(appUpdateService.check).toHaveBeenCalledTimes(1)
     expect(appUpdateService.download).toHaveBeenCalledTimes(1)
     expect(appUpdateService.install).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows task completion notification and sends click event to renderer', async () => {
+    const send = vi.fn()
+    const restore = vi.fn()
+    const show = vi.fn()
+    const focus = vi.fn()
+    const isMinimized = vi.fn(() => true)
+    const isDestroyed = vi.fn(() => false)
+    const mainWindow = {
+      isMinimized,
+      isDestroyed,
+      restore,
+      show,
+      focus,
+      webContents: {
+        send,
+        isDestroyed
+      }
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      getMainWindow: () => mainWindow as never
+    })
+
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'notification:show-task-completed'
+    )?.[1]
+    const payload = {
+      taskId: 'task-1',
+      localTaskId: 'local-1',
+      svn_url: 'svn://repo/project',
+      old_revision: 'r10',
+      new_revision: 'r12',
+      reportPath: '/tmp/report.md'
+    }
+
+    await expect(handler({}, payload)).resolves.toEqual({ status: 'shown' })
+    expect(notificationShowMock).toHaveBeenCalledWith()
+    const clickHandler = notificationOnMock.mock.calls.find(([eventName]) => eventName === 'click')?.[1]
+    expect(clickHandler).toBeDefined()
+
+    clickHandler()
+
+    expect(restore).toHaveBeenCalledWith()
+    expect(show).toHaveBeenCalledWith()
+    expect(focus).toHaveBeenCalledWith()
+    expect(send).toHaveBeenCalledWith('notification:task-completed-clicked', payload)
+  })
+
+  it('ignores destroyed window errors during task completion notification click', async () => {
+    const send = vi.fn()
+    const restore = vi.fn()
+    const show = vi.fn(() => {
+      throw new Error('Object has been destroyed')
+    })
+    const focus = vi.fn()
+    const isMinimized = vi.fn(() => false)
+    const isDestroyed = vi.fn(() => false)
+    const mainWindow = {
+      isMinimized,
+      isDestroyed,
+      restore,
+      show,
+      focus,
+      webContents: {
+        send,
+        isDestroyed
+      }
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      getMainWindow: () => mainWindow as never
+    })
+
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'notification:show-task-completed'
+    )?.[1]
+    const payload = {
+      taskId: 'task-1',
+      svn_url: 'svn://repo/project',
+      old_revision: 'r10',
+      new_revision: 'r12'
+    }
+
+    await expect(handler({}, payload)).resolves.toEqual({ status: 'shown' })
+    const clickHandler = notificationOnMock.mock.calls.find(([eventName]) => eventName === 'click')?.[1]
+    expect(clickHandler).toBeDefined()
+
+    expect(() => clickHandler()).not.toThrow()
+
+    expect(show).toHaveBeenCalledWith()
+    expect(focus).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('returns unsupported when task completion notification is unavailable', async () => {
+    notificationIsSupportedMock.mockReturnValueOnce(false)
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers()
+
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'notification:show-task-completed'
+    )?.[1]
+
+    await expect(
+      handler({}, {
+        taskId: 'task-1',
+        svn_url: 'svn://repo/project',
+        old_revision: 'r10',
+        new_revision: 'r12'
+      })
+    ).resolves.toEqual({ status: 'unsupported' })
+    expect(notificationShowMock).not.toHaveBeenCalled()
+  })
+
+  it('returns failed when task completion notification support check throws', async () => {
+    notificationIsSupportedMock.mockImplementationOnce(() => {
+      throw new Error('通知能力检查失败')
+    })
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers()
+
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'notification:show-task-completed'
+    )?.[1]
+
+    await expect(
+      handler({}, {
+        taskId: 'task-1',
+        svn_url: 'svn://repo/project',
+        old_revision: 'r10',
+        new_revision: 'r12'
+      })
+    ).resolves.toEqual({
+      status: 'failed',
+      message: '通知能力检查失败'
+    })
+    expect(notificationShowMock).not.toHaveBeenCalled()
   })
 
   it('passes user and department IPC calls through to the API client', async () => {
