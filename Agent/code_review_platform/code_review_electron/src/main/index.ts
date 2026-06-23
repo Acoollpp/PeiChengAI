@@ -5,6 +5,9 @@ import { join } from 'node:path'
 import { cancelAllActiveReviewTasks, registerIpcHandlers } from './ipc'
 import { configureExternalLinkHandling } from './window-security'
 
+const APP_USER_MODEL_ID = 'com.peicheng.code-review'
+let mainWindow: BrowserWindow | undefined
+
 const resolvePreloadPath = (): string => {
   const mjsPath = join(__dirname, '../preload/index.mjs')
   if (existsSync(mjsPath)) {
@@ -15,7 +18,7 @@ const resolvePreloadPath = (): string => {
 }
 
 const createWindow = (): void => {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1180,
     height: 760,
     minWidth: 920,
@@ -27,19 +30,23 @@ const createWindow = (): void => {
       contextIsolation: true
     }
   })
+  const window = mainWindow
 
-  configureExternalLinkHandling(mainWindow)
+  configureExternalLinkHandling(window)
 
   if (process.env.ELECTRON_RENDERER_URL) {
-    void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
+    void window.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    void window.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
 
 app.whenReady().then(() => {
+  app.setAppUserModelId(APP_USER_MODEL_ID)
   Menu.setApplicationMenu(null)
-  registerIpcHandlers()
+  registerIpcHandlers({
+    getMainWindow: () => mainWindow
+  })
   createWindow()
 
   app.on('activate', () => {

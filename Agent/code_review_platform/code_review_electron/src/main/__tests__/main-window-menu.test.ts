@@ -9,26 +9,36 @@ describe('main window menu', () => {
     const loadFile = vi.fn()
     const loadURL = vi.fn()
     const setWindowOpenHandler = vi.fn()
+    const registerIpcHandlers = vi.fn()
+    let createdWindow:
+      | {
+          loadFile: typeof loadFile
+          loadURL: typeof loadURL
+          webContents: { setWindowOpenHandler: typeof setWindowOpenHandler }
+        }
+      | undefined
 
     function BrowserWindowMock(): {
       loadFile: typeof loadFile
       loadURL: typeof loadURL
       webContents: { setWindowOpenHandler: typeof setWindowOpenHandler }
     } {
-      return {
+      createdWindow = {
         loadFile,
         loadURL,
         webContents: {
           setWindowOpenHandler
         }
       }
+      return createdWindow
     }
 
     vi.doMock('electron', () => ({
       app: {
         whenReady,
         on,
-        quit: vi.fn()
+        quit: vi.fn(),
+        setAppUserModelId: vi.fn()
       },
       BrowserWindow: BrowserWindowMock,
       Menu: {
@@ -39,13 +49,20 @@ describe('main window menu', () => {
       }
     }))
     vi.doMock('../ipc', () => ({
-      registerIpcHandlers: vi.fn()
+      registerIpcHandlers
     }))
 
     await import('../index')
     await Promise.resolve()
 
+    const { app } = await import('electron')
+    expect(app.setAppUserModelId).toHaveBeenCalledWith('com.peicheng.code-review')
     expect(setApplicationMenu).toHaveBeenCalledWith(null)
+    expect(registerIpcHandlers).toHaveBeenCalledWith({
+      getMainWindow: expect.any(Function)
+    })
+    const getMainWindow = registerIpcHandlers.mock.calls[0][0].getMainWindow
+    expect(getMainWindow()).toBe(createdWindow)
   })
 
   it('registers active task cancellation before app quit', async () => {
@@ -76,7 +93,8 @@ describe('main window menu', () => {
       app: {
         whenReady,
         on,
-        quit: vi.fn()
+        quit: vi.fn(),
+        setAppUserModelId: vi.fn()
       },
       BrowserWindow: BrowserWindowMock,
       Menu: {
@@ -133,7 +151,8 @@ describe('main window menu', () => {
       app: {
         whenReady,
         on,
-        quit: vi.fn()
+        quit: vi.fn(),
+        setAppUserModelId: vi.fn()
       },
       BrowserWindow: BrowserWindowMock,
       Menu: {
