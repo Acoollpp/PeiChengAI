@@ -80,13 +80,31 @@ def _ensure_department_exists(
 
 
 def _ensure_department_admin_can_read_user(
-    *, current_user: User, target_user: User
+    *, session: SessionDep, current_user: User, target_user: User
 ) -> None:
     if current_user.role != UserRole.department_admin:
         return
-    ensure_department_admin_has_department(current_user)
+    _ensure_department_admin_active_department(
+        session=session,
+        current_user=current_user,
+    )
     if target_user.department_id != current_user.department_id:
         raise HTTPException(status_code=403, detail="没有足够权限")
+
+
+def _ensure_department_admin_active_department(
+    *, session: SessionDep, current_user: User
+) -> Department | None:
+    if current_user.role != UserRole.department_admin:
+        return None
+    ensure_department_admin_has_department(current_user)
+    department = session.get(Department, current_user.department_id)
+    if department is None or not department.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="当前账号未绑定部门，请联系超级管理员。",
+        )
+    return department
 
 
 def _ensure_department_admin_role_has_department(
@@ -210,7 +228,10 @@ def read_users(
     if not has_management_role(current_user):
         raise HTTPException(status_code=403, detail="没有足够权限")
     if current_user.role == UserRole.department_admin:
-        ensure_department_admin_has_department(current_user)
+        _ensure_department_admin_active_department(
+            session=session,
+            current_user=current_user,
+        )
         filters.append(User.department_id == current_user.department_id)
     if search_term:
         search_pattern = f"%{search_term}%"
@@ -375,6 +396,7 @@ def read_user_by_id(
         )
     if current_user.role == UserRole.department_admin:
         _ensure_department_admin_can_read_user(
+            session=session,
             current_user=current_user,
             target_user=user,
         )

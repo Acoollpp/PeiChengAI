@@ -304,6 +304,25 @@ def test_department_admin_user_list_requires_department(
     assert response.json()["detail"] == "当前账号未绑定部门，请联系超级管理员。"
 
 
+def test_department_admin_user_list_rejects_inactive_department(
+    client: TestClient,
+    db: Session,
+) -> None:
+    department = _create_department(db, "停用部门管理员列表部门")
+    admin_context = _create_department_admin(client=client, db=db, department=department)
+    department.is_active = False
+    db.add(department)
+    db.commit()
+
+    response = client.get(
+        f"{settings.API_V1_STR}/users/",
+        headers=admin_context["headers"],
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "当前账号未绑定部门，请联系超级管理员。"
+
+
 def test_department_admin_can_read_same_department_user(
     client: TestClient,
     db: Session,
@@ -351,6 +370,28 @@ def test_department_admin_cannot_read_other_department_user(
 
     assert response.status_code == 403
     assert response.json()["detail"] == "没有足够权限"
+
+
+def test_department_admin_read_user_rejects_inactive_department(
+    client: TestClient,
+    db: Session,
+) -> None:
+    department = _create_department(db, "停用部门管理员读取部门")
+    admin_context = _create_department_admin(client=client, db=db, department=department)
+    user, _ = create_key_user(db)
+    user.department_id = department.id
+    department.is_active = False
+    db.add(user)
+    db.add(department)
+    db.commit()
+
+    response = client.get(
+        f"{settings.API_V1_STR}/users/{user.id}",
+        headers=admin_context["headers"],
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "当前账号未绑定部门，请联系超级管理员。"
 
 
 def test_department_admin_cannot_create_update_or_delete_users(
