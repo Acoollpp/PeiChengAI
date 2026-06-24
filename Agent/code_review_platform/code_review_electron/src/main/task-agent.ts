@@ -217,6 +217,7 @@ export const defaultRunCodex = async ({
       imagesDir,
       skillName,
       requirementFilePath,
+      departmentName: task.department_name ?? undefined,
       focusDirectionSnapshot: task.focus_direction_snapshot ?? undefined
     }),
     timeoutMs: 30 * 60 * 1000,
