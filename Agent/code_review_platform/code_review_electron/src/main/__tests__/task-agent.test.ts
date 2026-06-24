@@ -138,7 +138,7 @@ describe('executeReviewTask', () => {
       api: {
         createTask: vi.fn(async () => {
           calls.push('createTask')
-          return makeTask()
+          return makeTask({ department_name: '软件开发部' })
         }),
         updateTaskStatus: vi.fn(async (_token, _taskId, payload) => {
           calls.push(`status:${payload.status}`)
@@ -193,7 +193,7 @@ describe('executeReviewTask', () => {
       imagesDir,
       requirementFilePath: join(cwd, 'requirements', '产品开发需求表.xls'),
       skillName: '通用-代码审查-模版二',
-      task: makeTask(),
+      task: makeTask({ department_name: '软件开发部' }),
       clientTaskId: undefined,
       signal: undefined,
       onProgress: undefined

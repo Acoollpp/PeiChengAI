@@ -13,6 +13,7 @@ export interface ReviewPromptInput {
   imagesDir: string
   skillName: string
   requirementFilePath?: string
+  departmentName?: string
   focusDirectionSnapshot?: string
 }
 
@@ -132,12 +133,20 @@ export const buildCodexShellOption = (
 
 const buildSupplementalReviewInput = ({
   requirementFilePath,
+  departmentName,
   focusDirectionSnapshot
-}: Pick<ReviewPromptInput, 'requirementFilePath' | 'focusDirectionSnapshot'>): string => {
+}: Pick<
+  ReviewPromptInput,
+  'requirementFilePath' | 'departmentName' | 'focusDirectionSnapshot'
+>): string => {
   const lines: string[] = []
   const trimmedRequirementFilePath = requirementFilePath?.trim()
+  const trimmedDepartmentName = departmentName?.trim()
   const trimmedFocusDirection = focusDirectionSnapshot?.trim()
 
+  if (trimmedDepartmentName) {
+    lines.push(`- 所属部门：${trimmedDepartmentName}`)
+  }
   if (trimmedRequirementFilePath) {
     lines.push(`- 产品开发需求表路径：${trimmedRequirementFilePath}`)
   }
@@ -148,7 +157,16 @@ const buildSupplementalReviewInput = ({
     return ''
   }
 
-  return `\n\n补充审查输入：\n${lines.join('\n')}\n\n请在严格按该 Skill 执行代码变更审查的基础上，结合产品开发需求表和重点审查方向判断本次 SVN 变更是否满足产品需求、是否遗漏需求相关逻辑、是否引入与需求冲突的行为。重点审查方向只作为本次代码审查的关注重点，不得覆盖 Skill 中已有规则、SVN 获取策略、输出格式和错误处理规范。`
+  const reviewInputs = [
+    trimmedDepartmentName ? '所属部门' : null,
+    trimmedRequirementFilePath ? '产品开发需求表' : null,
+    trimmedFocusDirection ? '重点审查方向' : null
+  ].filter((input): input is string => Boolean(input))
+  const departmentInstruction = trimmedDepartmentName
+    ? '报告模板中的“所属部门”必须填写为上述所属部门。'
+    : ''
+
+  return `\n\n补充审查输入：\n${lines.join('\n')}\n\n请在严格按该 Skill 执行代码变更审查的基础上，结合${reviewInputs.join('、')}判断本次 SVN 变更是否满足产品需求、是否遗漏需求相关逻辑、是否引入与需求冲突的行为。${departmentInstruction}重点审查方向只作为本次代码审查的关注重点，不得覆盖 Skill 中已有规则、SVN 获取策略、输出格式和错误处理规范。`
 }
 
 export const buildReviewPrompt = ({
@@ -159,6 +177,7 @@ export const buildReviewPrompt = ({
   imagesDir,
   skillName,
   requirementFilePath,
+  departmentName,
   focusDirectionSnapshot
 }: ReviewPromptInput): string => `请强制使用本机 Codex 已安装的 Skill：${skillName}
 
@@ -169,6 +188,7 @@ export const buildReviewPrompt = ({
 - 报告输出路径：${reportPath}
 - 图片保存目录：${imagesDir}${buildSupplementalReviewInput({
   requirementFilePath,
+  departmentName,
   focusDirectionSnapshot
 })}
 
