@@ -3,16 +3,21 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session
-from sqlmodel import delete
-from sqlmodel import select
+from sqlmodel import Session, delete, select
 
-from app.core.config import settings
 from app.api.routes import feedback as feedback_route
-from app.models import Feedback, FeedbackScreenshot, FeedbackStatus, User, UserRole
+from app.core.config import settings
+from app.models import (
+    Department,
+    Feedback,
+    FeedbackScreenshot,
+    FeedbackStatus,
+    User,
+    UserRole,
+)
 from app.services import feedback_service
 from tests.utils.user import authentication_token_from_key, create_key_user
-
+from tests.utils.utils import random_lower_string
 
 FIXED_STATS_NOW = datetime(2026, 6, 11, 16, 30, tzinfo=timezone.utc)
 FIXED_STATS_TODAY = datetime(2026, 6, 11, 16, 10, tzinfo=timezone.utc)
@@ -41,6 +46,17 @@ def _admin_headers(client: TestClient, db: Session) -> dict[str, str]:
     db.add(admin)
     db.commit()
     return authentication_token_from_key(client=client, key=admin_api_key.key, db=db)
+
+
+def _feedback_department_admin_headers(
+    *, client: TestClient, db: Session, department: Department
+) -> dict[str, str]:
+    user, api_key = create_key_user(db)
+    user.role = UserRole.department_admin
+    user.department_id = department.id
+    db.add(user)
+    db.commit()
+    return authentication_token_from_key(client=client, key=api_key.key, db=db)
 
 
 def _create_feedback_row(
@@ -157,6 +173,7 @@ def test_create_feedback_with_multiple_screenshots_and_read_them(
         content["screenshots"],
         [b"first-image", b"second-image"],
         ["image/png", "image/webp"],
+        strict=False,
     ):
         screenshot_response = client.get(
             f"{settings.API_V1_STR}/feedback/{content['id']}/screenshots/{screenshot['id']}",
@@ -253,6 +270,7 @@ def test_create_feedback_rolls_back_db_and_files_when_screenshot_save_crashes(
     async def crash_after_writing(
         feedback_id, uploads
     ):  # type: ignore[no-untyped-def]
+        _ = uploads
         screenshot_dir = tmp_path / str(feedback_id)
         screenshot_dir.mkdir(parents=True)
         (screenshot_dir / "partial.png").write_bytes(b"partial")
@@ -407,6 +425,47 @@ def test_admin_lists_all_feedback(
     feedback_ids = {item["id"] for item in content["data"]}
     assert first_feedback["id"] in feedback_ids
     assert second_feedback["id"] in feedback_ids
+
+
+def test_department_admin_feedback_scope_stays_own_feedback(
+    client: TestClient,
+    db: Session,
+) -> None:
+    _clear_feedback_rows(db)
+    department = Department(name=f"反馈部门-{random_lower_string()}")
+    db.add(department)
+    db.commit()
+    db.refresh(department)
+    admin_headers = _feedback_department_admin_headers(
+        client=client, db=db, department=department
+    )
+    member, member_api_key = create_key_user(db)
+    member.department_id = department.id
+    db.add(member)
+    db.commit()
+    member_headers = authentication_token_from_key(
+        client=client, key=member_api_key.key, db=db
+    )
+    member_feedback = _create_feedback(client, member_headers, "成员反馈")
+    own_feedback = _create_feedback(client, admin_headers, "本人反馈")
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/feedback",
+        headers=admin_headers,
+    )
+    stats_response = client.get(
+        f"{settings.API_V1_STR}/feedback/stats",
+        headers=admin_headers,
+        params={"range": "all"},
+    )
+
+    assert list_response.status_code == 200
+    content = list_response.json()
+    feedback_ids = {item["id"] for item in content["data"]}
+    assert own_feedback["id"] in feedback_ids
+    assert member_feedback["id"] not in feedback_ids
+    assert stats_response.status_code == 200
+    assert stats_response.json()["total"] == 1
 
 
 def test_normal_user_feedback_stats_only_count_own_feedback(
@@ -765,6 +824,7 @@ def test_legacy_feedback_screenshot_endpoint_falls_back_to_legacy_fields(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _ = normal_user_token_headers
     monkeypatch.setattr(settings, "FEEDBACK_STORAGE_DIR", str(tmp_path))
     user, api_key = create_key_user(db)
     headers = authentication_token_from_key(client=client, key=api_key.key, db=db)

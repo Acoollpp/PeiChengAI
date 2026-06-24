@@ -27,7 +27,7 @@ export interface CurrentUser {
   svn_username?: string | null
   department_id?: string | null
   department_name?: string | null
-  role?: 'admin' | 'user'
+  role?: 'admin' | 'department_admin' | 'user'
 }
 
 export interface DepartmentPublic {
@@ -54,6 +54,7 @@ export type ReviewTaskStatus =
 
 export interface ReviewTask {
   id: string
+  user_id?: string | null
   svn_url: string
   old_revision: string
   new_revision: string

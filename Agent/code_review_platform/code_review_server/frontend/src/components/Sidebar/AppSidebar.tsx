@@ -18,7 +18,10 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar"
 import useAuth from "@/hooks/useAuth"
-import { hasAdminPrivileges } from "@/lib/authz"
+import {
+  hasDepartmentAdminPrivileges,
+  hasPlatformAdminPrivileges,
+} from "@/lib/authz"
 import { type Item, Main } from "./Main"
 import { User } from "./User"
 
@@ -63,9 +66,35 @@ const adminItems: Item[] = [
   { icon: MonitorDown, title: "客户端版本", path: "/admin/client-releases" },
 ]
 
+const departmentAdminItems: Item[] = [
+  { icon: Home, title: "主页", path: "/" },
+  { icon: Users, title: "用户管理", path: "/admin/users" },
+  {
+    icon: Target,
+    title: "重点审查方向",
+    path: "/admin/review-focus-directions",
+  },
+  { icon: MessageSquareText, title: "意见管理", path: "/feedback" },
+  {
+    icon: ListChecks,
+    title: "任务管理",
+    children: [
+      {
+        icon: ListChecks,
+        title: "代码审查任务管理",
+        path: "/tasks/review",
+      },
+    ],
+  },
+]
+
 export function AppSidebar() {
   const { user: currentUser } = useAuth()
-  const items = hasAdminPrivileges(currentUser) ? adminItems : userItems
+  const items = hasPlatformAdminPrivileges(currentUser)
+    ? adminItems
+    : hasDepartmentAdminPrivileges(currentUser)
+      ? departmentAdminItems
+      : userItems
 
   return (
     <Sidebar collapsible="icon">

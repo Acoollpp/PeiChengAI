@@ -9,8 +9,10 @@ from app import crud
 from app.api.deps import (
     CurrentUser,
     SessionDep,
+    ensure_department_admin_has_department,
     get_current_active_admin,
     has_admin_privileges,
+    has_management_role,
 )
 from app.models import (
     AuditLog,
@@ -74,6 +76,46 @@ def _ensure_department_exists(
     department = session.get(Department, department_id)
     if department is None:
         raise HTTPException(status_code=400, detail="部门不存在")
+    return department
+
+
+def _ensure_department_admin_can_read_user(
+    *, session: SessionDep, current_user: User, target_user: User
+) -> None:
+    if current_user.role != UserRole.department_admin:
+        return
+    _ensure_department_admin_active_department(
+        session=session,
+        current_user=current_user,
+    )
+    if target_user.department_id != current_user.department_id:
+        raise HTTPException(status_code=403, detail="没有足够权限")
+
+
+def _ensure_department_admin_active_department(
+    *, session: SessionDep, current_user: User
+) -> Department | None:
+    if current_user.role != UserRole.department_admin:
+        return None
+    ensure_department_admin_has_department(current_user)
+    department = session.get(Department, current_user.department_id)
+    if department is None or not department.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="当前账号未绑定部门，请联系超级管理员。",
+        )
+    return department
+
+
+def _ensure_department_admin_role_has_department(
+    *, session: SessionDep, role: UserRole | None, department_id: uuid.UUID | None
+) -> Department | None:
+    department = _ensure_department_exists(session=session, department_id=department_id)
+    if role == UserRole.department_admin:
+        if department is None:
+            raise HTTPException(status_code=400, detail="部门管理员必须绑定部门。")
+        if not department.is_active:
+            raise HTTPException(status_code=400, detail="部门不存在或已停用。")
     return department
 
 
@@ -166,26 +208,37 @@ def _delete_user_with_related_data(*, session: SessionDep, user: User) -> None:
 
 @router.get(
     "/",
-    dependencies=[Depends(get_current_active_admin)],
     response_model=UsersPublic,
 )
 def read_users(
-    session: SessionDep, skip: int = 0, limit: int = 100, search: str | None = None
+    session: SessionDep,
+    current_user: CurrentUser,
+    skip: int = 0,
+    limit: int = 100,
+    search: str | None = None,
 ) -> Any:
     """
     Retrieve users.
     """
 
     search_term = search.strip() if search else ""
-    filters = []
+    filters: list[Any] = []
+    if not has_management_role(current_user):
+        raise HTTPException(status_code=403, detail="没有足够权限")
+    if current_user.role == UserRole.department_admin:
+        _ensure_department_admin_active_department(
+            session=session,
+            current_user=current_user,
+        )
+        filters.append(User.department_id == current_user.department_id)
     if search_term:
         search_pattern = f"%{search_term}%"
-        search_filters = [
+        search_filters: list[Any] = [
             col(User.full_name).ilike(search_pattern),
             col(User.svn_username).ilike(search_pattern),
         ]
         if search_term.isdigit():
-            search_filters.append(User.cch_user_id == int(search_term))
+            search_filters.append(col(User.cch_user_id) == int(search_term))
         filters.append(or_(*search_filters))
 
     count_statement = select(func.count()).select_from(User).where(*filters)
@@ -227,11 +280,11 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
     """
     Create new user.
     """
-    _ensure_svn_username_available(
-        session=session, svn_username=user_in.svn_username
-    )
-    department = _ensure_department_exists(
-        session=session, department_id=user_in.department_id
+    _ensure_svn_username_available(session=session, svn_username=user_in.svn_username)
+    department = _ensure_department_admin_role_has_department(
+        session=session,
+        role=user_in.role,
+        department_id=user_in.department_id,
     )
     user_in.is_superuser = user_in.role == UserRole.admin
     user = crud.create_user(session=session, user_create=user_in)
@@ -269,6 +322,11 @@ def update_user_me_department(
     """
     Bind current user's department once.
     """
+    if current_user.role == UserRole.department_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="当前账号未绑定部门，请联系超级管理员。",
+        )
     if current_user.department_id is not None:
         raise HTTPException(
             status_code=409,
@@ -318,6 +376,8 @@ def read_user_by_id(
     Get a specific user by id.
     """
     user = session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
     if user == current_user:
         return _user_public(
             current_user,
@@ -325,16 +385,24 @@ def read_user_by_id(
                 session=session, user=current_user
             ),
         )
-    if not has_admin_privileges(current_user):
-        raise HTTPException(
-            status_code=403,
-            detail="The user doesn't have enough privileges",
+    if has_admin_privileges(current_user):
+        return _user_public(
+            user,
+            department_name=_department_name_for_user(session=session, user=user),
         )
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return _user_public(
-        user,
-        department_name=_department_name_for_user(session=session, user=user),
+    if current_user.role == UserRole.department_admin:
+        _ensure_department_admin_can_read_user(
+            session=session,
+            current_user=current_user,
+            target_user=user,
+        )
+        return _user_public(
+            user,
+            department_name=_department_name_for_user(session=session, user=user),
+        )
+    raise HTTPException(
+        status_code=403,
+        detail="The user doesn't have enough privileges",
     )
 
 
@@ -362,8 +430,16 @@ def update_user(
     _ensure_svn_username_available(
         session=session, svn_username=user_in.svn_username, user_id=user_id
     )
-    department = _ensure_department_exists(
-        session=session, department_id=user_in.department_id
+    user_data = user_in.model_dump(exclude_unset=True)
+    target_role = user_in.role if user_in.role is not None else db_user.role
+    if "department_id" in user_data:
+        target_department_id = user_in.department_id
+    else:
+        target_department_id = db_user.department_id
+    department = _ensure_department_admin_role_has_department(
+        session=session,
+        role=target_role,
+        department_id=target_department_id,
     )
     if user_in.role is not None:
         db_user.is_superuser = user_in.role == UserRole.admin

@@ -56,12 +56,20 @@ const setupCodeReviewApi = (): void => {
     listTasks: vi.fn(async () => ({ data: [], count: 0 })),
     readTaskReport: vi.fn(),
     executeTask: vi.fn(),
+    cancelTask: vi.fn(),
+    selectRequirementFile: vi.fn(),
+    getPathForPastedFile: vi.fn(),
     onTaskProgress: vi.fn(() => vi.fn()),
     downloadCurrentReport: vi.fn(),
+    openPdfReport: vi.fn(),
+    readReportAsset: vi.fn(),
+    showTaskCompletionNotification: vi.fn(),
+    onTaskCompletionNotificationClicked: vi.fn(() => vi.fn()),
     installCodex: vi.fn(),
     installSvn: vi.fn(),
     installSkill: vi.fn(),
     checkEnvironment: vi.fn(async () => ({ status: 'ready' })),
+    submitFeedback: vi.fn(),
     onEnvironmentProgress: vi.fn((callback: EnvironmentProgressListener) => {
       environmentProgressListener = callback
       return vi.fn()
@@ -121,6 +129,28 @@ describe('App update flow', () => {
       })
     })
     expect(await screen.findByRole('heading', { name: '任务工作台' })).toBeInTheDocument()
+  })
+
+  it('shows login error instead of department selection when department admin has no department', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.getCurrentUser).mockResolvedValueOnce({
+      id: 'user-1',
+      full_name: '部门管理员',
+      svn_username: null,
+      department_id: null,
+      department_name: null,
+      role: 'department_admin'
+    })
+    render(<App />)
+
+    await user.type(await screen.findByLabelText('Key'), 'sk-cch-test')
+    await user.click(screen.getByRole('button', { name: 'Key 登录' }))
+
+    expect(
+      await screen.findByText('当前账号未绑定部门，请联系超级管理员。')
+    ).toBeInTheDocument()
+    expect(window.codeReview.listAvailableDepartments).not.toHaveBeenCalled()
+    expect(screen.queryByRole('heading', { name: '选择部门' })).not.toBeInTheDocument()
   })
 
   it('enters the task page directly when current user already has a department', async () => {

@@ -222,6 +222,37 @@ describe('buildReviewPrompt', () => {
     )
     expect(prompt.indexOf('补充审查输入：')).toBeLessThan(prompt.indexOf('错误处理规范'))
   })
+
+  it('includes department name in supplemental review input when available', () => {
+    const prompt = buildReviewPrompt({
+      svnUrl: 'svn://example.com/repo/project',
+      oldRevision: '123',
+      newRevision: '130',
+      reportPath: '/tmp/review/代码审查报告.md',
+      imagesDir: '/tmp/review/images',
+      skillName: '通用-代码审查-模版二',
+      departmentName: '软件开发部'
+    })
+
+    expect(prompt).toContain('补充审查输入：')
+    expect(prompt).toContain('所属部门：软件开发部')
+    expect(prompt).toContain('报告模板中的“所属部门”必须填写为上述所属部门')
+  })
+
+  it('omits department supplemental input when department name is blank', () => {
+    const prompt = buildReviewPrompt({
+      svnUrl: 'svn://example.com/repo/project',
+      oldRevision: '123',
+      newRevision: '130',
+      reportPath: '/tmp/review/代码审查报告.md',
+      imagesDir: '/tmp/review/images',
+      skillName: '通用-代码审查-模版二',
+      departmentName: '  '
+    })
+
+    expect(prompt).not.toContain('补充审查输入：')
+    expect(prompt).not.toContain('所属部门：')
+  })
 })
 
 describe('buildCodexExecArgs', () => {

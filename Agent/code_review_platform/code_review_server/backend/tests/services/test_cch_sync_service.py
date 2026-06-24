@@ -3,8 +3,9 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine, text
 from sqlmodel import Session, col, delete, select
 
-from app.models import AuthSource, User, UserApiKey, UserRole
+from app.models import AuthSource, Department, User, UserApiKey, UserRole
 from app.services.cch_sync_service import CchKeyRow, CchSyncService, CchUserRow
+from tests.utils.utils import random_lower_string
 
 
 def test_sync_rows_creates_cch_user_and_key(db: Session) -> None:
@@ -262,3 +263,129 @@ def test_fetch_rows_supports_cch_users_keys_schema(tmp_path) -> None:
     assert keys[0].name == "Default"
     assert keys[0].is_active is False
     assert keys[0].is_deleted is True
+
+
+def test_cch_sync_preserves_existing_department_admin_role_and_department(
+    db: Session,
+) -> None:
+    department = Department(name=f"CCH部门-{random_lower_string()}")
+    db.add(department)
+    db.commit()
+    db.refresh(department)
+    user = User(
+        full_name="部门管理员",
+        auth_source=AuthSource.cch,
+        cch_user_id=9001,
+        role=UserRole.department_admin,
+        department_id=department.id,
+        is_superuser=False,
+    )
+    db.add(user)
+    db.commit()
+
+    result = CchSyncService().sync_rows(
+        db,
+        users=[
+            CchUserRow(
+                cch_user_id=9001,
+                full_name="同步后的姓名",
+                role=UserRole.user,
+                is_superuser=False,
+            )
+        ],
+        keys=[],
+        synced_at=datetime.now(timezone.utc),
+    )
+
+    db.refresh(user)
+    assert result.updated == 1
+    assert user.role == UserRole.department_admin
+    assert user.department_id == department.id
+    assert user.is_superuser is False
+
+
+def test_cch_sync_normalizes_department_admin_when_source_provides_it() -> None:
+    assert CchSyncService()._normalize_role("department_admin") == UserRole.department_admin
+
+
+def test_cch_sync_aligns_is_superuser_with_final_role(db: Session) -> None:
+    user = User(
+        full_name="普通用户",
+        auth_source=AuthSource.cch,
+        cch_user_id=9002,
+        role=UserRole.user,
+        is_superuser=False,
+    )
+    db.add(user)
+    db.commit()
+
+    CchSyncService().sync_rows(
+        db,
+        users=[
+            CchUserRow(
+                cch_user_id=9002,
+                full_name="普通用户",
+                role=UserRole.user,
+                is_superuser=True,
+            )
+        ],
+        keys=[],
+        synced_at=datetime.now(timezone.utc),
+    )
+
+    db.refresh(user)
+    assert user.role == UserRole.user
+    assert user.is_superuser is False
+
+
+def test_cch_sync_creates_department_admin_from_source_role(db: Session) -> None:
+    result = CchSyncService().sync_rows(
+        db,
+        users=[
+            CchUserRow(
+                cch_user_id=9003,
+                full_name="新部门管理员",
+                role="department_admin",
+                is_superuser=True,
+            )
+        ],
+        keys=[],
+        synced_at=datetime.now(timezone.utc),
+    )
+
+    user = db.exec(select(User).where(User.cch_user_id == 9003)).one()
+    assert result.created == 1
+    assert user.role == UserRole.department_admin
+    assert user.is_superuser is False
+
+
+def test_cch_sync_promotes_existing_department_admin_when_source_role_is_admin(
+    db: Session,
+) -> None:
+    user = User(
+        full_name="待升级部门管理员",
+        auth_source=AuthSource.cch,
+        cch_user_id=9004,
+        role=UserRole.department_admin,
+        is_superuser=False,
+    )
+    db.add(user)
+    db.commit()
+
+    CchSyncService().sync_rows(
+        db,
+        users=[
+            CchUserRow(
+                cch_user_id=9004,
+                full_name="已升级管理员",
+                role="admin",
+                is_superuser=False,
+            )
+        ],
+        keys=[],
+        synced_at=datetime.now(timezone.utc),
+    )
+
+    db.refresh(user)
+    assert user.role == UserRole.admin
+    assert user.is_superuser is True

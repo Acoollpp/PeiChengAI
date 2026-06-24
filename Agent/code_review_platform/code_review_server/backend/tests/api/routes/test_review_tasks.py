@@ -15,6 +15,7 @@ from app.models import (
     ReviewTask,
     ReviewTaskRequirementFile,
     ReviewTaskStatus,
+    User,
     UserRole,
 )
 from tests.utils.user import (
@@ -69,6 +70,34 @@ def _create_named_svn_user_task(
     }
 
 
+def _create_department(db: Session, name: str | None = None) -> Department:
+    department = Department(name=name or f"任务部门-{random_lower_string()}")
+    db.add(department)
+    db.commit()
+    db.refresh(department)
+    return department
+
+
+def _create_department_user(
+    *,
+    client: TestClient,
+    db: Session,
+    department: Department | None,
+    role: UserRole = UserRole.user,
+    full_name: str | None = None,
+    svn_username: str | None = None,
+) -> tuple[dict[str, str], User]:
+    user, api_key = create_key_user(db)
+    user.role = role
+    user.department_id = department.id if department else None
+    user.full_name = full_name or f"部门用户-{random_lower_string()}"
+    user.svn_username = svn_username or f"dept-svn-{random_lower_string()}"
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return authentication_token_from_key(client=client, key=api_key.key, db=db), user
+
+
 def _shanghai_datetime(days_delta: int, hour: int = 12) -> datetime:
     today = datetime.now(TASK_STATS_TIMEZONE).date()
     return datetime.combine(
@@ -109,6 +138,21 @@ def _set_review_task_stats_fields(
     db_task.started_at = started_at
     db_task.finished_at = finished_at
     db_task.report_path = report_path
+    db.add(db_task)
+    db.commit()
+
+
+def _set_review_task_pdf_report(
+    db: Session,
+    task_id: str,
+    *,
+    pdf_report_path: str,
+    pdf_report_name: str = "report.pdf",
+) -> None:
+    db_task = db.get(ReviewTask, UUID(task_id))
+    assert db_task is not None
+    db_task.pdf_report_path = pdf_report_path
+    db_task.pdf_report_name = pdf_report_name
     db.add(db_task)
     db.commit()
 
@@ -1603,3 +1647,506 @@ def test_role_admin_can_read_other_user_task_detail(
 
     assert response.status_code == 200
     assert response.json()["id"] == user_task["id"]
+
+
+def test_department_admin_lists_only_own_department_tasks(
+    client: TestClient,
+    db: Session,
+) -> None:
+    department_a = _create_department(db, f"审查部门A-{random_lower_string()}")
+    department_b = _create_department(db, f"审查部门B-{random_lower_string()}")
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_a,
+        role=UserRole.department_admin,
+    )
+    same_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_a,
+        full_name="同部门成员",
+        svn_username=f"same-dept-{random_lower_string()}",
+    )
+    other_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_b,
+        full_name="其他部门成员",
+        svn_username=f"other-dept-{random_lower_string()}",
+    )
+    same_task = _create_review_task(client, same_headers, old_revision="7101")
+    other_task = _create_review_task(client, other_headers, old_revision="7102")
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    listed_ids = {task["id"] for task in response.json()["data"]}
+    assert same_task["id"] in listed_ids
+    assert other_task["id"] not in listed_ids
+
+
+def test_department_admin_filters_do_not_expand_beyond_department(
+    client: TestClient,
+    db: Session,
+) -> None:
+    department_a = _create_department(db, f"搜索部门A-{random_lower_string()}")
+    department_b = _create_department(db, f"搜索部门B-{random_lower_string()}")
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_a,
+        role=UserRole.department_admin,
+    )
+    same_headers, same_user = _create_department_user(
+        client=client,
+        db=db,
+        department=department_a,
+        full_name="搜索目标",
+        svn_username=f"target-{random_lower_string()}",
+    )
+    other_headers, other_user = _create_department_user(
+        client=client,
+        db=db,
+        department=department_b,
+        full_name="搜索目标",
+        svn_username=f"target-{random_lower_string()}",
+    )
+    same_task = _create_review_task(client, same_headers, old_revision="7111")
+    other_task = _create_review_task(client, other_headers, old_revision="7112")
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=admin_headers,
+        params={"user_name": "搜索目标", "svn_username": "target"},
+    )
+
+    assert response.status_code == 200
+    listed_ids = {task["id"] for task in response.json()["data"]}
+    assert same_task["id"] in listed_ids
+    assert other_task["id"] not in listed_ids
+    assert same_user.department_id == department_a.id
+    assert other_user.department_id == department_b.id
+
+
+def test_department_admin_can_read_and_download_same_department_member_report(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    department = _create_department(db)
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+        role=UserRole.department_admin,
+    )
+    member_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+    )
+    task = _create_review_task(client, member_headers, old_revision="7121")
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=member_headers,
+        files={"upload": ("report.md", b"# Same Department\n", "text/markdown")},
+    )
+    assert upload_response.status_code == 200
+
+    read_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=admin_headers,
+    )
+    download_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/download",
+        headers=admin_headers,
+    )
+
+    assert read_response.status_code == 200
+    assert read_response.text == "# Same Department\n"
+    assert download_response.status_code == 200
+    assert download_response.content == b"# Same Department\n"
+
+
+def test_department_admin_cannot_read_other_department_task_or_report(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    department_a = _create_department(db, f"读取部门A-{random_lower_string()}")
+    department_b = _create_department(db, f"读取部门B-{random_lower_string()}")
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_a,
+        role=UserRole.department_admin,
+    )
+    other_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_b,
+    )
+    task = _create_review_task(client, other_headers, old_revision="7131")
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=other_headers,
+        files={"upload": ("report.md", b"# Other Department\n", "text/markdown")},
+    )
+    assert upload_response.status_code == 200
+
+    detail_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=admin_headers,
+    )
+    report_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=admin_headers,
+    )
+    download_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/download",
+        headers=admin_headers,
+    )
+
+    assert detail_response.status_code == 403
+    assert report_response.status_code == 403
+    assert download_response.status_code == 403
+
+
+def test_department_admin_can_download_same_department_member_pdf_report(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+) -> None:
+    department = _create_department(db)
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+        role=UserRole.department_admin,
+    )
+    member_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+    )
+    task = _create_review_task(client, member_headers, old_revision="7132")
+    pdf_path = tmp_path / "same-department.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 same department\n")
+    _set_review_task_pdf_report(
+        db,
+        task["id"],
+        pdf_report_path=str(pdf_path),
+        pdf_report_name="same-department.pdf",
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf/download",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"%PDF-1.4 same department\n"
+    assert "same-department.pdf" in unquote(
+        response.headers["content-disposition"]
+    )
+
+
+def test_department_admin_cannot_download_other_department_pdf_report(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+) -> None:
+    department_a = _create_department(db, f"PDF部门A-{random_lower_string()}")
+    department_b = _create_department(db, f"PDF部门B-{random_lower_string()}")
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_a,
+        role=UserRole.department_admin,
+    )
+    other_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_b,
+    )
+    task = _create_review_task(client, other_headers, old_revision="7133")
+    pdf_path = tmp_path / "other-department.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 other department\n")
+    _set_review_task_pdf_report(
+        db,
+        task["id"],
+        pdf_report_path=str(pdf_path),
+        pdf_report_name="other-department.pdf",
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf/download",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Not enough permissions"
+
+
+def test_department_admin_cannot_delete_same_department_member_task(
+    client: TestClient,
+    db: Session,
+) -> None:
+    department = _create_department(db)
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+        role=UserRole.department_admin,
+    )
+    member_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+    )
+    task = _create_review_task(client, member_headers, old_revision="7141")
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=admin_headers,
+    )
+    read_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=member_headers,
+    )
+
+    assert response.status_code == 403
+    assert read_response.status_code == 200
+
+
+def test_department_admin_cannot_write_same_department_member_task(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    department = _create_department(db)
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+        role=UserRole.department_admin,
+    )
+    member_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+    )
+    task = _create_review_task(client, member_headers, old_revision="7142")
+
+    status_response = client.patch(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/status",
+        headers=admin_headers,
+        json={"status": "running_codex"},
+    )
+    markdown_upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=admin_headers,
+        files={"upload": ("report.md", b"# Forbidden\n", "text/markdown")},
+    )
+    pdf_upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf-report",
+        headers=admin_headers,
+        files={"upload": ("report.pdf", b"%PDF-1.4\n", "application/pdf")},
+    )
+    requirement_upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/requirement-file",
+        headers=admin_headers,
+        files={"upload": ("requirement.txt", b"forbidden", "text/plain")},
+    )
+
+    assert status_response.status_code == 403
+    assert status_response.json()["detail"] == "Not enough permissions"
+    assert markdown_upload_response.status_code == 403
+    assert markdown_upload_response.json()["detail"] == "Not enough permissions"
+    assert pdf_upload_response.status_code == 403
+    assert pdf_upload_response.json()["detail"] == "Not enough permissions"
+    assert requirement_upload_response.status_code == 403
+    assert requirement_upload_response.json()["detail"] == "Not enough permissions"
+
+
+def test_department_admin_can_update_own_task_status(
+    client: TestClient,
+    db: Session,
+) -> None:
+    department = _create_department(db)
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+        role=UserRole.department_admin,
+    )
+    task = _create_review_task(client, admin_headers, old_revision="7151")
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/status",
+        headers=admin_headers,
+        json={"status": "running_codex"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "running_codex"
+
+
+def test_department_admin_task_stats_scope_and_reports_by_user(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    department_a = _create_department(db, f"统计部门A-{random_lower_string()}")
+    department_b = _create_department(db, f"统计部门B-{random_lower_string()}")
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_a,
+        role=UserRole.department_admin,
+    )
+    same_headers, same_user = _create_department_user(
+        client=client,
+        db=db,
+        department=department_a,
+        full_name="统计同部门成员",
+        svn_username=f"stats-same-{random_lower_string()}",
+    )
+    other_headers, other_user = _create_department_user(
+        client=client,
+        db=db,
+        department=department_b,
+        full_name="统计其他部门成员",
+        svn_username=f"stats-other-{random_lower_string()}",
+    )
+    same_task = _create_review_task(client, same_headers, old_revision="7161")
+    same_upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{same_task['id']}/report",
+        headers=same_headers,
+        files={"upload": ("same.md", b"# Same\n", "text/markdown")},
+    )
+    assert same_upload_response.status_code == 200
+    other_task = _create_review_task(client, other_headers, old_revision="7162")
+    other_upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{other_task['id']}/report",
+        headers=other_headers,
+        files={"upload": ("other.md", b"# Other\n", "text/markdown")},
+    )
+    assert other_upload_response.status_code == 200
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["total"] == 1
+    assert content["success"] == 1
+    assert content["reports_by_user"] == [
+        {
+            "user_name": same_user.full_name,
+            "svn_username": same_user.svn_username,
+            "report_count": 1,
+        }
+    ]
+    assert other_user.full_name not in {
+        user_stat["user_name"] for user_stat in content["reports_by_user"]
+    }
+
+
+def test_unbound_department_admin_read_scope_returns_403(
+    client: TestClient,
+    db: Session,
+) -> None:
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=None,
+        role=UserRole.department_admin,
+    )
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=admin_headers,
+    )
+    stats_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=admin_headers,
+    )
+
+    assert list_response.status_code == 403
+    assert list_response.json()["detail"] == "当前账号未绑定部门，请联系超级管理员。"
+    assert stats_response.status_code == 403
+    assert stats_response.json()["detail"] == "当前账号未绑定部门，请联系超级管理员。"
+
+
+def test_inactive_department_admin_read_scope_returns_403(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    department = _create_department(db)
+    department.is_active = False
+    db.add(department)
+    db.commit()
+    db.refresh(department)
+    admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+        role=UserRole.department_admin,
+    )
+    member_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+    )
+    task = _create_review_task(client, member_headers, old_revision="7171")
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=member_headers,
+        files={"upload": ("report.md", b"# Inactive Department\n", "text/markdown")},
+    )
+    assert upload_response.status_code == 200
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=admin_headers,
+    )
+    detail_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=admin_headers,
+    )
+    download_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/download",
+        headers=admin_headers,
+    )
+    stats_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=admin_headers,
+    )
+
+    expected_detail = "当前账号未绑定部门，请联系超级管理员。"
+    assert list_response.status_code == 403
+    assert list_response.json()["detail"] == expected_detail
+    assert detail_response.status_code == 403
+    assert detail_response.json()["detail"] == expected_detail
+    assert download_response.status_code == 403
+    assert download_response.json()["detail"] == expected_detail
+    assert stats_response.status_code == 403
+    assert stats_response.json()["detail"] == expected_detail

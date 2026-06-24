@@ -15,9 +15,9 @@ from app.models import (
     FeedbackPublic,
     FeedbackScreenshot,
     FeedbackScreenshotPublic,
+    FeedbacksPublic,
     FeedbackStatsPublic,
     FeedbackStatsRange,
-    FeedbacksPublic,
     FeedbackStatus,
     FeedbackStatusUpdate,
     FeedbackTrendPointPublic,
@@ -277,7 +277,9 @@ def read_feedback_stats(
 
     total = sum(by_status.values())
     resolved = by_status[FeedbackStatus.resolved]
-    unresolved = by_status[FeedbackStatus.pending] + by_status[FeedbackStatus.processing]
+    unresolved = (
+        by_status[FeedbackStatus.pending] + by_status[FeedbackStatus.processing]
+    )
     resolution_rate = resolved / total if total else 0
 
     resolved_rows = session.exec(
@@ -291,7 +293,9 @@ def read_feedback_stats(
     durations = [
         int((updated_at - created_at).total_seconds())
         for created_at, updated_at in resolved_rows
-        if created_at is not None and updated_at is not None and updated_at >= created_at
+        if created_at is not None
+        and updated_at is not None
+        and updated_at >= created_at
     ]
     average_resolution_seconds = (
         int(sum(durations) / len(durations)) if durations else None
@@ -365,7 +369,9 @@ def read_feedback_screenshot(
             filename=first.file_name,
         )
 
-    screenshot_path = Path(feedback.screenshot_path) if feedback.screenshot_path else None
+    screenshot_path = (
+        Path(feedback.screenshot_path) if feedback.screenshot_path else None
+    )
     if not screenshot_path or not screenshot_path.is_file():
         raise HTTPException(status_code=404, detail="Screenshot not found")
 

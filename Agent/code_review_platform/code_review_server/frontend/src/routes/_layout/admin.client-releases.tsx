@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router"
 
 import { AdminClientReleasesPage } from "@/components/Admin/ClientReleasesPage"
-import { requireAdminUser } from "@/lib/admin-route"
+import { requirePlatformAdminUser } from "@/lib/admin-route"
 
 export const Route = createFileRoute("/_layout/admin/client-releases")({
   component: AdminClientReleasesPage,
   beforeLoad: async () => {
-    await requireAdminUser()
+    await requirePlatformAdminUser()
   },
   head: () => ({
     meta: [

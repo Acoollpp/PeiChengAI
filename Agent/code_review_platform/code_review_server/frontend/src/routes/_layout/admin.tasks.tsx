@@ -1,16 +1,10 @@
 import { createFileRoute, redirect } from "@tanstack/react-router"
 
-import { UsersService } from "@/client"
-import { hasAdminPrivileges } from "@/lib/authz"
+import { requirePlatformAdminUser } from "@/lib/admin-route"
 
 export const Route = createFileRoute("/_layout/admin/tasks")({
   beforeLoad: async () => {
-    const user = await UsersService.readUserMe()
-    if (!hasAdminPrivileges(user)) {
-      throw redirect({
-        to: "/",
-      })
-    }
+    await requirePlatformAdminUser()
 
     throw redirect({
       to: "/tasks/review",

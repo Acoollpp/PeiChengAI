@@ -10,7 +10,12 @@ from openpyxl import Workbook
 from sqlalchemy import delete, or_
 from sqlmodel import col, exists, func, select
 
-from app.api.deps import CurrentUser, SessionDep, has_admin_privileges
+from app.api.deps import (
+    CurrentUser,
+    SessionDep,
+    ensure_department_admin_has_department,
+    has_admin_privileges,
+)
 from app.models import (
     Department,
     DepartmentPublic,
@@ -26,6 +31,7 @@ from app.models import (
     ReviewFocusDirectionUsageStatPublic,
     ReviewFocusDirectionUsageStatsPublic,
     ReviewTask,
+    UserRole,
     get_datetime_utc,
 )
 
@@ -38,6 +44,67 @@ router = APIRouter(
 def _ensure_admin(current_user: CurrentUser) -> None:
     if not has_admin_privileges(current_user):
         raise HTTPException(status_code=403, detail="没有足够权限")
+
+
+def _ensure_department_admin_active_department(
+    *, session: SessionDep, current_user: CurrentUser
+) -> None:
+    if current_user.role != UserRole.department_admin:
+        return
+    ensure_department_admin_has_department(current_user)
+    department = session.get(Department, current_user.department_id)
+    if department is None or not department.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="当前账号未绑定部门，请联系超级管理员。",
+        )
+
+
+def _ensure_management_user(*, session: SessionDep, current_user: CurrentUser) -> None:
+    if current_user.role == UserRole.department_admin:
+        _ensure_department_admin_active_department(
+            session=session,
+            current_user=current_user,
+        )
+        return
+    if not has_admin_privileges(current_user):
+        raise HTTPException(status_code=403, detail="没有足够权限")
+
+
+def _ensure_department_admin_direction_input(
+    *, current_user: CurrentUser, department_ids: list[uuid.UUID]
+) -> None:
+    if current_user.role != UserRole.department_admin:
+        return
+    ensure_department_admin_has_department(current_user)
+    unique_department_ids = list(dict.fromkeys(department_ids))
+    if unique_department_ids != [current_user.department_id]:
+        raise HTTPException(status_code=403, detail="只能维护本部门审查方向。")
+
+
+def _is_single_department_direction_for_current_user(
+    *, current_user: CurrentUser, departments: list[Department]
+) -> bool:
+    return (
+        current_user.role == UserRole.department_admin
+        and len(departments) == 1
+        and departments[0].id == current_user.department_id
+    )
+
+
+def _ensure_department_admin_can_maintain_direction(
+    *, current_user: CurrentUser, departments: list[Department]
+) -> None:
+    if current_user.role != UserRole.department_admin:
+        return
+    if not _is_single_department_direction_for_current_user(
+        current_user=current_user,
+        departments=departments,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="共享方向只能由超级管理员维护。",
+        )
 
 
 def _normalize_content(content: str) -> str:
@@ -141,8 +208,7 @@ def _direction_public(
         "department_id": legacy_department.id if legacy_department else None,
         "department_name": legacy_department.name if legacy_department else None,
         "departments": [
-            DepartmentPublic.model_validate(department)
-            for department in departments
+            DepartmentPublic.model_validate(department) for department in departments
         ],
     }
     if usage_count is not None:
@@ -154,7 +220,10 @@ def _direction_public(
 
 
 def _usage_count_by_content(
-    *, session: SessionDep, contents: list[str]
+    *,
+    session: SessionDep,
+    contents: list[str],
+    department_id: uuid.UUID | None = None,
 ) -> dict[str, int]:
     normalized_contents = {
         normalized_content
@@ -164,11 +233,12 @@ def _usage_count_by_content(
     if not normalized_contents:
         return {}
 
-    rows = session.exec(
-        select(ReviewTask.focus_direction_snapshot).where(
-            ReviewTask.focus_direction_snapshot.is_not(None)
-        )
-    ).all()
+    statement = select(ReviewTask.focus_direction_snapshot).where(
+        ReviewTask.focus_direction_snapshot.is_not(None)
+    )
+    if department_id is not None:
+        statement = statement.where(ReviewTask.department_id == department_id)
+    rows = session.exec(statement).all()
     usage_counts = dict.fromkeys(normalized_contents, 0)
     for snapshot in rows:
         if snapshot is None:
@@ -187,6 +257,10 @@ def _create_direction(
     normalize_content: bool = False,
 ) -> ReviewFocusDirectionPublic:
     department_ids = _department_ids_from_input(direction_in) or []
+    _ensure_department_admin_direction_input(
+        current_user=current_user,
+        department_ids=department_ids,
+    )
     departments = _get_departments_or_400(
         session=session, department_ids=department_ids
     )
@@ -225,11 +299,11 @@ def _normalize_search(search: str | None) -> str:
 
 @router.get(
     "",
-    dependencies=[Depends(_ensure_admin)],
     response_model=ReviewFocusDirectionsPublic,
 )
 def read_review_focus_directions(
     session: SessionDep,
+    current_user: CurrentUser,
     skip: int = 0,
     limit: int = 100,
     search: str | None = None,
@@ -237,6 +311,9 @@ def read_review_focus_directions(
     department_id: uuid.UUID | None = None,
     is_active: bool | None = None,
 ) -> Any:
+    _ensure_management_user(session=session, current_user=current_user)
+    if department_scope not in {"all", "global", "department"}:
+        raise HTTPException(status_code=400, detail="部门范围参数不正确。")
     conditions = []
     normalized_search = _normalize_search(search)
     if normalized_search:
@@ -249,11 +326,20 @@ def read_review_focus_directions(
         )
     if is_active is not None:
         conditions.append(ReviewFocusDirection.is_active == is_active)
-    if department_scope == "global":
+    if current_user.role == UserRole.department_admin:
+        conditions.append(
+            exists().where(
+                (ReviewFocusDirectionDepartment.direction_id == ReviewFocusDirection.id)
+                & (
+                    ReviewFocusDirectionDepartment.department_id
+                    == current_user.department_id
+                )
+            )
+        )
+    elif department_scope == "global":
         conditions.append(
             ~exists().where(
-                ReviewFocusDirectionDepartment.direction_id
-                == ReviewFocusDirection.id
+                ReviewFocusDirectionDepartment.direction_id == ReviewFocusDirection.id
             )
         )
     elif department_scope == "department":
@@ -265,8 +351,6 @@ def read_review_focus_directions(
                 & (ReviewFocusDirectionDepartment.department_id == department_id)
             )
         )
-    elif department_scope != "all":
-        raise HTTPException(status_code=400, detail="部门范围参数不正确。")
 
     count_statement = select(func.count()).select_from(ReviewFocusDirection)
     if conditions:
@@ -288,6 +372,11 @@ def read_review_focus_directions(
     usage_counts = _usage_count_by_content(
         session=session,
         contents=[direction.content for direction in directions],
+        department_id=(
+            current_user.department_id
+            if current_user.role == UserRole.department_admin
+            else None
+        ),
     )
     return ReviewFocusDirectionsPublic(
         data=[
@@ -304,7 +393,6 @@ def read_review_focus_directions(
 
 @router.post(
     "",
-    dependencies=[Depends(_ensure_admin)],
     response_model=ReviewFocusDirectionPublic,
 )
 def create_review_focus_direction(
@@ -313,6 +401,7 @@ def create_review_focus_direction(
     current_user: CurrentUser,
     direction_in: ReviewFocusDirectionCreate,
 ) -> Any:
+    _ensure_management_user(session=session, current_user=current_user)
     return _create_direction(
         session=session,
         current_user=current_user,
@@ -379,9 +468,7 @@ def _build_usage_stats(
     if stats:
         state_rows = session.exec(
             select(ReviewFocusDirectionUsageState).where(
-                col(ReviewFocusDirectionUsageState.normalized_content).in_(
-                    stats.keys()
-                )
+                col(ReviewFocusDirectionUsageState.normalized_content).in_(stats.keys())
             )
         ).all()
         states = {state.normalized_content: state for state in state_rows}
@@ -499,8 +586,7 @@ def export_usage_stats(
     workbook.save(output)
     output.seek(0)
     file_name = (
-        "重点审查方向用户输入统计_"
-        f"{get_datetime_utc().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        f"重点审查方向用户输入统计_{get_datetime_utc().strftime('%Y%m%d_%H%M%S')}.xlsx"
     )
     return StreamingResponse(
         output,
@@ -534,18 +620,27 @@ def create_review_focus_direction_from_usage(
 
 @router.patch(
     "/{direction_id}",
-    dependencies=[Depends(_ensure_admin)],
     response_model=ReviewFocusDirectionPublic,
 )
 def update_review_focus_direction(
     *,
     session: SessionDep,
+    current_user: CurrentUser,
     direction_id: uuid.UUID,
     direction_in: ReviewFocusDirectionUpdate,
 ) -> Any:
+    _ensure_management_user(session=session, current_user=current_user)
     direction = _get_direction_or_404(
         session=session,
         direction_id=direction_id,
+    )
+    current_departments = _departments_by_direction(
+        session=session,
+        direction_ids=[direction.id],
+    ).get(direction.id, [])
+    _ensure_department_admin_can_maintain_direction(
+        current_user=current_user,
+        departments=current_departments,
     )
     direction_data = direction_in.model_dump(exclude_unset=True)
     department_input_was_set = (
@@ -553,15 +648,16 @@ def update_review_focus_direction(
     )
     if department_input_was_set:
         department_ids = _department_ids_from_input(direction_in) or []
+        _ensure_department_admin_direction_input(
+            current_user=current_user,
+            department_ids=department_ids,
+        )
         departments = _get_departments_or_400(
             session=session,
             department_ids=department_ids,
         )
     else:
-        departments = _departments_by_direction(
-            session=session,
-            direction_ids=[direction.id],
-        ).get(direction.id, [])
+        departments = current_departments
     if direction_data:
         direction_data.pop("department_ids", None)
         if department_input_was_set:
@@ -584,16 +680,25 @@ def update_review_focus_direction(
 
 @router.delete(
     "/{direction_id}",
-    dependencies=[Depends(_ensure_admin)],
     response_model=Message,
 )
 def delete_review_focus_direction(
     session: SessionDep,
+    current_user: CurrentUser,
     direction_id: uuid.UUID,
 ) -> Message:
+    _ensure_management_user(session=session, current_user=current_user)
     direction = _get_direction_or_404(
         session=session,
         direction_id=direction_id,
+    )
+    departments = _departments_by_direction(
+        session=session,
+        direction_ids=[direction.id],
+    ).get(direction.id, [])
+    _ensure_department_admin_can_maintain_direction(
+        current_user=current_user,
+        departments=departments,
     )
     direction.is_active = False
     direction.updated_at = get_datetime_utc()

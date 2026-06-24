@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form"
 import { z } from "zod"
 
 import { type UserCreate, UsersService } from "@/client"
+import { DepartmentSelect } from "@/components/Departments/DepartmentSelect"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -28,7 +29,6 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
-import { DepartmentSelect } from "@/components/Departments/DepartmentSelect"
 import {
   Select,
   SelectContent,
@@ -39,15 +39,23 @@ import {
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
-const formSchema = z.object({
-  full_name: z.string().optional(),
-  svn_username: z.string().trim().min(1, {
-    message: "请填写 SVN 账号",
-  }),
-  role: z.enum(["admin", "user"]),
-  department_id: z.string().nullable(),
-  is_active: z.boolean(),
-})
+const formSchema = z
+  .object({
+    full_name: z.string().optional(),
+    svn_username: z.string().trim().min(1, {
+      message: "请填写 SVN 账号",
+    }),
+    role: z.enum(["admin", "department_admin", "user"]),
+    department_id: z.string().nullable(),
+    is_active: z.boolean(),
+  })
+  .refine(
+    (data) => data.role !== "department_admin" || Boolean(data.department_id),
+    {
+      message: "部门管理员必须选择部门",
+      path: ["department_id"],
+    },
+  )
 
 type FormData = z.infer<typeof formSchema>
 
@@ -159,8 +167,11 @@ const AddUser = () => {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="user">用户</SelectItem>
-                          <SelectItem value="admin">管理员</SelectItem>
+                          <SelectItem value="admin">超级管理员</SelectItem>
+                          <SelectItem value="department_admin">
+                            部门管理员
+                          </SelectItem>
+                          <SelectItem value="user">普通用户</SelectItem>
                         </SelectContent>
                       </Select>
                     </FormControl>
