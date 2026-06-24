@@ -1364,19 +1364,43 @@ describe('registerIpcHandlers', () => {
     })
   })
 
-  it('lists tasks for the authenticated user', async () => {
+  it('lists only tasks owned by the authenticated user', async () => {
     const api = {
+      readCurrentUser: vi.fn(async () => ({
+        id: 'user-1',
+        full_name: '张三',
+        svn_username: 'zhangsan',
+        department_id: null,
+        department_name: null,
+        role: 'department_admin'
+      })),
       listTasks: vi.fn(async () => ({
         data: [
           {
             id: 'task-1',
+            user_id: 'user-1',
             svn_url: 'svn://repo/project',
             old_revision: '1',
             new_revision: '2',
             status: 'success'
+          },
+          {
+            id: 'task-2',
+            user_id: 'user-2',
+            svn_url: 'svn://repo/other',
+            old_revision: '3',
+            new_revision: '4',
+            status: 'success'
+          },
+          {
+            id: 'task-without-user',
+            svn_url: 'svn://repo/missing-user',
+            old_revision: '5',
+            new_revision: '6',
+            status: 'success'
           }
         ],
-        count: 1
+        count: 3
       }))
     }
     const authStore = {
@@ -1396,6 +1420,7 @@ describe('registerIpcHandlers', () => {
       data: [
         {
           id: 'task-1',
+          user_id: 'user-1',
           svn_url: 'svn://repo/project',
           old_revision: '1',
           new_revision: '2',
@@ -1404,6 +1429,7 @@ describe('registerIpcHandlers', () => {
       ],
       count: 1
     })
+    expect(api.readCurrentUser).toHaveBeenCalledWith('token-123')
     expect(api.listTasks).toHaveBeenCalledWith('token-123')
   })
 
