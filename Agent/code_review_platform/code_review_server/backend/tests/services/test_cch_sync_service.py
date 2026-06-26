@@ -119,7 +119,9 @@ def test_sync_rows_skips_key_for_missing_cch_user(db: Session) -> None:
 
     assert result.skipped_records == 1
     assert "missing CCH user 99999" in result.errors[0]
-    assert db.exec(select(UserApiKey).where(UserApiKey.cch_key_id == 203)).first() is None
+    assert (
+        db.exec(select(UserApiKey).where(UserApiKey.cch_key_id == 203)).first() is None
+    )
 
 
 def test_sync_rows_updates_existing_cch_user_and_disables_keys_for_disabled_user(
@@ -185,7 +187,9 @@ def test_sync_rows_keeps_permanent_cch_admins_as_admin(db: Session) -> None:
     permanent_admin_user_ids = select(User.id).where(
         col(User.cch_user_id).in_([10, 102])
     )
-    db.exec(delete(UserApiKey).where(col(UserApiKey.user_id).in_(permanent_admin_user_ids)))
+    db.exec(
+        delete(UserApiKey).where(col(UserApiKey.user_id).in_(permanent_admin_user_ids))
+    )
     db.exec(delete(User).where(col(User.cch_user_id).in_([10, 102])))
     db.commit()
 
@@ -540,6 +544,98 @@ def test_sync_sub2api_rows_preserves_svn_credential_and_review_tasks(
     assert api_key.user_id == user.id
 
 
+def test_sync_sub2api_rows_reuses_existing_plaintext_key_and_preserves_history(
+    db: Session,
+) -> None:
+    service = CchSyncService()
+    old_user = User(
+        full_name="张胜科",
+        auth_source=AuthSource.cch,
+        cch_user_id=10,
+        svn_username="SW_26_ZhangShengKe",
+    )
+    conflicting_user = User(
+        full_name="旧测试用户",
+        auth_source=AuthSource.cch,
+        cch_user_id=1,
+    )
+    db.add(old_user)
+    db.add(conflicting_user)
+    db.commit()
+    db.refresh(old_user)
+    db.refresh(conflicting_user)
+    existing_key = UserApiKey(
+        user_id=old_user.id,
+        cch_key_id=11,
+        key="ah-existing-zhang",
+        name="张胜科",
+        is_active=True,
+    )
+    conflicting_key = UserApiKey(
+        user_id=conflicting_user.id,
+        cch_key_id=2,
+        key="sk-other-existing",
+        name="旧测试",
+        is_active=True,
+    )
+    credential = UserSvnCredential(
+        user_id=old_user.id,
+        encrypted_password="encrypted",
+        encryption_version="v1",
+    )
+    task = ReviewTask(
+        user_id=old_user.id,
+        svn_url="svn://repo/project",
+        old_revision="1",
+        new_revision="2",
+        status=ReviewTaskStatus.success,
+    )
+    db.add(existing_key)
+    db.add(conflicting_key)
+    db.add(credential)
+    db.add(task)
+    db.commit()
+
+    result = service.sync_rows(
+        db,
+        users=[
+            CchUserRow(
+                cch_user_id=service.SUB2API_CCH_ID_OFFSET + 2,
+                full_name="张胜科",
+                role=UserRole.user,
+            )
+        ],
+        keys=[
+            CchKeyRow(
+                cch_key_id=2,
+                cch_user_id=service.SUB2API_CCH_ID_OFFSET + 2,
+                key="ah-existing-zhang",
+                name="张胜科",
+                is_active=True,
+            )
+        ],
+        synced_at=datetime.now(timezone.utc),
+    )
+
+    db.refresh(old_user)
+    db.refresh(existing_key)
+    db.refresh(credential)
+    db.refresh(task)
+    db.refresh(conflicting_key)
+
+    assert result.updated == 2
+    assert result.created == 0
+    assert existing_key.user_id == old_user.id
+    assert existing_key.cch_key_id == 2
+    assert existing_key.key == "ah-existing-zhang"
+    assert old_user.full_name == "张胜科"
+    assert old_user.svn_username == "SW_26_ZhangShengKe"
+    assert credential.user_id == old_user.id
+    assert task.user_id == old_user.id
+    assert conflicting_key.cch_key_id != 2
+    assert conflicting_key.key == "sk-other-existing"
+
+
 def test_parse_sub2api_key_row_rejects_blank_name_or_key() -> None:
     service = CchSyncService()
 
@@ -579,7 +675,10 @@ def test_parse_sub2api_key_row_rejects_blank_name_or_key() -> None:
 
 
 def test_cch_sync_normalizes_department_admin_when_source_provides_it() -> None:
-    assert CchSyncService()._normalize_role("department_admin") == UserRole.department_admin
+    assert (
+        CchSyncService()._normalize_role("department_admin")
+        == UserRole.department_admin
+    )
 
 
 def test_cch_sync_aligns_is_superuser_with_final_role(db: Session) -> None:

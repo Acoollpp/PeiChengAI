@@ -46,6 +46,7 @@ class CchSyncResult:
 
 class CchSyncService:
     SUB2API_CCH_ID_OFFSET = 1_000_000_000
+    RELOCATED_CCH_ID_OFFSET = 1_500_000_000
 
     def fetch_rows(self, database_url: str) -> tuple[list[CchUserRow], list[CchKeyRow]]:
         engine = create_engine(database_url)
@@ -70,7 +71,7 @@ class CchSyncService:
                         self._parse_sub2api_key_row(dict(row._mapping))
                         for row in connection.execute(
                             text(
-                                f'SELECT id, user_id, key, name, status, deleted_at, '
+                                f"SELECT id, user_id, key, name, status, deleted_at, "
                                 f'expires_at FROM "{key_table}" ORDER BY id'
                             )
                         )
@@ -132,11 +133,12 @@ class CchSyncService:
     ) -> CchSyncResult:
         result = CchSyncResult(started_at=datetime.now(timezone.utc))
         users_by_cch_id: dict[int, User] = {}
+        keys_by_cch_user_id = {key.cch_user_id: key for key in keys}
 
         for row in users:
-            user = session.exec(
-                select(User).where(User.cch_user_id == row.cch_user_id)
-            ).first()
+            user = self._user_for_sync_row(
+                session, row, keys_by_cch_user_id.get(row.cch_user_id)
+            )
             disabled_reason = self._user_disabled_reason(row, synced_at)
             is_active = disabled_reason is None
             role = self._final_role_for_user(user, row)
@@ -147,6 +149,7 @@ class CchSyncService:
                 result.created += 1
             else:
                 result.updated += 1
+                self._assign_user_cch_id(session, user, row.cch_user_id)
 
             if user.is_active and not is_active:
                 result.disabled += 1
@@ -175,9 +178,7 @@ class CchSyncService:
                 )
                 continue
 
-            api_key = session.exec(
-                select(UserApiKey).where(UserApiKey.cch_key_id == row.cch_key_id)
-            ).first()
+            api_key = self._api_key_for_sync_row(session, row)
             disabled_reason = self._key_disabled_reason(row, synced_at)
             if disabled_reason is None and not user.is_active:
                 disabled_reason = "user_disabled"
@@ -191,6 +192,7 @@ class CchSyncService:
                 result.created += 1
             else:
                 result.updated += 1
+                self._assign_api_key_cch_id(session, api_key, row.cch_key_id)
 
             if api_key.is_active and not is_active:
                 result.disabled += 1
@@ -261,10 +263,98 @@ class CchSyncService:
                 self._value(row, "status", required=False)
             ),
             is_deleted=self._value(row, "deleted_at", required=False) is not None,
-            expires_at=self._datetime(
-                self._value(row, "expires_at", required=False)
-            ),
+            expires_at=self._datetime(self._value(row, "expires_at", required=False)),
         )
+
+    def _is_sub2api_user_id(self, cch_user_id: int) -> bool:
+        return cch_user_id >= self.SUB2API_CCH_ID_OFFSET
+
+    def _user_for_sync_row(
+        self, session: Session, row: CchUserRow, key_row: CchKeyRow | None
+    ) -> User | None:
+        if self._is_sub2api_user_id(row.cch_user_id) and key_row is not None:
+            existing_key = session.exec(
+                select(UserApiKey).where(UserApiKey.key == key_row.key)
+            ).first()
+            if existing_key is not None:
+                return session.get(User, existing_key.user_id)
+        return session.exec(
+            select(User).where(User.cch_user_id == row.cch_user_id)
+        ).first()
+
+    def _api_key_for_sync_row(
+        self, session: Session, row: CchKeyRow
+    ) -> UserApiKey | None:
+        if self._is_sub2api_user_id(row.cch_user_id):
+            api_key = session.exec(
+                select(UserApiKey).where(UserApiKey.key == row.key)
+            ).first()
+            if api_key is not None:
+                return api_key
+
+            target_holder = session.exec(
+                select(UserApiKey).where(UserApiKey.cch_key_id == row.cch_key_id)
+            ).first()
+            if target_holder is not None:
+                self._assign_api_key_cch_id(
+                    session,
+                    target_holder,
+                    self._next_relocated_cch_key_id(session, row.cch_key_id),
+                )
+                session.flush()
+            return None
+
+        return session.exec(
+            select(UserApiKey).where(UserApiKey.cch_key_id == row.cch_key_id)
+        ).first()
+
+    def _assign_user_cch_id(
+        self, session: Session, user: User, cch_user_id: int
+    ) -> None:
+        if user.cch_user_id == cch_user_id:
+            return
+        existing = session.exec(
+            select(User).where(User.cch_user_id == cch_user_id)
+        ).first()
+        if existing is not None and existing.id != user.id:
+            existing.cch_user_id = self._next_relocated_user_cch_id(
+                session, cch_user_id
+            )
+            session.add(existing)
+            session.flush()
+        user.cch_user_id = cch_user_id
+
+    def _assign_api_key_cch_id(
+        self, session: Session, api_key: UserApiKey, cch_key_id: int
+    ) -> None:
+        if api_key.cch_key_id == cch_key_id:
+            return
+        existing = session.exec(
+            select(UserApiKey).where(UserApiKey.cch_key_id == cch_key_id)
+        ).first()
+        if existing is not None and existing.id != api_key.id:
+            existing.cch_key_id = self._next_relocated_cch_key_id(session, cch_key_id)
+            session.add(existing)
+            session.flush()
+        api_key.cch_key_id = cch_key_id
+
+    def _next_relocated_user_cch_id(self, session: Session, source_id: int) -> int:
+        candidate = self.RELOCATED_CCH_ID_OFFSET + (
+            abs(source_id) % (self.SUB2API_CCH_ID_OFFSET // 2)
+        )
+        while session.exec(select(User).where(User.cch_user_id == candidate)).first():
+            candidate += 1
+        return candidate
+
+    def _next_relocated_cch_key_id(self, session: Session, source_id: int) -> int:
+        candidate = self.RELOCATED_CCH_ID_OFFSET + (
+            abs(source_id) % (self.SUB2API_CCH_ID_OFFSET // 2)
+        )
+        while session.exec(
+            select(UserApiKey).where(UserApiKey.cch_key_id == candidate)
+        ).first():
+            candidate += 1
+        return candidate
 
     def _status_is_active(self, value: Any) -> bool:
         if value is None:
@@ -375,6 +465,8 @@ class CchSyncService:
         return self._normalize_role(row.role)
 
     def _final_role_for_user(self, user: User | None, row: CchUserRow) -> UserRole:
+        if user is not None and self._is_sub2api_user_id(row.cch_user_id):
+            return user.role
         synced_role = self._sync_role(row)
         if user is not None and user.role == UserRole.department_admin:
             if synced_role == UserRole.user:
