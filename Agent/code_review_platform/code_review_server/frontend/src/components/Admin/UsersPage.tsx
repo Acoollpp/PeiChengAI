@@ -62,7 +62,7 @@ function SyncCchUsersButton() {
       ) : (
         <RefreshCw className="mr-2" />
       )}
-      同步 CCH 用户
+      同步用户Key
     </Button>
   )
 }

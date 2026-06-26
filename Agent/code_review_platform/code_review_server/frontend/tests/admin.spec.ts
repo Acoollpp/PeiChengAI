@@ -12,7 +12,7 @@ test("Admin page is accessible and shows current management sections", async ({
   await page.goto("/admin")
   await expect(page.getByRole("heading", { name: "用户管理" })).toBeVisible()
   await expect(
-    page.getByRole("button", { name: "同步 CCH 用户" }),
+    page.getByRole("button", { name: "同步用户Key" }),
   ).toBeVisible()
   await expect(
     page.getByText("SVN账号和密码管理将在专用用户接口接入后启用。"),
