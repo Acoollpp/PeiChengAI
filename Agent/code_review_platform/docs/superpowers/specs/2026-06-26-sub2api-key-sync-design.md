@@ -8,7 +8,7 @@
 
 ## 已确认的 sub2api 数据结构
 
-远端 sub2api 部署在 `45.78.79.200`，服务包含 `sub2api`、`sub2api-postgres`、`sub2api-redis` 容器。只读检查确认关键表如下。
+远端 sub2api 服务包含 `sub2api`、`sub2api-postgres`、`sub2api-redis` 容器。只读检查确认关键表如下。
 
 ### `users`
 
@@ -98,7 +98,7 @@
 sub2api_user_surrogate_id = SUB2API_CCH_ID_OFFSET + api_keys.id
 ```
 
-其中 `SUB2API_CCH_ID_OFFSET` 为代码常量，取足够大的整数，例如 `9_000_000_000`。这样每个 Key 都能对应一个唯一的本地 `User`，且不会把所有 Key 合并到同一个用户。
+其中 `SUB2API_CCH_ID_OFFSET` 为代码常量，取足够大且不超过 Postgres 32 位 integer 范围的整数，例如 `1_000_000_000`。这样每个 Key 都能对应一个唯一的本地 `User`，且不会把所有 Key 合并到同一个用户。
 
 ## 同步规则
 

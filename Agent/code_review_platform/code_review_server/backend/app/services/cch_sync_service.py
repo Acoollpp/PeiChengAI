@@ -45,6 +45,8 @@ class CchSyncResult:
 
 
 class CchSyncService:
+    SUB2API_CCH_ID_OFFSET = 1_000_000_000
+
     def fetch_rows(self, database_url: str) -> tuple[list[CchUserRow], list[CchKeyRow]]:
         engine = create_engine(database_url)
         try:
@@ -58,6 +60,32 @@ class CchSyncService:
                     table_names,
                     ("cch_key", "cch_keys", "user_api_key", "api_keys", "keys"),
                 )
+                user_columns = self._table_columns(inspector, user_table)
+                key_columns = self._table_columns(inspector, key_table)
+
+                if self._is_sub2api_schema(
+                    user_table, key_table, user_columns, key_columns
+                ):
+                    key_rows = [
+                        self._parse_sub2api_key_row(dict(row._mapping))
+                        for row in connection.execute(
+                            text(
+                                f'SELECT id, user_id, key, name, status, deleted_at, '
+                                f'expires_at FROM "{key_table}" ORDER BY id'
+                            )
+                        )
+                    ]
+                    user_rows = [
+                        CchUserRow(
+                            cch_user_id=key_row.cch_user_id,
+                            full_name=key_row.name,
+                            role=UserRole.user,
+                            is_active=True,
+                        )
+                        for key_row in key_rows
+                    ]
+                    return user_rows, key_rows
+
                 user_rows = [
                     self._parse_user_row(dict(row._mapping))
                     for row in connection.execute(text(f'SELECT * FROM "{user_table}"'))
@@ -188,6 +216,60 @@ class CchSyncService:
         raise RuntimeError(
             f"CCH database is missing expected tables: {', '.join(candidates)}"
         )
+
+    def _table_columns(self, inspector: Any, table_name: str) -> set[str]:
+        return {column["name"] for column in inspector.get_columns(table_name)}
+
+    def _is_sub2api_schema(
+        self,
+        user_table: str,
+        key_table: str,
+        user_columns: set[str],
+        key_columns: set[str],
+    ) -> bool:
+        return (
+            user_table == "users"
+            and key_table == "api_keys"
+            and {"id", "email", "username", "status", "deleted_at"}.issubset(
+                user_columns
+            )
+            and {
+                "id",
+                "user_id",
+                "key",
+                "name",
+                "status",
+                "deleted_at",
+                "expires_at",
+            }.issubset(key_columns)
+        )
+
+    def _parse_sub2api_key_row(self, row: dict[str, Any]) -> CchKeyRow:
+        key_id = int(self._value(row, "id"))
+        name = str(self._value(row, "name")).strip()
+        key = str(self._value(row, "key")).strip()
+        if not name:
+            raise ValueError(f"missing sub2api key name for api_keys.id={key_id}")
+        if not key:
+            raise ValueError(f"missing sub2api key value for api_keys.id={key_id}")
+        return CchKeyRow(
+            cch_key_id=key_id,
+            cch_user_id=self.SUB2API_CCH_ID_OFFSET + key_id,
+            key=key,
+            name=name,
+            is_active=self._status_is_active(
+                self._value(row, "status", required=False)
+            ),
+            is_deleted=self._value(row, "deleted_at", required=False) is not None,
+            expires_at=self._datetime(
+                self._value(row, "expires_at", required=False)
+            ),
+        )
+
+    def _status_is_active(self, value: Any) -> bool:
+        if value is None:
+            return True
+        return str(value).strip().lower() == "active"
 
     def _parse_user_row(self, row: dict[str, Any]) -> CchUserRow:
         return CchUserRow(

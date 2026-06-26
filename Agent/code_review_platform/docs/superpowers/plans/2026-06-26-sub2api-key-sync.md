@@ -127,7 +127,7 @@ In `code_review_server/backend/app/services/cch_sync_service.py`, add the consta
 
 ```python
 class CchSyncService:
-    SUB2API_CCH_ID_OFFSET = 9_000_000_000
+    SUB2API_CCH_ID_OFFSET = 1_000_000_000
 ```
 
 Replace the body of `fetch_rows()` with table-shape detection:
