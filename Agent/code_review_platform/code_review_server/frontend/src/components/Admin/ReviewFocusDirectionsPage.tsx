@@ -49,6 +49,11 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import useAuth from "@/hooks/useAuth"
 import useCustomToast from "@/hooks/useCustomToast"
 import {
@@ -359,7 +364,14 @@ function UsageStatRows({
   return stats.map((stat) => (
     <TableRow key={stat.content}>
       <TableCell className="max-w-xl text-muted-foreground">
-        <span className="line-clamp-2">{stat.content}</span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="line-clamp-2 cursor-help">{stat.content}</span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xl whitespace-pre-wrap break-words text-left leading-relaxed">
+            {stat.content}
+          </TooltipContent>
+        </Tooltip>
       </TableCell>
       <TableCell>{stat.usage_count}</TableCell>
       <TableCell className="text-muted-foreground">

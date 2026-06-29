@@ -126,6 +126,23 @@ test("Admin can settle usage stat into review focus direction", async ({
   await expect(page.getByRole("row").filter({ hasText: content })).toBeVisible()
 })
 
+test("Admin can hover usage stat content to see full text", async ({ page }) => {
+  await page.goto("/admin/review-focus-directions")
+  await page.getByRole("tab", { name: "用户输入统计" }).click()
+
+  const statsSection = page.getByTestId("review-focus-usage-stats")
+  const statRows = statsSection.getByRole("row")
+  const count = await statRows.count()
+  test.skip(count <= 1, "当前测试环境暂无用户输入统计")
+
+  const contentCell = statRows.nth(1).getByRole("cell").first()
+  const content = (await contentCell.innerText()).trim()
+
+  await contentCell.locator("span").hover()
+
+  await expect(page.getByRole("tooltip")).toContainText(content)
+})
+
 test("Admin can mark usage stat used and unused", async ({ page }) => {
   await page.goto("/admin/review-focus-directions")
   await page.getByRole("tab", { name: "用户输入统计" }).click()
