@@ -178,6 +178,59 @@ def test_create_review_task_normalizes_revisions(
     assert content["status"] == "created"
 
 
+def test_create_review_task_allows_zero_old_revision_for_full_review(
+    client: TestClient, normal_user_token_headers: dict[str, str]
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+        json={
+            "svn_url": "https://svn.example.com/project/trunk",
+            "old_revision": "0",
+            "new_revision": "r123",
+        },
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["old_revision"] == "r0"
+    assert content["new_revision"] == "r123"
+
+
+def test_create_review_task_rejects_zero_new_revision(
+    client: TestClient, normal_user_token_headers: dict[str, str]
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+        json={
+            "svn_url": "https://svn.example.com/project/trunk",
+            "old_revision": "0",
+            "new_revision": "0",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "新版本号不能为 0"
+
+
+def test_create_review_task_rejects_equal_non_zero_revisions(
+    client: TestClient, normal_user_token_headers: dict[str, str]
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+        json={
+            "svn_url": "https://svn.example.com/project/trunk",
+            "old_revision": "12",
+            "new_revision": "r12",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "旧版本号和新版本号不能相同"
+
+
 def test_create_review_task_stores_template_and_skill_name(
     client: TestClient,
     normal_user_token_headers: dict[str, str],

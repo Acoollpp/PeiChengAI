@@ -3,15 +3,22 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query"
-import { Download, ExternalLink, FileDown, Search, Trash2, X } from "lucide-react"
+import {
+  Download,
+  ExternalLink,
+  FileDown,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react"
 import { type FormEvent, Suspense, useState } from "react"
 import { toast } from "sonner"
 
 import { OpenAPI, type ReviewTaskPublic } from "@/client"
 import {
+  type DisplayableReviewTaskStatus,
   formatReviewTaskDateTime,
   ReviewTaskStatusBadge,
-  type DisplayableReviewTaskStatus,
 } from "@/components/Tasks/task-display"
 import { Button } from "@/components/ui/button"
 import {
@@ -156,6 +163,14 @@ async function deleteReviewTask(task: ReviewTask) {
   return response.json()
 }
 
+function formatReviewTaskRevisionRange(task: ReviewTask) {
+  if (task.old_revision.trim().toLowerCase() === "r0") {
+    return `全量审查 ${task.new_revision}`
+  }
+
+  return `${task.old_revision} → ${task.new_revision}`
+}
+
 function ReviewTasksTable({
   filters,
   canFilterUsers,
@@ -218,9 +233,7 @@ function ReviewTasksTable({
                 <TableCell className="max-w-sm truncate font-medium">
                   {task.svn_url}
                 </TableCell>
-                <TableCell>
-                  {task.old_revision} → {task.new_revision}
-                </TableCell>
+                <TableCell>{formatReviewTaskRevisionRange(task)}</TableCell>
                 <TableCell>
                   <ReviewTaskStatusBadge status={task.status} />
                 </TableCell>

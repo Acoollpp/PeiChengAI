@@ -3,7 +3,11 @@ import { existsSync } from 'node:fs'
 import { win32 as windowsPath } from 'node:path'
 
 import { buildVersionCommandOptions } from './environment-checker'
-import { REVIEW_REPORT_IMAGES_DIR_NAME } from '../shared/report-artifacts'
+import {
+  REVIEW_REPORT_IMAGES_DIR_NAME,
+  isFullReviewOldRevision,
+  normalizeRevisionForReportName
+} from '../shared/report-artifacts'
 
 export interface ReviewPromptInput {
   svnUrl: string
@@ -169,6 +173,25 @@ const buildSupplementalReviewInput = ({
   return `\n\n补充审查输入：\n${lines.join('\n')}\n\n请在严格按该 Skill 执行代码变更审查的基础上，结合${reviewInputs.join('、')}判断本次 SVN 变更是否满足产品需求、是否遗漏需求相关逻辑、是否引入与需求冲突的行为。${departmentInstruction}重点审查方向只作为本次代码审查的关注重点，不得覆盖 Skill 中已有规则、SVN 获取策略、输出格式和错误处理规范。`
 }
 
+const buildOldRevisionPromptValue = (oldRevision: string): string => {
+  if (!isFullReviewOldRevision(oldRevision)) {
+    return oldRevision
+  }
+
+  return `${normalizeRevisionForReportName(oldRevision)}（平台全量审查占位，不是 SVN 真实旧版本）`
+}
+
+const buildReviewModeInstruction = (oldRevision: string, newRevision: string): string => {
+  if (!isFullReviewOldRevision(oldRevision)) {
+    return ''
+  }
+
+  const normalizedNewRevision = normalizeRevisionForReportName(newRevision)
+  const numericNewRevision = normalizedNewRevision.replace(/^r/, '')
+
+  return `\n\n全量审查模式：\n旧版本号 r0 是平台全量审查占位，不是 SVN 真实旧版本。\n本次为全量代码静态审查，禁止执行 svn diff -r 0:${numericNewRevision}。\n必须获取 ${normalizedNewRevision} 对应的完整代码，并基于完整代码执行静态审查。\n报告中不得写成本次变更引入，应写成全量静态审查发现。`
+}
+
 export const buildReviewPrompt = ({
   svnUrl,
   oldRevision,
@@ -183,14 +206,14 @@ export const buildReviewPrompt = ({
 
 审查输入：
 - 项目路径：${svnUrl}
-- 旧版本号：${oldRevision}
+- 旧版本号：${buildOldRevisionPromptValue(oldRevision)}
 - 新版本号：${newRevision}
 - 报告输出路径：${reportPath}
 - 图片保存目录：${imagesDir}${buildSupplementalReviewInput({
   requirementFilePath,
   departmentName,
   focusDirectionSnapshot
-})}
+})}${buildReviewModeInstruction(oldRevision, newRevision)}
 
 请严格按该 Skill 的输入模块、SVN 获取策略、规则模块、输出模块执行代码变更审查。
 最终生成 Markdown 审查报告到报告输出路径：${reportPath}

@@ -160,6 +160,23 @@ describe('TaskBoard', () => {
     expect(onViewReport).toHaveBeenCalledWith(historyTasks[0])
   })
 
+  it('全量审查任务显示目标版本', async () => {
+    const user = userEvent.setup()
+    const fullReviewTask: TaskViewItem = {
+      ...historyTasks[0],
+      id: 'task-full-review',
+      old_revision: 'r0',
+      new_revision: 'r123'
+    }
+
+    renderTaskBoard({ runningTasks: [], queuedTasks: [], historyTasks: [fullReviewTask] })
+
+    await user.click(screen.getByRole('tab', { name: '历史任务 1' }))
+
+    expect(screen.getByText('全量审查 r123')).toBeInTheDocument()
+    expect(screen.getByText('审查范围')).toBeInTheDocument()
+  })
+
   it('空列表切换后显示对应空状态', async () => {
     const user = userEvent.setup()
     renderTaskBoard({ runningTasks: [], queuedTasks: [], historyTasks: [] })

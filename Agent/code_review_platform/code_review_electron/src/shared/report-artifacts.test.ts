@@ -29,6 +29,16 @@ describe('report artifacts', () => {
     ).toBe('r123_r456审查报告_20260610_142530.md')
   })
 
+  it('builds a full review report file name when old revision is zero', () => {
+    const fileName = buildReviewReportFileName({
+      oldRevision: '0',
+      newRevision: 'R456',
+      generatedAt: new Date(2026, 5, 29, 10, 30, 0)
+    })
+
+    expect(fileName).toBe('全量审查_r456_20260629_103000.md')
+  })
+
   it('keeps the historical fallback report file name available', () => {
     expect(REVIEW_REPORT_FILE_NAME).toBe('代码审查报告.md')
   })

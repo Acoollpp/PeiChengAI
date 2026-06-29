@@ -198,6 +198,23 @@ describe('buildReviewPrompt', () => {
     expect(prompt).not.toContain('svn diff')
   })
 
+  it('explains full review semantics when old revision is zero', () => {
+    const prompt = buildReviewPrompt({
+      svnUrl: 'svn://example.com/repo/project',
+      oldRevision: 'r0',
+      newRevision: 'r130',
+      reportPath: '/tmp/review/全量审查_r130.md',
+      imagesDir: '/tmp/review/images',
+      skillName: '通用-代码审查-模版二'
+    })
+
+    expect(prompt).toContain('旧版本号：r0（平台全量审查占位，不是 SVN 真实旧版本）')
+    expect(prompt).toContain('本次为全量代码静态审查')
+    expect(prompt).toContain('禁止执行 svn diff -r 0:130')
+    expect(prompt).toContain('必须获取 r130 对应的完整代码')
+    expect(prompt).toContain('报告中不得写成本次变更引入')
+  })
+
   it('includes optional requirement file and focus direction before execution rules', () => {
     const prompt = buildReviewPrompt({
       svnUrl: 'svn://example.com/repo/project',

@@ -148,6 +148,7 @@ export function TaskForm({
             required
             value={oldRevision}
             inputMode="numeric"
+            placeholder="填 0 表示全量审查新版本代码"
             onChange={(event) => setOldRevision(event.target.value)}
           />
         </label>

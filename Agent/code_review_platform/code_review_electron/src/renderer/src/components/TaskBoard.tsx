@@ -50,6 +50,20 @@ function formatRevisionLabel(value: string): string {
   return revision ? `r${revision}` : ''
 }
 
+function isFullReviewTask(task: Pick<TaskViewItem, 'old_revision'>): boolean {
+  return formatRevisionLabel(task.old_revision) === 'r0'
+}
+
+function formatTaskRevisionRange(task: TaskViewItem): string {
+  const newRevision = formatRevisionLabel(task.new_revision)
+
+  if (isFullReviewTask(task)) {
+    return `全量审查 ${newRevision || task.new_revision}`
+  }
+
+  return `${task.old_revision} → ${task.new_revision}`
+}
+
 function buildTaskDisplayName(task: TaskViewItem): string {
   const softwareVersion =
     extractSoftwareVersionFromReportName(task.report_name) ??
@@ -112,14 +126,23 @@ function TaskCard({
       </div>
       <p className="task-url">{task.svn_url}</p>
       <dl className="task-meta">
-        <div>
-          <dt>旧版本</dt>
-          <dd>{task.old_revision}</dd>
-        </div>
-        <div>
-          <dt>新版本</dt>
-          <dd>{task.new_revision}</dd>
-        </div>
+        {isFullReviewTask(task) ? (
+          <div>
+            <dt>审查范围</dt>
+            <dd>{formatTaskRevisionRange(task)}</dd>
+          </div>
+        ) : (
+          <>
+            <div>
+              <dt>旧版本</dt>
+              <dd>{task.old_revision}</dd>
+            </div>
+            <div>
+              <dt>新版本</dt>
+              <dd>{task.new_revision}</dd>
+            </div>
+          </>
+        )}
         <div>
           <dt>开始时间</dt>
           <dd>{formatTaskDateTime(task.started_at)}</dd>

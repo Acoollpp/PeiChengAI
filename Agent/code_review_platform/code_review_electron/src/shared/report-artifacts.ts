@@ -14,10 +14,17 @@ export const buildReviewReportFileName = ({
 }: BuildReviewReportFileNameInput): string => {
   const timestamp = formatReportTimestamp(generatedAt)
 
+  if (isFullReviewOldRevision(oldRevision)) {
+    return `全量审查_${normalizeRevisionForReportName(newRevision)}_${timestamp}.md`
+  }
+
   return `${normalizeRevisionForReportName(oldRevision)}_${normalizeRevisionForReportName(
     newRevision
   )}审查报告_${timestamp}.md`
 }
+
+export const isFullReviewOldRevision = (revision: string): boolean =>
+  normalizeRevisionForReportName(revision) === 'r0'
 
 export const normalizeRevisionForReportName = (revision: string): string => {
   const trimmed = revision.trim()
