@@ -347,7 +347,7 @@ function UsageStatRows({
     return (
       <TableRow>
         <TableCell
-          colSpan={5}
+          colSpan={6}
           className="h-28 text-center text-muted-foreground"
         >
           暂无用户输入统计。
@@ -364,6 +364,9 @@ function UsageStatRows({
       <TableCell>{stat.usage_count}</TableCell>
       <TableCell className="text-muted-foreground">
         {stat.departments?.length ? stat.departments.join("、") : "全局"}
+      </TableCell>
+      <TableCell className="text-muted-foreground">
+        {stat.submitter_names?.length ? stat.submitter_names.join("、") : "-"}
       </TableCell>
       <TableCell>
         <Badge variant={stat.is_used ? "secondary" : "outline"}>
@@ -996,6 +999,7 @@ export function ReviewFocusDirectionsPage() {
                       <TableHead>内容</TableHead>
                       <TableHead>使用次数</TableHead>
                       <TableHead>涉及部门</TableHead>
+                      <TableHead>提交用户</TableHead>
                       <TableHead>使用状态</TableHead>
                       <TableHead className="text-right">操作</TableHead>
                     </TableRow>
@@ -1004,7 +1008,7 @@ export function ReviewFocusDirectionsPage() {
                     {usageStatsQuery.isLoading ? (
                       <TableRow>
                         <TableCell
-                          colSpan={5}
+                          colSpan={6}
                           className="h-28 text-center text-muted-foreground"
                         >
                           正在加载用户输入统计...

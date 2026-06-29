@@ -31,6 +31,7 @@ from app.models import (
     ReviewFocusDirectionUsageStatPublic,
     ReviewFocusDirectionUsageStatsPublic,
     ReviewTask,
+    User,
     UserRole,
     get_datetime_utc,
 )
@@ -429,10 +430,13 @@ def _build_usage_stats(
             ReviewTask.created_at,
             ReviewTask.department_id,
             ReviewTask.department_name,
-        ).where(ReviewTask.focus_direction_snapshot.is_not(None))
+            User.full_name,
+        )
+        .join(User, ReviewTask.user_id == User.id)
+        .where(ReviewTask.focus_direction_snapshot.is_not(None))
     ).all()
     stats: dict[str, dict[str, Any]] = {}
-    for snapshot, created_at, row_department_id, department_name in rows:
+    for snapshot, created_at, row_department_id, department_name, full_name in rows:
         if snapshot is None:
             continue
         content = _normalize_content(snapshot)
@@ -454,6 +458,7 @@ def _build_usage_stats(
                 "usage_count": 0,
                 "latest_used_at": None,
                 "departments": set(),
+                "submitter_names": set(),
             },
         )
         stat["usage_count"] += 1
@@ -463,6 +468,10 @@ def _build_usage_stats(
             stat["latest_used_at"] = created_at
         if department_name:
             stat["departments"].add(department_name)
+        if full_name:
+            submitter_name = full_name.strip()
+            if submitter_name:
+                stat["submitter_names"].add(submitter_name)
 
     states: dict[str, ReviewFocusDirectionUsageState] = {}
     if stats:
@@ -485,6 +494,7 @@ def _build_usage_stats(
                 usage_count=stat["usage_count"],
                 latest_used_at=stat["latest_used_at"],
                 departments=sorted(stat["departments"]),
+                submitter_names=sorted(stat["submitter_names"]),
                 is_used=used,
             )
         )
@@ -571,13 +581,16 @@ def export_usage_stats(
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "用户输入统计"
-    sheet.append(["内容", "使用次数", "涉及部门", "最新使用时间", "是否已使用"])
+    sheet.append(
+        ["内容", "使用次数", "涉及部门", "提交用户", "最新使用时间", "是否已使用"]
+    )
     for stat in stats:
         sheet.append(
             [
                 stat.content,
                 stat.usage_count,
                 "、".join(stat.departments) if stat.departments else "全局",
+                "、".join(stat.submitter_names),
                 stat.latest_used_at.isoformat() if stat.latest_used_at else "",
                 "已使用" if stat.is_used else "未使用",
             ]

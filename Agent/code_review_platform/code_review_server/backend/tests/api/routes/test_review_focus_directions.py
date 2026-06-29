@@ -78,9 +78,12 @@ def _create_task_with_focus_snapshot(
     department: Department,
     snapshot: str | None,
     minutes_ago: int,
+    full_name: str | None = None,
 ) -> dict:
     user, api_key = create_key_user(db)
     user.department_id = department.id
+    if full_name is not None:
+        user.full_name = full_name
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -937,6 +940,7 @@ def test_admin_can_read_usage_stats_grouped_by_normalized_content(
         department=department_a,
         snapshot=f"  检查   权限\n边界  {unique_marker}",
         minutes_ago=30,
+        full_name="张三",
     )
     _create_task_with_focus_snapshot(
         client=client,
@@ -944,6 +948,7 @@ def test_admin_can_read_usage_stats_grouped_by_normalized_content(
         department=department_b,
         snapshot=f"检查 权限 边界 {unique_marker}",
         minutes_ago=10,
+        full_name="李四",
     )
     _create_task_with_focus_snapshot(
         client=client,
@@ -951,6 +956,7 @@ def test_admin_can_read_usage_stats_grouped_by_normalized_content(
         department=department_a,
         snapshot=f"\t检查 SQL 注入 {unique_marker}\t",
         minutes_ago=20,
+        full_name="王五",
     )
     _create_task_with_focus_snapshot(
         client=client,
@@ -975,9 +981,11 @@ def test_admin_can_read_usage_stats_grouped_by_normalized_content(
     assert payload["data"][0]["departments"] == sorted(
         [department_a.name, department_b.name]
     )
+    assert payload["data"][0]["submitter_names"] == ["张三", "李四"]
     assert payload["data"][1]["content"] == f"检查 SQL 注入 {unique_marker}"
     assert payload["data"][1]["usage_count"] == 1
     assert payload["data"][1]["departments"] == [department_a.name]
+    assert payload["data"][1]["submitter_names"] == ["王五"]
 
 
 def test_admin_can_mark_usage_stat_used_state(
@@ -1079,6 +1087,7 @@ def test_admin_can_export_filtered_usage_stats_excel(
         department=department,
         snapshot="导出检查项",
         minutes_ago=1,
+        full_name="导出用户",
     )
     _create_task_with_focus_snapshot(
         client=client,
@@ -1105,12 +1114,20 @@ def test_admin_can_export_filtered_usage_stats_excel(
     workbook = load_workbook(BytesIO(response.content))
     sheet = workbook.active
     rows = list(sheet.iter_rows(values_only=True))
-    assert rows[0] == ("内容", "使用次数", "涉及部门", "最新使用时间", "是否已使用")
+    assert rows[0] == (
+        "内容",
+        "使用次数",
+        "涉及部门",
+        "提交用户",
+        "最新使用时间",
+        "是否已使用",
+    )
     assert len(rows) == 2
     assert rows[1][0] == "导出检查项"
     assert rows[1][1] == 1
     assert rows[1][2] == department.name
-    assert rows[1][4] == "未使用"
+    assert rows[1][3] == "导出用户"
+    assert rows[1][5] == "未使用"
 
 
 def test_admin_can_create_focus_direction_from_usage(

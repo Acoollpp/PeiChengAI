@@ -295,6 +295,7 @@ class ReviewFocusDirectionUsageStatPublic(SQLModel):
     usage_count: int
     latest_used_at: datetime | None = None
     departments: list[str] = Field(default_factory=list)
+    submitter_names: list[str] = Field(default_factory=list)
     is_used: bool = False
 
 

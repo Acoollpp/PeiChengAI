@@ -1310,6 +1310,13 @@ export const ReviewFocusDirectionUsageStatPublicSchema = {
             type: 'array',
             title: 'Departments'
         },
+        submitter_names: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Submitter Names'
+        },
         is_used: {
             type: 'boolean',
             title: 'Is Used',

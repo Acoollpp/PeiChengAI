@@ -256,6 +256,7 @@ export type ReviewFocusDirectionUsageStatPublic = {
     usage_count: number;
     latest_used_at?: (string | null);
     departments?: Array<(string)>;
+    submitter_names?: Array<(string)>;
     is_used?: boolean;
 };
 
