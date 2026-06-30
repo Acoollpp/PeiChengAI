@@ -16,6 +16,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  localStorage.clear()
 })
 
 describe('TaskForm', () => {
@@ -70,6 +71,56 @@ describe('TaskForm', () => {
     expect(screen.getByLabelText('SVN 地址')).toHaveValue('svn://repo/project')
     expect(screen.getByLabelText('旧版本号')).toHaveValue('12')
     expect(screen.getByLabelText('新版本号')).toHaveValue('14')
+    expect(localStorage.getItem('code-review:recent-svn-urls')).toBeNull()
+  })
+
+  it('成功提交后只保存最近三条 SVN 地址并去重', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn(async () => undefined)
+    render(<TaskForm disabled={false} onSubmit={onSubmit} />)
+
+    const submitTask = async (svnUrl: string): Promise<void> => {
+      await user.clear(screen.getByLabelText('SVN 地址'))
+      await user.clear(screen.getByLabelText('旧版本号'))
+      await user.clear(screen.getByLabelText('新版本号'))
+      await user.type(screen.getByLabelText('SVN 地址'), svnUrl)
+      await user.type(screen.getByLabelText('旧版本号'), '12')
+      await user.type(screen.getByLabelText('新版本号'), '14')
+      await user.click(screen.getByRole('button', { name: '开始审查' }))
+    }
+
+    await submitTask('svn://repo/project-a')
+    await submitTask('svn://repo/project-b')
+    await submitTask('svn://repo/project-c')
+    await submitTask('svn://repo/project-a')
+    await submitTask('svn://repo/project-d')
+
+    expect(JSON.parse(localStorage.getItem('code-review:recent-svn-urls') ?? '[]')).toEqual([
+      'svn://repo/project-d',
+      'svn://repo/project-a',
+      'svn://repo/project-c'
+    ])
+  })
+
+  it('聚焦 SVN 地址输入框时显示最近三条地址并可点击回填', async () => {
+    const user = userEvent.setup()
+    localStorage.setItem(
+      'code-review:recent-svn-urls',
+      JSON.stringify(['svn://repo/project-a', 'svn://repo/project-b', 'svn://repo/project-c'])
+    )
+    render(<TaskForm disabled={false} onSubmit={vi.fn()} />)
+
+    await user.click(screen.getByLabelText('SVN 地址'))
+
+    expect(screen.getByRole('listbox', { name: '最近 SVN 地址' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'svn://repo/project-a' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'svn://repo/project-b' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'svn://repo/project-c' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('option', { name: 'svn://repo/project-b' }))
+
+    expect(screen.getByLabelText('SVN 地址')).toHaveValue('svn://repo/project-b')
+    expect(screen.queryByRole('listbox', { name: '最近 SVN 地址' })).not.toBeInTheDocument()
   })
 
   it('提交时包含产品开发需求表路径和重点审查方向', async () => {

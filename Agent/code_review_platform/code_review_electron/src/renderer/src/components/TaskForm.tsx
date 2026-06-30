@@ -8,6 +8,9 @@ import {
 } from '../../../shared/review-templates'
 import type { ExecuteTaskRequest } from '../code-review-api'
 
+const RECENT_SVN_URLS_STORAGE_KEY = 'code-review:recent-svn-urls'
+const MAX_RECENT_SVN_URLS = 3
+
 type TaskFormProps = {
   disabled: boolean
   activeSkillNames?: string[]
@@ -24,6 +27,8 @@ export function TaskForm({
   onSubmit
 }: TaskFormProps): React.JSX.Element {
   const [svnUrl, setSvnUrl] = useState('')
+  const [recentSvnUrls, setRecentSvnUrls] = useState<string[]>(() => readRecentSvnUrls())
+  const [isSvnHistoryOpen, setIsSvnHistoryOpen] = useState(false)
   const [oldRevision, setOldRevision] = useState('')
   const [newRevision, setNewRevision] = useState('')
   const [requirementFilePath, setRequirementFilePath] = useState('')
@@ -74,8 +79,9 @@ export function TaskForm({
         return
       }
 
+      const normalizedSvnUrl = svnUrl.trim()
       await onSubmit({
-        svn_url: svnUrl.trim(),
+        svn_url: normalizedSvnUrl,
         old_revision: oldRevision.trim(),
         new_revision: newRevision.trim(),
         template_key: template.key,
@@ -86,6 +92,8 @@ export function TaskForm({
           : undefined,
         focus_direction_snapshot: focusDirectionSnapshot.trim() || undefined
       })
+      setRecentSvnUrls(rememberRecentSvnUrl(normalizedSvnUrl))
+      setIsSvnHistoryOpen(false)
       setSvnUrl('')
       setOldRevision('')
       setNewRevision('')
@@ -131,15 +139,41 @@ export function TaskForm({
 
   return (
     <form className="task-form" onSubmit={handleSubmit}>
-      <label className="field">
-        <span>SVN 地址</span>
-        <input
-          required
-          value={svnUrl}
-          placeholder="https://svn.example.com/project/trunk"
-          onChange={(event) => setSvnUrl(event.target.value)}
-        />
-      </label>
+      <div className="field svn-url-field">
+        <label htmlFor="svn-url-input">SVN 地址</label>
+        <div className="svn-url-input-wrap">
+          <input
+            id="svn-url-input"
+            required
+            value={svnUrl}
+            placeholder="https://svn.example.com/project/trunk"
+            aria-haspopup="listbox"
+            aria-expanded={isSvnHistoryOpen && recentSvnUrls.length > 0}
+            onFocus={() => setIsSvnHistoryOpen(true)}
+            onBlur={() => setIsSvnHistoryOpen(false)}
+            onChange={(event) => setSvnUrl(event.target.value)}
+          />
+          {isSvnHistoryOpen && recentSvnUrls.length > 0 ? (
+            <div className="svn-url-history-list" role="listbox" aria-label="最近 SVN 地址">
+              {recentSvnUrls.map((recentSvnUrl) => (
+                <button
+                  key={recentSvnUrl}
+                  type="button"
+                  className="svn-url-history-item"
+                  role="option"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    setSvnUrl(recentSvnUrl)
+                    setIsSvnHistoryOpen(false)
+                  }}
+                >
+                  {recentSvnUrl}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
 
       <div className="revision-grid">
         <label className="field">
@@ -232,3 +266,42 @@ export function TaskForm({
 }
 
 const basenameLike = (value: string): string => value.split(/[\\/]/).filter(Boolean).at(-1) ?? value
+
+function readRecentSvnUrls(): string[] {
+  try {
+    const value = localStorage.getItem(RECENT_SVN_URLS_STORAGE_KEY)
+    if (!value) {
+      return []
+    }
+
+    const parsed = JSON.parse(value)
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+
+    return parsed.filter((item): item is string => typeof item === 'string').slice(0, MAX_RECENT_SVN_URLS)
+  } catch {
+    return []
+  }
+}
+
+function writeRecentSvnUrls(urls: string[]): void {
+  try {
+    localStorage.setItem(RECENT_SVN_URLS_STORAGE_KEY, JSON.stringify(urls))
+  } catch {
+    return
+  }
+}
+
+function rememberRecentSvnUrl(svnUrl: string): string[] {
+  if (!svnUrl) {
+    return readRecentSvnUrls()
+  }
+
+  const nextUrls = [svnUrl, ...readRecentSvnUrls().filter((item) => item !== svnUrl)].slice(
+    0,
+    MAX_RECENT_SVN_URLS
+  )
+  writeRecentSvnUrls(nextUrls)
+  return nextUrls
+}
