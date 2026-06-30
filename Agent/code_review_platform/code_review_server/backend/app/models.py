@@ -45,6 +45,14 @@ class FeedbackStatsRange(str, Enum):
     all = "all"
 
 
+class ReviewTaskStatsRange(str, Enum):
+    this_week = "this_week"
+    last_week = "last_week"
+    today = "today"
+    yesterday = "yesterday"
+    all = "all"
+
+
 class DepartmentBase(SQLModel):
     name: str = Field(min_length=1, max_length=255, unique=True, index=True)
     description: str | None = Field(default=None, max_length=1024)
@@ -494,7 +502,7 @@ class ReviewTaskTrendPointPublic(SQLModel):
 
 
 class ReviewTaskStatsPublic(SQLModel):
-    range: FeedbackStatsRange
+    range: ReviewTaskStatsRange
     total: int
     success: int
     running: int

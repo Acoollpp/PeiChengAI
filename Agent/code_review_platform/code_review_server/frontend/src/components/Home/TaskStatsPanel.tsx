@@ -30,7 +30,7 @@ type ReviewTaskStatus =
   | "environment_error"
   | "cancelled"
 
-type TaskStatsRange = "today" | "yesterday" | "all"
+type TaskStatsRange = "this_week" | "last_week" | "today" | "yesterday" | "all"
 
 type ReviewTaskStats = {
   range: TaskStatsRange
@@ -51,18 +51,9 @@ type ReviewTaskStats = {
   }>
 }
 
-const statusLabels: Array<{ key: ReviewTaskStatus; label: string }> = [
-  { key: "created", label: "待处理" },
-  { key: "checking_environment", label: "环境检查中" },
-  { key: "running_codex", label: "运行中" },
-  { key: "uploading_report", label: "上传报告中" },
-  { key: "success", label: "成功" },
-  { key: "failed", label: "失败" },
-  { key: "environment_error", label: "环境异常" },
-  { key: "cancelled", label: "已取消" },
-]
-
 const rangeOptions: Array<{ label: string; value: TaskStatsRange }> = [
+  { label: "本周", value: "this_week" },
+  { label: "上周", value: "last_week" },
   { label: "今日", value: "today" },
   { label: "昨日", value: "yesterday" },
   { label: "累计", value: "all" },
@@ -212,10 +203,6 @@ export function TaskStatsPanel() {
       iconClassName: "text-blue-600",
     },
   ]
-  const maxStatusCount = Math.max(
-    1,
-    ...statusLabels.map(({ key }) => stats.by_status[key] ?? 0),
-  )
   const canViewUserReportStats = hasAdminPrivileges(currentUser)
   const reportsByUser = stats.reports_by_user.filter(
     (item) => item.report_count > 0,
@@ -300,7 +287,11 @@ export function TaskStatsPanel() {
                         <span className="font-medium tabular-nums">
                           {item.report_count}
                         </span>
-                        <div className="flex h-48 w-full items-end justify-center rounded-md bg-muted/60 px-3 py-2">
+                        <div
+                          aria-label={`${displayName}报告柱`}
+                          role="img"
+                          className="flex h-48 w-full items-end justify-center rounded-md bg-muted/60 px-3 py-2"
+                        >
                           <div
                             className={cn(
                               "w-full rounded-t-md transition-all",
@@ -318,6 +309,9 @@ export function TaskStatsPanel() {
                           }
                         >
                           {displayName}
+                        </span>
+                        <span className="sr-only">
+                          {item.report_count}份报告
                         </span>
                       </div>
                     )
@@ -374,32 +368,53 @@ export function TaskStatsPanel() {
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>状态分布</CardTitle>
-            <CardDescription>按任务当前状态统计。</CardDescription>
+            <CardTitle>成功报告排行榜</CardTitle>
+            <CardDescription>
+              按用户统计当前时间范围内成功报告数量。
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {statusLabels.map(({ key, label }) => {
-              const count = stats.by_status[key] ?? 0
-              const width = `${(count / maxStatusCount) * 100}%`
+            {reportsByUser.length > 0 ? (
+              reportsByUser.map((item, index) => {
+                const displayName =
+                  item.user_name || item.svn_username || "未命名用户"
+                const width = `${(item.report_count / maxReportCount) * 100}%`
 
-              return (
-                <div
-                  key={key}
-                  className="grid grid-cols-[minmax(6rem,max-content)_minmax(0,1fr)_3rem] items-center gap-3 text-sm"
-                >
-                  <span className="text-muted-foreground">{label}</span>
-                  <div className="h-2 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-primary"
-                      style={{ width }}
-                    />
+                return (
+                  <div
+                    key={`${item.user_name ?? ""}-${item.svn_username ?? ""}-${index}`}
+                    className="grid grid-cols-[2.5rem_minmax(7rem,max-content)_minmax(0,1fr)_3.5rem] items-center gap-3 text-sm"
+                  >
+                    <span className="text-center font-semibold text-muted-foreground tabular-nums">
+                      {index + 1}
+                    </span>
+                    <span
+                      className="truncate font-medium"
+                      title={
+                        item.svn_username
+                          ? `${displayName} (${item.svn_username})`
+                          : displayName
+                      }
+                    >
+                      {displayName}
+                    </span>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{ width }}
+                      />
+                    </div>
+                    <span className="text-right font-medium tabular-nums">
+                      {item.report_count}份
+                    </span>
                   </div>
-                  <span className="text-right font-medium tabular-nums">
-                    {count}
-                  </span>
-                </div>
-              )
-            })}
+                )
+              })
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                暂无成功报告记录。
+              </p>
+            )}
           </CardContent>
         </Card>
       )}

@@ -1362,6 +1362,21 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
         status=ReviewTaskStatus.running_codex,
         report_path=str(tmp_path / "older.md"),
     )
+    last_week_task = _create_review_task(client, headers, old_revision="304")
+    last_week_date = datetime.now(TASK_STATS_TIMEZONE).date() - timedelta(days=7)
+    _set_review_task_stats_fields(
+        db,
+        last_week_task["id"],
+        created_at=datetime.combine(
+            last_week_date,
+            time(10),
+            tzinfo=TASK_STATS_TIMEZONE,
+        )
+        .astimezone(timezone.utc)
+        .replace(tzinfo=None),
+        status=ReviewTaskStatus.success,
+        report_path=str(tmp_path / "last-week.md"),
+    )
 
     today_response = client.get(
         f"{settings.API_V1_STR}/review-tasks/stats",
@@ -1372,6 +1387,16 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
         f"{settings.API_V1_STR}/review-tasks/stats",
         headers=headers,
         params={"range": "yesterday"},
+    )
+    this_week_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=headers,
+        params={"range": "this_week"},
+    )
+    last_week_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=headers,
+        params={"range": "last_week"},
     )
     all_response = client.get(
         f"{settings.API_V1_STR}/review-tasks/stats",
@@ -1398,11 +1423,26 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
     assert yesterday_content["reports_by_user"] == []
     assert yesterday_content["trend"][-1]["count"] == 1
 
+    assert this_week_response.status_code == 200
+    this_week_content = this_week_response.json()
+    assert this_week_content["range"] == "this_week"
+    assert this_week_content["total"] >= 3
+    assert this_week_content["success"] == 1
+    assert this_week_content["running"] == 1
+    assert this_week_content["failed_or_error"] == 1
+
+    assert last_week_response.status_code == 200
+    last_week_content = last_week_response.json()
+    assert last_week_content["range"] == "last_week"
+    assert last_week_content["total"] == 1
+    assert last_week_content["success"] == 1
+    assert last_week_content["running"] == 0
+
     assert all_response.status_code == 200
     all_content = all_response.json()
     assert all_content["range"] == "all"
-    assert all_content["total"] == 3
-    assert all_content["success"] == 1
+    assert all_content["total"] == 4
+    assert all_content["success"] == 2
     assert all_content["running"] == 1
     assert all_content["failed_or_error"] == 1
     assert all_content["reports_by_user"] == []
@@ -1585,6 +1625,26 @@ def test_admin_task_stats_include_all_nonzero_report_counts_by_user(
     )
     _create_review_task(client, no_report_headers, old_revision="9999")
 
+    failed_report_user, failed_report_api_key = create_key_user(db)
+    failed_report_user.full_name = f"{report_user_prefix} 失败报告用户"
+    db.add(failed_report_user)
+    db.commit()
+    failed_report_headers = authentication_token_from_key(
+        client=client, key=failed_report_api_key.key, db=db
+    )
+    failed_task = _create_review_task(
+        client,
+        failed_report_headers,
+        old_revision="10000",
+    )
+    _set_review_task_stats_fields(
+        db,
+        failed_task["id"],
+        created_at=_shanghai_datetime(0, 11),
+        status=ReviewTaskStatus.failed,
+        report_path=str(tmp_path / "failed-report.md"),
+    )
+
     response = client.get(
         f"{settings.API_V1_STR}/review-tasks/stats",
         headers=superuser_token_headers,
@@ -1610,6 +1670,9 @@ def test_admin_task_stats_include_all_nonzero_report_counts_by_user(
     assert reports_by_user[-1]["user_name"] == f"{report_user_prefix} 00"
     assert reports_by_user[-1]["report_count"] == 1
     assert "没有报告用户" not in {
+        user_stat["user_name"] for user_stat in reports_by_user
+    }
+    assert f"{report_user_prefix} 失败报告用户" not in {
         user_stat["user_name"] for user_stat in reports_by_user
     }
 

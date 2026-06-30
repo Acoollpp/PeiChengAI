@@ -18,13 +18,13 @@ from app.api.deps import (
 )
 from app.models import (
     Department,
-    FeedbackStatsRange,
     ReviewTask,
     ReviewTaskCreate,
     ReviewTaskPublic,
     ReviewTaskReportUserStatsPublic,
     ReviewTaskRequirementFile,
     ReviewTasksPublic,
+    ReviewTaskStatsRange,
     ReviewTaskStatsPublic,
     ReviewTaskStatus,
     ReviewTaskStatusUpdate,
@@ -87,10 +87,10 @@ def _task_read_scope_filters(
 
 
 def _range_bounds(
-    stats_range: FeedbackStatsRange,
+    stats_range: ReviewTaskStatsRange,
     now: datetime | None = None,
 ) -> tuple[datetime | None, datetime | None]:
-    if stats_range == FeedbackStatsRange.all:
+    if stats_range == ReviewTaskStatsRange.all:
         return None, None
 
     current = (now or _utcnow()).astimezone(TASK_STATS_TIMEZONE)
@@ -99,7 +99,14 @@ def _range_bounds(
         time.min,
         tzinfo=TASK_STATS_TIMEZONE,
     )
-    if stats_range == FeedbackStatsRange.today:
+    week_start = today_start - timedelta(days=current.weekday())
+    if stats_range == ReviewTaskStatsRange.this_week:
+        start = week_start
+        end = current
+    elif stats_range == ReviewTaskStatsRange.last_week:
+        start = week_start - timedelta(days=7)
+        end = week_start
+    elif stats_range == ReviewTaskStatsRange.today:
         start = today_start
         end = current
     else:
@@ -112,7 +119,7 @@ def _range_bounds(
     )
 
 
-def _range_filters(stats_range: FeedbackStatsRange) -> list[Any]:
+def _range_filters(stats_range: ReviewTaskStatsRange) -> list[Any]:
     start, end = _range_bounds(stats_range)
     filters: list[Any] = []
     if start is not None:
@@ -301,7 +308,7 @@ def read_review_tasks(
 def read_review_task_stats(
     session: SessionDep,
     current_user: CurrentUser,
-    range: FeedbackStatsRange = FeedbackStatsRange.today,
+    range: ReviewTaskStatsRange = ReviewTaskStatsRange.today,
 ) -> Any:
     filters = [
         *_task_read_scope_filters(session=session, current_user=current_user),
@@ -347,7 +354,11 @@ def read_review_task_stats(
         report_rows = session.exec(
             select(User.full_name, User.svn_username, report_count)
             .join(User, ReviewTask.user_id == User.id)
-            .where(*filters, ReviewTask.report_path.is_not(None))
+            .where(
+                *filters,
+                ReviewTask.status == ReviewTaskStatus.success,
+                ReviewTask.report_path.is_not(None),
+            )
             .group_by(User.id, User.full_name, User.svn_username)
             .order_by(report_count.desc(), User.full_name)
         ).all()
