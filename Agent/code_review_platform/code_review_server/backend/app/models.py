@@ -382,6 +382,34 @@ class ReviewTask(SQLModel, table=True):
     )
 
 
+class ReviewTaskReportFeedback(SQLModel, table=True):
+    __tablename__ = "review_task_report_feedback"
+    __table_args__ = (
+        Index(
+            "ix_review_task_report_feedback_helpful_created_at",
+            "helpful",
+            "created_at",
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    task_id: uuid.UUID = Field(
+        foreign_key="review_task.id", nullable=False, unique=True, index=True
+    )
+    user_id: uuid.UUID = Field(foreign_key="user.id", nullable=False, index=True)
+    helpful: bool = Field(nullable=False, index=True)
+    useful_issues_text: str | None = Field(default=None, max_length=4096)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        index=True,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
 class Feedback(SQLModel, table=True):
     __tablename__ = "feedback"
     __table_args__ = (
@@ -453,6 +481,21 @@ class ReviewTaskStatusUpdate(SQLModel):
     client_version: str | None = Field(default=None, max_length=255)
 
 
+class ReviewTaskReportFeedbackCreate(SQLModel):
+    helpful: bool
+    useful_issues_text: str | None = Field(default=None, max_length=4096)
+
+
+class ReviewTaskReportFeedbackPublic(SQLModel):
+    id: uuid.UUID
+    task_id: uuid.UUID
+    user_id: uuid.UUID
+    helpful: bool
+    useful_issues_text: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
 class ReviewTaskPublic(SQLModel):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -476,6 +519,8 @@ class ReviewTaskPublic(SQLModel):
     report_name: str | None = None
     pdf_report_path: str | None = None
     pdf_report_name: str | None = None
+    report_feedback_helpful: bool | None = None
+    report_feedback_useful_issues_text: str | None = None
     error_message: str | None = None
     client_hostname: str | None = None
     client_version: str | None = None

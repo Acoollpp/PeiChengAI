@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.models import (
     Department,
     ReviewTask,
+    ReviewTaskReportFeedback,
     ReviewTaskRequirementFile,
     ReviewTaskStatus,
     User,
