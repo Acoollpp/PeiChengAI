@@ -8,7 +8,8 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
-from sqlmodel import col, func, select
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import col, delete, func, select
 
 from app.api.deps import (
     CurrentUser,
@@ -21,6 +22,9 @@ from app.models import (
     ReviewTask,
     ReviewTaskCreate,
     ReviewTaskPublic,
+    ReviewTaskReportFeedback,
+    ReviewTaskReportFeedbackCreate,
+    ReviewTaskReportFeedbackPublic,
     ReviewTaskReportUserStatsPublic,
     ReviewTaskRequirementFile,
     ReviewTasksPublic,
@@ -225,12 +229,40 @@ def _read_pdf_report_path(task: ReviewTask) -> Path:
     return report_path
 
 
-def _task_public(task: ReviewTask, user: User | None = None) -> ReviewTaskPublic:
+def _ensure_task_has_reports(task: ReviewTask) -> None:
+    if not task.report_path:
+        raise HTTPException(status_code=409, detail="no_report")
+    if not task.pdf_report_path:
+        raise HTTPException(status_code=409, detail="no_pdf_report")
+
+
+def _normalize_useful_issues_text(
+    *, helpful: bool, useful_issues_text: str | None
+) -> str | None:
+    normalized = useful_issues_text.strip() if useful_issues_text else ""
+    if helpful and not normalized:
+        raise HTTPException(
+            status_code=400, detail="有帮助时请至少填写一条有用信息"
+        )
+    return normalized or None
+
+
+def _task_public(
+    task: ReviewTask,
+    user: User | None = None,
+    report_feedback: ReviewTaskReportFeedback | None = None,
+) -> ReviewTaskPublic:
     return ReviewTaskPublic.model_validate(
         task,
         update={
             "user_name": user.full_name if user else None,
             "svn_username": user.svn_username if user else None,
+            "report_feedback_helpful": (
+                report_feedback.helpful if report_feedback else None
+            ),
+            "report_feedback_useful_issues_text": (
+                report_feedback.useful_issues_text if report_feedback else None
+            ),
         },
     )
 
@@ -290,8 +322,12 @@ def read_review_tasks(
         .where(*filters)
     )
     statement = (
-        select(ReviewTask, User)
+        select(ReviewTask, User, ReviewTaskReportFeedback)
         .join(User, ReviewTask.user_id == User.id)
+        .outerjoin(
+            ReviewTaskReportFeedback,
+            ReviewTaskReportFeedback.task_id == ReviewTask.id,
+        )
         .where(*filters)
     )
     count = session.exec(count_statement).one()
@@ -299,7 +335,10 @@ def read_review_tasks(
         statement.order_by(col(ReviewTask.created_at).desc()).offset(skip).limit(limit)
     ).all()
     return ReviewTasksPublic(
-        data=[_task_public(task, user) for task, user in rows],
+        data=[
+            _task_public(task, user, report_feedback)
+            for task, user, report_feedback in rows
+        ],
         count=count,
     )
 
@@ -384,13 +423,64 @@ def read_review_task_stats(
     )
 
 
+@router.post(
+    "/{task_id}/report-feedback",
+    response_model=ReviewTaskReportFeedbackPublic,
+)
+def submit_review_task_report_feedback(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    feedback_in: ReviewTaskReportFeedbackCreate,
+) -> Any:
+    task = _get_task_for_read(
+        session=session, current_user=current_user, task_id=task_id
+    )
+    _ensure_task_has_reports(task)
+    useful_issues_text = _normalize_useful_issues_text(
+        helpful=feedback_in.helpful,
+        useful_issues_text=feedback_in.useful_issues_text,
+    )
+    existing_feedback = session.exec(
+        select(ReviewTaskReportFeedback).where(
+            ReviewTaskReportFeedback.task_id == task.id
+        )
+    ).first()
+    if existing_feedback:
+        raise HTTPException(status_code=409, detail="report_feedback_exists")
+
+    feedback = ReviewTaskReportFeedback(
+        task_id=task.id,
+        user_id=current_user.id,
+        helpful=feedback_in.helpful,
+        useful_issues_text=useful_issues_text,
+        created_at=_utcnow(),
+        updated_at=_utcnow(),
+    )
+    session.add(feedback)
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="report_feedback_exists") from None
+    session.refresh(feedback)
+    return feedback
+
+
 @router.get("/{task_id}", response_model=ReviewTaskPublic)
 def read_review_task(
     session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
 ) -> Any:
-    return _get_task_for_read(
+    task = _get_task_for_read(
         session=session, current_user=current_user, task_id=task_id
     )
+    report_feedback = session.exec(
+        select(ReviewTaskReportFeedback).where(
+            ReviewTaskReportFeedback.task_id == task.id
+        )
+    ).first()
+    return _task_public(task, session.get(User, task.user_id), report_feedback)
 
 
 @router.delete("/{task_id}")
@@ -420,6 +510,11 @@ def delete_review_task(
         if file_path is not None
     ]
 
+    session.exec(
+        delete(ReviewTaskReportFeedback).where(
+            ReviewTaskReportFeedback.task_id == task.id
+        )
+    )
     for requirement_file in requirement_files:
         session.delete(requirement_file)
     session.flush()

@@ -158,6 +158,42 @@ def _set_review_task_pdf_report(
     db.commit()
 
 
+def _set_review_task_report(
+    db: Session,
+    task_id: str,
+    *,
+    report_path: str = "/tmp/report.md",
+    pdf_report_path: str = "/tmp/report.pdf",
+) -> None:
+    db_task = db.get(ReviewTask, UUID(task_id))
+    assert db_task is not None
+    db_task.report_path = report_path
+    db_task.report_name = "report.md"
+    db_task.pdf_report_path = pdf_report_path
+    db_task.pdf_report_name = "report.pdf"
+    db_task.status = ReviewTaskStatus.success
+    db.add(db_task)
+    db.commit()
+
+
+def _submit_report_feedback(
+    client: TestClient,
+    headers: dict[str, str],
+    task_id: str,
+    *,
+    helpful: bool,
+    useful_issues_text: str | None = None,
+):
+    return client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task_id}/report-feedback",
+        headers=headers,
+        json={
+            "helpful": helpful,
+            "useful_issues_text": useful_issues_text,
+        },
+    )
+
+
 def test_create_review_task_normalizes_revisions(
     client: TestClient, normal_user_token_headers: dict[str, str]
 ) -> None:
@@ -2267,3 +2303,221 @@ def test_inactive_department_admin_read_scope_returns_403(
     assert download_response.json()["detail"] == expected_detail
     assert stats_response.status_code == 403
     assert stats_response.json()["detail"] == expected_detail
+
+
+def test_submit_report_feedback_helpful_requires_useful_text(
+    client: TestClient, normal_user_token_headers: dict[str, str], db: Session
+) -> None:
+    task = _create_review_task(client, normal_user_token_headers)
+    _set_review_task_report(db, task["id"])
+
+    response = _submit_report_feedback(
+        client,
+        normal_user_token_headers,
+        task["id"],
+        helpful=True,
+        useful_issues_text="   ",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "有帮助时请至少填写一条有用信息"
+    assert db.exec(select(ReviewTaskReportFeedback)).all() == []
+
+
+def test_submit_report_feedback_helpful_success_and_task_public_fields(
+    client: TestClient, normal_user_token_headers: dict[str, str], db: Session
+) -> None:
+    task = _create_review_task(client, normal_user_token_headers)
+    _set_review_task_report(db, task["id"])
+
+    response = _submit_report_feedback(
+        client,
+        normal_user_token_headers,
+        task["id"],
+        helpful=True,
+        useful_issues_text="1. 空指针风险\n2. 越界访问风险",
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["task_id"] == task["id"]
+    assert content["helpful"] is True
+    assert content["useful_issues_text"] == "1. 空指针风险\n2. 越界访问风险"
+
+    detail_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert detail["report_feedback_helpful"] is True
+    assert detail["report_feedback_useful_issues_text"] == "1. 空指针风险\n2. 越界访问风险"
+
+
+def test_submit_report_feedback_not_helpful_allows_empty_text(
+    client: TestClient, normal_user_token_headers: dict[str, str], db: Session
+) -> None:
+    task = _create_review_task(client, normal_user_token_headers)
+    _set_review_task_report(db, task["id"])
+
+    response = _submit_report_feedback(
+        client,
+        normal_user_token_headers,
+        task["id"],
+        helpful=False,
+        useful_issues_text=None,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["helpful"] is False
+    assert content["useful_issues_text"] in (None, "")
+
+
+def test_submit_report_feedback_rejects_duplicate(
+    client: TestClient, normal_user_token_headers: dict[str, str], db: Session
+) -> None:
+    task = _create_review_task(client, normal_user_token_headers)
+    _set_review_task_report(db, task["id"])
+    first_response = _submit_report_feedback(
+        client,
+        normal_user_token_headers,
+        task["id"],
+        helpful=False,
+        useful_issues_text=None,
+    )
+    assert first_response.status_code == 200
+
+    duplicate_response = _submit_report_feedback(
+        client,
+        normal_user_token_headers,
+        task["id"],
+        helpful=False,
+        useful_issues_text=None,
+    )
+
+    assert duplicate_response.status_code == 409
+    assert duplicate_response.json()["detail"] == "report_feedback_exists"
+
+
+def test_submit_report_feedback_requires_report_and_pdf(
+    client: TestClient, normal_user_token_headers: dict[str, str]
+) -> None:
+    task = _create_review_task(client, normal_user_token_headers)
+
+    response = _submit_report_feedback(
+        client,
+        normal_user_token_headers,
+        task["id"],
+        helpful=False,
+        useful_issues_text=None,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "no_report"
+
+
+def test_report_feedback_department_admin_can_submit_same_department_task(
+    client: TestClient, db: Session
+) -> None:
+    department = _create_department(db)
+    member_headers, member = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+        full_name="成员",
+    )
+    admin_headers, _admin = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+        role=UserRole.department_admin,
+        full_name="部门管理员",
+    )
+    task = _create_review_task(client, member_headers)
+    _set_review_task_report(db, task["id"])
+
+    response = _submit_report_feedback(
+        client,
+        admin_headers,
+        task["id"],
+        helpful=False,
+        useful_issues_text=None,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["user_id"] != str(member.id)
+
+
+def test_report_feedback_department_admin_cannot_submit_other_or_null_department_task(
+    client: TestClient, db: Session
+) -> None:
+    own_department = _create_department(db, "本部门")
+    other_department = _create_department(db, "其他部门")
+    admin_headers, _admin = _create_department_user(
+        client=client,
+        db=db,
+        department=own_department,
+        role=UserRole.department_admin,
+    )
+    other_headers, _other_user = _create_department_user(
+        client=client,
+        db=db,
+        department=other_department,
+    )
+    null_department_headers, _null_user = _create_department_user(
+        client=client,
+        db=db,
+        department=None,
+    )
+    other_task = _create_review_task(client, other_headers)
+    null_task = _create_review_task(client, null_department_headers)
+    _set_review_task_report(db, other_task["id"])
+    _set_review_task_report(db, null_task["id"])
+
+    other_response = _submit_report_feedback(
+        client,
+        admin_headers,
+        other_task["id"],
+        helpful=False,
+        useful_issues_text=None,
+    )
+    null_response = _submit_report_feedback(
+        client,
+        admin_headers,
+        null_task["id"],
+        helpful=False,
+        useful_issues_text=None,
+    )
+
+    assert other_response.status_code == 403
+    assert null_response.status_code == 403
+
+
+def test_review_task_list_includes_report_feedback_fields(
+    client: TestClient, normal_user_token_headers: dict[str, str], db: Session
+) -> None:
+    first_task = _create_review_task(client, normal_user_token_headers)
+    second_task = _create_review_task(client, normal_user_token_headers)
+    _set_review_task_report(db, first_task["id"])
+    _set_review_task_report(db, second_task["id"])
+    feedback_response = _submit_report_feedback(
+        client,
+        normal_user_token_headers,
+        first_task["id"],
+        helpful=True,
+        useful_issues_text="1. 有价值内容",
+    )
+    assert feedback_response.status_code == 200
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 200
+    by_id = {item["id"]: item for item in response.json()["data"]}
+    assert by_id[first_task["id"]]["report_feedback_helpful"] is True
+    assert by_id[first_task["id"]]["report_feedback_useful_issues_text"] == "1. 有价值内容"
+    assert by_id[second_task["id"]]["report_feedback_helpful"] is None
+    assert by_id[second_task["id"]]["report_feedback_useful_issues_text"] is None
