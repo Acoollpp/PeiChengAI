@@ -89,6 +89,7 @@ Web 端“代码审查任务管理”沿用原任务权限范围，在表格中�
 - `helpful=false` 时，`useful_issues_text` 可以为空；服务端可统一保存为空字符串或 `null`，接口返回时按空文本处理。
 - `user_id` 来自当前登录用户，不接受前端传入。
 - `task_id` 来自路径参数，不接受请求体覆盖。
+- `task_id` 外键第一版不设置数据库级 `ondelete=CASCADE`，删除任务时在任务删除接口中显式删除报告反馈记录，保持与现有 `ReviewTaskRequirementFile` 的处理方式一致。
 
 ## 后端 API 设计
 
@@ -104,6 +105,8 @@ POST /api/v1/review-tasks/{task_id}/report-feedback
 - 普通用户只能提交自己任务的报告反馈。
 - 部门管理员只能提交本部门任务的报告反馈。
 - 超级管理员可以提交任意任务报告反馈。
+- 权限校验必须复用 `review_tasks.py` 中现有任务读取边界，例如 `_get_task_for_read(session, current_user, task_id)`。不要用 `has_admin_privileges` 重新实现判断，因为该 helper 只代表平台管理员，不包含部门管理员。
+- 报告反馈的可见和可提交范围与任务读取范围完全一致，包括现有行为：`department_id IS NULL` 的任务对部门管理员不可见。
 
 请求体：
 
@@ -133,8 +136,8 @@ POST /api/v1/review-tasks/{task_id}/report-feedback
 - 任务不存在：`404`。
 - 无任务读取权限：`403`。
 - `helpful=true` 但有用信息为空：`422` 或 `400`。
-- 当前任务已提交过报告反馈：`409`。客户端收到后刷新任务状态，如果发现已有反馈，则允许继续打开 PDF。
-- 任务没有 Markdown 报告或 PDF 报告时，提交接口可以返回对应业务错误，避免对无报告任务产生无效反馈。
+- 当前任务已提交过报告反馈：`409`，响应中使用可区分的错误标识，例如 `report_feedback_exists`。客户端收到后重新拉取 `GET /api/v1/review-tasks/{task_id}`，如果发现已有反馈，则允许继续打开 PDF。
+- 任务没有 Markdown 报告或 PDF 报告时，不创建报告反馈，返回可区分的业务错误。建议使用 `409` 并在 `detail` 或错误 code 中标识 `no_report` / `no_pdf_report`，避免和“任务不存在”的 `404` 混淆。
 
 ### 任务列表和详情返回字段
 
@@ -160,6 +163,8 @@ POST /api/v1/review-tasks/{task_id}/report-feedback
 - `GET /api/v1/review-tasks` 左连接 `review_task_report_feedback`。
 - `GET /api/v1/review-tasks/{task_id}` 返回同样的反馈展示字段。
 - 权限过滤仍以任务权限为准，不因为反馈表存在而扩大可见范围。
+- 左连接只用于补充展示字段，不改变任务列表现有过滤条件和排序。
+- 删除任务时，`delete_review_task` 需要显式删除对应 `review_task_report_feedback` 记录，再删除任务记录。
 
 ## Electron 闭环设计
 
@@ -169,6 +174,18 @@ Electron 不再把报告反馈提交到 `window.codeReview.submitFeedback`，而
 - Preload：转发到 IPC。
 - Main：读取登录 token 后调用 API Client。
 - API Client：请求 `POST /api/v1/review-tasks/{task_id}/report-feedback`。
+
+### IPC 和跨端类型同步清单
+
+新增报告反馈 IPC 时需要同步修改以下位置：
+
+1. `code_review_electron/src/main/ipc.ts`：新增报告反馈 IPC handler，建议频道名为 `report-feedback:submit`。
+2. `code_review_electron/src/preload/index.ts`：在 `contextBridge` 暴露 `submitReportFeedback`。报告反馈是纯 JSON 文本提交，不需要复用通用意见反馈的截图 `File` 序列化逻辑。
+3. `code_review_electron/src/renderer/src/code-review-api.ts`：新增 `SubmitReportFeedbackPayload`、`SubmitReportFeedbackResult` 和 `CodeReviewApi.submitReportFeedback` 类型。
+4. `code_review_electron/src/main/api-client.ts`：新增 `submitReportFeedback(token, taskId, payload)`，用 JSON POST 请求专用后端接口，不使用 `FormData`。
+5. `code_review_electron/src/main/__tests__/ipc.test.ts`：更新 renderer-facing IPC channel 顺序断言。
+6. 渲染层 `TaskPage.tsx`：把打开 PDF 前的反馈提交改为调用 `submitReportFeedback`。
+7. `code_review_electron/src/shared/types.ts`：同步更新 `ReviewTask` 类型，新增 `report_feedback_helpful?: boolean | null` 和 `report_feedback_useful_issues_text?: string | null`。Electron 当前任务字段沿用后端蛇形命名，新增字段也保持蛇形。
 
 ### 用户流程
 
@@ -189,6 +206,8 @@ Electron 不再把报告反馈提交到 `window.codeReview.submitFeedback`，而
    - 提交成功后更新当前任务本地反馈状态，并自动打开 PDF。
 7. 已反馈任务后续再次点击 PDF 时不再重复打扰，直接打开 PDF。
 
+强制反馈的拦截点只放在 Renderer 的 `TaskPage.tsx` / `handleOpenPdfReport` 流程。主进程 `report:open-pdf` IPC 保持现有 4 级本地文件和服务端下载 fallback，不在主进程里增加报告反馈鉴权。原因是主进程当前会在本地 PDF 路径存在时直接打开文件，如果把反馈校验下沉到主进程，会扩大改动面并影响已有 PDF 打开兼容逻辑。
+
 ### 状态设计
 
 Renderer 建议区分以下状态：
@@ -206,6 +225,8 @@ type ReportFeedbackStatus = "idle" | "choosing" | "useful" | "submitting" | "sub
 - `submitted`：当前任务已有报告反馈，可打开 PDF。
 
 任务本身以 `report_feedback_helpful` 作为服务端事实来源。本地状态只服务于当前交互。
+
+客户端不新增持久化的“已查看”或“已反馈”状态。提交成功后可以乐观更新当前任务对象的 `report_feedback_helpful` 和 `report_feedback_useful_issues_text`；遇到 `report_feedback_exists` 冲突时重新拉取单个任务详情，以服务端状态为准。
 
 ### Markdown 标题勾选
 
@@ -253,18 +274,19 @@ type ReportFeedbackStatus = "idle" | "choosing" | "useful" | "submitting" | "sub
 有用信息展示：
 
 - 表格内最多展示一行或两行摘要。
-- 鼠标悬浮时展示完整内容，保留换行。
-- 完整内容可使用 Tooltip，也可以使用 `title` 作为第一版兜底；如果使用 Tooltip，需要保证长文本自动换行。
+- 第一版用原生 `title` 在鼠标悬浮时展示完整内容，与当前 `错误信息` 列保持一致。
+- 原生 `title` 不保证复杂换行体验；如果后续升级为 Radix Tooltip，需要保证长文本自动换行并保留换行语义。
 - 不在表格内直接展开长文本，避免任务列表难以扫描。
 
 布局优化：
 
 - 当前全站布局使用 `mx-auto max-w-7xl`，导致大屏下任务表居中变窄。
 - 第一版只对任务管理这类宽表格页面放宽内容宽度，普通页面保持现有宽度。
-- 任务管理页应使用接近全宽的内容区域，例如页面级 `max-w-none` / `w-full`。
+- 任务管理页应使用接近全宽的内容区域，但不要直接修改全站共享的 `_layout.tsx` 外层 `max-w-7xl`，避免影响其它页面。实现时应在 `TasksPage` 组件局部突破或覆盖父级宽度限制。
 - 表格保留横向滚动兜底，但在 1920px 以上屏幕不应出现明显的左右大片空白。
-- `SVN地址`、`错误信息`、`有用信息` 都采用截断加悬浮完整内容。
+- `有用信息` 第一版使用截断加原生 `title` 悬浮展示完整内容，保持与当前 `错误信息` 列一致；后续如需更好换行体验，再统一升级为 Radix Tooltip。
 - 新增列后可适当压缩 `报告` 和 `操作` 列，只保留图标按钮。
+- 表格空状态当前 `colSpan` 是硬编码，新增两列后需要同步调整为 12，或抽出列数常量避免后续遗漏。
 
 ## 权限设计
 
@@ -300,10 +322,11 @@ flowchart TD
 
 - 报告反馈提交失败：不打开 PDF，提示“报告反馈提交失败，请稍后重试。”
 - 有帮助但没有有用信息：前端禁用提交按钮，后端再次校验。
-- 重复提交：后端返回 `409`；客户端刷新任务状态，如果已存在反馈则允许打开 PDF。
+- 重复提交：后端返回 `409 report_feedback_exists`；客户端重新读取单个任务详情，如果已存在反馈则允许打开 PDF。
 - PDF 打开失败：报告反馈记录保留，界面提示现有 PDF 错误信息。
 - 任务无权限或不存在：沿用任务接口现有错误提示。
 - 任务没有 PDF 报告：反馈不应解锁无效 PDF，仍提示“该历史任务没有 PDF 报告，请查看 Markdown 或重新生成报告。”
+- 任务存在但没有 Markdown 或 PDF 报告：报告反馈提交接口返回可区分的业务错误，不创建反馈记录。
 
 ## 测试设计
 
@@ -316,7 +339,10 @@ flowchart TD
 - 同一任务重复提交返回冲突。
 - 普通用户不能提交他人任务反馈。
 - 部门管理员只能提交本部门任务反馈。
+- 部门管理员不能提交 `department_id IS NULL` 的任务反馈。
 - 超级管理员可以提交任意任务反馈。
+- 无 Markdown 或无 PDF 报告的任务不能创建报告反馈。
+- 删除任务时同步删除该任务报告反馈记录。
 - 任务列表和任务详情返回报告反馈展示字段。
 
 Electron 测试：
@@ -329,6 +355,8 @@ Electron 测试：
 - 手动输入有用信息可以提交并打开 PDF。
 - 已反馈任务再次点击 PDF 直接打开。
 - 专用报告反馈接口失败时不打开 PDF。
+- `report:open-pdf` 主进程 IPC 不增加反馈鉴权，未反馈拦截只由 Renderer 完成。
+- 新增 IPC 后更新 renderer-facing IPC channel 顺序测试。
 
 Web 测试：
 
@@ -339,6 +367,8 @@ Web 测试：
 - 没帮助显示灰色状态和 `-`。
 - 有用信息悬浮可看到完整内容。
 - 宽屏任务管理页使用更宽内容区域。
+- 宽屏优化不影响其它登录后页面布局。
+- 新增两列后空状态 `colSpan` 正确。
 
 ## 后续优化
 
