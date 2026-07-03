@@ -67,6 +67,19 @@ export interface FeedbackResult {
   status: 'pending' | 'processing' | 'resolved'
 }
 
+export interface SubmitReportFeedbackRequest {
+  helpful: boolean
+  useful_issues_text?: string | null
+}
+
+export interface ReportFeedbackResult {
+  id: string
+  task_id: string
+  user_id: string
+  helpful: boolean
+  useful_issues_text?: string | null
+}
+
 export interface ReviewTasksResponse {
   data: ReviewTask[]
   count: number
@@ -377,6 +390,21 @@ export class ApiClient {
         body
       },
       { json: false }
+    )
+  }
+
+  submitReportFeedback(
+    token: string,
+    taskId: string,
+    payload: SubmitReportFeedbackRequest
+  ): Promise<ReportFeedbackResult> {
+    return this.request(
+      `/api/v1/review-tasks/${encodeURIComponent(taskId)}/report-feedback`,
+      {
+        method: 'POST',
+        headers: this.authHeaders(token),
+        body: JSON.stringify(payload)
+      }
     )
   }
 

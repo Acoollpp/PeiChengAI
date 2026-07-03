@@ -117,6 +117,20 @@ export interface SubmitFeedbackResult {
   status: 'pending' | 'processing' | 'resolved'
 }
 
+export interface SubmitReportFeedbackPayload {
+  taskId: string
+  helpful: boolean
+  useful_issues_text?: string | null
+}
+
+export interface SubmitReportFeedbackResult {
+  id: string
+  task_id: string
+  user_id: string
+  helpful: boolean
+  useful_issues_text?: string | null
+}
+
 export interface ReviewTasksResponse {
   data: ReviewTask[]
   count: number
@@ -212,6 +226,7 @@ export interface CodeReviewApi {
   checkEnvironment(): Promise<EnvironmentCheckResult>
   onEnvironmentProgress(callback: (event: EnvironmentProgressEvent) => void): () => void
   submitFeedback(payload: SubmitFeedbackPayload): Promise<SubmitFeedbackResult>
+  submitReportFeedback(payload: SubmitReportFeedbackPayload): Promise<SubmitReportFeedbackResult>
   bindSvnCredential(payload: SvnCredentialPayload): Promise<true>
   checkForAppUpdate(): Promise<boolean>
   downloadAppUpdate(): Promise<true>
