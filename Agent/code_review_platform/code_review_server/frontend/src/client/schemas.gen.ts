@@ -1678,6 +1678,28 @@ export const ReviewTaskPublicSchema = {
             ],
             title: 'Pdf Report Name'
         },
+        report_feedback_helpful: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Report Feedback Helpful'
+        },
+        report_feedback_useful_issues_text: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Report Feedback Useful Issues Text'
+        },
         error_message: {
             anyOf: [
                 {

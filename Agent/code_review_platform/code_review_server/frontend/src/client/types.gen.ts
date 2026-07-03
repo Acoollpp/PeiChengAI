@@ -306,6 +306,8 @@ export type ReviewTaskPublic = {
     started_at?: (string | null);
     finished_at?: (string | null);
     updated_at?: (string | null);
+    report_feedback_helpful?: boolean | null;
+    report_feedback_useful_issues_text?: string | null;
 };
 
 export type ReviewTaskReportUserStatsPublic = {

@@ -1,4 +1,9 @@
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
+import {
+  createFileRoute,
+  Outlet,
+  redirect,
+  useRouterState,
+} from "@tanstack/react-router"
 
 import { Footer } from "@/components/Common/Footer"
 import AppSidebar from "@/components/Sidebar/AppSidebar"
@@ -21,6 +26,11 @@ export const Route = createFileRoute("/_layout")({
 })
 
 function Layout() {
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
+  const isReviewTasksRoute = pathname === "/tasks/review"
+
   return (
     <SidebarProvider>
       <AppSidebar />
@@ -29,7 +39,14 @@ function Layout() {
           <SidebarTrigger className="-ml-1 text-muted-foreground" />
         </header>
         <main className="flex-1 p-6 md:p-8">
-          <div className="mx-auto max-w-7xl">
+          <div
+            className={
+              isReviewTasksRoute
+                ? "mx-auto w-full max-w-[1600px]"
+                : "mx-auto max-w-7xl"
+            }
+            data-testid={isReviewTasksRoute ? "review-tasks-content" : undefined}
+          >
             <Outlet />
           </div>
         </main>
