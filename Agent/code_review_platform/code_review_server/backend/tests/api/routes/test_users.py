@@ -20,7 +20,9 @@ from app.models import (
     ReviewFocusDirection,
     ReviewFocusDirectionUsageState,
     ReviewTask,
+    ReviewTaskReportFeedback,
     ReviewTaskRequirementFile,
+    ReviewTaskStatus,
     SkillPackage,
     User,
     UserCreate,
@@ -1251,6 +1253,48 @@ def test_delete_user_removes_review_task_requirement_files(
     assert db.get(User, user_id) is None
     assert db.get(ReviewTask, task_id) is None
     assert db.get(ReviewTaskRequirementFile, requirement_file_id) is None
+
+
+def test_delete_user_removes_review_task_report_feedback(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    user = create_random_user(db)
+    user_id = user.id
+    task = ReviewTask(
+        user_id=user_id,
+        svn_url="https://svn.example.com/delete/report-feedback",
+        old_revision="r1",
+        new_revision="r2",
+        status=ReviewTaskStatus.success,
+        report_path="/tmp/report.md",
+        pdf_report_path="/tmp/report.pdf",
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    feedback = ReviewTaskReportFeedback(
+        task_id=task.id,
+        user_id=user_id,
+        helpful=True,
+        useful_issues_text="1. 有用信息",
+    )
+    db.add(feedback)
+    db.commit()
+    db.refresh(feedback)
+    task_id = task.id
+    feedback_id = feedback.id
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/users/{user_id}",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "User deleted successfully"
+    db.expire_all()
+    assert db.get(User, user_id) is None
+    assert db.get(ReviewTask, task_id) is None
+    assert db.get(ReviewTaskReportFeedback, feedback_id) is None
 
 
 def test_delete_user_not_found(

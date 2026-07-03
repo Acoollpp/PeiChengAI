@@ -24,6 +24,7 @@ from app.models import (
     ReviewFocusDirection,
     ReviewFocusDirectionUsageState,
     ReviewTask,
+    ReviewTaskReportFeedback,
     ReviewTaskRequirementFile,
     SkillPackage,
     User,
@@ -179,6 +180,10 @@ def _delete_user_with_related_data(*, session: SessionDep, user: User) -> None:
         select(ReviewTask.id).where(col(ReviewTask.user_id) == user.id)
     ).all()
     if review_task_ids:
+        report_feedback_statement = delete(ReviewTaskReportFeedback).where(
+            col(ReviewTaskReportFeedback.task_id).in_(review_task_ids)
+        )
+        session.exec(report_feedback_statement)
         requirement_file_statement = delete(ReviewTaskRequirementFile).where(
             col(ReviewTaskRequirementFile.task_id).in_(review_task_ids)
         )
