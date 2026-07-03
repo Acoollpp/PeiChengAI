@@ -48,6 +48,26 @@ const formatUsefulIssues = (issues: string[]): string =>
 const uniqueIssues = (issues: string[]): string[] =>
   issues.filter((issue, index) => issues.indexOf(issue) === index)
 
+const REPORT_FEEDBACK_EXISTS_CODE = 'report_feedback_exists'
+
+const isReportFeedbackExistsError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false
+  }
+  return error.message.includes(REPORT_FEEDBACK_EXISTS_CODE)
+}
+
+const formatReportFeedbackError = (error: unknown): string => {
+  if (!(error instanceof Error)) {
+    return '报告反馈提交失败，请稍后重试。'
+  }
+  const message = error.message
+  if (message.includes('no_report') || message.includes('no_pdf_report')) {
+    return '该任务暂无可反馈的报告'
+  }
+  return message
+}
+
 const isRendererForeground = (): boolean =>
   document.visibilityState === 'visible' && document.hasFocus()
 
@@ -385,8 +405,14 @@ export function TaskPage({
       setReportFeedbackStatus('idle')
       await openSelectedPdfReport()
     } catch (submitError) {
+      if (isReportFeedbackExistsError(submitError)) {
+        markTaskFeedbackSubmitted(taskId, false, null)
+        setReportFeedbackStatus('idle')
+        await openSelectedPdfReport()
+        return
+      }
       setReportFeedbackStatus('choosing')
-      setError(submitError instanceof Error ? submitError.message : '报告反馈提交失败，请稍后重试。')
+      setError(formatReportFeedbackError(submitError))
     }
   }
 
@@ -395,13 +421,11 @@ export function TaskPage({
   }
 
   const handleUsefulIssueToggle = (issue: string): void => {
-    setSelectedUsefulIssues((current) => {
-      const next = current.includes(issue)
-        ? current.filter((item) => item !== issue)
-        : [...current, issue]
-      setUsefulIssuesText(formatUsefulIssues(next))
-      return next
-    })
+    const next = selectedUsefulIssues.includes(issue)
+      ? selectedUsefulIssues.filter((item) => item !== issue)
+      : [...selectedUsefulIssues, issue]
+    setSelectedUsefulIssues(next)
+    setUsefulIssuesText(formatUsefulIssues(next))
   }
 
   const handleUsefulIssuesTextChange = (value: string): void => {
@@ -433,8 +457,14 @@ export function TaskPage({
       setReportFeedbackStatus('idle')
       await openSelectedPdfReport()
     } catch (submitError) {
+      if (isReportFeedbackExistsError(submitError)) {
+        markTaskFeedbackSubmitted(taskId, true, formatted)
+        setReportFeedbackStatus('idle')
+        await openSelectedPdfReport()
+        return
+      }
       setReportFeedbackStatus('useful')
-      setError(submitError instanceof Error ? submitError.message : '报告反馈提交失败，请稍后重试。')
+      setError(formatReportFeedbackError(submitError))
     }
   }
 
@@ -543,6 +573,7 @@ export function TaskPage({
                 value={usefulIssuesText}
                 onChange={(event) => handleUsefulIssuesTextChange(event.target.value)}
                 placeholder="可补充报告中有价值的问题或建议点，每行一条"
+                maxLength={4096}
               />
               <button
                 className="secondary-button"

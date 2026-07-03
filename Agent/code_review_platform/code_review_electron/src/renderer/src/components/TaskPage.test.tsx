@@ -975,4 +975,44 @@ describe('TaskPage', () => {
     expect(window.codeReview.submitReportFeedback).not.toHaveBeenCalled()
     expect(window.codeReview.openPdfReport).toHaveBeenCalled()
   })
+
+  it('后端返回报告反馈已存在(409)时也放行打开PDF，不卡死在选择态', async () => {
+    const user = userEvent.setup()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-history-1',
+          svn_url: 'svn://repo/project',
+          old_revision: 'r1',
+          new_revision: 'r2',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history.md',
+          pdf_report_path: '/app/reports/task-history.pdf',
+          report_feedback_helpful: null
+        }
+      ],
+      count: 1
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () => '# 审查报告')
+    window.codeReview.submitReportFeedback = vi.fn(async () => {
+      throw new Error('请求失败：409 Client Error: Bad Request for url ... detail: report_feedback_exists')
+    })
+    window.codeReview.openPdfReport = vi.fn(async () => ({
+      status: 'ready' as const,
+      pdfPath: '/local/task-history.pdf'
+    }))
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+    await user.click(screen.getByRole('button', { name: '没帮助' }))
+
+    await waitFor(() => expect(window.codeReview.openPdfReport).toHaveBeenCalled())
+    // 反馈选择面板不再展示（已放行）
+    expect(screen.queryByRole('button', { name: '有帮助' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '没帮助' })).not.toBeInTheDocument()
+    // 不向用户展示冲突错误
+    expect(screen.queryByText(/report_feedback_exists/)).not.toBeInTheDocument()
+  })
 })
