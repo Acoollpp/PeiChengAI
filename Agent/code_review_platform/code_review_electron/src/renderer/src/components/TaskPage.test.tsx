@@ -35,7 +35,14 @@ const setupCodeReviewApi = (): void => {
     checkEnvironment: vi.fn(),
     onEnvironmentProgress: vi.fn(() => vi.fn()),
     bindSvnCredential: vi.fn(),
-    submitFeedback: vi.fn(async () => ({ id: 'feedback-1', status: 'pending' }))
+    submitFeedback: vi.fn(async () => ({ id: 'feedback-1', status: 'pending' })),
+    submitReportFeedback: vi.fn(async () => ({
+      id: 'report-feedback-1',
+      task_id: 'task-history-2',
+      user_id: 'user-1',
+      helpful: true,
+      useful_issues_text: '1. 空指针风险'
+    }))
   } as unknown as CodeReviewApi
 }
 
@@ -248,7 +255,8 @@ describe('TaskPage', () => {
           status: 'success' as const,
           report_path: '/app/reports/task-history-2.md',
           pdf_report_path: '/app/reports/task-history-2.pdf',
-          pdf_report_name: 'r3_r4审查报告_20260615_143000.pdf'
+          pdf_report_name: 'r3_r4审查报告_20260615_143000.pdf',
+          report_feedback_helpful: false
         }
       ],
       count: 2
@@ -287,7 +295,8 @@ describe('TaskPage', () => {
           status: 'success' as const,
           report_path: '/app/reports/task-history-a.md',
           pdf_report_path: '/app/reports/task-history-a.pdf',
-          pdf_report_name: 'A审查报告_20260615_143000.pdf'
+          pdf_report_name: 'A审查报告_20260615_143000.pdf',
+          report_feedback_helpful: false
         },
         {
           id: 'task-history-b',
@@ -297,7 +306,8 @@ describe('TaskPage', () => {
           status: 'success' as const,
           report_path: '/app/reports/task-history-b.md',
           pdf_report_path: '/app/reports/task-history-b.pdf',
-          pdf_report_name: 'B审查报告_20260615_143000.pdf'
+          pdf_report_name: 'B审查报告_20260615_143000.pdf',
+          report_feedback_helpful: false
         }
       ],
       count: 2
@@ -350,6 +360,13 @@ describe('TaskPage', () => {
       status: 'ready' as const,
       pdfPath: '/app/reports/task-local-success.pdf'
     }))
+    window.codeReview.submitReportFeedback = vi.fn(async () => ({
+      id: 'report-feedback-local-success',
+      task_id: 'task-local-success',
+      user_id: 'user-1',
+      helpful: false,
+      useful_issues_text: null
+    }))
 
     renderReadyTaskPage()
 
@@ -359,7 +376,13 @@ describe('TaskPage', () => {
     await user.click(within(notice).getByRole('button', { name: '查看报告' }))
     await screen.findByText('本地报告')
     await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+    await user.click(screen.getByRole('button', { name: '没帮助' }))
 
+    expect(window.codeReview.submitReportFeedback).toHaveBeenCalledWith({
+      taskId: 'task-local-success',
+      helpful: false,
+      useful_issues_text: ''
+    })
     expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
       taskId: 'task-local-success',
       localPdfPath: '/app/reports/task-local-success.pdf',
@@ -815,5 +838,141 @@ describe('TaskPage', () => {
       })
     )
     expect(window.codeReview.readTaskReport).not.toHaveBeenCalled()
+  })
+
+  it('未反馈历史任务点击查看PDF时先展示报告反馈选择', async () => {
+    const user = userEvent.setup()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-history-1',
+          svn_url: 'svn://repo/project',
+          old_revision: 'r1',
+          new_revision: 'r2',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history.md',
+          pdf_report_path: '/app/reports/task-history.pdf',
+          report_feedback_helpful: null
+        }
+      ],
+      count: 1
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () => '# 审查报告\n\n### 空指针风险')
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+
+    expect(screen.getByRole('button', { name: '有帮助' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '没帮助' })).toBeInTheDocument()
+    expect(window.codeReview.openPdfReport).not.toHaveBeenCalled()
+  })
+
+  it('点击没帮助会提交报告反馈并打开PDF', async () => {
+    const user = userEvent.setup()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-history-1',
+          svn_url: 'svn://repo/project',
+          old_revision: 'r1',
+          new_revision: 'r2',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history.md',
+          pdf_report_path: '/app/reports/task-history.pdf',
+          report_feedback_helpful: null
+        }
+      ],
+      count: 1
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () => '# 审查报告')
+    window.codeReview.submitReportFeedback = vi.fn(async () => ({
+      id: 'report-feedback-1',
+      task_id: 'task-history-1',
+      user_id: 'user-1',
+      helpful: false,
+      useful_issues_text: null
+    }))
+    window.codeReview.openPdfReport = vi.fn(async () => ({
+      status: 'ready' as const,
+      pdfPath: '/local/task-history.pdf'
+    }))
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+    await user.click(screen.getByRole('button', { name: '没帮助' }))
+
+    expect(window.codeReview.submitReportFeedback).toHaveBeenCalledWith({
+      taskId: 'task-history-1',
+      helpful: false,
+      useful_issues_text: ''
+    })
+    await waitFor(() => expect(window.codeReview.openPdfReport).toHaveBeenCalled())
+  })
+
+  it('点击有帮助后必须至少选择或填写一条有用信息才能提交', async () => {
+    const user = userEvent.setup()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-history-1',
+          svn_url: 'svn://repo/project',
+          old_revision: 'r1',
+          new_revision: 'r2',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history.md',
+          pdf_report_path: '/app/reports/task-history.pdf',
+          report_feedback_helpful: null
+        }
+      ],
+      count: 1
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () => '# 审查报告\n\n### 空指针风险')
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+    await user.click(screen.getByRole('button', { name: '有帮助' }))
+
+    expect(screen.getByRole('button', { name: '提交并打开PDF' })).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: '空指针风险' }))
+    expect(screen.getByRole('button', { name: '提交并打开PDF' })).toBeEnabled()
+  })
+
+  it('已反馈任务点击查看PDF报告直接打开PDF', async () => {
+    const user = userEvent.setup()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-history-1',
+          svn_url: 'svn://repo/project',
+          old_revision: 'r1',
+          new_revision: 'r2',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history.md',
+          pdf_report_path: '/app/reports/task-history.pdf',
+          report_feedback_helpful: false,
+          report_feedback_useful_issues_text: null
+        }
+      ],
+      count: 1
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () => '# 审查报告')
+    window.codeReview.openPdfReport = vi.fn(async () => ({
+      status: 'ready' as const,
+      pdfPath: '/local/task-history.pdf'
+    }))
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+
+    expect(window.codeReview.submitReportFeedback).not.toHaveBeenCalled()
+    expect(window.codeReview.openPdfReport).toHaveBeenCalled()
   })
 })
