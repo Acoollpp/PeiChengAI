@@ -34,6 +34,8 @@
 
 Web：
 
+- Modify: `code_review_server/frontend/src/routes/_layout.tsx`
+  - 对 `/tasks/review` 路由做内容容器级宽度放宽，宽度仍基于 `SidebarInset` 内容区，不使用 `100vw`。
 - Modify: `code_review_server/frontend/src/client/types.gen.ts`
   - 重新生成或手动同步 `ReviewTaskPublic` 新字段。
 - Modify: `code_review_server/frontend/src/client/schemas.gen.ts`
@@ -823,7 +825,13 @@ In `delete_review_task`, before deleting requirement files, add:
     session.exec(report_feedback_statement)
 ```
 
-If `delete` is not imported in this file, add:
+Update the `sqlmodel` import in this file from:
+
+```python
+from sqlmodel import col, func, select
+```
+
+to:
 
 ```python
 from sqlmodel import col, delete, func, select
@@ -1439,7 +1447,73 @@ git commit -m "支持报告有用信息勾选"
 - Modify: `code_review_electron/src/renderer/src/hooks/useTaskQueue.ts`
 - Modify: `code_review_electron/src/renderer/src/styles.css`
 
-- [ ] **Step 1: Add TaskPage failing tests**
+- [ ] **Step 1: Prepare existing TaskPage PDF tests for feedback gate**
+
+In `TaskPage.test.tsx`, update existing historical-task PDF tests that should keep the old direct-open behavior by adding `report_feedback_helpful: false` to the selected historical task mocks.
+
+In `历史任务查看PDF报告时按任务 ID 下载服务端 PDF`, add the field to `task-history-2`:
+
+```ts
+          report_path: '/app/reports/task-history-2.md',
+          pdf_report_path: '/app/reports/task-history-2.pdf',
+          pdf_report_name: 'r3_r4审查报告_20260615_143000.pdf',
+          report_feedback_helpful: false
+```
+
+In `快速切换历史报告时忽略旧请求返回，避免覆盖当前 PDF 报告名`, add the field to both `task-history-a` and `task-history-b`:
+
+```ts
+          pdf_report_name: 'A审查报告_20260615_143000.pdf',
+          report_feedback_helpful: false
+```
+
+```ts
+          pdf_report_name: 'B审查报告_20260615_143000.pdf',
+          report_feedback_helpful: false
+```
+
+Do not bypass feedback for the local-completion test `点击查看PDF报告时优先打开当前任务本地 PDF`. That test represents a newly generated task that has not submitted report feedback yet. Update it to submit the required lightweight feedback before asserting PDF open:
+
+```ts
+    window.codeReview.submitReportFeedback = vi.fn(async () => ({
+      id: 'report-feedback-local-success',
+      task_id: 'task-local-success',
+      user_id: 'user-1',
+      helpful: false,
+      useful_issues_text: null
+    }))
+```
+
+Change the click sequence in that test:
+
+```ts
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+    await user.click(screen.getByRole('button', { name: '没帮助' }))
+```
+
+Add the feedback assertion before the existing `openPdfReport` assertion:
+
+```ts
+    expect(window.codeReview.submitReportFeedback).toHaveBeenCalledWith({
+      taskId: 'task-local-success',
+      helpful: false,
+      useful_issues_text: ''
+    })
+```
+
+Keep the existing `openPdfReport` assertion unchanged so it still proves the local PDF path is preferred:
+
+```ts
+    expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
+      taskId: 'task-local-success',
+      localPdfPath: '/app/reports/task-local-success.pdf',
+      pdfReportName: 'r7_r2审查报告_20260615_143000.pdf'
+    })
+```
+
+Existing test `未选中任务时右侧显示当前审查模板，切换模板后不打开最新报告位置` does not need `report_feedback_helpful`, because `handleOpenPdfReport` returns on missing `taskId` before the feedback gate.
+
+- [ ] **Step 2: Add TaskPage failing tests**
 
 In `TaskPage.test.tsx`, update `setupCodeReviewApi` with:
 
@@ -1593,7 +1667,7 @@ Append tests:
   })
 ```
 
-- [ ] **Step 2: Run TaskPage tests to verify they fail**
+- [ ] **Step 3: Run TaskPage tests to verify they fail**
 
 Run:
 
@@ -1604,7 +1678,7 @@ npm test -- src/renderer/src/components/TaskPage.test.tsx
 
 Expected: FAIL because feedback UI and submit flow do not exist.
 
-- [ ] **Step 3: Add TaskPage state and formatting helpers**
+- [ ] **Step 4: Add TaskPage state and formatting helpers**
 
 In `TaskPage.tsx`, add types near `CompletionNotice`:
 
@@ -1650,7 +1724,7 @@ When switching template or selected task, reset feedback UI:
 
 Add same reset in `handleViewReport` before loading the selected task.
 
-- [ ] **Step 4: Track selected task and update feedback fields locally**
+- [ ] **Step 5: Track selected task and update feedback fields locally**
 
 Add helper in `TaskPage.tsx`:
 
@@ -1698,7 +1772,7 @@ Add helper:
   )
 ```
 
-- [ ] **Step 5: Extract pure PDF open flow and implement submit flow**
+- [ ] **Step 6: Extract pure PDF open flow and implement submit flow**
 
 In `TaskPage.tsx`, extract the existing PDF opening body from `handleOpenPdfReport` into `openSelectedPdfReport`. The extracted function must contain the current `window.codeReview.openPdfReport(...)`, success handling, and error handling. It must not check or mutate report feedback state:
 
@@ -1830,7 +1904,7 @@ Add:
   }
 ```
 
-- [ ] **Step 6: Render feedback toolbar and Markdown selection**
+- [ ] **Step 7: Render feedback toolbar and Markdown selection**
 
 Replace toolbar button with conditional controls:
 
@@ -1901,7 +1975,7 @@ Pass selection props:
         />
 ```
 
-- [ ] **Step 7: Add styles**
+- [ ] **Step 8: Add styles**
 
 In `styles.css`, add near preview toolbar styles:
 
@@ -1971,7 +2045,7 @@ Add mobile adjustment inside existing media query:
   }
 ```
 
-- [ ] **Step 8: Run TaskPage and hook tests**
+- [ ] **Step 9: Run TaskPage and hook tests**
 
 Run:
 
@@ -1982,7 +2056,7 @@ npm test -- src/renderer/src/components/TaskPage.test.tsx src/renderer/src/hooks
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit Electron renderer feedback loop**
+- [ ] **Step 10: Commit Electron renderer feedback loop**
 
 ```bash
 git add code_review_electron/src/renderer/src/components/TaskPage.tsx \
@@ -1995,6 +2069,7 @@ git commit -m "实现客户端报告反馈闭环"
 ### Task 7: Web 任务管理两列展示和宽屏布局
 
 **Files:**
+- Modify: `code_review_server/frontend/src/routes/_layout.tsx`
 - Modify: `code_review_server/frontend/src/client/types.gen.ts`
 - Modify: `code_review_server/frontend/src/client/schemas.gen.ts`
 - Modify: `code_review_server/frontend/src/components/Tasks/TasksPage.tsx`
@@ -2106,6 +2181,15 @@ Append to `code_review_server/frontend/tests/tasks.spec.ts`:
     await expect(page.getByText("未反馈")).toBeVisible()
     const usefulCell = page.getByTitle("1. 空指针风险\n2. 越界访问风险")
     await expect(usefulCell).toBeVisible()
+
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await expect(page.locator('[data-testid="review-tasks-content"]')).toHaveClass(
+      /max-w-\[1600px\]/,
+    )
+    const hasPageHorizontalOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    )
+    expect(hasPageHorizontalOverflow).toBe(false)
   })
 ```
 
@@ -2200,21 +2284,66 @@ Change empty state:
                 colSpan={REVIEW_TASK_TABLE_COLUMN_COUNT}
 ```
 
-- [ ] **Step 5: Implement local wide layout**
+- [ ] **Step 5: Implement route-scoped wide layout without viewport-width breakout**
 
-Change root return in `TasksPage` from:
+In `code_review_server/frontend/src/routes/_layout.tsx`, change the import from:
+
+```ts
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
+```
+
+to:
+
+```ts
+import {
+  createFileRoute,
+  Outlet,
+  redirect,
+  useRouterState,
+} from "@tanstack/react-router"
+```
+
+Inside `Layout`, add route detection:
+
+```tsx
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
+  const isReviewTasksRoute = pathname === "/tasks/review"
+```
+
+Replace the existing content wrapper:
+
+```tsx
+          <div className="mx-auto max-w-7xl">
+            <Outlet />
+          </div>
+```
+
+with:
+
+```tsx
+          <div
+            className={
+              isReviewTasksRoute
+                ? "mx-auto w-full max-w-[1600px]"
+                : "mx-auto max-w-7xl"
+            }
+            data-testid={isReviewTasksRoute ? "review-tasks-content" : undefined}
+          >
+            <Outlet />
+          </div>
+```
+
+This keeps the width based on `SidebarInset` / `<main>` available content area. Do not use `100vw`, `left-1/2`, or `translate-x-*` in `TasksPage`; those calculate against the full viewport and overlap the sidebar when it is expanded.
+
+In `TasksPage`, keep the root container content-area relative:
 
 ```tsx
     <div className="flex flex-col gap-6">
 ```
 
-to:
-
-```tsx
-    <div className="relative left-1/2 flex w-[calc(100vw-3rem)] max-w-[calc(100vw-3rem)] -translate-x-1/2 flex-col gap-6 md:w-[calc(100vw-5rem)] md:max-w-[calc(100vw-5rem)]">
-```
-
-This locally breaks out of `_layout.tsx` `max-w-7xl` without changing other pages. If visual QA shows it collides with sidebar, adjust the calc to subtract the visible sidebar width or use a route-level class, but do not remove the global `max-w-7xl`.
+No class change is required on the `TasksPage` root. The table already uses the shared `Table` wrapper with `w-full overflow-x-auto`, so horizontal scrolling stays inside the table container when the viewport is narrow. Do not add viewport-width breakout classes to `TasksPage`.
 
 - [ ] **Step 6: Run Web task tests**
 
