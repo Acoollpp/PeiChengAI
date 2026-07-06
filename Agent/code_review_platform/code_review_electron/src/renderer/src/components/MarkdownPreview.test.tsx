@@ -5,7 +5,7 @@ import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { MarkdownPreview } from './MarkdownPreview'
+import { extractDetailedHeadingOptions, MarkdownPreview } from './MarkdownPreview'
 
 afterEach(() => {
   cleanup()
@@ -138,41 +138,27 @@ describe('MarkdownPreview', () => {
     expect(screen.getByRole('heading', { name: '新报告', level: 1 })).toBeInTheDocument()
   })
 
-  it('renders detailed heading checkboxes when report feedback selection is enabled', async () => {
-    const onUsefulIssueToggle = vi.fn()
-    render(
-      <MarkdownPreview
-        markdown={[
-          '# 审查报告',
-          '## 高风险问题',
-          '### 空指针风险',
-          '正文',
-          '### 越界访问风险',
-          '正文',
-          '```',
-          '### 代码块标题不应识别',
-          '```'
-        ].join('\n')}
-        usefulIssueSelection={{
-          enabled: true,
-          selectedIssues: ['空指针风险'],
-          onToggle: onUsefulIssueToggle
-        }}
-      />
+  it('extracts detailed heading options for report feedback', () => {
+    const options = extractDetailedHeadingOptions(
+      [
+        '# 审查报告',
+        '## 高风险问题',
+        '### 空指针风险',
+        '正文',
+        '### 越界访问风险',
+        '正文',
+        '```',
+        '### 代码块标题不应识别',
+        '```'
+      ].join('\n')
     )
 
-    expect(screen.getByRole('checkbox', { name: '空指针风险' })).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: '越界访问风险' })).not.toBeChecked()
-    expect(screen.queryByRole('checkbox', { name: '代码块标题不应识别' })).not.toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('checkbox', { name: '越界访问风险' }))
-    expect(onUsefulIssueToggle).toHaveBeenCalledWith('越界访问风险')
+    expect(options.map((option) => option.text)).toEqual(['空指针风险', '越界访问风险'])
   })
 
   it('模板二报告优先从有效表格行提取具体问题选项', () => {
-    render(
-      <MarkdownPreview
-        markdown={[
+    const options = extractDetailedHeadingOptions(
+      [
           '# 代码审查报告模板二',
           '## 二、流程节点详细审查报告',
           '### 1. 部门自检项结果',
@@ -183,27 +169,13 @@ describe('MarkdownPreview', () => {
           '| 涉及文件及行号 | 风险级别 | 专项检查方向 | 缺陷描述 (Root Cause) | 缺陷可能造成的风险 | 整改建议与闭环方案 | 对应变更图 |',
           '|---|---|---|---|---|---|---|',
           '| `source/Bms_Config.h` | 高风险 | SOH 容量映射 | SOH 字段映射缺失。 | 导致容量显示异常。 | 增加映射并做协议回归。 | 无 |'
-        ].join('\n')}
-        usefulIssueSelection={{
-          enabled: true,
-          selectedIssues: [],
-          onToggle: vi.fn()
-        }}
-      />
+      ].join('\n')
     )
 
-    expect(
-      screen.getByRole('checkbox', {
-        name: '部门自检项结果 · 中风险 · 软件版本与工程配置不一致，采样电阻未识别。'
-      })
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('checkbox', {
-        name: '部门专项风险检查 · 高风险 · SOH 容量映射 · SOH 字段映射缺失。'
-      })
-    ).toBeInTheDocument()
-    expect(screen.queryByRole('checkbox', { name: '部门自检项结果' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('checkbox', { name: '部门专项风险检查' })).not.toBeInTheDocument()
+    expect(options.map((option) => option.text)).toEqual([
+      '部门自检项结果 · 中风险 · 软件版本与工程配置不一致，采样电阻未识别。',
+      '部门专项风险检查 · 高风险 · SOH 容量映射 · SOH 字段映射缺失。'
+    ])
   })
 
   it('does not render report feedback checkboxes by default', () => {

@@ -835,7 +835,7 @@ describe('TaskPage', () => {
     expect(window.codeReview.readTaskReport).not.toHaveBeenCalled()
   })
 
-  it('未反馈历史任务查看报告后直接展示报告反馈选择和说明', async () => {
+  it('未反馈历史任务查看报告后直接展示报告反馈选择和用途说明', async () => {
     const user = userEvent.setup()
     window.codeReview.listTasks = vi.fn(async () => ({
       data: [
@@ -860,7 +860,7 @@ describe('TaskPage', () => {
 
     expect(screen.getByRole('button', { name: '有帮助' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '没帮助' })).toBeInTheDocument()
-    expect(screen.getByText('这两个按钮用于统计报告是否对代码审查有帮助。')).toBeInTheDocument()
+    expect(screen.getByText('用于统计这份 AI 审查报告是否真的有参考价值。')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '查看PDF报告' })).not.toBeInTheDocument()
     expect(window.codeReview.openPdfReport).not.toHaveBeenCalled()
   })
@@ -935,10 +935,13 @@ describe('TaskPage', () => {
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
     await user.click(screen.getByRole('button', { name: '有帮助' }))
 
-    expect(screen.getByRole('button', { name: '提交并打开PDF' })).toBeDisabled()
-    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' }))
-    await user.click(screen.getByRole('checkbox', { name: '空指针风险' }))
-    expect(screen.getByRole('button', { name: '提交并打开PDF' })).toBeEnabled()
+    const dialog = screen.getByRole('dialog', { name: '报告有用信息反馈' })
+    expect(within(dialog).getByRole('button', { name: '提交并打开PDF' })).toBeDisabled()
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('checkbox', { name: '空指针风险' }))
+    expect(within(dialog).getByRole('button', { name: '提交并打开PDF' })).toBeEnabled()
+    const preview = document.querySelector('.markdown-preview')
+    expect(preview).not.toContainElement(screen.getByLabelText('可标记的有用信息'))
   })
 
   it('历史失败任务点击重试后复用原任务重新执行', async () => {
@@ -983,7 +986,7 @@ describe('TaskPage', () => {
     expect(window.codeReview.executeTask).not.toHaveBeenCalled()
   })
 
-  it('点击有帮助后用独立反馈面板展示说明、计数、输入框和提交按钮', async () => {
+  it('点击有帮助后用弹窗展示说明、计数、输入框和提交按钮', async () => {
     const user = userEvent.setup()
     window.codeReview.listTasks = vi.fn(async () => ({
       data: [
@@ -1007,12 +1010,17 @@ describe('TaskPage', () => {
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
     await user.click(screen.getByRole('button', { name: '有帮助' }))
 
-    const panel = screen.getByLabelText('报告有用信息反馈')
-    expect(panel).toHaveClass('report-feedback-panel')
-    expect(within(panel).getByText('标记有用信息')).toBeInTheDocument()
-    expect(within(panel).getByText('已选 0 条')).toBeInTheDocument()
-    expect(within(panel).getByRole('textbox', { name: '有用信息' })).toBeInTheDocument()
-    expect(within(panel).getByRole('button', { name: '提交并打开PDF' })).toBeDisabled()
+    const dialog = screen.getByRole('dialog', { name: '报告有用信息反馈' })
+    expect(dialog).toHaveClass('report-feedback-dialog')
+    expect(within(dialog).getByText('标记报告中的有用内容')).toBeInTheDocument()
+    expect(
+      within(dialog).getByText('请勾选这份报告里真正有参考价值的问题或建议，也可以手动补充。提交后会用于统计报告质量，并帮助后续优化 AI 输出。')
+    ).toBeInTheDocument()
+    expect(within(dialog).getByText('已标记 0 条')).toBeInTheDocument()
+    expect(within(dialog).getByRole('checkbox', { name: '空指针风险' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('textbox', { name: '有用内容' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: '提交并打开PDF' })).toBeDisabled()
+    expect(screen.queryByLabelText('报告有用信息反馈', { selector: '.report-feedback-panel' })).not.toBeInTheDocument()
   })
 
   it('勾选已有编号的有用信息时提交内容不会重复编号', async () => {
@@ -1044,9 +1052,10 @@ describe('TaskPage', () => {
     const historyPanel = await openHistoryTasks(user)
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
     await user.click(screen.getByRole('button', { name: '有帮助' }))
-    await user.click(screen.getByRole('checkbox', { name: '空指针风险' }))
-    await user.click(screen.getByRole('checkbox', { name: '越界访问风险' }))
-    await user.click(screen.getByRole('button', { name: '提交并打开PDF' }))
+    const dialog = screen.getByRole('dialog', { name: '报告有用信息反馈' })
+    await user.click(within(dialog).getByRole('checkbox', { name: '空指针风险' }))
+    await user.click(within(dialog).getByRole('checkbox', { name: '越界访问风险' }))
+    await user.click(within(dialog).getByRole('button', { name: '提交并打开PDF' }))
 
     expect(window.codeReview.submitReportFeedback).toHaveBeenCalledWith({
       taskId: 'task-history-1',

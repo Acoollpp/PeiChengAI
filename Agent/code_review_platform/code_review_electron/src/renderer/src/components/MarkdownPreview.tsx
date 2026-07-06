@@ -2,7 +2,6 @@ import {
   Component,
   isValidElement,
   type ReactNode,
-  type RefObject,
   useEffect,
   useState
 } from 'react'
@@ -15,17 +14,9 @@ export type ReportHeadingOption = {
   text: string
 }
 
-type UsefulIssueSelection = {
-  enabled: boolean
-  selectedIssues: string[]
-  onToggle: (issue: string) => void
-  optionsRef?: RefObject<HTMLDivElement | null>
-}
-
 type MarkdownPreviewProps = {
   markdown: string
   reportPath?: string
-  usefulIssueSelection?: UsefulIssueSelection
 }
 
 const headingLinePattern = /^(#{1,6})\s+(.+?)\s*$/
@@ -383,8 +374,7 @@ function ReportImage({
 
 export function MarkdownPreview({
   markdown,
-  reportPath,
-  usefulIssueSelection
+  reportPath
 }: MarkdownPreviewProps): React.JSX.Element {
   if (!markdown.trim()) {
     return (
@@ -398,24 +388,6 @@ export function MarkdownPreview({
     <div className="preview-scroll">
       <MarkdownErrorBoundary resetKey={markdown}>
         <article className="markdown-preview">
-          {usefulIssueSelection?.enabled && (
-            <div
-              ref={usefulIssueSelection.optionsRef}
-              className="report-heading-options"
-              aria-label="可标记的有用信息"
-            >
-              {extractDetailedHeadingOptions(markdown).map((option) => (
-                <label className="report-heading-option" key={option.id}>
-                  <input
-                    type="checkbox"
-                    checked={usefulIssueSelection.selectedIssues.includes(option.text)}
-                    onChange={() => usefulIssueSelection.onToggle(option.text)}
-                  />
-                  <span>{option.text}</span>
-                </label>
-              ))}
-            </div>
-          )}
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             urlTransform={(url, key) =>
