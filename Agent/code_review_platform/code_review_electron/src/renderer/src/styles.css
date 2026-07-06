@@ -33,6 +33,15 @@ button:disabled {
   opacity: 0.58;
 }
 
+button:not(:disabled) {
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
 .app-shell {
   position: relative;
   overflow: hidden;
@@ -407,6 +416,7 @@ h2 {
 .password-toggle:hover {
   color: #f5f7fb;
   background: rgb(255 255 255 / 8%);
+  box-shadow: 0 8px 16px rgb(0 0 0 / 16%);
 }
 
 .auth-card .remember-field {
@@ -430,6 +440,7 @@ h2 {
 
 .link-button:hover {
   color: #f5f7fb;
+  text-decoration: underline;
 }
 
 .auth-admin-link {
@@ -446,6 +457,7 @@ h2 {
 
 .auth-admin-link:hover {
   color: #f5f7fb;
+  text-decoration: underline;
 }
 
 .primary-button,
@@ -462,6 +474,7 @@ h2 {
 .primary-button {
   color: #ffffff;
   background: #0dac68;
+  box-shadow: 0 10px 22px rgb(13 172 104 / 18%);
 }
 
 .auth-card .primary-button {
@@ -480,6 +493,42 @@ h2 {
   color: rgb(245 247 251 / 76%);
   border-color: rgb(255 255 255 / 12%);
   background: rgb(255 255 255 / 8%);
+}
+
+.primary-button:hover:not(:disabled),
+.install-button:hover:not(:disabled) {
+  background: #12b978;
+  box-shadow: 0 14px 28px rgb(18 185 120 / 26%);
+  transform: translateY(-1px);
+}
+
+.secondary-button:hover:not(:disabled),
+.ghost-button:hover:not(:disabled) {
+  color: #ffffff;
+  border-color: rgb(18 185 120 / 44%);
+  background: rgb(18 185 120 / 18%);
+  box-shadow: 0 12px 24px rgb(0 0 0 / 20%);
+  transform: translateY(-1px);
+}
+
+.primary-button:active:not(:disabled),
+.secondary-button:active:not(:disabled),
+.ghost-button:active:not(:disabled),
+.install-button:active:not(:disabled) {
+  box-shadow: 0 6px 14px rgb(0 0 0 / 18%);
+  transform: translateY(0);
+}
+
+.primary-button:focus-visible,
+.secondary-button:focus-visible,
+.ghost-button:focus-visible,
+.install-button:focus-visible,
+.admin-contact-button:focus-visible,
+.task-action-button:focus-visible,
+.dependency-alert-button:focus-visible,
+.task-cancel-button:focus-visible {
+  outline: 2px solid rgb(18 185 120 / 78%);
+  outline-offset: 2px;
 }
 
 .ghost-button:disabled,
@@ -543,6 +592,15 @@ h2 {
   font-size: 20px;
   font-weight: 900;
   line-height: 1;
+}
+
+.dependency-alert-button:hover:not(:disabled) {
+  box-shadow: 0 12px 24px rgb(0 0 0 / 18%);
+  transform: translateY(-1px);
+}
+
+.dependency-alert-button:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .dependency-alert-button.is-warning {
@@ -625,6 +683,7 @@ h2 {
   background: #10a36f;
   font-size: 13px;
   font-weight: 800;
+  box-shadow: 0 8px 18px rgb(16 163 111 / 18%);
 }
 
 .dependency-help {
@@ -715,9 +774,17 @@ h2 {
   white-space: nowrap;
 }
 
-.admin-contact-button:hover {
+.admin-contact-button:hover:not(:disabled) {
   color: #ffffff;
-  background: rgb(255 255 255 / 14%);
+  border-color: rgb(18 185 120 / 36%);
+  background: rgb(18 185 120 / 16%);
+  box-shadow: 0 10px 20px rgb(0 0 0 / 18%);
+  transform: translateY(-1px);
+}
+
+.admin-contact-button:active:not(:disabled) {
+  box-shadow: none;
+  transform: translateY(0);
 }
 
 .workspace-logo {
@@ -922,6 +989,13 @@ h2 {
 .task-action-button:hover:not(:disabled) {
   border-color: rgb(18 185 120 / 44%);
   background: rgb(18 185 120 / 18%);
+  box-shadow: 0 10px 20px rgb(0 0 0 / 18%);
+  transform: translateY(-1px);
+}
+
+.task-action-button:active:not(:disabled) {
+  box-shadow: none;
+  transform: translateY(0);
 }
 
 .completion-notice {
@@ -975,6 +1049,17 @@ h2 {
 .task-cancel-button:hover:not(:disabled) {
   border-color: rgb(255 112 92 / 54%);
   background: rgb(255 112 92 / 18%);
+  box-shadow: 0 10px 20px rgb(255 112 92 / 12%);
+  transform: translateY(-1px);
+}
+
+.task-cancel-button:focus-visible {
+  outline-color: rgb(255 112 92 / 78%);
+}
+
+.task-cancel-button:active:not(:disabled) {
+  box-shadow: none;
+  transform: translateY(0);
 }
 
 .task-error {
