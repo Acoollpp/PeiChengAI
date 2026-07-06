@@ -154,6 +154,10 @@ describe('MarkdownPreview', () => {
     )
 
     expect(options.map((option) => option.text)).toEqual(['空指针风险', '越界访问风险'])
+    expect(options.map((option) => option.anchorId)).toEqual([
+      'report-option-2',
+      'report-option-4'
+    ])
   })
 
   it('模板二报告优先从有效表格行提取具体问题选项', () => {
@@ -176,6 +180,37 @@ describe('MarkdownPreview', () => {
       '部门自检项结果 · 中风险 · 软件版本与工程配置不一致，采样电阻未识别。',
       '部门专项风险检查 · 高风险 · SOH 容量映射 · SOH 字段映射缺失。'
     ])
+    expect(options.map((option) => option.anchorId)).toEqual([
+      'report-option-5',
+      'report-option-9'
+    ])
+  })
+
+  it('renders report anchors for feedback option targets', () => {
+    render(
+      <MarkdownPreview
+        markdown={[
+          '# 审查报告',
+          '## 高风险问题',
+          '### 空指针风险',
+          '正文',
+          '### 越界访问风险'
+        ].join('\n')}
+        activeFeedbackAnchorId="report-option-2"
+      />
+    )
+
+    expect(screen.getByRole('heading', { name: '空指针风险' })).toHaveAttribute(
+      'data-report-anchor-id',
+      'report-option-2'
+    )
+    expect(screen.getByRole('heading', { name: '空指针风险' })).toHaveClass(
+      'report-anchor-highlight'
+    )
+    expect(screen.getByRole('heading', { name: '越界访问风险' })).toHaveAttribute(
+      'data-report-anchor-id',
+      'report-option-4'
+    )
   })
 
   it('does not render report feedback checkboxes by default', () => {

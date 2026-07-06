@@ -1496,7 +1496,21 @@ h2 {
 }
 
 .report-feedback-dialog {
+  position: fixed;
+  z-index: 110;
   width: min(680px, calc(100vw - 48px));
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+  padding-top: 30px;
+}
+
+.report-feedback-dialog-drag-handle {
+  cursor: move;
+  user-select: none;
+}
+
+.report-feedback-dialog-drag-handle h2 {
+  margin: 0 0 8px;
 }
 
 .report-feedback-dialog-body {
@@ -1572,6 +1586,14 @@ h2 {
 .report-feedback-dialog-field textarea:focus {
   outline: 2px solid rgb(18 185 120 / 32%);
   border-color: rgb(18 185 120 / 62%);
+}
+
+.report-anchor-highlight {
+  border-radius: 8px;
+  outline: 2px solid rgb(18 185 120 / 55%);
+  outline-offset: 4px;
+  background: rgb(18 185 120 / 10%);
+  transition: outline-color 160ms ease, background 160ms ease;
 }
 
 .submit-feedback-dialog {

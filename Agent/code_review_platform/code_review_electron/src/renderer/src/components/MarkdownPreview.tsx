@@ -3,6 +3,7 @@ import {
   isValidElement,
   type ReactNode,
   useEffect,
+  useMemo,
   useState
 } from 'react'
 import ReactMarkdown from 'react-markdown'
@@ -12,14 +13,18 @@ export type ReportHeadingOption = {
   id: string
   level: number
   text: string
+  anchorId: string
 }
 
 type MarkdownPreviewProps = {
   markdown: string
   reportPath?: string
+  activeFeedbackAnchorId?: string
 }
 
 const headingLinePattern = /^(#{1,6})\s+(.+?)\s*$/
+
+const anchorIdForLine = (lineIndex: number): string => `report-option-${lineIndex}`
 
 const stripMarkerListPrefix = (value: string): string =>
   value.replace(/^\s*\d+[\.)、]\s*/, '').trim()
@@ -136,7 +141,7 @@ const extractTemplateTwoTableOptions = (markdown: string): ReportHeadingOption[]
 
     const text = buildTemplateTwoTableOption(currentSection, currentHeaders, cells)
     if (text) {
-      options.push({ id: `${index}-${text}`, level: 4, text })
+      options.push({ id: `${index}-${text}`, level: 4, text, anchorId: anchorIdForLine(index) })
     }
   })
 
@@ -186,7 +191,7 @@ const extractTemplateTwoConclusionOptions = (markdown: string): ReportHeadingOpt
     }
 
     const text = `${currentSection} · ${item}`
-    options.push({ id: `${index}-${text}`, level: 4, text })
+    options.push({ id: `${index}-${text}`, level: 4, text, anchorId: anchorIdForLine(index) })
   })
 
   return makeUniqueOptions(options)
@@ -226,7 +231,8 @@ export const extractDetailedHeadingOptions = (markdown: string): ReportHeadingOp
     headings.push({
       id: `${index}-${text}`,
       level: match[1].length,
-      text
+      text,
+      anchorId: anchorIdForLine(index)
     })
   })
 
@@ -282,6 +288,78 @@ const getCodeLanguage = (children: ReactNode): string | undefined => {
   }
 
   return /language-(\w+)/.exec(child.props.className ?? '')?.[1]
+}
+
+const buildFeedbackAnchorMap = (markdown: string): Map<string, string> => {
+  const anchors = new Map<string, string>()
+
+  try {
+    extractDetailedHeadingOptions(markdown).forEach((option) => {
+      anchors.set(option.text, option.anchorId)
+    })
+  } catch {
+    return anchors
+  }
+
+  return anchors
+}
+
+const getPlainText = (children: ReactNode): string => {
+  if (typeof children === 'string' || typeof children === 'number') {
+    return String(children)
+  }
+
+  if (Array.isArray(children)) {
+    return children.map(getPlainText).join('')
+  }
+
+  if (isValidElement<{ children?: ReactNode }>(children)) {
+    return getPlainText(children.props.children)
+  }
+
+  return ''
+}
+
+const stripRenderedMarkerPrefix = (value: string): string =>
+  value.replace(/^\s*\d+[\.)、]\s*/, '').trim()
+
+const isActiveReportAnchor = (
+  anchorId: string | undefined,
+  activeFeedbackAnchorId: string | undefined
+): boolean => Boolean(anchorId) && anchorId === activeFeedbackAnchorId
+
+const findAnchorForRenderedText = (
+  anchorMap: Map<string, string>,
+  renderedText: string
+): string | undefined => {
+  const normalized = stripRenderedMarkerPrefix(renderedText).replace(/\s+/g, ' ').trim()
+
+  if (!normalized) {
+    return undefined
+  }
+
+  return anchorMap.get(normalized)
+}
+
+const findAnchorForRenderedTableRow = (
+  anchorMap: Map<string, string>,
+  renderedText: string
+): string | undefined => {
+  const normalized = stripRenderedMarkerPrefix(renderedText).replace(/\s+/g, ' ').trim()
+  if (!normalized) {
+    return undefined
+  }
+
+  return (
+    anchorMap.get(normalized) ??
+    [...anchorMap.entries()].find(([text]) => {
+      const parts = text
+        .split('·')
+        .map((part) => part.trim())
+        .filter((part) => part.length >= 2)
+      return parts.length >= 2 && parts.filter((part) => normalized.includes(part)).length >= 2
+    })?.[1]
+  )
 }
 
 type MarkdownErrorBoundaryProps = {
@@ -374,8 +452,11 @@ function ReportImage({
 
 export function MarkdownPreview({
   markdown,
-  reportPath
+  reportPath,
+  activeFeedbackAnchorId
 }: MarkdownPreviewProps): React.JSX.Element {
+  const feedbackAnchorMap = useMemo(() => buildFeedbackAnchorMap(markdown), [markdown])
+
   if (!markdown.trim()) {
     return (
       <div className="preview-scroll">
@@ -394,6 +475,96 @@ export function MarkdownPreview({
               key === 'src' && isRelativeImagePath(url) ? url : safeUrl(url)
             }
             components={{
+              h1: ({ children }) => {
+                const anchorId = findAnchorForRenderedText(feedbackAnchorMap, getPlainText(children))
+                return (
+                  <h1
+                    data-report-anchor-id={anchorId}
+                    className={
+                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId)
+                        ? 'report-anchor-highlight'
+                        : undefined
+                    }
+                  >
+                    {children}
+                  </h1>
+                )
+              },
+              h2: ({ children }) => {
+                const anchorId = findAnchorForRenderedText(feedbackAnchorMap, getPlainText(children))
+                return (
+                  <h2
+                    data-report-anchor-id={anchorId}
+                    className={
+                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId)
+                        ? 'report-anchor-highlight'
+                        : undefined
+                    }
+                  >
+                    {children}
+                  </h2>
+                )
+              },
+              h3: ({ children }) => {
+                const anchorId = findAnchorForRenderedText(feedbackAnchorMap, getPlainText(children))
+                return (
+                  <h3
+                    data-report-anchor-id={anchorId}
+                    className={
+                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId)
+                        ? 'report-anchor-highlight'
+                        : undefined
+                    }
+                  >
+                    {children}
+                  </h3>
+                )
+              },
+              h4: ({ children }) => {
+                const anchorId = findAnchorForRenderedText(feedbackAnchorMap, getPlainText(children))
+                return (
+                  <h4
+                    data-report-anchor-id={anchorId}
+                    className={
+                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId)
+                        ? 'report-anchor-highlight'
+                        : undefined
+                    }
+                  >
+                    {children}
+                  </h4>
+                )
+              },
+              h5: ({ children }) => {
+                const anchorId = findAnchorForRenderedText(feedbackAnchorMap, getPlainText(children))
+                return (
+                  <h5
+                    data-report-anchor-id={anchorId}
+                    className={
+                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId)
+                        ? 'report-anchor-highlight'
+                        : undefined
+                    }
+                  >
+                    {children}
+                  </h5>
+                )
+              },
+              h6: ({ children }) => {
+                const anchorId = findAnchorForRenderedText(feedbackAnchorMap, getPlainText(children))
+                return (
+                  <h6
+                    data-report-anchor-id={anchorId}
+                    className={
+                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId)
+                        ? 'report-anchor-highlight'
+                        : undefined
+                    }
+                  >
+                    {children}
+                  </h6>
+                )
+              },
               a: ({ href, children }) => {
                 const safeHref = safeUrl(href)
                 if (!safeHref) {
@@ -406,8 +577,8 @@ export function MarkdownPreview({
                   </a>
                 )
               },
-              code: ({ className, children, ...props }) => (
-                <code className={className} {...props}>
+              code: ({ className, children }) => (
+                <code className={className}>
                   {children}
                 </code>
               ),
@@ -425,6 +596,21 @@ export function MarkdownPreview({
                   <table>{children}</table>
                 </div>
               ),
+              tr: ({ children }) => {
+                const anchorId = findAnchorForRenderedTableRow(feedbackAnchorMap, getPlainText(children))
+                return (
+                  <tr
+                    data-report-anchor-id={anchorId}
+                    className={
+                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId)
+                        ? 'report-anchor-highlight'
+                        : undefined
+                    }
+                  >
+                    {children}
+                  </tr>
+                )
+              },
               img: ({ alt, src }) => <ReportImage alt={alt} src={src} reportPath={reportPath} />
             }}
           >

@@ -554,7 +554,9 @@ describe('TaskPage', () => {
 
     renderReadyTaskPage()
 
-    expect(await screen.findByRole('heading', { name: '代码审查报告-模版一' })).toBeInTheDocument()
+    await waitFor(() => expect(window.codeReview.listTasks).toHaveBeenCalled())
+    expect(await screen.findByText('暂无运行中任务。')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '代码审查报告-模版一' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '代码审查报告模板二' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '查看PDF报告' })).not.toBeInTheDocument()
 
@@ -1021,6 +1023,92 @@ describe('TaskPage', () => {
     expect(within(dialog).getByRole('textbox', { name: '有用内容' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: '提交并打开PDF' })).toBeDisabled()
     expect(screen.queryByLabelText('报告有用信息反馈', { selector: '.report-feedback-panel' })).not.toBeInTheDocument()
+  })
+
+  it('报告有用信息弹窗可以拖动', async () => {
+    const user = userEvent.setup()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-history-1',
+          svn_url: 'svn://repo/project',
+          old_revision: 'r1',
+          new_revision: 'r2',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history.md',
+          pdf_report_path: '/app/reports/task-history.pdf',
+          report_feedback_helpful: null
+        }
+      ],
+      count: 1
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () => '# 审查报告\n\n### 空指针风险')
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
+    await user.click(screen.getByRole('button', { name: '有帮助' }))
+
+    const dialog = screen.getByRole('dialog', { name: '报告有用信息反馈' })
+    vi.spyOn(dialog, 'offsetWidth', 'get').mockReturnValue(360)
+    vi.spyOn(dialog, 'offsetHeight', 'get').mockReturnValue(420)
+    vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue({
+      x: 440,
+      y: 88,
+      left: 440,
+      top: 88,
+      right: 800,
+      bottom: 508,
+      width: 360,
+      height: 420,
+      toJSON: () => ({})
+    })
+    const dragHandle = within(dialog).getByLabelText('拖动反馈弹窗')
+    expect(dialog).toHaveStyle({ right: '24px', top: '88px' })
+
+    await user.pointer([
+      { keys: '[MouseLeft>]', target: dragHandle, coords: { x: 500, y: 120 } },
+      { coords: { x: 620, y: 180 } },
+      { keys: '[/MouseLeft]' }
+    ])
+
+    expect(dialog).toHaveStyle({ left: '560px', top: '148px' })
+  })
+
+  it('点击弹窗选项后定位并高亮报告对应内容', async () => {
+    const user = userEvent.setup()
+    const scrollIntoView = vi.fn()
+    window.HTMLElement.prototype.scrollIntoView = scrollIntoView
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-history-1',
+          svn_url: 'svn://repo/project',
+          old_revision: 'r1',
+          new_revision: 'r2',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history.md',
+          pdf_report_path: '/app/reports/task-history.pdf',
+          report_feedback_helpful: null
+        }
+      ],
+      count: 1
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () =>
+      ['# 审查报告', '## 高风险问题', '### 空指针风险', '正文'].join('\n')
+    )
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
+    await user.click(screen.getByRole('button', { name: '有帮助' }))
+
+    const dialog = screen.getByRole('dialog', { name: '报告有用信息反馈' })
+    await user.click(within(dialog).getByRole('checkbox', { name: '空指针风险' }))
+
+    const heading = screen.getByRole('heading', { name: '空指针风险' })
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' })
+    expect(heading).toHaveClass('report-anchor-highlight')
   })
 
   it('勾选已有编号的有用信息时提交内容不会重复编号', async () => {

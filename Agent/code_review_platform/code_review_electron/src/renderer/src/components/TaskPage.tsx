@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import paceLogo from '../assets/pace-logo.png'
 import type { EnvironmentCheckResult, ExecuteTaskRequest } from '../code-review-api'
@@ -100,6 +100,16 @@ export function TaskPage({
   const [selectedUsefulIssues, setSelectedUsefulIssues] = useState<string[]>([])
   const [usefulIssuesText, setUsefulIssuesText] = useState('')
   const [showUsefulFeedbackDialog, setShowUsefulFeedbackDialog] = useState(false)
+  const [usefulFeedbackDialogPosition, setUsefulFeedbackDialogPosition] = useState<{
+    left?: number
+    top: number
+  }>(() => ({ top: 88 }))
+  const [usefulFeedbackDialogDragOffset, setUsefulFeedbackDialogDragOffset] = useState<{
+    x: number
+    y: number
+  } | null>(null)
+  const [activeFeedbackAnchorId, setActiveFeedbackAnchorId] = useState<string>()
+  const usefulFeedbackDialogRef = useRef<HTMLElement | null>(null)
   const selectedTaskIdRef = useRef<string | undefined>(undefined)
   const currentPdfPathRef = useRef<string | undefined>(undefined)
   const currentPdfReportNameRef = useRef<string | undefined>(undefined)
@@ -113,6 +123,7 @@ export function TaskPage({
     isInstallingCodex ||
     isInstallingSvn
   const activeSkillNames = environment?.skills?.map((skill) => skill.name)
+  const usefulIssueOptions = useMemo(() => extractDetailedHeadingOptions(markdown), [markdown])
   const setActivePdfPath = useCallback((pdfPath: string | undefined): void => {
     currentPdfPathRef.current = pdfPath
     setCurrentPdfPath(pdfPath)
@@ -466,12 +477,58 @@ export function TaskPage({
     setShowUsefulFeedbackDialog(true)
   }, [reportFeedbackStatus])
 
+  useEffect(() => {
+    if (!usefulFeedbackDialogDragOffset) {
+      return
+    }
+
+    const handlePointerMove = (event: PointerEvent): void => {
+      const dialog = usefulFeedbackDialogRef.current
+      const dialogWidth = dialog?.offsetWidth ?? 0
+      const dialogHeight = dialog?.offsetHeight ?? 0
+      const maxLeft = Math.max(8, window.innerWidth - dialogWidth - 8)
+      const maxTop = Math.max(8, window.innerHeight - dialogHeight - 8)
+      setUsefulFeedbackDialogPosition({
+        left: Math.min(Math.max(8, event.clientX - usefulFeedbackDialogDragOffset.x), maxLeft),
+        top: Math.min(Math.max(8, event.clientY - usefulFeedbackDialogDragOffset.y), maxTop)
+      })
+    }
+
+    const handlePointerUp = (): void => {
+      setUsefulFeedbackDialogDragOffset(null)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [usefulFeedbackDialogDragOffset])
+
+  useEffect(() => {
+    if (!activeFeedbackAnchorId) {
+      return
+    }
+
+    const target = document.querySelector<HTMLElement>(
+      `[data-report-anchor-id="${activeFeedbackAnchorId}"]`
+    )
+    target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [activeFeedbackAnchorId])
+
   const handleUsefulIssueToggle = (issue: string): void => {
     const next = selectedUsefulIssues.includes(issue)
       ? selectedUsefulIssues.filter((item) => item !== issue)
       : [...selectedUsefulIssues, issue]
     setSelectedUsefulIssues(next)
     setUsefulIssuesText(formatUsefulIssues(next))
+  }
+
+  const handleUsefulIssueOptionToggle = (issue: string, anchorId: string): void => {
+    handleUsefulIssueToggle(issue)
+    setActiveFeedbackAnchorId(anchorId)
   }
 
   const handleUsefulIssuesTextChange = (value: string): void => {
@@ -633,7 +690,11 @@ export function TaskPage({
             </div>
           )}
         </div>
-        <MarkdownPreview markdown={markdown} reportPath={currentReportPath} />
+        <MarkdownPreview
+          markdown={markdown}
+          reportPath={currentReportPath}
+          activeFeedbackAnchorId={activeFeedbackAnchorId}
+        />
       </section>
       {completionNotice && (
         <aside className="completion-notice" role="status" aria-label="审查完成提醒">
@@ -663,12 +724,19 @@ export function TaskPage({
         </aside>
       )}
       {showUsefulFeedbackDialog && selectedTask?.report_feedback_helpful == null && (
-        <div className="dialog-overlay" role="presentation">
           <section
+            ref={usefulFeedbackDialogRef}
             className="dialog-card report-feedback-dialog"
             role="dialog"
-            aria-modal="true"
             aria-label="报告有用信息反馈"
+            style={
+              usefulFeedbackDialogPosition.left == null
+                ? { right: '24px', top: `${usefulFeedbackDialogPosition.top}px` }
+                : {
+                    left: `${usefulFeedbackDialogPosition.left}px`,
+                    top: `${usefulFeedbackDialogPosition.top}px`
+                  }
+            }
           >
             <button
               className="dialog-close"
@@ -678,7 +746,22 @@ export function TaskPage({
             >
               ×
             </button>
-            <h2>标记报告中的有用内容</h2>
+            <div
+              className="report-feedback-dialog-drag-handle"
+              aria-label="拖动反馈弹窗"
+              role="button"
+              tabIndex={0}
+              onPointerDown={(event) => {
+                event.preventDefault()
+                const rect = usefulFeedbackDialogRef.current?.getBoundingClientRect()
+                setUsefulFeedbackDialogDragOffset({
+                  x: event.clientX - (rect?.left ?? event.clientX),
+                  y: event.clientY - (rect?.top ?? event.clientY)
+                })
+              }}
+            >
+              <h2>标记报告中的有用内容</h2>
+            </div>
             <p className="dialog-desc">
               请勾选这份报告里真正有参考价值的问题或建议，也可以手动补充。提交后会用于统计报告质量，并帮助后续优化 AI 输出。
             </p>
@@ -688,12 +771,12 @@ export function TaskPage({
                 <span>可从下方选择，也可以手动补充</span>
               </div>
               <div className="report-feedback-option-list" aria-label="可标记的有用信息">
-                {extractDetailedHeadingOptions(markdown).map((option) => (
+                {usefulIssueOptions.map((option) => (
                   <label className="report-feedback-option" key={option.id}>
                     <input
                       type="checkbox"
                       checked={selectedUsefulIssues.includes(option.text)}
-                      onChange={() => handleUsefulIssueToggle(option.text)}
+                      onChange={() => handleUsefulIssueOptionToggle(option.text, option.anchorId)}
                     />
                     <span>{option.text}</span>
                   </label>
@@ -728,7 +811,6 @@ export function TaskPage({
               </button>
             </div>
           </section>
-        </div>
       )}
       <SubmitFeedbackDialog open={showSubmitFeedback} onClose={() => setShowSubmitFeedback(false)} />
     </section>
