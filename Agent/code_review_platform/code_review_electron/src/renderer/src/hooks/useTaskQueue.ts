@@ -5,7 +5,8 @@ import type {
   CancelTaskRequest,
   CancelTaskResult,
   ExecuteTaskRequest,
-  ExecuteTaskResult
+  ExecuteTaskResult,
+  RetryTaskRequest
 } from '../code-review-api'
 
 export const MAX_CONCURRENT_REVIEW_TASKS = 2
@@ -24,10 +25,13 @@ export type TaskViewItem = ReviewTask & {
   pdfPath?: string
   isLocalOnly?: boolean
   isLocallyExecuting?: boolean
+  executePayload?: ExecuteTaskRequest | RetryTaskRequest
+  executeWith?: 'create' | 'retry'
 }
 
 type UseTaskQueueOptions = {
   executeTask: (payload: ExecuteTaskRequest) => Promise<ExecuteTaskResult>
+  retryTask?: (payload: RetryTaskRequest) => Promise<ExecuteTaskResult>
   cancelTask?: (payload: CancelTaskRequest) => Promise<CancelTaskResult>
   initialTasks?: ReviewTask[]
   onTaskSuccess?: (task: TaskViewItem, result: ExecuteTaskResult) => void
@@ -40,6 +44,7 @@ type UseTaskQueueResult = {
   queuedTasks: TaskViewItem[]
   historyTasks: TaskViewItem[]
   submitTask: (payload: ExecuteTaskRequest) => Promise<void>
+  retryTask: (task: TaskViewItem) => Promise<void>
   cancelTask: (task: TaskViewItem) => Promise<void>
   applyProgressEvent: (event: TaskProgressEvent) => void
   setServerTasks: (serverTasks: ReviewTask[]) => void
@@ -133,6 +138,7 @@ type ActiveTaskRun = {
 
 export function useTaskQueue({
   executeTask,
+  retryTask: retryTaskRequest,
   cancelTask: cancelTaskRequest,
   initialTasks = [],
   onTaskSuccess,
@@ -192,7 +198,7 @@ export function useTaskQueue({
 
       activeTaskRuns.current.set(task.localTaskId, { runId, timeoutId })
 
-      void executeTask({
+      const defaultPayload = {
         svn_url: task.svn_url,
         old_revision: task.old_revision,
         new_revision: task.new_revision,
@@ -203,7 +209,17 @@ export function useTaskQueue({
         focus_direction_id: task.focus_direction_id ?? undefined,
         focus_direction_snapshot: task.focus_direction_snapshot ?? undefined,
         client_task_id: task.localTaskId
-      })
+      } satisfies ExecuteTaskRequest
+      const executePayload = task.executePayload ?? defaultPayload
+
+      const executionPromise =
+        task.executeWith === 'retry'
+          ? retryTaskRequest
+            ? retryTaskRequest(executePayload as RetryTaskRequest)
+            : Promise.reject(new Error('缺少任务重试执行器'))
+          : executeTask(executePayload as ExecuteTaskRequest)
+
+      void executionPromise
         .then((result) => {
           const activeRun = activeTaskRuns.current.get(task.localTaskId)
           if (activeRun?.runId !== runId || !isMountedRef.current) {
@@ -277,7 +293,7 @@ export function useTaskQueue({
           )
         })
     },
-    [executeTask, onTaskSuccess, taskTimeoutMs]
+    [executeTask, onTaskSuccess, retryTaskRequest, taskTimeoutMs]
   )
 
   useEffect(() => {
@@ -341,10 +357,51 @@ export function useTaskQueue({
       queueIndex: 0,
       createdAtMs,
       isLocalOnly: true,
-      isLocallyExecuting: false
+      isLocallyExecuting: false,
+      executeWith: 'create',
+      executePayload: {
+        ...payload,
+        client_task_id: localTaskId
+      }
     }
 
     setTasks((current) => normalizeQueueIndexes([...current, task]))
+    return Promise.resolve()
+  }, [])
+
+  const retryTask = useCallback((task: TaskViewItem): Promise<void> => {
+    const retryPayload: RetryTaskRequest = {
+      task_id: task.id,
+      client_task_id: task.localTaskId,
+      requirement_file_path: task.requirement_file_path ?? undefined
+    }
+    const retryingTask: TaskViewItem = {
+      ...task,
+      status: 'created',
+      error_message: undefined,
+      progress_message: '等待重试',
+      reportMarkdown: undefined,
+      report_path: undefined,
+      pdf_report_name: undefined,
+      pdfPath: undefined,
+      codex_log: undefined,
+      started_at: undefined,
+      finished_at: undefined,
+      localQueueState: 'queued',
+      queueIndex: 0,
+      isLocalOnly: false,
+      isLocallyExecuting: false,
+      executeWith: 'retry',
+      executePayload: retryPayload
+    }
+
+    setTasks((current) =>
+      normalizeQueueIndexes(
+        current.map((currentTask) =>
+          currentTask.localTaskId === task.localTaskId ? retryingTask : currentTask
+        )
+      )
+    )
     return Promise.resolve()
   }, [])
 
@@ -524,6 +581,7 @@ export function useTaskQueue({
     queuedTasks,
     historyTasks,
     submitTask,
+    retryTask,
     cancelTask,
     applyProgressEvent,
     setServerTasks,

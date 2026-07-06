@@ -88,6 +88,7 @@ describe('registerIpcHandlers', () => {
       'skill:install',
       'environment:check',
       'task:execute',
+      'task:retry',
       'task:cancel',
       'task:open-log',
       'feedback:submit',
@@ -705,6 +706,71 @@ describe('registerIpcHandlers', () => {
       expect.objectContaining({
         clientTaskId: 'local-task-1',
         taskId: 'task-1'
+      })
+    )
+  })
+
+  it('retries an existing failed task through IPC without creating a new task', async () => {
+    const api = {
+      createTask: vi.fn(),
+      readTask: vi.fn(async () => ({
+        id: 'task-retry',
+        svn_url: 'svn://repo/retry',
+        old_revision: '10',
+        new_revision: '12',
+        template_key: 'template_2',
+        skill_name: '通用-代码审查-模版二',
+        status: 'failed'
+      })),
+      updateTaskStatus: vi.fn(async () => undefined),
+      uploadReport: vi.fn(async () => undefined),
+      uploadPdfReport: vi.fn(async () => undefined)
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123' })),
+      save: vi.fn()
+    }
+    const cwd = await mkdtemp(join(tmpdir(), 'ipc-retry-task-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '代码审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    const sender = { send: vi.fn() }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      runCodex: vi.fn(async () => {
+        await writeFile(reportPath, '# retry report\n')
+      })
+    })
+
+    const retryHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:retry')?.[1]
+
+    await expect(
+      retryHandler(
+        { sender },
+        {
+          task_id: 'task-retry',
+          client_task_id: 'task-retry',
+          requirement_file_path: '/tmp/产品开发需求表.xls'
+        }
+      )
+    ).resolves.toMatchObject({
+      taskId: 'task-retry',
+      status: 'success',
+      reportMarkdown: '# retry report\n'
+    })
+    expect(api.createTask).not.toHaveBeenCalled()
+    expect(api.readTask).toHaveBeenCalledWith('token-123', 'task-retry')
+    expect(sender.send).toHaveBeenCalledWith(
+      'task:progress',
+      expect.objectContaining({
+        clientTaskId: 'task-retry',
+        taskId: 'task-retry'
       })
     )
   })

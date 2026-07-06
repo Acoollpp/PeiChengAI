@@ -9,6 +9,7 @@ import {
   defaultPrepareWorkspace,
   executeReviewTask,
   prepareRequirementFile,
+  retryReviewTask,
   type TaskAgentDependencies
 } from '../task-agent'
 import type { ReviewTask } from '../../shared/types'
@@ -238,6 +239,73 @@ describe('executeReviewTask', () => {
         report_path: reportPath
       })
     )
+  })
+
+  it('retries an existing failed task without creating a new review task', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-retry-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '代码审查报告.md')
+    const pdfPath = join(cwd, '代码审查报告.pdf')
+    const imagesDir = join(cwd, 'images')
+    const calls: string[] = []
+    const failedTask = makeTask({
+      id: 'task-retry',
+      status: 'failed',
+      error_message: 'Codex 执行失败',
+      skill_name: '通用-代码审查-模版二'
+    })
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => {
+          throw new Error('不应该新建任务')
+        }),
+        readTask: vi.fn(async () => failedTask),
+        updateTaskStatus: vi.fn(async (_token, _taskId, payload) => {
+          calls.push(`status:${payload.status}`)
+        })
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      runCodex: vi.fn(async () => {
+        await writeFile(reportPath, '# retry report\n')
+      }),
+      generatePdfReport: vi.fn(async () => {
+        await writeFile(pdfPath, '%PDF-1.4\n')
+        return { status: 'ready' as const, reportPath, pdfPath }
+      }),
+      uploadReport: vi.fn(),
+      uploadPdfReport: vi.fn()
+    })
+
+    const result = await retryReviewTask(
+      {
+        token: 'token-123',
+        taskId: 'task-retry',
+        clientTaskId: 'task-retry',
+        requirementFilePath: '/tmp/产品开发需求表.xls'
+      },
+      dependencies
+    )
+
+    expect(result).toMatchObject({
+      taskId: 'task-retry',
+      status: 'success',
+      reportMarkdown: '# retry report\n'
+    })
+    expect(dependencies.api.createTask).not.toHaveBeenCalled()
+    expect(dependencies.api.readTask).toHaveBeenCalledWith('token-123', 'task-retry')
+    expect(dependencies.prepareWorkspace).toHaveBeenCalledWith({
+      taskId: 'task-retry',
+      svnUrl: 'svn://repo/project',
+      oldRevision: '12',
+      newRevision: '14',
+      requirementFilePath: '/tmp/产品开发需求表.xls'
+    })
+    expect(calls).toEqual([
+      'status:checking_environment',
+      'status:running_codex',
+      'status:uploading_report'
+    ])
   })
 
   it('marks task failed when PDF generation fails after markdown is ready', async () => {

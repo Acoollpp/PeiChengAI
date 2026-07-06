@@ -56,6 +56,12 @@ export interface ExecuteTaskRequest {
   client_task_id?: string
 }
 
+export interface RetryTaskRequest {
+  task_id: string
+  client_task_id?: string
+  requirement_file_path?: string
+}
+
 export type SelectRequirementFileResult =
   | {
       status: 'selected'
@@ -213,6 +219,7 @@ export interface CodeReviewApi {
   listTasks(): Promise<ReviewTasksResponse>
   readTaskReport(taskId: string): Promise<string>
   executeTask(payload: ExecuteTaskRequest): Promise<ExecuteTaskResult>
+  retryTask(payload: RetryTaskRequest): Promise<ExecuteTaskResult>
   cancelTask(payload: CancelTaskRequest): Promise<CancelTaskResult>
   openTaskLog(taskId: string): Promise<OpenTaskLogResult>
   selectRequirementFile(): Promise<SelectRequirementFileResult>

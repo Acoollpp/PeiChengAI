@@ -32,6 +32,7 @@ import {
   defaultPrepareWorkspace,
   defaultRunCodex,
   executeReviewTask,
+  retryReviewTask,
   type ExecuteReviewTaskResult,
   type TaskAgentDependencies
 } from './task-agent'
@@ -109,6 +110,12 @@ interface ReadReportAssetResult {
 interface CancelTaskRequest {
   client_task_id?: string
   task_id?: string
+}
+
+interface RetryTaskRequest {
+  task_id: string
+  client_task_id?: string
+  requirement_file_path?: string
 }
 
 interface CancelTaskResult {
@@ -624,6 +631,98 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
           token: tokens.access_token,
           request: createTaskPayload,
           clientTaskId,
+          signal: abortController.signal
+        },
+        {
+          api: taskApi,
+          checkEnvironment: checkLocalEnvironment,
+          prepareWorkspace: async (input) => {
+            activeTask.taskId = input.taskId
+            registerActiveTask(activeTask)
+            const workspace = await prepareWorkspace(input)
+            activeTask.workspaceDir = workspace.cwd
+            codexLogPath = workspace.codexLogPath ?? join(workspace.cwd, CODEX_REVIEW_LOG_FILE_NAME)
+            return {
+              ...workspace,
+              codexLogPath
+            }
+          },
+          runCodex: dependencies.runCodex ?? defaultRunCodex,
+          generatePdfReport: dependencies.generatePdfReport ?? generatePdfReport,
+          uploadRequirementFile:
+            dependencies.uploadRequirementFile ??
+            ((token, taskId, filePath) =>
+              uploadRequirementFile(taskApi, token, taskId, filePath)),
+          uploadReport:
+            dependencies.uploadReport ??
+            ((token, taskId, reportPath) => uploadReportFile(taskApi, token, taskId, reportPath)),
+          uploadPdfReport:
+            dependencies.uploadPdfReport ??
+            ((token, taskId, pdfPath) => uploadPdfReportFile(taskApi, token, taskId, pdfPath))
+        },
+        (progressEvent) => {
+          if (codexLogPath) {
+            void appendTaskLogEvent(codexLogPath, progressEvent)
+          }
+          if (progressEvent.taskId) {
+            activeTask.taskId = progressEvent.taskId
+            registerActiveTask(activeTask)
+          }
+          sendToRenderer(event.sender, 'task:progress', progressEvent)
+        }
+      ).finally(() => {
+        unregisterActiveTask(activeTask)
+      })
+
+      if (result.status === 'success' && result.reportPath) {
+        latestSuccessfulReport = {
+          status: 'ready',
+          taskId: result.taskId,
+          reportPath: result.reportPath
+        }
+      }
+
+      return result
+    }
+  )
+
+  ipcMain.handle(
+    'task:retry',
+    async (
+      event,
+      payload: RetryTaskRequest
+    ): Promise<ExecuteReviewTaskResult> => {
+      const tokens = await authStore.load()
+
+      if (!tokens) {
+        throw new Error('Not authenticated')
+      }
+
+      const skillSyncResult = await syncSkillForCurrentUser(authStore, syncSkill)
+      if (typeof skillSyncResult === 'string') {
+        throw new Error(skillSyncResult)
+      }
+
+      const taskApi = await createApiClient()
+      const abortController = new AbortController()
+      const activeTask: ActiveReviewTask = {
+        clientTaskId: payload.client_task_id,
+        taskId: payload.task_id,
+        token: tokens.access_token,
+        api: taskApi,
+        abortController
+      }
+
+      registerActiveTask(activeTask)
+
+      const prepareWorkspace = dependencies.prepareWorkspace ?? defaultPrepareWorkspace
+      let codexLogPath: string | undefined
+      const result = await retryReviewTask(
+        {
+          token: tokens.access_token,
+          taskId: payload.task_id,
+          clientTaskId: payload.client_task_id,
+          requirementFilePath: payload.requirement_file_path,
           signal: abortController.signal
         },
         {

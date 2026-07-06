@@ -18,6 +18,7 @@ import type {
   OpenPdfReportResult,
   ReadReportAssetRequest,
   ReadReportAssetResult,
+  RetryTaskRequest,
   RememberedCredentials,
   SubmitFeedbackIpcPayload,
   SubmitFeedbackPayload,
@@ -84,6 +85,8 @@ contextBridge.exposeInMainWorld('codeReview', {
   readTaskReport: (taskId: string): Promise<string> => ipcRenderer.invoke('task:report', taskId),
   executeTask: (payload: ExecuteTaskRequest): Promise<ExecuteTaskResult> =>
     ipcRenderer.invoke('task:execute', payload),
+  retryTask: (payload: RetryTaskRequest): Promise<ExecuteTaskResult> =>
+    ipcRenderer.invoke('task:retry', payload),
   cancelTask: (payload: CancelTaskRequest): Promise<CancelTaskResult> =>
     ipcRenderer.invoke('task:cancel', payload),
   openTaskLog: (taskId: string): ReturnType<CodeReviewApi['openTaskLog']> =>

@@ -548,6 +548,8 @@ def update_review_task_status(
         ReviewTaskStatus.cancelled,
     }:
         task.finished_at = now
+    elif task.status in _RUNNING_STATUSES:
+        task.finished_at = None
     task.updated_at = now
 
     session.add(task)

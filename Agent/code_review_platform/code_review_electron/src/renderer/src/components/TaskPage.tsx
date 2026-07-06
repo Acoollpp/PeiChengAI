@@ -167,12 +167,14 @@ export function TaskPage({
     queuedTasks,
     historyTasks,
     submitTask,
+    retryTask,
     cancelTask,
     applyProgressEvent,
     setServerTasks,
     updateTask
   } = useTaskQueue({
     executeTask: window.codeReview.executeTask,
+    retryTask: window.codeReview.retryTask,
     cancelTask: window.codeReview.cancelTask,
     onTaskSuccess: handleTaskSuccess
   })
@@ -265,17 +267,7 @@ export function TaskPage({
     setReportFeedbackStatus('idle')
     setSelectedUsefulIssues([])
     setUsefulIssuesText('')
-    await submitTask({
-      svn_url: task.svn_url,
-      old_revision: task.old_revision,
-      new_revision: task.new_revision,
-      template_key: task.template_key,
-      skill_name: task.skill_name,
-      requirement_file_path: task.requirement_file_path,
-      requirement_file_name: task.requirement_file_name ?? undefined,
-      focus_direction_id: task.focus_direction_id ?? undefined,
-      focus_direction_snapshot: task.focus_direction_snapshot ?? undefined
-    })
+    await retryTask(task)
   }
 
   const handleViewReport = useCallback(async (task: TaskViewItem): Promise<void> => {

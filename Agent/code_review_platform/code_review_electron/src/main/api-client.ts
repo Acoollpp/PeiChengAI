@@ -37,7 +37,7 @@ export interface CreateTaskRequest {
 export interface UpdateTaskStatusRequest {
   status: string
   report_path?: string
-  error_message?: string
+  error_message?: string | null
 }
 
 export interface UploadReportRequest {
@@ -156,6 +156,13 @@ export class ApiClient {
 
   listTasks(token: string): Promise<ReviewTasksResponse> {
     return this.request<ReviewTasksResponse>('/api/v1/review-tasks', {
+      method: 'GET',
+      headers: this.authHeaders(token)
+    })
+  }
+
+  readTask(token: string, taskId: string): Promise<ReviewTask> {
+    return this.request<ReviewTask>(`/api/v1/review-tasks/${encodeURIComponent(taskId)}`, {
       method: 'GET',
       headers: this.authHeaders(token)
     })

@@ -464,6 +464,34 @@ describe('ApiClient', () => {
     )
   })
 
+  it('reads a review task by id with authorization header', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      id: 'task-1',
+      svn_url: 'svn://repo/project',
+      old_revision: '1',
+      new_revision: '2',
+      status: 'failed'
+    }))
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    const result = await client.readTask('token-123', 'task-1')
+
+    expect(result).toMatchObject({
+      id: 'task-1',
+      status: 'failed'
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://server.example/api/v1/review-tasks/task-1',
+      {
+        method: 'GET',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer token-123'
+        }
+      }
+    )
+  })
+
   it('uploads review report as multipart form data with authorization header', async () => {
     vi.stubGlobal('File', File)
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'task-1' }))

@@ -64,6 +64,7 @@ export interface ReviewTask {
   department_name?: string | null
   focus_direction_id?: string | null
   focus_direction_snapshot?: string | null
+  requirement_file_path?: string
   requirement_file_name?: string | null
   requirement_file_size?: number | null
   requirement_file_sha256?: string | null

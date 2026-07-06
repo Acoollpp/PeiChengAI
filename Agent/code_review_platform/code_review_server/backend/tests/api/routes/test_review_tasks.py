@@ -422,6 +422,39 @@ def test_upload_and_read_review_task_report(
     assert read_response.text == "# Review\n\nLooks good.\n"
 
 
+def test_restart_failed_task_status_clears_previous_error_and_finish_time(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    task = _create_review_task(client, normal_user_token_headers)
+    db_task = db.get(ReviewTask, UUID(task["id"]))
+    assert db_task is not None
+    db_task.status = ReviewTaskStatus.failed
+    db_task.error_message = "Codex 执行失败"
+    db_task.started_at = _today_elapsed_datetime(20)
+    db_task.finished_at = _today_elapsed_datetime(10)
+    db.add(db_task)
+    db.commit()
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/status",
+        headers=normal_user_token_headers,
+        json={"status": "checking_environment", "error_message": None},
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["status"] == "checking_environment"
+    assert content["error_message"] is None
+    assert content["finished_at"] is None
+
+    db.refresh(db_task)
+    assert db_task.status == ReviewTaskStatus.checking_environment
+    assert db_task.error_message is None
+    assert db_task.finished_at is None
+
+
 def test_download_review_task_report_uses_uploaded_report_filename(
     client: TestClient,
     normal_user_token_headers: dict[str, str],

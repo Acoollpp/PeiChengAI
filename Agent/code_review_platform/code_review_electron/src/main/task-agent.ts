@@ -29,6 +29,14 @@ export interface ExecuteReviewTaskInput {
   signal?: AbortSignal
 }
 
+export interface RetryReviewTaskInput {
+  token: string
+  taskId: string
+  clientTaskId?: string
+  requirementFilePath?: string
+  signal?: AbortSignal
+}
+
 export interface PreparedWorkspace {
   cwd: string
   reportPath: string
@@ -71,6 +79,7 @@ export interface ExecuteReviewTaskResult {
 
 export interface TaskAgentApi {
   createTask(token: string, payload: CreateTaskRequest): Promise<unknown>
+  readTask?: ApiClient['readTask']
   updateTaskStatus(
     token: string,
     taskId: string,
@@ -261,13 +270,59 @@ export const executeReviewTask = async (
   const task = toReviewTask(await dependencies.api.createTask(input.token, input.request))
   emitStage(onProgress, task.id, input.clientTaskId, 'created', '任务已创建')
 
+  return runExistingReviewTask({
+    token: input.token,
+    task,
+    skillName: input.request.skill_name,
+    requirementFilePath: input.request.requirement_file_path,
+    clientTaskId: input.clientTaskId,
+    signal: input.signal
+  }, dependencies, onProgress)
+}
+
+export const retryReviewTask = async (
+  input: RetryReviewTaskInput,
+  dependencies: TaskAgentDependencies,
+  onProgress?: TaskProgressReporter
+): Promise<ExecuteReviewTaskResult> => {
+  throwIfCancelled(input.signal)
+  if (!dependencies.api.readTask) {
+    throw new Error('当前服务端客户端不支持读取审查任务')
+  }
+  const task = toReviewTask(await dependencies.api.readTask(input.token, input.taskId))
+  emitStage(onProgress, task.id, input.clientTaskId, 'created', '任务重新启动')
+
+  return runExistingReviewTask({
+    token: input.token,
+    task,
+    requirementFilePath: input.requirementFilePath,
+    clientTaskId: input.clientTaskId,
+    signal: input.signal
+  }, dependencies, onProgress)
+}
+
+const runExistingReviewTask = async (
+  input: {
+    token: string
+    task: ReviewTask
+    skillName?: string
+    requirementFilePath?: string
+    clientTaskId?: string
+    signal?: AbortSignal
+  },
+  dependencies: TaskAgentDependencies,
+  onProgress?: TaskProgressReporter
+): Promise<ExecuteReviewTaskResult> => {
+  const task = input.task
+
   try {
     throwIfCancelled(input.signal)
-    const skillName = resolveSkillName(input.request.skill_name, task.skill_name)
+    const skillName = resolveSkillName(input.skillName, task.skill_name)
 
     emitStage(onProgress, task.id, input.clientTaskId, 'checking_environment', '检查本机环境')
     await updateStatus(dependencies, input.token, task.id, {
-      status: 'checking_environment'
+      status: 'checking_environment',
+      error_message: null
     })
 
     const environment = await dependencies.checkEnvironment()
@@ -295,7 +350,7 @@ export const executeReviewTask = async (
       svnUrl: task.svn_url,
       oldRevision: task.old_revision,
       newRevision: task.new_revision,
-      requirementFilePath: input.request.requirement_file_path
+      requirementFilePath: input.requirementFilePath
     })
     throwIfCancelled(input.signal)
 

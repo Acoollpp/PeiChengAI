@@ -23,7 +23,9 @@ const setupCodeReviewApi = (): void => {
       contentType: 'image/png'
     })),
     executeTask: vi.fn(),
+    retryTask: vi.fn(),
     cancelTask: vi.fn(async () => ({ status: 'cancelled' })),
+    openTaskLog: vi.fn(),
     onTaskProgress: vi.fn(() => vi.fn()),
     downloadCurrentReport: vi.fn(),
     openPdfReport: vi.fn(),
@@ -939,7 +941,7 @@ describe('TaskPage', () => {
     expect(screen.getByRole('button', { name: '提交并打开PDF' })).toBeEnabled()
   })
 
-  it('历史失败任务点击重试后按原任务信息重新提交队列', async () => {
+  it('历史失败任务点击重试后复用原任务重新执行', async () => {
     const user = userEvent.setup()
     window.codeReview.listTasks = vi.fn(async () => ({
       data: [
@@ -959,8 +961,8 @@ describe('TaskPage', () => {
       ],
       count: 1
     }))
-    window.codeReview.executeTask = vi.fn(async () => ({
-      taskId: 'task-retry-success',
+    window.codeReview.retryTask = vi.fn(async () => ({
+      taskId: 'task-failed',
       status: 'success' as const,
       reportMarkdown: '# retry report',
       reportPath: '/tmp/retry.md'
@@ -971,20 +973,14 @@ describe('TaskPage', () => {
     await user.click(within(historyPanel).getByRole('button', { name: '重试' }))
 
     await waitFor(() =>
-      expect(window.codeReview.executeTask).toHaveBeenCalledWith(
+      expect(window.codeReview.retryTask).toHaveBeenCalledWith(
         expect.objectContaining({
-          svn_url: 'svn://repo/retry',
-          old_revision: '10',
-          new_revision: '12',
-          template_key: 'template_2',
-          skill_name: '通用-代码审查-模版二',
-          requirement_file_name: '需求.xlsx',
-          focus_direction_id: 'focus-1',
-          focus_direction_snapshot: '重点检查协议解析',
+          task_id: 'task-failed',
           client_task_id: expect.any(String)
         })
       )
     )
+    expect(window.codeReview.executeTask).not.toHaveBeenCalled()
   })
 
   it('点击有帮助后用独立反馈面板展示说明、计数、输入框和提交按钮', async () => {

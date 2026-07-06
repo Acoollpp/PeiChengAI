@@ -1101,6 +1101,73 @@ describe('useTaskQueue', () => {
     )
   })
 
+  it('重试历史失败任务时复用原任务卡片，不新增任务', async () => {
+    const deferred = createDeferred<ExecuteTaskResult>()
+    const executeTask = vi.fn()
+    const retryTask = vi.fn(() => deferred.promise)
+    const { result } = renderHook(() =>
+      useTaskQueue({
+        executeTask,
+        retryTask,
+        initialTasks: [
+          {
+            id: 'task-failed',
+            svn_url: 'svn://repo/retry',
+            old_revision: '10',
+            new_revision: '12',
+            template_key: 'template_2',
+            skill_name: '通用-代码审查-模版二',
+            requirement_file_path: '/tmp/产品开发需求表.xls',
+            status: 'failed',
+            error_message: 'Codex 执行失败',
+            finished_at: '2026-06-23T10:00:00.000Z'
+          }
+        ]
+      })
+    )
+
+    await act(async () => {
+      await result.current.retryTask(result.current.historyTasks[0])
+    })
+
+    await waitFor(() => expect(retryTask).toHaveBeenCalledTimes(1))
+    expect(retryTask).toHaveBeenCalledWith({
+      task_id: 'task-failed',
+      client_task_id: 'task-failed',
+      requirement_file_path: '/tmp/产品开发需求表.xls'
+    })
+    expect(executeTask).not.toHaveBeenCalled()
+    expect(result.current.runningTasks).toEqual([
+      expect.objectContaining({
+        id: 'task-failed',
+        localTaskId: 'task-failed',
+        status: 'created',
+        error_message: undefined
+      })
+    ])
+    expect(result.current.tasks).toHaveLength(1)
+
+    await act(async () => {
+      deferred.resolve({
+        taskId: 'task-failed',
+        status: 'success',
+        reportMarkdown: '# retry report',
+        reportPath: '/tmp/retry.md'
+      })
+    })
+
+    await waitFor(() =>
+      expect(result.current.historyTasks).toEqual([
+        expect.objectContaining({
+          id: 'task-failed',
+          status: 'success',
+          reportMarkdown: '# retry report'
+        })
+      ])
+    )
+    expect(result.current.tasks).toHaveLength(1)
+  })
+
   it('历史任务按完成时间倒序展示', () => {
     const { result } = renderHook(() =>
       useTaskQueue({
