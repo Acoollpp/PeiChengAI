@@ -428,7 +428,7 @@ const runExistingReviewTask = async (
     })
     emitStage(onProgress, task.id, input.clientTaskId, 'failed', errorMessage)
 
-    throw error
+    throw new Error(errorMessage)
   }
 }
 

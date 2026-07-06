@@ -227,7 +227,9 @@ function TaskCard({
           取消任务
         </button>
       )}
-      {task.progress_message && <p className="task-progress">{task.progress_message}</p>}
+      {task.progress_message && task.progress_message !== task.error_message && (
+        <p className="task-progress">{task.progress_message}</p>
+      )}
       {showCodexLog && task.codex_log && task.codex_log.length > 0 && (
         <div className="task-log" aria-label="Codex 执行输出">
           {task.codex_log.slice(-4).map((event, index) => (

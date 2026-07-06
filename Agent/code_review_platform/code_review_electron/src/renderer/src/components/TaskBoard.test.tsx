@@ -205,6 +205,28 @@ describe('TaskBoard', () => {
     expect(onOpenTaskLog).toHaveBeenCalledWith(failedTask)
   })
 
+  it('失败任务进度和错误相同时只展示一条错误信息', async () => {
+    const user = userEvent.setup()
+    const failedTask: TaskViewItem = {
+      ...historyTasks[0],
+      id: 'task-failed-message',
+      localTaskId: 'task-failed-message',
+      status: 'failed',
+      progress_message: 'SVN权限不足（或者SVN账号未登录）',
+      error_message: 'SVN权限不足（或者SVN账号未登录）'
+    }
+
+    renderTaskBoard({
+      runningTasks: [],
+      queuedTasks: [],
+      historyTasks: [failedTask]
+    })
+
+    await user.click(screen.getByRole('tab', { name: '历史任务 1' }))
+
+    expect(screen.getAllByText('SVN权限不足（或者SVN账号未登录）')).toHaveLength(1)
+  })
+
   it('历史任务卡片用右上角状态显示报告反馈状态', async () => {
     const user = userEvent.setup()
     const tasks: TaskViewItem[] = [

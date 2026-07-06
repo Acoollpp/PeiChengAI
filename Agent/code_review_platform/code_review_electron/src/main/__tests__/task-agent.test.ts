@@ -495,7 +495,7 @@ describe('executeReviewTask', () => {
     })
 
     await expect(executeReviewTask({ token: 'secret-token', request }, dependencies)).rejects.toThrow(
-      'failure using token secret-token'
+      'failure using token [redacted]'
     )
 
     expect(dependencies.api.updateTaskStatus).toHaveBeenLastCalledWith('secret-token', 'task-1', {
@@ -544,7 +544,7 @@ describe('executeReviewTask', () => {
       })
 
       await expect(executeReviewTask({ token: 'token-123', request }, dependencies)).rejects.toThrow(
-        item.raw
+        item.expected
       )
 
       expect(dependencies.api.updateTaskStatus).toHaveBeenLastCalledWith('token-123', 'task-1', {
@@ -573,7 +573,7 @@ describe('executeReviewTask', () => {
     })
 
     await expect(executeReviewTask({ token: 'token-123', request }, dependencies)).rejects.toThrow(
-      'failed with password=hunter2'
+      'failed with password= [redacted]'
     )
 
     const lastStatus = vi.mocked(dependencies.api.updateTaskStatus).mock.calls.at(-1)?.[2]
