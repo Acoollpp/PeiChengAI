@@ -939,6 +939,38 @@ describe('TaskPage', () => {
     expect(screen.getByRole('button', { name: '提交并打开PDF' })).toBeEnabled()
   })
 
+  it('点击有帮助后用独立反馈面板展示说明、计数、输入框和提交按钮', async () => {
+    const user = userEvent.setup()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-history-1',
+          svn_url: 'svn://repo/project',
+          old_revision: 'r1',
+          new_revision: 'r2',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history.md',
+          pdf_report_path: '/app/reports/task-history.pdf',
+          report_feedback_helpful: null
+        }
+      ],
+      count: 1
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () => '# 审查报告\n\n### 空指针风险')
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
+    await user.click(screen.getByRole('button', { name: '有帮助' }))
+
+    const panel = screen.getByLabelText('报告有用信息反馈')
+    expect(panel).toHaveClass('report-feedback-panel')
+    expect(within(panel).getByText('标记有用信息')).toBeInTheDocument()
+    expect(within(panel).getByText('已选 0 条')).toBeInTheDocument()
+    expect(within(panel).getByRole('textbox', { name: '有用信息' })).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: '提交并打开PDF' })).toBeDisabled()
+  })
+
   it('勾选已有编号的有用信息时提交内容不会重复编号', async () => {
     const user = userEvent.setup()
     window.codeReview.listTasks = vi.fn(async () => ({

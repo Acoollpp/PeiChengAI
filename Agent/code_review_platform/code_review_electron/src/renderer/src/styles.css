@@ -1065,6 +1065,23 @@ h2 {
   width: min(100%, 50rem);
 }
 
+.report-feedback-panel {
+  display: grid;
+  gap: 0.65rem;
+  width: min(100%, 42rem);
+  padding: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 0.5rem;
+  background: rgba(15, 23, 42, 0.52);
+}
+
+.report-feedback-panel-header {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) auto auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .report-feedback-copy {
   display: grid;
   gap: 0.15rem;
@@ -1091,6 +1108,18 @@ h2 {
   background: rgba(15, 23, 42, 0.72);
   color: #e5edf7;
   padding: 0.55rem 0.7rem;
+}
+
+.report-feedback-panel textarea {
+  width: 100%;
+  min-height: 4rem;
+  max-height: 7rem;
+  resize: vertical;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 0.5rem;
+  background: rgba(15, 23, 42, 0.72);
+  color: #e5edf7;
+  padding: 0.65rem 0.75rem;
 }
 
 .report-heading-options {
@@ -1291,6 +1320,15 @@ h2 {
   .report-feedback-bar {
     grid-template-columns: 1fr;
     width: 100%;
+  }
+
+  .report-feedback-panel {
+    width: 100%;
+  }
+
+  .report-feedback-panel-header {
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 }
 

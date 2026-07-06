@@ -169,6 +169,43 @@ describe('MarkdownPreview', () => {
     expect(onUsefulIssueToggle).toHaveBeenCalledWith('越界访问风险')
   })
 
+  it('模板二报告优先从有效表格行提取具体问题选项', () => {
+    render(
+      <MarkdownPreview
+        markdown={[
+          '# 代码审查报告模板二',
+          '## 二、流程节点详细审查报告',
+          '### 1. 部门自检项结果',
+          '| 检查方式 | 涉及文件及行号 | 风险级别 | 触发规则/缺陷描述 | 整改建议 / 闭环方案 | 对应变更图 |',
+          '|---|---|---|---|---|---|',
+          '| 广用 SVN 远程自检 | 工程级 | 中风险 | 软件版本与工程配置不一致，采样电阻未识别。 | 补齐工程配置并回归验证。 | 无 |',
+          '### 2. 部门专项风险检查',
+          '| 涉及文件及行号 | 风险级别 | 专项检查方向 | 缺陷描述 (Root Cause) | 缺陷可能造成的风险 | 整改建议与闭环方案 | 对应变更图 |',
+          '|---|---|---|---|---|---|---|',
+          '| `source/Bms_Config.h` | 高风险 | SOH 容量映射 | SOH 字段映射缺失。 | 导致容量显示异常。 | 增加映射并做协议回归。 | 无 |'
+        ].join('\n')}
+        usefulIssueSelection={{
+          enabled: true,
+          selectedIssues: [],
+          onToggle: vi.fn()
+        }}
+      />
+    )
+
+    expect(
+      screen.getByRole('checkbox', {
+        name: '部门自检项结果 · 中风险 · 软件版本与工程配置不一致，采样电阻未识别。'
+      })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('checkbox', {
+        name: '部门专项风险检查 · 高风险 · SOH 容量映射 · SOH 字段映射缺失。'
+      })
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: '部门自检项结果' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: '部门专项风险检查' })).not.toBeInTheDocument()
+  })
+
   it('does not render report feedback checkboxes by default', () => {
     render(<MarkdownPreview markdown={'## 高风险问题\n\n### 空指针风险'} />)
 

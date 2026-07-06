@@ -41,7 +41,178 @@ const stripMarkdownInline = (value: string): string =>
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .trim()
 
+const normalizeCellText = (value?: string): string =>
+  stripMarkdownInline(value ?? '')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+const isPlaceholderText = (value: string): boolean =>
+  !value ||
+  value === '无' ||
+  value === '待填写' ||
+  value === '待填写。' ||
+  value.includes('填写') ||
+  value.includes('高风险/中风险/低风险/建议')
+
+const isTableSeparator = (line: string): boolean =>
+  /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)
+
+const splitTableRow = (line: string): string[] =>
+  line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map(normalizeCellText)
+
+const makeUniqueOptions = (options: ReportHeadingOption[]): ReportHeadingOption[] => {
+  const seen = new Set<string>()
+  return options.filter((option) => {
+    if (seen.has(option.text)) {
+      return false
+    }
+    seen.add(option.text)
+    return true
+  })
+}
+
+const getHeaderIndex = (headers: string[], names: string[]): number =>
+  headers.findIndex((header) => names.some((name) => header.includes(name)))
+
+const buildTemplateTwoTableOption = (
+  sectionTitle: string,
+  headers: string[],
+  cells: string[]
+): string | null => {
+  const risk = cells[getHeaderIndex(headers, ['风险级别'])] ?? ''
+  const direction = cells[getHeaderIndex(headers, ['专项检查方向', '规范违反条目'])] ?? ''
+  const description =
+    cells[
+      getHeaderIndex(headers, [
+        '触发规则/缺陷描述',
+        '缺陷描述',
+        '不合规现象描述',
+        '修改建议',
+        '整改建议'
+      ])
+    ] ?? ''
+  const parts = [sectionTitle, risk, direction, description].filter((part) => !isPlaceholderText(part))
+
+  if (parts.length < 2) {
+    return null
+  }
+
+  return parts.join(' · ')
+}
+
+const extractTemplateTwoTableOptions = (markdown: string): ReportHeadingOption[] => {
+  const options: ReportHeadingOption[] = []
+  const lines = markdown.split(/\r?\n/)
+  let inCodeBlock = false
+  let currentSection = ''
+  let currentHeaders: string[] | null = null
+
+  lines.forEach((line, index) => {
+    if (/^\s*```/.test(line)) {
+      inCodeBlock = !inCodeBlock
+      return
+    }
+    if (inCodeBlock) {
+      return
+    }
+
+    const headingMatch = headingLinePattern.exec(line)
+    if (headingMatch) {
+      currentSection = stripMarkerListPrefix(stripMarkdownInline(headingMatch[2]))
+      currentHeaders = null
+      return
+    }
+
+    if (!line.trim().startsWith('|')) {
+      currentHeaders = null
+      return
+    }
+    if (isTableSeparator(line)) {
+      return
+    }
+
+    const cells = splitTableRow(line)
+    if (currentHeaders === null) {
+      currentHeaders = cells
+      return
+    }
+
+    const text = buildTemplateTwoTableOption(currentSection, currentHeaders, cells)
+    if (text) {
+      options.push({ id: `${index}-${text}`, level: 4, text })
+    }
+  })
+
+  return makeUniqueOptions(options)
+}
+
+const extractTemplateTwoConclusionOptions = (markdown: string): ReportHeadingOption[] => {
+  const options: ReportHeadingOption[] = []
+  let inCodeBlock = false
+  let inConclusion = false
+  let currentSection = ''
+
+  markdown.split(/\r?\n/).forEach((line, index) => {
+    if (/^\s*```/.test(line)) {
+      inCodeBlock = !inCodeBlock
+      return
+    }
+    if (inCodeBlock) {
+      return
+    }
+
+    const headingMatch = headingLinePattern.exec(line)
+    if (headingMatch) {
+      const headingText = stripMarkerListPrefix(stripMarkdownInline(headingMatch[2]))
+      const level = headingMatch[1].length
+      if (level === 2) {
+        inConclusion = headingText === '结论'
+      }
+      if (inConclusion && level >= 3) {
+        currentSection = headingText
+      }
+      return
+    }
+
+    if (!inConclusion || !currentSection) {
+      return
+    }
+
+    const itemMatch = /^\s*[-*]\s+(.+?)\s*$/.exec(line)
+    if (!itemMatch) {
+      return
+    }
+
+    const item = stripMarkdownInline(itemMatch[1])
+    if (isPlaceholderText(item)) {
+      return
+    }
+
+    const text = `${currentSection} · ${item}`
+    options.push({ id: `${index}-${text}`, level: 4, text })
+  })
+
+  return makeUniqueOptions(options)
+}
+
+const isTemplateTwoReport = (markdown: string): boolean =>
+  /代码审查报告模?板二/.test(markdown)
+
 export const extractDetailedHeadingOptions = (markdown: string): ReportHeadingOption[] => {
+  if (isTemplateTwoReport(markdown)) {
+    const tableOptions = extractTemplateTwoTableOptions(markdown)
+    if (tableOptions.length > 0) {
+      return tableOptions
+    }
+    return extractTemplateTwoConclusionOptions(markdown)
+  }
+
   const headings: ReportHeadingOption[] = []
   let inCodeBlock = false
 
@@ -82,7 +253,7 @@ export const extractDetailedHeadingOptions = (markdown: string): ReportHeadingOp
   const detailed = leafHeadings.filter((heading) => heading.level >= 3)
   const fallback = leafHeadings.filter((heading) => heading.level >= 2)
 
-  return detailed.length > 0 ? detailed : fallback
+  return makeUniqueOptions(detailed.length > 0 ? detailed : fallback)
 }
 
 const safeUrl = (href?: string): string | undefined => {

@@ -553,14 +553,24 @@ export function TaskPage({
             <div className="report-toolbar-actions">
               {selectedTask.report_feedback_helpful == null &&
                 (reportFeedbackStatus === 'useful' ? (
-                  <div className="report-feedback-bar">
-                    <div className="report-feedback-copy">
-                      <strong>标记有用信息</strong>
-                      <span>勾选下方标题，或手动补充有价值内容。</span>
+                  <div className="report-feedback-panel" aria-label="报告有用信息反馈">
+                    <div className="report-feedback-panel-header">
+                      <div className="report-feedback-copy">
+                        <strong>标记有用信息</strong>
+                        <span>勾选报告中的问题摘要，或手动补充有价值内容。</span>
+                      </div>
+                      <span className="report-feedback-count">
+                        已选 {parseUsefulIssuesText(usefulIssuesText).length} 条
+                      </span>
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        disabled={parseUsefulIssuesText(usefulIssuesText).length === 0}
+                        onClick={() => void handleSubmitUsefulIssuesAndOpenPdf()}
+                      >
+                        提交并打开PDF
+                      </button>
                     </div>
-                    <span className="report-feedback-count">
-                      已选 {parseUsefulIssuesText(usefulIssuesText).length} 条
-                    </span>
                     <textarea
                       aria-label="有用信息"
                       value={usefulIssuesText}
@@ -568,14 +578,6 @@ export function TaskPage({
                       placeholder="可补充报告中有价值的问题或建议点，每行一条"
                       maxLength={4096}
                     />
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      disabled={parseUsefulIssuesText(usefulIssuesText).length === 0}
-                      onClick={() => void handleSubmitUsefulIssuesAndOpenPdf()}
-                    >
-                      提交并打开PDF
-                    </button>
                   </div>
                 ) : (
                   <div className="report-feedback-actions">
