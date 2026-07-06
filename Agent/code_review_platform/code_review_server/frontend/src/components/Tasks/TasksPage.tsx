@@ -56,9 +56,50 @@ type ReviewTaskFilters = {
   svnUsername: string
 }
 
+const REVIEW_TASK_TABLE_COLUMN_COUNT = 12
+
 const emptyFilters: ReviewTaskFilters = {
   userName: "",
   svnUsername: "",
+}
+
+function ReportFeedbackHelpfulBadge({
+  helpful,
+}: {
+  helpful?: boolean | null
+}) {
+  if (helpful === true) {
+    return (
+      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+        有帮助
+      </span>
+    )
+  }
+
+  if (helpful === false) {
+    return (
+      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+        没帮助
+      </span>
+    )
+  }
+
+  return (
+    <span className="rounded-full bg-slate-50 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+      未反馈
+    </span>
+  )
+}
+
+function formatUsefulIssuesSummary(value?: string | null) {
+  if (!value?.trim()) {
+    return "-"
+  }
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join("；")
 }
 
 async function readReviewTasks(
@@ -211,6 +252,8 @@ function ReviewTasksTable({
             <TableHead>开始时间</TableHead>
             <TableHead>结束时间</TableHead>
             <TableHead>错误信息</TableHead>
+            <TableHead>是否有帮助</TableHead>
+            <TableHead>有用信息</TableHead>
             <TableHead>报告</TableHead>
             <TableHead>操作</TableHead>
           </TableRow>
@@ -219,7 +262,7 @@ function ReviewTasksTable({
           {tasks.data.length === 0 ? (
             <TableRow className="hover:bg-transparent">
               <TableCell
-                colSpan={10}
+                colSpan={REVIEW_TASK_TABLE_COLUMN_COUNT}
                 className="h-32 text-center text-muted-foreground"
               >
                 暂无审查任务
@@ -248,6 +291,17 @@ function ReviewTasksTable({
                   title={task.error_message || undefined}
                 >
                   {task.error_message || "-"}
+                </TableCell>
+                <TableCell>
+                  <ReportFeedbackHelpfulBadge helpful={task.report_feedback_helpful} />
+                </TableCell>
+                <TableCell
+                  className="max-w-xs truncate text-muted-foreground"
+                  title={task.report_feedback_useful_issues_text || undefined}
+                >
+                  {task.report_feedback_helpful
+                    ? formatUsefulIssuesSummary(task.report_feedback_useful_issues_text)
+                    : "-"}
                 </TableCell>
                 <TableCell>
                   {task.report_path ? (

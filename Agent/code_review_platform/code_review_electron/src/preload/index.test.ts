@@ -100,6 +100,31 @@ describe('preload codeReview API', () => {
     expect(payload).not.toHaveProperty('screenshot')
   })
 
+  it('invokes report feedback IPC without screenshot serialization', async () => {
+    invokeMock.mockResolvedValue({
+      id: 'report-feedback-1',
+      task_id: 'task-1',
+      user_id: 'user-1',
+      helpful: true,
+      useful_issues_text: '1. 有用信息'
+    })
+
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+
+    await api.submitReportFeedback({
+      taskId: 'task-1',
+      helpful: true,
+      useful_issues_text: '1. 有用信息'
+    })
+
+    expect(invokeMock).toHaveBeenCalledWith('report-feedback:submit', {
+      taskId: 'task-1',
+      helpful: true,
+      useful_issues_text: '1. 有用信息'
+    })
+  })
+
   it('invokes report asset IPC with report path and asset path', async () => {
     await import('./index')
     const api = exposeInMainWorldMock.mock.calls[0][1]

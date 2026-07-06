@@ -90,6 +90,7 @@ describe('registerIpcHandlers', () => {
       'task:execute',
       'task:cancel',
       'feedback:submit',
+      'report-feedback:submit',
       'report:asset',
       'report:download-current',
       'report:open-pdf'
@@ -1545,6 +1546,38 @@ describe('registerIpcHandlers', () => {
     expect(screenshots?.[1]).toBeInstanceOf(Blob)
     expect(screenshots?.[1].type).toBe('image/jpeg')
     await expect(screenshots?.[1].text()).resolves.toBe('jpeg-bytes')
+  })
+
+  it('submits report feedback through authenticated API client', async () => {
+    const submitReportFeedback = vi.fn(async () => ({
+      id: 'report-feedback-1',
+      task_id: 'task-1',
+      user_id: 'user-1',
+      helpful: false,
+      useful_issues_text: null
+    }))
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      api: { submitReportFeedback } as never,
+      authStore: {
+        load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh' }))
+      } as never
+    })
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback:submit'
+    )?.[1]
+
+    await expect(
+      handler({}, {
+        taskId: 'task-1',
+        helpful: false,
+        useful_issues_text: ''
+      })
+    ).resolves.toMatchObject({ id: 'report-feedback-1', helpful: false })
+    expect(submitReportFeedback).toHaveBeenCalledWith('token-123', 'task-1', {
+      helpful: false,
+      useful_issues_text: ''
+    })
   })
 
   it('installs Codex CLI on demand', async () => {

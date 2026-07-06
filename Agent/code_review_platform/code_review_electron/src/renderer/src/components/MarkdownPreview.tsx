@@ -2,9 +2,76 @@ import { Component, isValidElement, type ReactNode, useEffect, useState } from '
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+export type ReportHeadingOption = {
+  id: string
+  level: number
+  text: string
+}
+
+type UsefulIssueSelection = {
+  enabled: boolean
+  selectedIssues: string[]
+  onToggle: (issue: string) => void
+}
+
 type MarkdownPreviewProps = {
   markdown: string
   reportPath?: string
+  usefulIssueSelection?: UsefulIssueSelection
+}
+
+const headingLinePattern = /^(#{1,6})\s+(.+?)\s*$/
+
+const stripMarkdownInline = (value: string): string =>
+  value
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .trim()
+
+export const extractDetailedHeadingOptions = (markdown: string): ReportHeadingOption[] => {
+  const headings: ReportHeadingOption[] = []
+  let inCodeBlock = false
+
+  markdown.split(/\r?\n/).forEach((line, index) => {
+    if (/^\s*```/.test(line)) {
+      inCodeBlock = !inCodeBlock
+      return
+    }
+    if (inCodeBlock) {
+      return
+    }
+    const match = headingLinePattern.exec(line)
+    if (!match) {
+      return
+    }
+    const text = stripMarkdownInline(match[2])
+    if (!text) {
+      return
+    }
+    headings.push({
+      id: `${index}-${text}`,
+      level: match[1].length,
+      text
+    })
+  })
+
+  const leafHeadings = headings.filter((heading, index) => {
+    const nextSameOrHigher = headings.findIndex(
+      (candidate, candidateIndex) =>
+        candidateIndex > index && candidate.level <= heading.level
+    )
+    const children = headings.slice(
+      index + 1,
+      nextSameOrHigher === -1 ? headings.length : nextSameOrHigher
+    )
+    return children.length === 0
+  })
+  const detailed = leafHeadings.filter((heading) => heading.level >= 3)
+  const fallback = leafHeadings.filter((heading) => heading.level >= 2)
+
+  return detailed.length > 0 ? detailed : fallback
 }
 
 const safeUrl = (href?: string): string | undefined => {
@@ -132,7 +199,11 @@ function ReportImage({
   return <img src={resolvedSrc} alt={alt ?? ''} />
 }
 
-export function MarkdownPreview({ markdown, reportPath }: MarkdownPreviewProps): React.JSX.Element {
+export function MarkdownPreview({
+  markdown,
+  reportPath,
+  usefulIssueSelection
+}: MarkdownPreviewProps): React.JSX.Element {
   if (!markdown.trim()) {
     return (
       <div className="preview-scroll">
@@ -145,6 +216,20 @@ export function MarkdownPreview({ markdown, reportPath }: MarkdownPreviewProps):
     <div className="preview-scroll">
       <MarkdownErrorBoundary resetKey={markdown}>
         <article className="markdown-preview">
+          {usefulIssueSelection?.enabled && (
+            <div className="report-heading-options" aria-label="可标记的有用信息">
+              {extractDetailedHeadingOptions(markdown).map((option) => (
+                <label className="report-heading-option" key={option.id}>
+                  <input
+                    type="checkbox"
+                    checked={usefulIssueSelection.selectedIssues.includes(option.text)}
+                    onChange={() => usefulIssueSelection.onToggle(option.text)}
+                  />
+                  <span>{option.text}</span>
+                </label>
+              ))}
+            </div>
+          )}
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             urlTransform={(url, key) =>

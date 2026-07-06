@@ -703,6 +703,47 @@ describe('ApiClient', () => {
     )
   })
 
+  it('submits report feedback as JSON with authorization header', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          id: 'feedback-1',
+          task_id: 'task-1',
+          user_id: 'user-1',
+          helpful: true,
+          useful_issues_text: '1. 空指针风险'
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    )
+    const client = new ApiClient('https://server.example', fetchMock as typeof fetch)
+
+    const result = await client.submitReportFeedback('token-123', 'task-1', {
+      helpful: true,
+      useful_issues_text: '1. 空指针风险'
+    })
+
+    expect(result).toMatchObject({
+      id: 'feedback-1',
+      task_id: 'task-1',
+      helpful: true
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://server.example/api/v1/review-tasks/task-1/report-feedback',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          authorization: 'Bearer token-123',
+          'content-type': 'application/json'
+        }),
+        body: JSON.stringify({
+          helpful: true,
+          useful_issues_text: '1. 空指针风险'
+        })
+      })
+    )
+  })
+
   it('adds the request URL and network cause to failed fetch errors', async () => {
     const fetchMock = vi.fn().mockRejectedValue(
       new TypeError('fetch failed', {

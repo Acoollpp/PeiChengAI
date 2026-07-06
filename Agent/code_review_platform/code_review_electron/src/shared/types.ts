@@ -77,6 +77,8 @@ export interface ReviewTask {
   error_message?: string
   progress_message?: string
   codex_log?: TaskProgressEvent[]
+  report_feedback_helpful?: boolean | null
+  report_feedback_useful_issues_text?: string | null
 }
 
 export type TaskProgressStage =

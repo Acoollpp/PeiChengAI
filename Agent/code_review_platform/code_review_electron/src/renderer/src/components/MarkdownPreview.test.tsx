@@ -2,6 +2,7 @@
 
 import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MarkdownPreview } from './MarkdownPreview'
@@ -135,5 +136,42 @@ describe('MarkdownPreview', () => {
 
     expect(screen.queryByText('报告渲染失败，请下载报告查看原始 Markdown。')).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '新报告', level: 1 })).toBeInTheDocument()
+  })
+
+  it('renders detailed heading checkboxes when report feedback selection is enabled', async () => {
+    const onUsefulIssueToggle = vi.fn()
+    render(
+      <MarkdownPreview
+        markdown={[
+          '# 审查报告',
+          '## 高风险问题',
+          '### 空指针风险',
+          '正文',
+          '### 越界访问风险',
+          '正文',
+          '```',
+          '### 代码块标题不应识别',
+          '```'
+        ].join('\n')}
+        usefulIssueSelection={{
+          enabled: true,
+          selectedIssues: ['空指针风险'],
+          onToggle: onUsefulIssueToggle
+        }}
+      />
+    )
+
+    expect(screen.getByRole('checkbox', { name: '空指针风险' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: '越界访问风险' })).not.toBeChecked()
+    expect(screen.queryByRole('checkbox', { name: '代码块标题不应识别' })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('checkbox', { name: '越界访问风险' }))
+    expect(onUsefulIssueToggle).toHaveBeenCalledWith('越界访问风险')
+  })
+
+  it('does not render report feedback checkboxes by default', () => {
+    render(<MarkdownPreview markdown={'## 高风险问题\n\n### 空指针风险'} />)
+
+    expect(screen.queryByRole('checkbox', { name: '空指针风险' })).not.toBeInTheDocument()
   })
 })

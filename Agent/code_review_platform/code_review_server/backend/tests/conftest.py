@@ -63,6 +63,7 @@ from app.models import (
     ReviewFocusDirectionDepartment,
     ReviewFocusDirectionUsageState,
     ReviewTask,
+    ReviewTaskReportFeedback,
     ReviewTaskRequirementFile,
     SkillPackage,
     User,
@@ -91,6 +92,9 @@ def db() -> Generator[Session, None, None]:
         yield session
         _assert_test_database(session)
         inspector = inspect(engine)
+        if inspector.has_table("review_task_report_feedback"):
+            statement = delete(ReviewTaskReportFeedback)
+            session.execute(statement)
         if inspector.has_table("review_task_requirement_file"):
             statement = delete(ReviewTaskRequirementFile)
             session.execute(statement)

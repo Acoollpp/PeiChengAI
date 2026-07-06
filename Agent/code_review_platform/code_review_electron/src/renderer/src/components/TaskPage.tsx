@@ -31,6 +31,43 @@ type CompletionNotice = {
   task: TaskViewItem
 }
 
+type ReportFeedbackStatus = 'idle' | 'choosing' | 'useful' | 'submitting'
+
+const stripMarkerListPrefix = (value: string): string =>
+  value.replace(/^\s*\d+[\.)、]\s*/, '').trim()
+
+const parseUsefulIssuesText = (value: string): string[] =>
+  value
+    .split(/\r?\n/)
+    .map(stripMarkerListPrefix)
+    .filter(Boolean)
+
+const formatUsefulIssues = (issues: string[]): string =>
+  issues.map((issue, index) => `${index + 1}. ${issue}`).join('\n')
+
+const uniqueIssues = (issues: string[]): string[] =>
+  issues.filter((issue, index) => issues.indexOf(issue) === index)
+
+const REPORT_FEEDBACK_EXISTS_CODE = 'report_feedback_exists'
+
+const isReportFeedbackExistsError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false
+  }
+  return error.message.includes(REPORT_FEEDBACK_EXISTS_CODE)
+}
+
+const formatReportFeedbackError = (error: unknown): string => {
+  if (!(error instanceof Error)) {
+    return '报告反馈提交失败，请稍后重试。'
+  }
+  const message = error.message
+  if (message.includes('no_report') || message.includes('no_pdf_report')) {
+    return '该任务暂无可反馈的报告'
+  }
+  return message
+}
+
 const isRendererForeground = (): boolean =>
   document.visibilityState === 'visible' && document.hasFocus()
 
@@ -58,6 +95,10 @@ export function TaskPage({
   const [loadingReportTaskId, setLoadingReportTaskId] = useState<string>()
   const [showSubmitFeedback, setShowSubmitFeedback] = useState(false)
   const [completionNotice, setCompletionNotice] = useState<CompletionNotice | null>(null)
+  const [reportFeedbackStatus, setReportFeedbackStatus] =
+    useState<ReportFeedbackStatus>('idle')
+  const [selectedUsefulIssues, setSelectedUsefulIssues] = useState<string[]>([])
+  const [usefulIssuesText, setUsefulIssuesText] = useState('')
   const selectedTaskIdRef = useRef<string | undefined>(undefined)
   const currentPdfPathRef = useRef<string | undefined>(undefined)
   const currentPdfReportNameRef = useRef<string | undefined>(undefined)
@@ -127,7 +168,8 @@ export function TaskPage({
     submitTask,
     cancelTask,
     applyProgressEvent,
-    setServerTasks
+    setServerTasks,
+    updateTask
   } = useTaskQueue({
     executeTask: window.codeReview.executeTask,
     cancelTask: window.codeReview.cancelTask,
@@ -150,6 +192,9 @@ export function TaskPage({
       selectedTaskIdRef.current = undefined
       setSelectedTaskId(undefined)
       setLoadingReportTaskId(undefined)
+      setReportFeedbackStatus('idle')
+      setSelectedUsefulIssues([])
+      setUsefulIssuesText('')
       setError('')
     },
     [setActivePdfPath, setActivePdfReportName]
@@ -211,6 +256,9 @@ export function TaskPage({
     setError('')
     setReportMessage('')
     updateSelectedTaskId(task.id)
+    setReportFeedbackStatus('idle')
+    setSelectedUsefulIssues([])
+    setUsefulIssuesText('')
 
     if (task.reportMarkdown && task.report_path) {
       setMarkdown(task.reportMarkdown)
@@ -272,7 +320,51 @@ export function TaskPage({
     })
   }, [findTaskForNotification, handleViewReport])
 
-  const handleOpenPdfReport = async (): Promise<void> => {
+  const selectedTask = [...runningTasks, ...queuedTasks, ...historyTasks].find(
+    (task) => task.id === selectedTaskId
+  )
+
+  const markTaskFeedbackSubmitted = useCallback(
+    (taskId: string, helpful: boolean, usefulText: string | null): void => {
+      updateTask(taskId, (task) => ({
+        ...task,
+        report_feedback_helpful: helpful,
+        report_feedback_useful_issues_text: usefulText
+      }))
+    },
+    [updateTask]
+  )
+
+  const openSelectedPdfReport = useCallback(async (): Promise<void> => {
+    const taskId = selectedTaskIdRef.current
+
+    if (!taskId) {
+      setError('请先选择一个已完成任务报告。')
+      return
+    }
+
+    setError('')
+    try {
+      const result = await window.codeReview.openPdfReport({
+        taskId,
+        localPdfPath: currentPdfPathRef.current,
+        pdfReportName: currentPdfReportNameRef.current
+      })
+      if (!isMountedRef.current) {
+        return
+      }
+      setReportMessage(`PDF报告位置：${result.pdfPath}`)
+      setActivePdfPath(result.pdfPath)
+    } catch (openError) {
+      if (!isMountedRef.current) {
+        return
+      }
+      const message = openError instanceof Error ? openError.message : 'PDF报告打开失败。'
+      setError(message.includes('404') ? '该历史任务没有 PDF 报告，请查看 Markdown 或重新生成报告。' : message)
+    }
+  }, [setActivePdfPath])
+
+  const handleOpenPdfReport = useCallback(async (): Promise<void> => {
     if (!isMountedRef.current) {
       return
     }
@@ -287,24 +379,92 @@ export function TaskPage({
       return
     }
 
-    try {
-      const result = await window.codeReview.openPdfReport({
-        taskId,
-        localPdfPath: currentPdfPathRef.current,
-        pdfReportName: currentPdfReportNameRef.current
-      })
-      if (!isMountedRef.current) {
-        return
-      }
+    if (selectedTask?.report_feedback_helpful == null && reportFeedbackStatus === 'idle') {
+      setReportFeedbackStatus('choosing')
+      return
+    }
 
-      setReportMessage(`PDF报告位置：${result.pdfPath}`)
-      setActivePdfPath(result.pdfPath)
-    } catch (downloadError) {
-      if (!isMountedRef.current) {
+    await openSelectedPdfReport()
+  }, [openSelectedPdfReport, reportFeedbackStatus, selectedTask?.report_feedback_helpful])
+
+  const handleReportNotUseful = async (): Promise<void> => {
+    const taskId = selectedTaskIdRef.current
+    if (!taskId) {
+      setError('请先选择一个已完成任务报告。')
+      return
+    }
+    setError('')
+    setReportFeedbackStatus('submitting')
+    try {
+      await window.codeReview.submitReportFeedback({
+        taskId,
+        helpful: false,
+        useful_issues_text: ''
+      })
+      markTaskFeedbackSubmitted(taskId, false, null)
+      setReportFeedbackStatus('idle')
+      await openSelectedPdfReport()
+    } catch (submitError) {
+      if (isReportFeedbackExistsError(submitError)) {
+        markTaskFeedbackSubmitted(taskId, false, null)
+        setReportFeedbackStatus('idle')
+        await openSelectedPdfReport()
         return
       }
-      const message = downloadError instanceof Error ? downloadError.message : 'PDF报告打开失败。'
-      setError(message.includes('404') ? '该历史任务没有 PDF 报告，请查看 Markdown 或重新生成报告。' : message)
+      setReportFeedbackStatus('choosing')
+      setError(formatReportFeedbackError(submitError))
+    }
+  }
+
+  const handleReportUseful = (): void => {
+    setReportFeedbackStatus('useful')
+  }
+
+  const handleUsefulIssueToggle = (issue: string): void => {
+    const next = selectedUsefulIssues.includes(issue)
+      ? selectedUsefulIssues.filter((item) => item !== issue)
+      : [...selectedUsefulIssues, issue]
+    setSelectedUsefulIssues(next)
+    setUsefulIssuesText(formatUsefulIssues(next))
+  }
+
+  const handleUsefulIssuesTextChange = (value: string): void => {
+    setUsefulIssuesText(value)
+    setSelectedUsefulIssues(uniqueIssues(parseUsefulIssuesText(value)))
+  }
+
+  const handleSubmitUsefulIssuesAndOpenPdf = async (): Promise<void> => {
+    const taskId = selectedTaskIdRef.current
+    const issues = uniqueIssues(parseUsefulIssuesText(usefulIssuesText))
+    if (!taskId) {
+      setError('请先选择一个已完成任务报告。')
+      return
+    }
+    if (issues.length === 0) {
+      setError('请至少标记或填写一条有用信息。')
+      return
+    }
+    const formatted = formatUsefulIssues(issues)
+    setError('')
+    setReportFeedbackStatus('submitting')
+    try {
+      await window.codeReview.submitReportFeedback({
+        taskId,
+        helpful: true,
+        useful_issues_text: formatted
+      })
+      markTaskFeedbackSubmitted(taskId, true, formatted)
+      setReportFeedbackStatus('idle')
+      await openSelectedPdfReport()
+    } catch (submitError) {
+      if (isReportFeedbackExistsError(submitError)) {
+        markTaskFeedbackSubmitted(taskId, true, formatted)
+        setReportFeedbackStatus('idle')
+        await openSelectedPdfReport()
+        return
+      }
+      setReportFeedbackStatus('useful')
+      setError(formatReportFeedbackError(submitError))
     }
   }
 
@@ -378,11 +538,67 @@ export function TaskPage({
             <p className="eyebrow">Markdown</p>
             <h2>审查报告</h2>
           </div>
-          <button className="secondary-button" type="button" onClick={() => void handleOpenPdfReport()}>
-            查看PDF报告
-          </button>
+          {!selectedTask ? null : selectedTask.report_feedback_helpful != null ? (
+            <button className="secondary-button" type="button" onClick={() => void handleOpenPdfReport()}>
+              查看PDF报告
+            </button>
+          ) : reportFeedbackStatus === 'choosing' || reportFeedbackStatus === 'submitting' ? (
+            <div className="report-feedback-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={reportFeedbackStatus === 'submitting'}
+                onClick={handleReportUseful}
+              >
+                有帮助
+              </button>
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={reportFeedbackStatus === 'submitting'}
+                onClick={() => void handleReportNotUseful()}
+              >
+                没帮助
+              </button>
+            </div>
+          ) : reportFeedbackStatus === 'useful' ? (
+            <div className="report-feedback-bar">
+              <div className="report-feedback-copy">
+                <strong>标记有用信息</strong>
+                <span>勾选下方标题，或手动补充有价值内容。</span>
+              </div>
+              <span className="report-feedback-count">已选 {parseUsefulIssuesText(usefulIssuesText).length} 条</span>
+              <textarea
+                aria-label="有用信息"
+                value={usefulIssuesText}
+                onChange={(event) => handleUsefulIssuesTextChange(event.target.value)}
+                placeholder="可补充报告中有价值的问题或建议点，每行一条"
+                maxLength={4096}
+              />
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={parseUsefulIssuesText(usefulIssuesText).length === 0}
+                onClick={() => void handleSubmitUsefulIssuesAndOpenPdf()}
+              >
+                提交并打开PDF
+              </button>
+            </div>
+          ) : (
+            <button className="secondary-button" type="button" onClick={() => void handleOpenPdfReport()}>
+              查看PDF报告
+            </button>
+          )}
         </div>
-        <MarkdownPreview markdown={markdown} reportPath={currentReportPath} />
+        <MarkdownPreview
+          markdown={markdown}
+          reportPath={currentReportPath}
+          usefulIssueSelection={{
+            enabled: reportFeedbackStatus === 'useful',
+            selectedIssues: selectedUsefulIssues,
+            onToggle: handleUsefulIssueToggle
+          }}
+        />
       </section>
       {completionNotice && (
         <aside className="completion-notice" role="status" aria-label="审查完成提醒">
