@@ -3,6 +3,9 @@ set -euo pipefail
 
 CONTAINER_NAME="${CONTAINER_NAME:-code_review_server-backend-1}"
 LOCK_FILE="${LOCK_FILE:-/tmp/code-review-sub2api-user-sync.lock}"
+TUNNEL_SERVICE="${TUNNEL_SERVICE:-pacemind-sub2api-db-tunnel.service}"
+TUNNEL_BIND="${TUNNEL_BIND:-172.23.17.242}"
+TUNNEL_DROP_IN="${TUNNEL_DROP_IN:-$HOME/.config/systemd/user/$TUNNEL_SERVICE.d/code-review-bind.conf}"
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
@@ -14,15 +17,8 @@ timestamp() {
   date '+%Y-%m-%d %H:%M:%S %z'
 }
 
-echo "[$(timestamp)] sub2api user key sync started"
-
-health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$CONTAINER_NAME" 2>/dev/null || true)"
-if [[ "$health" != "healthy" && "$health" != "running" ]]; then
-  echo "[$(timestamp)] backend container is not ready: ${health:-missing}"
-  exit 1
-fi
-
-docker exec "$CONTAINER_NAME" sh -lc '/app/.venv/bin/python - <<'"'"'PY'"'"'
+run_backend_python() {
+  docker exec "$CONTAINER_NAME" sh -lc '/app/.venv/bin/python - <<'"'"'PY'"'"'
 from sqlmodel import Session
 
 from app.core.config import settings
@@ -52,5 +48,59 @@ print(
 for error in result.errors:
     print(f"error={error}")
 PY'
+}
+
+check_source_database() {
+  docker exec "$CONTAINER_NAME" sh -lc '/app/.venv/bin/python - <<'"'"'PY'"'"' >/dev/null
+from sqlalchemy import create_engine, text
+
+from app.core.config import settings
+
+if settings.CCH_DATABASE_URL is None:
+    raise SystemExit("CCH_DATABASE_URL is not configured")
+
+engine = create_engine(str(settings.CCH_DATABASE_URL))
+try:
+    with engine.connect() as connection:
+        connection.execute(text("select 1"))
+finally:
+    engine.dispose()
+PY'
+}
+
+ensure_source_database() {
+  if check_source_database; then
+    return
+  fi
+
+  echo "[$(timestamp)] source database is unreachable, restarting $TUNNEL_SERVICE"
+  mkdir -p "$(dirname "$TUNNEL_DROP_IN")"
+  printf '[Service]\nEnvironment=LOCAL_BIND=%s\n' "$TUNNEL_BIND" >"$TUNNEL_DROP_IN"
+  systemctl --user daemon-reload
+  systemctl --user restart "$TUNNEL_SERVICE"
+
+  for _ in $(seq 1 30); do
+    sleep 1
+    if check_source_database; then
+      echo "[$(timestamp)] source database connection recovered"
+      return
+    fi
+  done
+
+  echo "[$(timestamp)] source database is still unreachable after tunnel restart"
+  systemctl --user status "$TUNNEL_SERVICE" --no-pager -l || true
+  exit 1
+}
+
+echo "[$(timestamp)] sub2api user key sync started"
+
+health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$CONTAINER_NAME" 2>/dev/null || true)"
+if [[ "$health" != "healthy" && "$health" != "running" ]]; then
+  echo "[$(timestamp)] backend container is not ready: ${health:-missing}"
+  exit 1
+fi
+
+ensure_source_database
+run_backend_python
 
 echo "[$(timestamp)] sub2api user key sync finished"
