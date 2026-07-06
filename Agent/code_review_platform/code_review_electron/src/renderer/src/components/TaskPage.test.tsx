@@ -832,7 +832,7 @@ describe('TaskPage', () => {
     expect(window.codeReview.readTaskReport).not.toHaveBeenCalled()
   })
 
-  it('未反馈历史任务点击查看PDF时先展示报告反馈选择', async () => {
+  it('未反馈历史任务查看报告后直接展示报告反馈选择和说明', async () => {
     const user = userEvent.setup()
     window.codeReview.listTasks = vi.fn(async () => ({
       data: [
@@ -854,10 +854,10 @@ describe('TaskPage', () => {
     renderReadyTaskPage()
     const historyPanel = await openHistoryTasks(user)
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
-    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
 
     expect(screen.getByRole('button', { name: '有帮助' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '没帮助' })).toBeInTheDocument()
+    expect(screen.getByText('这两个按钮用于统计报告是否对代码审查有帮助。')).toBeInTheDocument()
     expect(window.codeReview.openPdfReport).not.toHaveBeenCalled()
   })
 
@@ -894,7 +894,6 @@ describe('TaskPage', () => {
     renderReadyTaskPage()
     const historyPanel = await openHistoryTasks(user)
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
-    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
     await user.click(screen.getByRole('button', { name: '没帮助' }))
 
     expect(window.codeReview.submitReportFeedback).toHaveBeenCalledWith({
@@ -905,8 +904,10 @@ describe('TaskPage', () => {
     await waitFor(() => expect(window.codeReview.openPdfReport).toHaveBeenCalled())
   })
 
-  it('点击有帮助后必须至少选择或填写一条有用信息才能提交', async () => {
+  it('点击有帮助后滚动到选项区域并要求至少选择或填写一条有用信息才能提交', async () => {
     const user = userEvent.setup()
+    const scrollIntoView = vi.fn()
+    window.HTMLElement.prototype.scrollIntoView = scrollIntoView
     window.codeReview.listTasks = vi.fn(async () => ({
       data: [
         {
@@ -927,12 +928,52 @@ describe('TaskPage', () => {
     renderReadyTaskPage()
     const historyPanel = await openHistoryTasks(user)
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
-    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
     await user.click(screen.getByRole('button', { name: '有帮助' }))
 
     expect(screen.getByRole('button', { name: '提交并打开PDF' })).toBeDisabled()
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' }))
     await user.click(screen.getByRole('checkbox', { name: '空指针风险' }))
     expect(screen.getByRole('button', { name: '提交并打开PDF' })).toBeEnabled()
+  })
+
+  it('勾选已有编号的有用信息时提交内容不会重复编号', async () => {
+    const user = userEvent.setup()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-history-1',
+          svn_url: 'svn://repo/project',
+          old_revision: 'r1',
+          new_revision: 'r2',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history.md',
+          pdf_report_path: '/app/reports/task-history.pdf',
+          report_feedback_helpful: null
+        }
+      ],
+      count: 1
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () =>
+      ['# 审查报告', '### 1. 空指针风险', '正文', '### 4. 越界访问风险'].join('\n')
+    )
+    window.codeReview.openPdfReport = vi.fn(async () => ({
+      status: 'ready' as const,
+      pdfPath: '/local/task-history.pdf'
+    }))
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
+    await user.click(screen.getByRole('button', { name: '有帮助' }))
+    await user.click(screen.getByRole('checkbox', { name: '空指针风险' }))
+    await user.click(screen.getByRole('checkbox', { name: '越界访问风险' }))
+    await user.click(screen.getByRole('button', { name: '提交并打开PDF' }))
+
+    expect(window.codeReview.submitReportFeedback).toHaveBeenCalledWith({
+      taskId: 'task-history-1',
+      helpful: true,
+      useful_issues_text: '1. 空指针风险\n2. 越界访问风险'
+    })
   })
 
   it('已反馈任务点击查看PDF报告直接打开PDF', async () => {
@@ -997,7 +1038,6 @@ describe('TaskPage', () => {
     renderReadyTaskPage()
     const historyPanel = await openHistoryTasks(user)
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
-    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
     await user.click(screen.getByRole('button', { name: '没帮助' }))
 
     await waitFor(() => expect(window.codeReview.openPdfReport).toHaveBeenCalled())

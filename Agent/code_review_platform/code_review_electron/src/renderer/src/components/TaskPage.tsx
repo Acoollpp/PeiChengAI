@@ -31,7 +31,7 @@ type CompletionNotice = {
   task: TaskViewItem
 }
 
-type ReportFeedbackStatus = 'idle' | 'choosing' | 'useful' | 'submitting'
+type ReportFeedbackStatus = 'idle' | 'useful' | 'submitting'
 
 const stripMarkerListPrefix = (value: string): string =>
   value.replace(/^\s*\d+[\.)、]\s*/, '').trim()
@@ -102,6 +102,7 @@ export function TaskPage({
   const selectedTaskIdRef = useRef<string | undefined>(undefined)
   const currentPdfPathRef = useRef<string | undefined>(undefined)
   const currentPdfReportNameRef = useRef<string | undefined>(undefined)
+  const usefulIssueOptionsRef = useRef<HTMLDivElement | null>(null)
   const isMountedRef = useRef(true)
 
   const canRunTask = environment?.status === 'ready' && !environment.skillError
@@ -379,13 +380,8 @@ export function TaskPage({
       return
     }
 
-    if (selectedTask?.report_feedback_helpful == null && reportFeedbackStatus === 'idle') {
-      setReportFeedbackStatus('choosing')
-      return
-    }
-
     await openSelectedPdfReport()
-  }, [openSelectedPdfReport, reportFeedbackStatus, selectedTask?.report_feedback_helpful])
+  }, [openSelectedPdfReport])
 
   const handleReportNotUseful = async (): Promise<void> => {
     const taskId = selectedTaskIdRef.current
@@ -411,7 +407,7 @@ export function TaskPage({
         await openSelectedPdfReport()
         return
       }
-      setReportFeedbackStatus('choosing')
+      setReportFeedbackStatus('idle')
       setError(formatReportFeedbackError(submitError))
     }
   }
@@ -419,6 +415,21 @@ export function TaskPage({
   const handleReportUseful = (): void => {
     setReportFeedbackStatus('useful')
   }
+
+  useEffect(() => {
+    if (reportFeedbackStatus !== 'useful') {
+      return
+    }
+
+    const schedule =
+      typeof window.requestAnimationFrame === 'function'
+        ? window.requestAnimationFrame
+        : (callback: FrameRequestCallback) => window.setTimeout(callback, 0)
+
+    schedule(() => {
+      usefulIssueOptionsRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    })
+  }, [reportFeedbackStatus])
 
   const handleUsefulIssueToggle = (issue: string): void => {
     const next = selectedUsefulIssues.includes(issue)
@@ -538,56 +549,62 @@ export function TaskPage({
             <p className="eyebrow">Markdown</p>
             <h2>审查报告</h2>
           </div>
-          {!selectedTask ? null : selectedTask.report_feedback_helpful != null ? (
-            <button className="secondary-button" type="button" onClick={() => void handleOpenPdfReport()}>
-              查看PDF报告
-            </button>
-          ) : reportFeedbackStatus === 'choosing' || reportFeedbackStatus === 'submitting' ? (
-            <div className="report-feedback-actions">
-              <button
-                className="secondary-button"
-                type="button"
-                disabled={reportFeedbackStatus === 'submitting'}
-                onClick={handleReportUseful}
-              >
-                有帮助
-              </button>
-              <button
-                className="secondary-button"
-                type="button"
-                disabled={reportFeedbackStatus === 'submitting'}
-                onClick={() => void handleReportNotUseful()}
-              >
-                没帮助
+          {selectedTask && (
+            <div className="report-toolbar-actions">
+              {selectedTask.report_feedback_helpful == null &&
+                (reportFeedbackStatus === 'useful' ? (
+                  <div className="report-feedback-bar">
+                    <div className="report-feedback-copy">
+                      <strong>标记有用信息</strong>
+                      <span>勾选下方标题，或手动补充有价值内容。</span>
+                    </div>
+                    <span className="report-feedback-count">
+                      已选 {parseUsefulIssuesText(usefulIssuesText).length} 条
+                    </span>
+                    <textarea
+                      aria-label="有用信息"
+                      value={usefulIssuesText}
+                      onChange={(event) => handleUsefulIssuesTextChange(event.target.value)}
+                      placeholder="可补充报告中有价值的问题或建议点，每行一条"
+                      maxLength={4096}
+                    />
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={parseUsefulIssuesText(usefulIssuesText).length === 0}
+                      onClick={() => void handleSubmitUsefulIssuesAndOpenPdf()}
+                    >
+                      提交并打开PDF
+                    </button>
+                  </div>
+                ) : (
+                  <div className="report-feedback-actions">
+                    <div className="report-feedback-copy">
+                      <strong>报告反馈</strong>
+                      <span>这两个按钮用于统计报告是否对代码审查有帮助。</span>
+                    </div>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={reportFeedbackStatus === 'submitting'}
+                      onClick={handleReportUseful}
+                    >
+                      有帮助
+                    </button>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={reportFeedbackStatus === 'submitting'}
+                      onClick={() => void handleReportNotUseful()}
+                    >
+                      没帮助
+                    </button>
+                  </div>
+                ))}
+              <button className="secondary-button" type="button" onClick={() => void handleOpenPdfReport()}>
+                查看PDF报告
               </button>
             </div>
-          ) : reportFeedbackStatus === 'useful' ? (
-            <div className="report-feedback-bar">
-              <div className="report-feedback-copy">
-                <strong>标记有用信息</strong>
-                <span>勾选下方标题，或手动补充有价值内容。</span>
-              </div>
-              <span className="report-feedback-count">已选 {parseUsefulIssuesText(usefulIssuesText).length} 条</span>
-              <textarea
-                aria-label="有用信息"
-                value={usefulIssuesText}
-                onChange={(event) => handleUsefulIssuesTextChange(event.target.value)}
-                placeholder="可补充报告中有价值的问题或建议点，每行一条"
-                maxLength={4096}
-              />
-              <button
-                className="secondary-button"
-                type="button"
-                disabled={parseUsefulIssuesText(usefulIssuesText).length === 0}
-                onClick={() => void handleSubmitUsefulIssuesAndOpenPdf()}
-              >
-                提交并打开PDF
-              </button>
-            </div>
-          ) : (
-            <button className="secondary-button" type="button" onClick={() => void handleOpenPdfReport()}>
-              查看PDF报告
-            </button>
           )}
         </div>
         <MarkdownPreview
@@ -596,7 +613,8 @@ export function TaskPage({
           usefulIssueSelection={{
             enabled: reportFeedbackStatus === 'useful',
             selectedIssues: selectedUsefulIssues,
-            onToggle: handleUsefulIssueToggle
+            onToggle: handleUsefulIssueToggle,
+            optionsRef: usefulIssueOptionsRef
           }}
         />
       </section>

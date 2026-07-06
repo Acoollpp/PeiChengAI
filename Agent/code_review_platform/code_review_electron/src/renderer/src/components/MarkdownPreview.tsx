@@ -1,4 +1,11 @@
-import { Component, isValidElement, type ReactNode, useEffect, useState } from 'react'
+import {
+  Component,
+  isValidElement,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useState
+} from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -12,6 +19,7 @@ type UsefulIssueSelection = {
   enabled: boolean
   selectedIssues: string[]
   onToggle: (issue: string) => void
+  optionsRef?: RefObject<HTMLDivElement | null>
 }
 
 type MarkdownPreviewProps = {
@@ -21,6 +29,9 @@ type MarkdownPreviewProps = {
 }
 
 const headingLinePattern = /^(#{1,6})\s+(.+?)\s*$/
+
+const stripMarkerListPrefix = (value: string): string =>
+  value.replace(/^\s*\d+[\.)、]\s*/, '').trim()
 
 const stripMarkdownInline = (value: string): string =>
   value
@@ -46,7 +57,7 @@ export const extractDetailedHeadingOptions = (markdown: string): ReportHeadingOp
     if (!match) {
       return
     }
-    const text = stripMarkdownInline(match[2])
+    const text = stripMarkerListPrefix(stripMarkdownInline(match[2]))
     if (!text) {
       return
     }
@@ -217,7 +228,11 @@ export function MarkdownPreview({
       <MarkdownErrorBoundary resetKey={markdown}>
         <article className="markdown-preview">
           {usefulIssueSelection?.enabled && (
-            <div className="report-heading-options" aria-label="可标记的有用信息">
+            <div
+              ref={usefulIssueSelection.optionsRef}
+              className="report-heading-options"
+              aria-label="可标记的有用信息"
+            >
               {extractDetailedHeadingOptions(markdown).map((option) => (
                 <label className="report-heading-option" key={option.id}>
                   <input
