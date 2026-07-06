@@ -13,6 +13,7 @@ type TaskBoardProps = {
   onViewReport?: (task: TaskViewItem) => void
   onCancelTask?: (task: TaskViewItem) => void
   onRetryTask?: (task: TaskViewItem) => void
+  onOpenTaskLog?: (task: TaskViewItem) => void
 }
 
 const statusText: Record<ReviewTask['status'], string> = {
@@ -121,6 +122,7 @@ type TaskCardProps = {
   onViewReport?: (task: TaskViewItem) => void
   onCancelTask?: (task: TaskViewItem) => void
   onRetryTask?: (task: TaskViewItem) => void
+  onOpenTaskLog?: (task: TaskViewItem) => void
 }
 
 function TaskCard({
@@ -131,7 +133,8 @@ function TaskCard({
   showQueueIndex = false,
   onViewReport,
   onCancelTask,
-  onRetryTask
+  onRetryTask,
+  onOpenTaskLog
 }: TaskCardProps): React.JSX.Element {
   const canCancel =
     task.localQueueState === 'starting' ||
@@ -198,13 +201,22 @@ function TaskCard({
         </button>
       )}
       {task.status === 'failed' && (
-        <button
-          className="task-action-button"
-          type="button"
-          onClick={() => onRetryTask?.(task)}
-        >
-          重试
-        </button>
+        <div className="task-card-actions">
+          <button
+            className="task-action-button"
+            type="button"
+            onClick={() => onRetryTask?.(task)}
+          >
+            重试
+          </button>
+          <button
+            className="task-action-button"
+            type="button"
+            onClick={() => onOpenTaskLog?.(task)}
+          >
+            查看日志
+          </button>
+        </div>
       )}
       {canCancel && (
         <button
@@ -247,7 +259,8 @@ export function TaskBoard({
   loadingReportTaskId,
   onViewReport,
   onCancelTask,
-  onRetryTask
+  onRetryTask,
+  onOpenTaskLog
 }: TaskBoardProps): React.JSX.Element {
   const [activeView, setActiveView] = useState<TaskBoardView>('running')
   const viewTasks: Record<TaskBoardView, TaskViewItem[]> = {
@@ -301,10 +314,11 @@ export function TaskBoard({
                 loadingReportTaskId={loadingReportTaskId}
                 showCodexLog={isRunningView}
                 showQueueIndex={isQueuedView}
-                onViewReport={onViewReport}
-                onCancelTask={onCancelTask}
-                onRetryTask={onRetryTask}
-              />
+              onViewReport={onViewReport}
+              onCancelTask={onCancelTask}
+              onRetryTask={onRetryTask}
+              onOpenTaskLog={onOpenTaskLog}
+            />
             ))}
           </div>
         )}

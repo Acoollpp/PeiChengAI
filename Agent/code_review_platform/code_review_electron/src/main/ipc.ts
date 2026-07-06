@@ -40,6 +40,7 @@ import { uploadPdfReportFile, uploadReportFile, uploadRequirementFile } from './
 import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
 import { ServerConfigStore, normalizeServerUrl } from './server-config-store'
 import { createSkillSyncService, type SkillSyncResult } from './skill-sync'
+import { appendTaskLogEvent, CODEX_REVIEW_LOG_FILE_NAME } from './task-log'
 
 interface SerializedFeedbackScreenshot {
   name: string
@@ -112,6 +113,15 @@ interface CancelTaskRequest {
 
 interface CancelTaskResult {
   status: 'cancelled' | 'not_found'
+}
+
+interface OpenTaskLogRequest {
+  taskId: string
+}
+
+interface OpenTaskLogResult {
+  status: 'ready' | 'missing'
+  logPath?: string
 }
 
 type SelectRequirementFileResult =
@@ -608,6 +618,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       registerActiveTask(activeTask)
 
       const prepareWorkspace = dependencies.prepareWorkspace ?? defaultPrepareWorkspace
+      let codexLogPath: string | undefined
       const result = await executeReviewTask(
         {
           token: tokens.access_token,
@@ -623,7 +634,11 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
             registerActiveTask(activeTask)
             const workspace = await prepareWorkspace(input)
             activeTask.workspaceDir = workspace.cwd
-            return workspace
+            codexLogPath = workspace.codexLogPath ?? join(workspace.cwd, CODEX_REVIEW_LOG_FILE_NAME)
+            return {
+              ...workspace,
+              codexLogPath
+            }
           },
           runCodex: dependencies.runCodex ?? defaultRunCodex,
           generatePdfReport: dependencies.generatePdfReport ?? generatePdfReport,
@@ -639,6 +654,9 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
             ((token, taskId, pdfPath) => uploadPdfReportFile(taskApi, token, taskId, pdfPath))
         },
         (progressEvent) => {
+          if (codexLogPath) {
+            void appendTaskLogEvent(codexLogPath, progressEvent)
+          }
           if (progressEvent.taskId) {
             activeTask.taskId = progressEvent.taskId
             registerActiveTask(activeTask)
@@ -669,6 +687,25 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     }
 
     return cancelActiveReviewTask(activeTask)
+  })
+
+  ipcMain.handle('task:open-log', async (_event, payload: OpenTaskLogRequest): Promise<OpenTaskLogResult> => {
+    const trimmedTaskId = payload.taskId.trim()
+    if (!trimmedTaskId) {
+      return { status: 'missing' }
+    }
+
+    const runtimePaths = await loadRuntimePaths()
+    const logPath =
+      runtimePaths.codexLogPathForTask?.(trimmedTaskId) ??
+      join(runtimePaths.workspaceForTask(trimmedTaskId), CODEX_REVIEW_LOG_FILE_NAME)
+
+    if (!(await isExistingFile(logPath))) {
+      return { status: 'missing' }
+    }
+
+    shell.showItemInFolder(logPath)
+    return { status: 'ready', logPath }
   })
 
   ipcMain.handle(

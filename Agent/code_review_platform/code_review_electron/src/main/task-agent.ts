@@ -13,6 +13,7 @@ import {
 } from './report-uploader'
 import { getRuntimePaths } from './runtime-paths'
 import { resolveReviewReportFileName, type RunSvnLog } from './svn-report-name-resolver'
+import { CODEX_REVIEW_LOG_FILE_NAME } from './task-log'
 import type {
   EnvironmentStatus,
   ReviewTask,
@@ -32,6 +33,7 @@ export interface PreparedWorkspace {
   cwd: string
   reportPath: string
   imagesDir: string
+  codexLogPath?: string
   requirementFilePath?: string
 }
 
@@ -64,6 +66,7 @@ export interface ExecuteReviewTaskResult {
   reportPath?: string
   pdfPath?: string
   pdfReportName?: string
+  codexLogPath?: string
 }
 
 export interface TaskAgentApi {
@@ -160,6 +163,8 @@ export const defaultPrepareWorkspace = async ({
     cwd,
     reportPath: runtimePaths.reportPathForTask(taskId, reportFileName),
     imagesDir,
+    codexLogPath:
+      runtimePaths.codexLogPathForTask?.(taskId) ?? join(cwd, CODEX_REVIEW_LOG_FILE_NAME),
     requirementFilePath: workspaceRequirementFilePath
   }
 }
@@ -346,7 +351,8 @@ export const executeReviewTask = async (
       reportMarkdown,
       reportPath: workspace.reportPath,
       pdfPath: pdfResult.pdfPath,
-      pdfReportName: basename(pdfResult.pdfPath)
+      pdfReportName: basename(pdfResult.pdfPath),
+      codexLogPath: workspace.codexLogPath
     }
   } catch (error) {
     if (isCancelledError(error) || input.signal?.aborted) {
@@ -359,7 +365,7 @@ export const executeReviewTask = async (
 
     const errorMessage = error instanceof CodexReviewError
       ? `${codexErrorMessages[error.errorCode]}（Codex 分析：${error.message}）`
-      : sanitizeErrorSummary(error, input.token)
+      : toUserFacingErrorMessage(sanitizeErrorSummary(error, input.token))
 
     await updateStatus(dependencies, input.token, task.id, {
       status: 'failed',
@@ -444,4 +450,20 @@ const sanitizeErrorSummary = (error: unknown, token: string): string => {
     .replace(/\/[^\s:]+/g, '[路径已隐藏]')
     .replace(/\s+/g, ' ')
     .slice(0, 500)
+}
+
+export const toUserFacingErrorMessage = (message: string): string => {
+  if (/Codex review timed out after \d+ms/.test(message)) {
+    return 'Codex 审查超过 60 分钟仍未完成，请稍后重试或联系管理员。'
+  }
+
+  if (message.includes('审查报告不存在')) {
+    return 'SVN权限不足（或者SVN账号未登录）'
+  }
+
+  if (/Codex review failed with exit code 1:/.test(message)) {
+    return 'Codex报错请检查Codex对话后重试。'
+  }
+
+  return message
 }

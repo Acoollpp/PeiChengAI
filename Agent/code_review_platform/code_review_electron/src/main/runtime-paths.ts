@@ -8,6 +8,7 @@ export interface RuntimePaths {
   skillManifestPath: string
   workspacesDir: string
   workspaceForTask(taskId: string): string
+  codexLogPathForTask?: (taskId: string) => string
   reportPathForTask(taskId: string, reportFileName?: string): string
   pdfReportPathForTask?: (taskId: string) => string
   imagesDirForTask(taskId: string): string
@@ -33,6 +34,8 @@ export const getRuntimePaths = async (): Promise<RuntimePaths> => {
     skillManifestPath: pathApi.join(skillPackagesDir, 'manifest.json'),
     workspacesDir,
     workspaceForTask: (taskId: string) => pathApi.join(workspacesDir, taskId),
+    codexLogPathForTask: (taskId: string) =>
+      pathApi.join(workspacesDir, taskId, 'codex-review.log'),
     reportPathForTask: (taskId: string, reportFileName = REVIEW_REPORT_FILE_NAME) =>
       pathApi.join(workspacesDir, taskId, reportFileName),
     pdfReportPathForTask: (taskId: string) =>

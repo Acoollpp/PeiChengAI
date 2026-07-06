@@ -89,6 +89,7 @@ describe('registerIpcHandlers', () => {
       'environment:check',
       'task:execute',
       'task:cancel',
+      'task:open-log',
       'feedback:submit',
       'report-feedback:submit',
       'report:asset',
@@ -770,6 +771,92 @@ describe('registerIpcHandlers', () => {
       status: 'success'
     })
     expect(sender.send).not.toHaveBeenCalled()
+  })
+
+  it('writes Codex output to a local task log and opens it from IPC', async () => {
+    const api = {
+      createTask: vi.fn(async () => ({
+        id: 'task-log',
+        svn_url: 'svn://repo/project',
+        old_revision: '1',
+        new_revision: '2',
+        status: 'created'
+      })),
+      updateTaskStatus: vi.fn(async () => undefined),
+      uploadReport: vi.fn(async () => undefined),
+      uploadPdfReport: vi.fn(async () => undefined)
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123' })),
+      save: vi.fn()
+    }
+    const cwd = await mkdtemp(join(tmpdir(), 'ipc-task-log-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '代码审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    const sender = { send: vi.fn() }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      runtimePaths: {
+        runtimeRoot: cwd,
+        skillPackagesDir: join(cwd, 'skill-packages'),
+        skillManifestPath: join(cwd, 'skill-packages', 'manifest.json'),
+        workspacesDir: join(cwd, '..'),
+        workspaceForTask: () => cwd,
+        reportPathForTask: () => reportPath,
+        codexLogPathForTask: () => join(cwd, 'codex-review.log'),
+        imagesDirForTask: () => imagesDir
+      },
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      runCodex: vi.fn(async ({ onProgress }) => {
+        onProgress?.({
+          taskId: 'task-log',
+          type: 'codex_output',
+          stream: 'stdout',
+          message: '读取 Skill\n'
+        })
+        onProgress?.({
+          taskId: 'task-log',
+          type: 'codex_output',
+          stream: 'stderr',
+          message: 'Codex warning\n'
+        })
+        await writeFile(reportPath, '# report\n')
+      })
+    })
+
+    const executeHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:execute')?.[1]
+    const openLogHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:open-log')?.[1]
+
+    await expect(
+      executeHandler({ sender }, {
+        client_task_id: 'local-task-log',
+        svn_url: 'svn://repo/project',
+        old_revision: '1',
+        new_revision: '2',
+        template_key: 'template_1',
+        skill_name: '通用-代码审查-模版一'
+      })
+    ).resolves.toMatchObject({
+      taskId: 'task-log',
+      status: 'success',
+      codexLogPath: join(cwd, 'codex-review.log')
+    })
+
+    const logPath = join(cwd, 'codex-review.log')
+    await expect(readFile(logPath, 'utf8')).resolves.toContain('[stdout] 读取 Skill')
+    await expect(readFile(logPath, 'utf8')).resolves.toContain('[stderr] Codex warning')
+
+    await expect(openLogHandler({}, { taskId: 'task-log' })).resolves.toEqual({
+      status: 'ready',
+      logPath
+    })
+    expect(showItemInFolderMock).toHaveBeenCalledWith(logPath)
   })
 
   it('取消运行中的任务时更新服务端状态并删除任务工作区', async () => {

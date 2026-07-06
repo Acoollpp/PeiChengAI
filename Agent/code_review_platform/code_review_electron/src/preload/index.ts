@@ -86,6 +86,8 @@ contextBridge.exposeInMainWorld('codeReview', {
     ipcRenderer.invoke('task:execute', payload),
   cancelTask: (payload: CancelTaskRequest): Promise<CancelTaskResult> =>
     ipcRenderer.invoke('task:cancel', payload),
+  openTaskLog: (taskId: string): ReturnType<CodeReviewApi['openTaskLog']> =>
+    ipcRenderer.invoke('task:open-log', { taskId }),
   selectRequirementFile: (): Promise<SelectRequirementFileResult> =>
     ipcRenderer.invoke('requirement-file:select'),
   getPathForPastedFile: (file: File): string => webUtils.getPathForFile(file),

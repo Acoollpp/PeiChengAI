@@ -20,6 +20,7 @@ import {
   formatReviewTaskDateTime,
   ReviewTaskStatusBadge,
 } from "@/components/Tasks/task-display"
+import { formatReviewTaskErrorMessage } from "@/components/Tasks/task-error-display"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -269,7 +270,10 @@ function ReviewTasksTable({
               </TableCell>
             </TableRow>
           ) : (
-            tasks.data.map((task) => (
+            tasks.data.map((task) => {
+              const errorMessage = formatReviewTaskErrorMessage(task.error_message)
+
+              return (
               <TableRow key={task.id}>
                 <TableCell>{task.user_name || "-"}</TableCell>
                 <TableCell>{task.svn_username || "-"}</TableCell>
@@ -288,9 +292,9 @@ function ReviewTasksTable({
                 </TableCell>
                 <TableCell
                   className="max-w-xs truncate text-muted-foreground"
-                  title={task.error_message || undefined}
+                  title={errorMessage === "-" ? undefined : errorMessage}
                 >
-                  {task.error_message || "-"}
+                  {errorMessage}
                 </TableCell>
                 <TableCell>
                   <ReportFeedbackHelpfulBadge helpful={task.report_feedback_helpful} />
@@ -352,7 +356,8 @@ function ReviewTasksTable({
                   </Button>
                 </TableCell>
               </TableRow>
-            ))
+              )
+            })
           )}
         </TableBody>
       </Table>

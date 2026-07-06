@@ -221,6 +221,7 @@ export function useTaskQueue({
             status: result.status,
             report_path: result.reportPath,
             pdf_report_name: result.pdfReportName ?? latestTask.pdf_report_name,
+            codex_log_path: result.codexLogPath ?? latestTask.codex_log_path,
             reportMarkdown: result.reportMarkdown,
             pdfPath: result.pdfPath,
             progress_message:
@@ -485,6 +486,7 @@ export function useTaskQueue({
             ? false
             : existing?.isLocallyExecuting === true,
           reportMarkdown: existing?.reportMarkdown,
+          codex_log_path: existing?.codex_log_path ?? task.codex_log_path,
           codex_log: existing?.codex_log
         }
       })

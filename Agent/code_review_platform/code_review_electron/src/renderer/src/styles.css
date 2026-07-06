@@ -1062,6 +1062,12 @@ h2 {
   transform: translateY(0);
 }
 
+.task-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .task-error {
   margin: 10px 0 0;
   color: #a33b32;

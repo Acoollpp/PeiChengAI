@@ -84,6 +84,7 @@ export interface ExecuteTaskResult {
   reportPath?: string
   pdfPath?: string
   pdfReportName?: string
+  codexLogPath?: string
 }
 
 export interface CancelTaskRequest {
@@ -93,6 +94,11 @@ export interface CancelTaskRequest {
 
 export interface CancelTaskResult {
   status: 'cancelled' | 'not_found'
+}
+
+export interface OpenTaskLogResult {
+  status: 'ready' | 'missing'
+  logPath?: string
 }
 
 export interface SubmitFeedbackPayload {
@@ -208,6 +214,7 @@ export interface CodeReviewApi {
   readTaskReport(taskId: string): Promise<string>
   executeTask(payload: ExecuteTaskRequest): Promise<ExecuteTaskResult>
   cancelTask(payload: CancelTaskRequest): Promise<CancelTaskResult>
+  openTaskLog(taskId: string): Promise<OpenTaskLogResult>
   selectRequirementFile(): Promise<SelectRequirementFileResult>
   getPathForPastedFile(file: File): string
   onTaskProgress(callback: (event: TaskProgressEvent) => void): () => void

@@ -180,6 +180,31 @@ describe('TaskBoard', () => {
     expect(screen.queryByRole('button', { name: '查看报告' })).not.toBeInTheDocument()
   })
 
+  it('历史任务失败时可以查看本地 Codex 日志', async () => {
+    const user = userEvent.setup()
+    const onOpenTaskLog = vi.fn()
+    const failedTask: TaskViewItem = {
+      ...historyTasks[0],
+      id: 'task-failed-log',
+      localTaskId: 'task-failed-log',
+      status: 'failed',
+      error_message: 'Codex报错请检查Codex对话后重试。',
+      codex_log_path: '/tmp/workspaces/task-failed-log/codex-review.log'
+    }
+
+    renderTaskBoard({
+      runningTasks: [],
+      queuedTasks: [],
+      historyTasks: [failedTask],
+      onOpenTaskLog
+    })
+
+    await user.click(screen.getByRole('tab', { name: '历史任务 1' }))
+    await user.click(screen.getByRole('button', { name: '查看日志' }))
+
+    expect(onOpenTaskLog).toHaveBeenCalledWith(failedTask)
+  })
+
   it('历史任务卡片用右上角状态显示报告反馈状态', async () => {
     const user = userEvent.setup()
     const tasks: TaskViewItem[] = [

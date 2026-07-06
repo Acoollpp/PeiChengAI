@@ -97,6 +97,72 @@ test.describe("Admin task navigation", () => {
     await expect(page.getByText("2026-06-11 13:52:30")).toBeVisible()
   })
 
+  test("Admin task table maps common raw Codex failures to readable messages", async ({
+    page,
+  }) => {
+    await logInWithKey(page, testApiKey)
+
+    await page.route("**/api/v1/review-tasks?**", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: {
+          data: [
+            {
+              id: "11111111-1111-1111-1111-111111111111",
+              user_id: "22222222-2222-2222-2222-222222222222",
+              user_name: "超时用户",
+              svn_username: "timeout_svn",
+              svn_url: "https://example.test/svn/project",
+              old_revision: "r1",
+              new_revision: "r2",
+              status: "failed",
+              error_message: "Codex review timed out after 1800000ms",
+              started_at: "2026-06-11T13:40:00",
+              finished_at: "2026-06-11T13:52:30",
+            },
+            {
+              id: "33333333-3333-3333-3333-333333333333",
+              user_id: "44444444-4444-4444-4444-444444444444",
+              user_name: "权限用户",
+              svn_username: "permission_svn",
+              svn_url: "https://example.test/svn/project-2",
+              old_revision: "r3",
+              new_revision: "r4",
+              status: "failed",
+              error_message: "审查报告不存在：[路径已隐藏]",
+              started_at: "2026-06-11T14:40:00",
+              finished_at: "2026-06-11T14:52:30",
+            },
+            {
+              id: "55555555-5555-5555-5555-555555555555",
+              user_id: "66666666-6666-6666-6666-666666666666",
+              user_name: "Codex用户",
+              svn_username: "codex_svn",
+              svn_url: "https://example.test/svn/project-3",
+              old_revision: "r5",
+              new_revision: "r6",
+              status: "failed",
+              error_message:
+                "Codex review failed with exit code 1: Reading failed\nstderr: 后续内容每次可能不同",
+              started_at: "2026-06-11T15:40:00",
+              finished_at: "2026-06-11T15:52:30",
+            },
+          ],
+          count: 3,
+        },
+      })
+    })
+
+    await page.goto("/tasks/review")
+
+    await expect(
+      page.getByText("Codex 审查超过 60 分钟仍未完成，请稍后重试或联系管理员。"),
+    ).toBeVisible()
+    await expect(page.getByText("SVN权限不足（或者SVN账号未登录）")).toBeVisible()
+    await expect(page.getByText("Codex报错请检查Codex对话后重试。")).toBeVisible()
+    await expect(page.getByText("Codex review timed out")).not.toBeVisible()
+  })
+
   test("Admin task table shows status badge and task times", async ({
     page,
   }) => {

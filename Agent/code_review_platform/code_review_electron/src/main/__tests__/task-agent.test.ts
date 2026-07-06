@@ -441,6 +441,51 @@ describe('executeReviewTask', () => {
     expect(dependencies.uploadReport).not.toHaveBeenCalled()
   })
 
+  it('maps common Codex infrastructure failures to business friendly messages', async () => {
+    const cases = [
+      {
+        raw: 'Codex review timed out after 3600000ms',
+        expected: 'Codex 审查超过 60 分钟仍未完成，请稍后重试或联系管理员。'
+      },
+      {
+        raw: '审查报告不存在：[路径已隐藏]',
+        expected: 'SVN权限不足（或者SVN账号未登录）'
+      },
+      {
+        raw: 'Codex review failed with exit code 1: Reading failed\nstderr: 任意 Codex 输出内容都会变化',
+        expected: 'Codex报错请检查Codex对话后重试。'
+      }
+    ]
+
+    for (const item of cases) {
+      const cwd = await mkdtemp(join(tmpdir(), 'task-agent-friendly-error-'))
+      tempDirs.push(cwd)
+      const reportPath = join(cwd, '代码审查报告.md')
+      const imagesDir = join(cwd, 'images')
+      const dependencies: TaskAgentDependencies = withPdfDependencies({
+        api: {
+          createTask: vi.fn(async () => makeTask()),
+          updateTaskStatus: vi.fn(async () => undefined)
+        },
+        checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+        prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+        runCodex: vi.fn(async () => {
+          throw new Error(item.raw)
+        }),
+        uploadReport: vi.fn()
+      })
+
+      await expect(executeReviewTask({ token: 'token-123', request }, dependencies)).rejects.toThrow(
+        item.raw
+      )
+
+      expect(dependencies.api.updateTaskStatus).toHaveBeenLastCalledWith('token-123', 'task-1', {
+        status: 'failed',
+        error_message: item.expected
+      })
+    }
+  })
+
   it('redacts secret-like values from codex failure summaries', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-'))
     tempDirs.push(cwd)
@@ -544,6 +589,13 @@ describe('defaultPrepareWorkspace', () => {
         'workspaces',
         'task-runtime-workspace',
         'P16S100A-41662-1.30-000_审查报告.md'
+      ),
+      codexLogPath: join(
+        appRoot,
+        '.runtime-data',
+        'workspaces',
+        'task-runtime-workspace',
+        'codex-review.log'
       ),
       imagesDir: join(appRoot, '.runtime-data', 'workspaces', 'task-runtime-workspace', 'images')
     })

@@ -323,6 +323,23 @@ export function TaskPage({
     }
   }, [setActivePdfPath, setActivePdfReportName, updateSelectedTaskId])
 
+  const handleOpenTaskLog = useCallback(async (task: TaskViewItem): Promise<void> => {
+    if (!isMountedRef.current) {
+      return
+    }
+
+    setError('')
+
+    try {
+      const result = await window.codeReview.openTaskLog(task.id)
+      if (result.status === 'missing') {
+        setError('未找到该任务的本地 Codex 执行日志。')
+      }
+    } catch (logError) {
+      setError(logError instanceof Error ? logError.message : '打开 Codex 执行日志失败。')
+    }
+  }, [])
+
   const findTaskForNotification = useCallback(
     (payload: { taskId: string; localTaskId?: string }): TaskViewItem | undefined =>
       [...runningTasks, ...queuedTasks, ...historyTasks].find(
@@ -569,6 +586,7 @@ export function TaskPage({
             onViewReport={(task) => void handleViewReport(task)}
             onCancelTask={(task) => void cancelTask(task)}
             onRetryTask={(task) => void handleRetryTask(task)}
+            onOpenTaskLog={(task) => void handleOpenTaskLog(task)}
           />
         </section>
       </aside>
