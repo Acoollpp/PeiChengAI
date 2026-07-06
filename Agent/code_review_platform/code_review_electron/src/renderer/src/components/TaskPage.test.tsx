@@ -546,28 +546,20 @@ describe('TaskPage', () => {
     expect(await screen.findByRole('heading', { name: '点击通知报告' })).toBeInTheDocument()
   })
 
-  it('未选中任务时右侧显示当前审查模板，切换模板后不打开最新报告位置', async () => {
+  it('未选中任务时右侧显示当前审查模板且不显示 PDF 报告按钮', async () => {
     const user = userEvent.setup()
-    window.codeReview.openPdfReport = vi.fn(async () => ({
-      status: 'ready' as const,
-      taskId: 'task-latest',
-      pdfPath: '/tmp/latest.pdf'
-    }))
 
     renderReadyTaskPage()
 
     expect(await screen.findByRole('heading', { name: '代码审查报告-模版一' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '代码审查报告模板二' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '查看PDF报告' })).not.toBeInTheDocument()
 
     await user.click(screen.getByLabelText('模板二'))
 
     expect(screen.getByRole('heading', { name: '代码审查报告模板二' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '代码审查报告-模版一' })).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
-
-    expect(window.codeReview.openPdfReport).not.toHaveBeenCalled()
-    expect(screen.getByText('请先选择一个已完成任务报告。')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '查看PDF报告' })).not.toBeInTheDocument()
   })
 
   it('选择任务报告后再切换模板会回到模板预览', async () => {

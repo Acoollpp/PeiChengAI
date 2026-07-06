@@ -538,7 +538,7 @@ export function TaskPage({
             <p className="eyebrow">Markdown</p>
             <h2>审查报告</h2>
           </div>
-          {selectedTask?.report_feedback_helpful != null ? (
+          {!selectedTask ? null : selectedTask.report_feedback_helpful != null ? (
             <button className="secondary-button" type="button" onClick={() => void handleOpenPdfReport()}>
               查看PDF报告
             </button>
