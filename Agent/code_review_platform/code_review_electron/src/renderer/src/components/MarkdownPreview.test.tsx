@@ -213,6 +213,52 @@ describe('MarkdownPreview', () => {
     )
   })
 
+  it('renders report anchors for template two table row option targets', () => {
+    render(
+      <MarkdownPreview
+        markdown={[
+          '# 代码审查报告模板二',
+          '## 二、流程节点详细审查报告',
+          '### 1. 部门自检项结果',
+          '| 检查方式 | 涉及文件及行号 | 风险级别 | 触发规则/缺陷描述 | 整改建议 / 闭环方案 | 对应变更图 |',
+          '|---|---|---|---|---|---|',
+          '| 广用 SVN 远程自检 | 工程级 | 中风险 | 软件版本与工程配置不一致，采样电阻未识别。 | 补齐工程配置并回归验证。 | 无 |'
+        ].join('\n')}
+        activeFeedbackAnchorId="report-option-5"
+      />
+    )
+
+    const table = screen.getByRole('table')
+    const row = within(table).getByRole('row', {
+      name: /广用 SVN 远程自检 工程级 中风险 软件版本与工程配置不一致/
+    })
+    expect(row).toHaveAttribute('data-report-anchor-id', 'report-option-5')
+    expect(row).toHaveClass('report-anchor-highlight')
+  })
+
+  it('renders report anchors for template two table rows with html line breaks', () => {
+    render(
+      <MarkdownPreview
+        markdown={[
+          '# 代码审查报告模板二',
+          '## 二、流程节点详细审查报告',
+          '### 1. 部门自检项结果',
+          '| 检查方式 | 涉及文件及行号 | 风险级别 | 触发规则/缺陷描述 | 整改建议 / 闭环方案 | 对应变更图 |',
+          '|---|---|---|---|---|---|',
+          '| 广用 SVN 远程自检 | 工程级 | 中风险 | 软件版本: P00S000A-00000-0.0-000<br>工程配置: PCB=0000V000, AFE=unknown, 电流=未识别, 采样电阻=0 | 补齐配置。 | 无 |'
+        ].join('\n')}
+        activeFeedbackAnchorId="report-option-5"
+      />
+    )
+
+    const table = screen.getByRole('table')
+    const row = within(table).getByRole('row', {
+      name: /广用 SVN 远程自检 工程级 中风险 软件版本/
+    })
+    expect(row).toHaveAttribute('data-report-anchor-id', 'report-option-5')
+    expect(row).toHaveClass('report-anchor-highlight')
+  })
+
   it('does not render report feedback checkboxes by default', () => {
     render(<MarkdownPreview markdown={'## 高风险问题\n\n### 空指针风险'} />)
 

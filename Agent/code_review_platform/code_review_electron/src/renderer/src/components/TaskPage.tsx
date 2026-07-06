@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent
+} from 'react'
 
 import paceLogo from '../assets/pace-logo.png'
 import type { EnvironmentCheckResult, ExecuteTaskRequest } from '../code-review-api'
@@ -109,6 +116,10 @@ export function TaskPage({
     y: number
   } | null>(null)
   const [activeFeedbackAnchorId, setActiveFeedbackAnchorId] = useState<string>()
+  const [feedbackAnchorScrollRequest, setFeedbackAnchorScrollRequest] = useState<{
+    anchorId: string
+    requestId: number
+  }>()
   const usefulFeedbackDialogRef = useRef<HTMLElement | null>(null)
   const selectedTaskIdRef = useRef<string | undefined>(undefined)
   const currentPdfPathRef = useRef<string | undefined>(undefined)
@@ -469,6 +480,15 @@ export function TaskPage({
     setShowUsefulFeedbackDialog(true)
   }
 
+  const startUsefulFeedbackDialogDrag = (event: ReactPointerEvent): void => {
+    event.preventDefault()
+    const rect = usefulFeedbackDialogRef.current?.getBoundingClientRect()
+    setUsefulFeedbackDialogDragOffset({
+      x: event.clientX - (rect?.left ?? event.clientX),
+      y: event.clientY - (rect?.top ?? event.clientY)
+    })
+  }
+
   useEffect(() => {
     if (reportFeedbackStatus !== 'useful') {
       return
@@ -508,15 +528,15 @@ export function TaskPage({
   }, [usefulFeedbackDialogDragOffset])
 
   useEffect(() => {
-    if (!activeFeedbackAnchorId) {
+    if (!feedbackAnchorScrollRequest) {
       return
     }
 
     const target = document.querySelector<HTMLElement>(
-      `[data-report-anchor-id="${activeFeedbackAnchorId}"]`
+      `[data-report-anchor-id="${feedbackAnchorScrollRequest.anchorId}"]`
     )
     target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [activeFeedbackAnchorId])
+  }, [feedbackAnchorScrollRequest])
 
   const handleUsefulIssueToggle = (issue: string): void => {
     const next = selectedUsefulIssues.includes(issue)
@@ -527,8 +547,20 @@ export function TaskPage({
   }
 
   const handleUsefulIssueOptionToggle = (issue: string, anchorId: string): void => {
+    const isSelected = selectedUsefulIssues.includes(issue)
     handleUsefulIssueToggle(issue)
+    if (isSelected) {
+      if (activeFeedbackAnchorId === anchorId) {
+        setActiveFeedbackAnchorId(undefined)
+      }
+      return
+    }
+
     setActiveFeedbackAnchorId(anchorId)
+    setFeedbackAnchorScrollRequest((current) => ({
+      anchorId,
+      requestId: (current?.requestId ?? 0) + 1
+    }))
   }
 
   const handleUsefulIssuesTextChange = (value: string): void => {
@@ -738,6 +770,13 @@ export function TaskPage({
                   }
             }
           >
+            <div
+              className="report-feedback-dialog-top-drag-zone"
+              aria-label="拖动反馈弹窗顶部空白"
+              role="button"
+              tabIndex={0}
+              onPointerDown={startUsefulFeedbackDialogDrag}
+            />
             <button
               className="dialog-close"
               type="button"
@@ -751,20 +790,13 @@ export function TaskPage({
               aria-label="拖动反馈弹窗"
               role="button"
               tabIndex={0}
-              onPointerDown={(event) => {
-                event.preventDefault()
-                const rect = usefulFeedbackDialogRef.current?.getBoundingClientRect()
-                setUsefulFeedbackDialogDragOffset({
-                  x: event.clientX - (rect?.left ?? event.clientX),
-                  y: event.clientY - (rect?.top ?? event.clientY)
-                })
-              }}
+              onPointerDown={startUsefulFeedbackDialogDrag}
             >
               <h2>标记报告中的有用内容</h2>
+              <p className="dialog-desc">
+                请勾选这份报告里真正有参考价值的问题或建议，也可以手动补充。提交后会用于统计报告质量，并帮助后续优化 AI 输出。
+              </p>
             </div>
-            <p className="dialog-desc">
-              请勾选这份报告里真正有参考价值的问题或建议，也可以手动补充。提交后会用于统计报告质量，并帮助后续优化 AI 输出。
-            </p>
             <div className="report-feedback-dialog-body">
               <div className="report-feedback-dialog-meta">
                 <span>已标记 {parseUsefulIssuesText(usefulIssuesText).length} 条</span>

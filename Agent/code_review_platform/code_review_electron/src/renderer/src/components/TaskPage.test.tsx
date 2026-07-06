@@ -1064,6 +1064,7 @@ describe('TaskPage', () => {
       toJSON: () => ({})
     })
     const dragHandle = within(dialog).getByLabelText('拖动反馈弹窗')
+    const topDragZone = within(dialog).getByLabelText('拖动反馈弹窗顶部空白')
     expect(dialog).toHaveStyle({ right: '24px', top: '88px' })
 
     await user.pointer([
@@ -1073,6 +1074,26 @@ describe('TaskPage', () => {
     ])
 
     expect(dialog).toHaveStyle({ left: '560px', top: '148px' })
+
+    vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue({
+      x: 560,
+      y: 148,
+      left: 560,
+      top: 148,
+      right: 920,
+      bottom: 568,
+      width: 360,
+      height: 420,
+      toJSON: () => ({})
+    })
+
+    await user.pointer([
+      { keys: '[MouseLeft>]', target: topDragZone, coords: { x: 590, y: 152 } },
+      { coords: { x: 610, y: 172 } },
+      { keys: '[/MouseLeft]' }
+    ])
+
+    expect(dialog).toHaveStyle({ left: '580px', top: '168px' })
   })
 
   it('点击弹窗选项后定位并高亮报告对应内容', async () => {
@@ -1109,6 +1130,58 @@ describe('TaskPage', () => {
     const heading = screen.getByRole('heading', { name: '空指针风险' })
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' })
     expect(heading).toHaveClass('report-anchor-highlight')
+  })
+
+  it('取消弹窗选项时清除高亮，再次选中时重新定位报告内容', async () => {
+    const user = userEvent.setup()
+    const scrollIntoView = vi.fn()
+    window.HTMLElement.prototype.scrollIntoView = scrollIntoView
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-history-1',
+          svn_url: 'svn://repo/project',
+          old_revision: 'r1',
+          new_revision: 'r2',
+          status: 'success' as const,
+          report_path: '/app/reports/task-history.md',
+          pdf_report_path: '/app/reports/task-history.pdf',
+          report_feedback_helpful: null
+        }
+      ],
+      count: 1
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () =>
+      ['# 审查报告', '## 高风险问题', '### 空指针风险', '正文'].join('\n')
+    )
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
+    await user.click(screen.getByRole('button', { name: '有帮助' }))
+
+    const dialog = screen.getByRole('dialog', { name: '报告有用信息反馈' })
+    const option = within(dialog).getByRole('checkbox', { name: '空指针风险' })
+
+    await user.click(option)
+    const heading = screen.getByRole('heading', { name: '空指针风险' })
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(heading).toHaveClass('report-anchor-highlight')
+
+    await user.click(option)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: '空指针风险' })).not.toHaveClass(
+        'report-anchor-highlight'
+      )
+    )
+
+    await user.click(option)
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('heading', { name: '空指针风险' })).toHaveClass(
+      'report-anchor-highlight'
+    )
   })
 
   it('勾选已有编号的有用信息时提交内容不会重复编号', async () => {

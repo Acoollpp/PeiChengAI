@@ -1504,6 +1504,15 @@ h2 {
   padding-top: 30px;
 }
 
+.report-feedback-dialog-top-drag-zone {
+  position: absolute;
+  top: 0;
+  right: 52px;
+  left: 0;
+  height: 30px;
+  cursor: move;
+}
+
 .report-feedback-dialog-drag-handle {
   cursor: move;
   user-select: none;

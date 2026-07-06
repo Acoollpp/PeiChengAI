@@ -323,6 +323,15 @@ const getPlainText = (children: ReactNode): string => {
 const stripRenderedMarkerPrefix = (value: string): string =>
   value.replace(/^\s*\d+[\.)、]\s*/, '').trim()
 
+const normalizeRenderedAnchorText = (value: string): string =>
+  stripRenderedMarkerPrefix(value)
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+const compactAnchorText = (value: string): string =>
+  normalizeRenderedAnchorText(value).replace(/\s+/g, '')
+
 const isActiveReportAnchor = (
   anchorId: string | undefined,
   activeFeedbackAnchorId: string | undefined
@@ -332,7 +341,7 @@ const findAnchorForRenderedText = (
   anchorMap: Map<string, string>,
   renderedText: string
 ): string | undefined => {
-  const normalized = stripRenderedMarkerPrefix(renderedText).replace(/\s+/g, ' ').trim()
+  const normalized = normalizeRenderedAnchorText(renderedText)
 
   if (!normalized) {
     return undefined
@@ -345,19 +354,33 @@ const findAnchorForRenderedTableRow = (
   anchorMap: Map<string, string>,
   renderedText: string
 ): string | undefined => {
-  const normalized = stripRenderedMarkerPrefix(renderedText).replace(/\s+/g, ' ').trim()
+  const normalized = normalizeRenderedAnchorText(renderedText)
   if (!normalized) {
     return undefined
   }
+  const compactRenderedText = compactAnchorText(normalized)
 
   return (
     anchorMap.get(normalized) ??
     [...anchorMap.entries()].find(([text]) => {
       const parts = text
         .split('·')
-        .map((part) => part.trim())
+        .map(normalizeRenderedAnchorText)
         .filter((part) => part.length >= 2)
-      return parts.length >= 2 && parts.filter((part) => normalized.includes(part)).length >= 2
+      const rowParts = parts.slice(1)
+      const directMatches = rowParts.filter((part) => compactRenderedText.includes(compactAnchorText(part)))
+      if (directMatches.length >= 2) {
+        return true
+      }
+
+      const hasRiskLevel = rowParts.some((part) => /风险|建议/.test(part) && compactRenderedText.includes(compactAnchorText(part)))
+      const hasDescriptionFragment = rowParts
+        .flatMap((part) => part.split(/[，。；、,.;:：]/))
+        .map(normalizeRenderedAnchorText)
+        .filter((part) => part.length >= 8)
+        .some((part) => compactRenderedText.includes(compactAnchorText(part)))
+
+      return hasRiskLevel && hasDescriptionFragment
     })?.[1]
   )
 }
