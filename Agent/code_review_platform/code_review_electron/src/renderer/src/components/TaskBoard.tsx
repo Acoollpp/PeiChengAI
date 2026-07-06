@@ -94,6 +94,23 @@ function formatTaskDateTime(value?: string | null): string {
   )
 }
 
+function getReportFeedbackLabel(task: TaskViewItem): string {
+  if (task.report_feedback_helpful === true) {
+    return '有帮助'
+  }
+  if (task.report_feedback_helpful === false) {
+    return '没帮助'
+  }
+  return '未提交'
+}
+
+function getTaskStatusLabel(task: TaskViewItem): string {
+  if (task.status === 'success') {
+    return `${statusText[task.status]} · ${getReportFeedbackLabel(task)}`
+  }
+  return statusText[task.status]
+}
+
 type TaskCardProps = {
   task: TaskViewItem
   selectedTaskId?: string
@@ -122,7 +139,21 @@ function TaskCard({
     <article className={`task-card${task.id === selectedTaskId ? ' is-selected' : ''}`}>
       <div className="task-card-header">
         <strong>{buildTaskDisplayName(task)}</strong>
-        <span className={`task-status task-status-${task.status}`}>{statusText[task.status]}</span>
+        <span
+          className={`task-status task-status-${task.status}${
+            task.status === 'success'
+              ? ` task-feedback-status-${
+                  task.report_feedback_helpful === true
+                    ? 'helpful'
+                    : task.report_feedback_helpful === false
+                      ? 'not-helpful'
+                      : 'pending'
+                }`
+              : ''
+          }`}
+        >
+          {getTaskStatusLabel(task)}
+        </span>
       </div>
       <p className="task-url">{task.svn_url}</p>
       <dl className="task-meta">

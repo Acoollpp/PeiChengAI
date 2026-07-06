@@ -375,7 +375,7 @@ describe('TaskPage', () => {
     const notice = await screen.findByRole('status', { name: '审查完成提醒' })
     await user.click(within(notice).getByRole('button', { name: '查看报告' }))
     await screen.findByText('本地报告')
-    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+    expect(screen.queryByRole('button', { name: '查看PDF报告' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '没帮助' }))
 
     expect(window.codeReview.submitReportFeedback).toHaveBeenCalledWith({
@@ -383,6 +383,7 @@ describe('TaskPage', () => {
       helpful: false,
       useful_issues_text: ''
     })
+    await waitFor(() => expect(screen.getByRole('button', { name: '查看PDF报告' })).toBeInTheDocument())
     expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
       taskId: 'task-local-success',
       localPdfPath: '/app/reports/task-local-success.pdf',
@@ -858,6 +859,7 @@ describe('TaskPage', () => {
     expect(screen.getByRole('button', { name: '有帮助' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '没帮助' })).toBeInTheDocument()
     expect(screen.getByText('这两个按钮用于统计报告是否对代码审查有帮助。')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '查看PDF报告' })).not.toBeInTheDocument()
     expect(window.codeReview.openPdfReport).not.toHaveBeenCalled()
   })
 
@@ -902,6 +904,7 @@ describe('TaskPage', () => {
       useful_issues_text: ''
     })
     await waitFor(() => expect(window.codeReview.openPdfReport).toHaveBeenCalled())
+    expect(screen.getByRole('button', { name: '查看PDF报告' })).toBeInTheDocument()
   })
 
   it('点击有帮助后滚动到选项区域并要求至少选择或填写一条有用信息才能提交', async () => {
@@ -1044,6 +1047,7 @@ describe('TaskPage', () => {
     // 反馈选择面板不再展示（已放行）
     expect(screen.queryByRole('button', { name: '有帮助' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '没帮助' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '查看PDF报告' })).toBeInTheDocument()
     // 不向用户展示冲突错误
     expect(screen.queryByText(/report_feedback_exists/)).not.toBeInTheDocument()
   })

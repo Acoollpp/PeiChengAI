@@ -160,6 +160,39 @@ describe('TaskBoard', () => {
     expect(onViewReport).toHaveBeenCalledWith(historyTasks[0])
   })
 
+  it('历史任务卡片用右上角状态显示报告反馈状态', async () => {
+    const user = userEvent.setup()
+    const tasks: TaskViewItem[] = [
+      {
+        ...historyTasks[0],
+        id: 'task-feedback-pending',
+        localTaskId: 'task-feedback-pending',
+        report_feedback_helpful: null
+      },
+      {
+        ...historyTasks[0],
+        id: 'task-feedback-helpful',
+        localTaskId: 'task-feedback-helpful',
+        report_feedback_helpful: true
+      },
+      {
+        ...historyTasks[0],
+        id: 'task-feedback-not-helpful',
+        localTaskId: 'task-feedback-not-helpful',
+        report_feedback_helpful: false
+      }
+    ]
+
+    renderTaskBoard({ runningTasks: [], queuedTasks: [], historyTasks: tasks })
+
+    await user.click(screen.getByRole('tab', { name: '历史任务 3' }))
+
+    expect(screen.getByText('已完成 · 未提交')).toBeInTheDocument()
+    expect(screen.getByText('已完成 · 有帮助')).toBeInTheDocument()
+    expect(screen.getByText('已完成 · 没帮助')).toBeInTheDocument()
+    expect(screen.queryByText('反馈：未提交')).not.toBeInTheDocument()
+  })
+
   it('全量审查任务显示目标版本', async () => {
     const user = userEvent.setup()
     const fullReviewTask: TaskViewItem = {

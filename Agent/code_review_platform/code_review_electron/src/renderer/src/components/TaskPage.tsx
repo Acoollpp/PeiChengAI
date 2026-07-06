@@ -601,9 +601,11 @@ export function TaskPage({
                     </button>
                   </div>
                 ))}
-              <button className="secondary-button" type="button" onClick={() => void handleOpenPdfReport()}>
-                查看PDF报告
-              </button>
+              {selectedTask.report_feedback_helpful != null && (
+                <button className="secondary-button" type="button" onClick={() => void handleOpenPdfReport()}>
+                  查看PDF报告
+                </button>
+              )}
             </div>
           )}
         </div>

@@ -890,6 +890,23 @@ h2 {
   font-size: 14px;
 }
 
+.task-feedback-status-pending {
+  color: rgb(245 247 251 / 62%);
+  background: rgb(255 255 255 / 8%);
+}
+
+.task-feedback-status-helpful {
+  color: #a7f3d0;
+  border-color: rgb(13 172 104 / 32%);
+  background: rgb(13 172 104 / 20%);
+}
+
+.task-feedback-status-not-helpful {
+  color: #fecaca;
+  border-color: rgb(239 68 68 / 30%);
+  background: rgb(239 68 68 / 16%);
+}
+
 .task-action-button {
   justify-self: start;
   min-height: 30px;
