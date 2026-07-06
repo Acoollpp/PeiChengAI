@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  CODEX_REVIEW_TIMEOUT_MS,
   defaultPrepareWorkspace,
   executeReviewTask,
   prepareRequirementFile,
@@ -57,6 +58,10 @@ describe('executeReviewTask', () => {
 
     await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })))
     tempDirs = []
+  })
+
+  it('Codex 审查默认超时时间为 60 分钟', () => {
+    expect(CODEX_REVIEW_TIMEOUT_MS).toBe(60 * 60 * 1000)
   })
 
   it('prepares the default workspace with a dynamic report file name from task revisions', async () => {

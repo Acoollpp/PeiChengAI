@@ -4,7 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ExecuteTaskRequest, ExecuteTaskResult } from '../code-review-api'
-import { useTaskQueue } from './useTaskQueue'
+import { REVIEW_TASK_TIMEOUT_MS, useTaskQueue } from './useTaskQueue'
 
 const basePayload = (index: number): ExecuteTaskRequest => ({
   svn_url: `svn://repo/project-${index}`,
@@ -41,6 +41,10 @@ afterEach(() => {
 })
 
 describe('useTaskQueue', () => {
+  it('默认任务超时时间为 60 分钟', () => {
+    expect(REVIEW_TASK_TIMEOUT_MS).toBe(60 * 60 * 1000)
+  })
+
   it('初始加载 2 个服务端运行任务时新提交任务仍按本地并发上限执行', async () => {
     const deferreds = [
       createDeferred<ExecuteTaskResult>(),

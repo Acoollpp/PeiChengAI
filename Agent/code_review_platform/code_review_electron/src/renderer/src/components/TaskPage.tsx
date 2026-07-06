@@ -249,6 +249,35 @@ export function TaskPage({
     await submitTask(payload)
   }
 
+  const handleRetryTask = async (task: TaskViewItem): Promise<void> => {
+    if (!isMountedRef.current) {
+      return
+    }
+
+    setError('')
+    setReportMessage('')
+    setMarkdown(REVIEW_TEMPLATE_PREVIEWS[task.template_key ?? DEFAULT_REVIEW_TEMPLATE_KEY])
+    setCurrentReportPath(undefined)
+    setActivePdfPath(undefined)
+    setActivePdfReportName(undefined)
+    updateSelectedTaskId(undefined)
+    setLoadingReportTaskId(undefined)
+    setReportFeedbackStatus('idle')
+    setSelectedUsefulIssues([])
+    setUsefulIssuesText('')
+    await submitTask({
+      svn_url: task.svn_url,
+      old_revision: task.old_revision,
+      new_revision: task.new_revision,
+      template_key: task.template_key,
+      skill_name: task.skill_name,
+      requirement_file_path: task.requirement_file_path,
+      requirement_file_name: task.requirement_file_name ?? undefined,
+      focus_direction_id: task.focus_direction_id ?? undefined,
+      focus_direction_snapshot: task.focus_direction_snapshot ?? undefined
+    })
+  }
+
   const handleViewReport = useCallback(async (task: TaskViewItem): Promise<void> => {
     if (!isMountedRef.current) {
       return
@@ -539,6 +568,7 @@ export function TaskPage({
             loadingReportTaskId={loadingReportTaskId}
             onViewReport={(task) => void handleViewReport(task)}
             onCancelTask={(task) => void cancelTask(task)}
+            onRetryTask={(task) => void handleRetryTask(task)}
           />
         </section>
       </aside>

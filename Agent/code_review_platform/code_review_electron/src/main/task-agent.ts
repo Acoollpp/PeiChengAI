@@ -90,6 +90,8 @@ export interface TaskAgentDependencies {
 
 export type TaskProgressReporter = (event: TaskProgressEvent) => void
 
+export const CODEX_REVIEW_TIMEOUT_MS = 60 * 60 * 1000
+
 const environmentErrorMessages: Record<Exclude<EnvironmentStatus, 'ready'>, string> = {
   missing_codex: '本机 Codex CLI 不可用，请联系管理员处理。',
   missing_svn: '本机 SVN CLI 不可用，请联系管理员处理。',
@@ -220,7 +222,7 @@ export const defaultRunCodex = async ({
       departmentName: task.department_name ?? undefined,
       focusDirectionSnapshot: task.focus_direction_snapshot ?? undefined
     }),
-    timeoutMs: 30 * 60 * 1000,
+    timeoutMs: CODEX_REVIEW_TIMEOUT_MS,
     signal,
     onOutput: (event) =>
       onProgress?.({

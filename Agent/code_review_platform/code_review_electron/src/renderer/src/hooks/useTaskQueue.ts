@@ -9,7 +9,7 @@ import type {
 } from '../code-review-api'
 
 export const MAX_CONCURRENT_REVIEW_TASKS = 2
-export const REVIEW_TASK_TIMEOUT_MS = 30 * 60 * 1000
+export const REVIEW_TASK_TIMEOUT_MS = 60 * 60 * 1000
 export const REVIEW_TASK_TIMEOUT_MESSAGE = '任务执行超时，请联系管理员处理。'
 
 export type LocalTaskQueueState = 'queued' | 'starting' | 'running' | 'finished'

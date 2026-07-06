@@ -12,6 +12,7 @@ type TaskBoardProps = {
   loadingReportTaskId?: string
   onViewReport?: (task: TaskViewItem) => void
   onCancelTask?: (task: TaskViewItem) => void
+  onRetryTask?: (task: TaskViewItem) => void
 }
 
 const statusText: Record<ReviewTask['status'], string> = {
@@ -119,6 +120,7 @@ type TaskCardProps = {
   showQueueIndex?: boolean
   onViewReport?: (task: TaskViewItem) => void
   onCancelTask?: (task: TaskViewItem) => void
+  onRetryTask?: (task: TaskViewItem) => void
 }
 
 function TaskCard({
@@ -128,7 +130,8 @@ function TaskCard({
   showCodexLog = false,
   showQueueIndex = false,
   onViewReport,
-  onCancelTask
+  onCancelTask,
+  onRetryTask
 }: TaskCardProps): React.JSX.Element {
   const canCancel =
     task.localQueueState === 'starting' ||
@@ -194,6 +197,15 @@ function TaskCard({
           {loadingReportTaskId === task.id ? '加载中...' : '查看报告'}
         </button>
       )}
+      {task.status === 'failed' && (
+        <button
+          className="task-action-button"
+          type="button"
+          onClick={() => onRetryTask?.(task)}
+        >
+          重试
+        </button>
+      )}
       {canCancel && (
         <button
           className="task-action-button task-cancel-button"
@@ -234,7 +246,8 @@ export function TaskBoard({
   selectedTaskId,
   loadingReportTaskId,
   onViewReport,
-  onCancelTask
+  onCancelTask,
+  onRetryTask
 }: TaskBoardProps): React.JSX.Element {
   const [activeView, setActiveView] = useState<TaskBoardView>('running')
   const viewTasks: Record<TaskBoardView, TaskViewItem[]> = {
@@ -290,6 +303,7 @@ export function TaskBoard({
                 showQueueIndex={isQueuedView}
                 onViewReport={onViewReport}
                 onCancelTask={onCancelTask}
+                onRetryTask={onRetryTask}
               />
             ))}
           </div>

@@ -939,6 +939,54 @@ describe('TaskPage', () => {
     expect(screen.getByRole('button', { name: '提交并打开PDF' })).toBeEnabled()
   })
 
+  it('历史失败任务点击重试后按原任务信息重新提交队列', async () => {
+    const user = userEvent.setup()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-failed',
+          svn_url: 'svn://repo/retry',
+          old_revision: '10',
+          new_revision: '12',
+          template_key: 'template_2' as const,
+          skill_name: '通用-代码审查-模版二',
+          requirement_file_name: '需求.xlsx',
+          focus_direction_id: 'focus-1',
+          focus_direction_snapshot: '重点检查协议解析',
+          status: 'failed' as const,
+          error_message: 'Codex 执行失败'
+        }
+      ],
+      count: 1
+    }))
+    window.codeReview.executeTask = vi.fn(async () => ({
+      taskId: 'task-retry-success',
+      status: 'success' as const,
+      reportMarkdown: '# retry report',
+      reportPath: '/tmp/retry.md'
+    }))
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '重试' }))
+
+    await waitFor(() =>
+      expect(window.codeReview.executeTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          svn_url: 'svn://repo/retry',
+          old_revision: '10',
+          new_revision: '12',
+          template_key: 'template_2',
+          skill_name: '通用-代码审查-模版二',
+          requirement_file_name: '需求.xlsx',
+          focus_direction_id: 'focus-1',
+          focus_direction_snapshot: '重点检查协议解析',
+          client_task_id: expect.any(String)
+        })
+      )
+    )
+  })
+
   it('点击有帮助后用独立反馈面板展示说明、计数、输入框和提交按钮', async () => {
     const user = userEvent.setup()
     window.codeReview.listTasks = vi.fn(async () => ({

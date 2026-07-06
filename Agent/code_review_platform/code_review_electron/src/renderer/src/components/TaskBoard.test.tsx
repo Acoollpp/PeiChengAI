@@ -160,6 +160,26 @@ describe('TaskBoard', () => {
     expect(onViewReport).toHaveBeenCalledWith(historyTasks[0])
   })
 
+  it('历史任务失败时显示重试按钮并回传该任务', async () => {
+    const user = userEvent.setup()
+    const onRetryTask = vi.fn()
+    const failedTask: TaskViewItem = {
+      ...historyTasks[0],
+      id: 'task-failed',
+      localTaskId: 'task-failed',
+      status: 'failed',
+      error_message: 'Codex 执行失败'
+    }
+
+    renderTaskBoard({ runningTasks: [], queuedTasks: [], historyTasks: [failedTask], onRetryTask })
+
+    await user.click(screen.getByRole('tab', { name: '历史任务 1' }))
+    await user.click(screen.getByRole('button', { name: '重试' }))
+
+    expect(onRetryTask).toHaveBeenCalledWith(failedTask)
+    expect(screen.queryByRole('button', { name: '查看报告' })).not.toBeInTheDocument()
+  })
+
   it('历史任务卡片用右上角状态显示报告反馈状态', async () => {
     const user = userEvent.setup()
     const tasks: TaskViewItem[] = [
