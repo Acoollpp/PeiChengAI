@@ -8,20 +8,21 @@
 2. “有帮助”反馈表单是主渲染页面中的固定定位 DOM，只能在主客户端内容区域内拖动，无法移出主窗口，容易遮挡正在对照的报告内容。
 3. SVN 地址或版本错误目前主要由 Codex 和审查 Skill 在执行过程中发现。错误可能被写入报告或在较晚阶段才转为失败，浪费执行时间，也会产生不应存在的错误报告。
 
-本设计在不改变服务端任务创建接口和报告反馈业务语义的前提下，分别优化表单交互、反馈窗口承载方式和任务启动前校验流程。
+本设计不新增服务端任务接口，但会同步收紧现有任务创建接口的版本顺序语义，并分别优化表单交互、反馈窗口承载方式和任务启动前校验流程。
 
 ## 2. 目标
 
 - SVN 历史记录不能覆盖版本号等后续表单字段。
 - SVN 历史记录只展示与当前输入匹配的地址，并在用户完成输入或离开该区域时及时收起。
 - 报告反馈表单可以拖出主客户端边界，并继续与主报告的滚动和高亮交互。
+- 后端和 Electron 客户端使用一致的版本顺序契约，避免任务创建成功后被客户端立即判定为参数失败。
 - SVN 地址或版本不可用时，任务在启动 Codex 前立即失败。
-- 预检失败任务保留在任务历史中，并显示明确、经过脱敏的错误原因。
+- 客户端 SVN 访问预检失败的任务保留在任务历史中，并显示明确、经过脱敏的错误原因。
 - 三项功能保持独立职责，能够分别测试和维护。
 
 ## 3. 非目标
 
-- 不增加服务端 SVN 校验接口。
+- 不增加服务端 SVN 访问或校验接口；后端只在现有任务创建接口中同步收紧版本参数语义，不执行 `svn info`、`svn log` 或其他 SVN 命令。
 - 不改变最近 SVN 地址最多保存 3 条的现有规则。
 - 不持久化未提交的报告反馈草稿；应用退出后草稿可以丢弃。
 - 不允许反馈窗口置顶到其他应用之上。
@@ -30,18 +31,21 @@
 
 ## 4. 总体架构
 
-改动拆分为三个独立单元：
+改动拆分为四个职责单元：
 
 1. `TaskForm` 内部负责 SVN 历史地址的读取、匹配、展示、选择和收起。
 2. 主进程新增报告反馈工具窗口管理器，独立反馈渲染入口通过受限 preload 和 IPC 与主窗口通信。
 3. 主进程新增 SVN 预检模块，`task-agent` 在环境检查成功后、准备工作区之前调用该模块。
+4. 后端现有任务创建接口同步执行与客户端一致的版本顺序校验。
 
 任务执行顺序调整为：
 
 ```text
-创建服务端任务
+后端校验版本格式与顺序
+  -> 参数错误：返回 400/422，不创建任务
+  -> 参数有效：创建服务端任务
   -> 检查本机环境
-  -> 校验 SVN 参数格式与版本顺序
+  -> 客户端防御性复核 SVN 参数
   -> 访问 SVN 校验路径和版本
   -> 准备任务工作区
   -> 上传可选需求文件
@@ -50,6 +54,10 @@
 ```
 
 预检必须早于工作区准备。当前工作区准备过程会通过 `svn log` 解析报告文件名，如果预检放在其后，错误参数仍会触发 SVN 操作，无法满足“立即停止”的要求。
+
+版本格式和顺序错误在后端创建任务前拒绝，因此不会产生历史任务。SVN 地址不可访问、版本不存在、认证失败、权限不足、网络失败或超时等只能由客户端本机确认的运行时错误，在任务创建后标记为 `failed` 并保留历史记录。
+
+跨端发布顺序必须是后端先部署、Electron 客户端后发布。旧客户端连接新后端时，反向或相同版本会在创建请求阶段收到 HTTP 400；禁止先发布新客户端再依赖尚未收紧的旧后端，以免仍产生“创建成功后客户端秒失败”的任务。
 
 ## 5. SVN 地址历史框
 
@@ -74,6 +82,8 @@
 - 鼠标移动经过历史项不能改变输入值。
 - 选择历史项后立即收起列表。
 - 按 `Escape`、`Tab`、提交成功或焦点移出 SVN 地址区域时收起。
+- 历史项保留 `onMouseDown` 阶段阻止输入框提前失焦的处理，确保一次明确点击能够稳定完成回填。
+- 历史项设置 `tabIndex={-1}`，避免列表展开后 `Tab` 先进入历史按钮；键盘 `Tab` 必须直接进入旧版本号字段。
 - 用户点击旧版本号或新版本号字段时，点击目标必须保持为对应版本字段，不能被历史项截获。
 - 提交失败时保留当前 SVN 地址和版本号，便于修正后重试。
 
@@ -93,6 +103,8 @@
 - 用户可以自由移动窗口，包括移动到主客户端边界之外。
 - 使用原生窗口移动能力，不再依赖主页面中的 Pointer Event 拖拽坐标。
 - 窗口采用单实例模型，同一时间最多存在一个反馈工具窗口。
+- 使用原生窗口框架和标题栏，设置 `autoHideMenuBar: true`。
+- 创建窗口时使用 `show: false`，在 `ready-to-show` 后显示，避免白屏闪烁。
 
 ### 6.2 生命周期
 
@@ -101,7 +113,8 @@
 - 主窗口最小化时隐藏反馈窗口，主窗口恢复时重新显示。
 - 主窗口关闭时销毁反馈窗口。
 - 用户退出登录、切换到不允许反馈的任务、反馈已成功提交或任务状态不再匹配时关闭窗口并结束会话。
-- 用户点击关闭按钮或“稍后提交”时关闭或隐藏窗口，但保留当前任务的内存草稿。
+- 用户点击原生关闭按钮时销毁 BrowserWindow，并把单实例引用置空；当前任务草稿仍保留在主进程内存中。
+- 用户点击“稍后提交”时只隐藏 BrowserWindow，保留窗口实例和当前任务草稿，后续“继续标记”直接复用。
 - 应用退出后不保存草稿。
 
 ### 6.3 独立渲染入口
@@ -117,6 +130,13 @@
 
 反馈窗口不加载任务看板、登录页、完整报告预览或其他主应用界面。
 
+该方案需要扩展 `electron.vite.config.ts`：
+
+- renderer 增加主窗口和反馈窗口两个 HTML 入口。
+- preload 增加主窗口 preload 和反馈窗口专用 preload 两个入口。
+- 开发环境和生产构建都必须能解析反馈窗口对应的 HTML、脚本和 preload 输出路径。
+- 窗口管理器必须分别处理开发环境 URL 和生产环境 `loadFile` 路径。
+
 ### 6.4 会话数据
 
 主页面打开反馈窗口时提供：
@@ -128,13 +148,18 @@
 - 当前选择项
 - 当前手动补充文本
 
-主进程按 `taskId` 保存内存草稿：
+主进程使用 `Map<taskId, draft>` 保存内存草稿：
 
 - 已选择的问题文本
 - 手动补充文本
 - 最后更新时间
 
-切换任务时不能把一个任务的草稿应用到另一个任务。
+切换任务时保留原任务草稿，不能把一个任务的草稿应用到另一个任务。草稿仅在以下情况清除：
+
+- 对应任务反馈提交成功或确认服务端已存在反馈。
+- 对应任务被删除或明确失效。
+- 用户退出登录时清空全部草稿，避免下一位登录用户读取上一位用户的内存数据。
+- 应用退出。
 
 ### 6.5 IPC 边界
 
@@ -145,20 +170,34 @@
 - 更新当前任务草稿。
 - 请求主报告定位并高亮指定锚点。
 - 提交当前反馈。
-- 关闭或隐藏反馈窗口。
+- 执行“稍后提交”并隐藏反馈窗口；原生关闭按钮由 BrowserWindow 生命周期处理。
 
-建议使用独立通道，命名保持统一，例如：
+IPC 通道必须明确区分 `ipcRenderer.invoke`/`ipcMain.handle` 请求和 `webContents.send` 事件：
 
-```text
-report-feedback-window:open
-report-feedback-window:session
-report-feedback-window:update-draft
-report-feedback-window:focus-anchor
-report-feedback-window:submit
-report-feedback-window:close
-report-feedback-window:submitted
-report-feedback-window:invalidated
-```
+| 通道 | 方向 | 类型 | 用途 |
+|---|---|---|---|
+| `report-feedback-window:open` | 主窗口 renderer -> main | invoke/handle | 创建或复用反馈窗口并设置当前任务 |
+| `report-feedback-window:get-session` | 反馈窗口 renderer -> main | invoke/handle | 获取当前反馈会话，避免窗口加载时的事件竞态 |
+| `report-feedback-window:update-draft` | 反馈窗口 renderer -> main | invoke/handle | 更新 `Map<taskId, draft>` |
+| `report-feedback-window:focus-anchor` | 反馈窗口 renderer -> main | invoke/handle | 请求主窗口定位报告锚点 |
+| `report-feedback-window:submit` | 反馈窗口 renderer -> main | invoke/handle | 提交反馈并返回提交结果 |
+| `report-feedback-window:hide` | 反馈窗口 renderer -> main | invoke/handle | 执行“稍后提交”隐藏窗口 |
+| `report-feedback-window:session-updated` | main -> 反馈窗口 renderer | send/listen | 当前任务或草稿在窗口外发生变化 |
+| `report-feedback-window:focus-anchor-requested` | main -> 主窗口 renderer | send/listen | 转发报告滚动和高亮请求 |
+| `report-feedback-window:submitted` | main -> 主窗口 renderer | send/listen | 更新任务反馈状态并打开 PDF |
+| `report-feedback-window:invalidated` | main -> 反馈窗口 renderer | send/listen | 会话失效并关闭窗口 |
+
+所有 invoke 通道统一通过 `registerIpcHandlers` 按确定顺序注册。新增通道时必须按 `main/ipc.ts` 中的实际注册顺序，精确同步 `main/__tests__/ipc.test.ts` 的全等顺序数组；send/listen 事件不进入该数组。
+
+IPC 三层契约必须同步：
+
+- `main/ipc.ts` 或反馈窗口管理器中的 handle/send 注册。
+- 主窗口 preload 和反馈窗口专用 preload。
+- 主窗口 `renderer/src/code-review-api.ts` 以及反馈窗口专用 API 类型。
+
+新前缀 `report-feedback-window:*` 与现有服务端反馈入口 `report-feedback:submit` 含义不同。新窗口提交 handler 可以复用同一主进程业务函数，但不能混用 renderer 契约或重复实现服务端调用。
+
+所有反馈窗口专用 handler 必须校验消息发送方属于当前反馈窗口，并校验 payload 中的 `taskId` 与当前会话一致；主窗口专用的 `open` 请求同样校验发送方属于主窗口，拒绝过期窗口或伪造任务 ID 的请求。
 
 专用 preload 不暴露登录、任务执行、更新安装等无关 API。
 
@@ -188,19 +227,32 @@ report-feedback-window:invalidated
 - SVN 地址
 - 旧版本号
 - 新版本号
+- 环境检查已经探测成功的 SVN 命令 `svnCommand`，来源为 `EnvironmentCheckResult.svnPath`
+- 与环境检查一致的 spawn options 或命令环境，包含扩展后的 `PATH`、Windows `shell` 和 `windowsHide`
 - 可选的 `AbortSignal`
 - 可替换的命令执行依赖，便于单元测试
 
 输出为成功结果；任何失败通过带错误类别的异常返回，由 `task-agent` 转换为用户可读错误。
+
+`svnPath` 当前可能是命令名，也可能是绝对候选路径，不假设它始终是绝对路径。预检必须使用环境检查实际探测成功的命令值和同一套进程环境，不能重新硬编码 `spawn('svn', ...)`。如有必要，应从 `environment-checker.ts` 导出或提取专用的 SVN spawn options 构造函数，供环境检查、预检和报告名解析复用。
+
+环境状态为 `ready` 但缺少 `svnPath` 时按环境检查异常处理，不回退到硬编码命令。
 
 ### 7.2 参数格式校验
 
 - SVN 地址去除首尾空白后不能为空。
 - 旧版本号必须是大于或等于 `0` 的十进制整数。
 - 新版本号必须是大于 `0` 的十进制整数。
-- 旧版本号不为 `0` 时必须小于或等于新版本号。
+- 旧版本号不为 `0` 时必须严格小于新版本号；相同版本和反向版本范围都没有有效的代码变更审查语义。
 - 接受用户输入的可选 `r`/`R` 前缀，但传给 SVN CLI 前统一转换为纯数字。
 - `r0` 与 `0` 都表示现有全量审查模式，不访问 SVN 的真实版本 0。
+
+该规则必须同时落实到：
+
+- 后端 `create_review_task`：规范化后把 `r` 后的数字转换为整数进行比较，拒绝 `old_revision >= new_revision`（`old_revision == r0` 除外），返回 HTTP 400，不落库；禁止直接比较 `"r200"` 和 `"r100"` 字符串。
+- 后端路由测试：保留相同版本测试，新增旧版本大于新版本测试。
+- Electron 客户端：在实际 SVN 访问前防御性复核服务端返回的规范化参数。
+- 工程契约文档：修正“版本号错误统一返回 422”的旧描述；请求结构、缺失字段等模型校验错误可返回 422，版本号规范化失败、版本为 0 或版本顺序错误等路由校验返回 400。
 
 ### 7.3 SVN 访问校验
 
@@ -214,8 +266,8 @@ report-feedback-window:invalidated
 
 - 使用 peg revision URL，避免路径在后续版本删除或重命名时产生歧义。
 - 使用非交互执行方式，避免任务后台等待凭据输入。
-- 复用当前环境检查中的 SVN 可执行文件定位和进程环境。
-- 设置独立超时。
+- 使用 `EnvironmentCheckResult.svnPath` 返回的已探测命令，并复用环境检查的 spawn options/进程环境。
+- 每次 `svn info` 设置 30 秒超时；新旧版本均需校验时分别计时。
 - 在任务取消时终止 SVN 子进程并返回取消结果。
 
 ### 7.4 错误分类
@@ -223,7 +275,7 @@ report-feedback-window:invalidated
 至少区分以下错误：
 
 - 参数格式错误。
-- 旧版本大于新版本。
+- 版本顺序错误，包括相同版本和旧版本大于新版本。
 - SVN 地址或路径不存在。
 - 新版本不存在或路径在新版本不可用。
 - 旧版本不存在或路径在旧版本不可用。
@@ -236,12 +288,16 @@ report-feedback-window:invalidated
 
 错误消息必须说明失败对象，例如“新版本 r123 在该 SVN 地址下不存在或不可访问”，不能笼统输出错误报告。
 
-原始 SVN stderr 只用于分类和日志，不直接完整展示。进入任务状态前继续执行现有敏感信息清理，避免暴露密码、Token、凭据参数和本地路径。
+预检模块抛出带稳定错误码的 `SvnPreflightError`。`task-agent` 使用独立的 `preflightErrorMessages` 模板映射生成用户提示，不把模板再次传入 `sanitizeErrorSummary`，避免模板中的 SVN 语义被通用路径正则破坏。用户提示只包含错误类别、旧/新版本和“该 SVN 地址”等必要上下文，不直接回显完整凭据 URL。
+
+原始 SVN stderr 只用于错误分类和受控日志，不直接写入 `error_message`。写日志前单独执行敏感信息清理，避免暴露密码、Token、用户名参数、完整 SVN URL 和本地路径。未知预检错误才进入现有通用 `sanitizeErrorSummary` 兜底。
 
 ### 7.5 任务状态
 
-- 服务端任务仍在点击“开始检查”后创建，确保失败任务可审计。
-- 环境检查成功后进入 SVN 预检。
+- 版本格式或顺序错误由后端创建接口直接拒绝，不创建任务，也不产生失败历史记录。
+- 服务端任务创建成功后，客户端先把任务状态更新为 `checking_environment` 并执行环境检查。
+- 环境检查成功后继续执行 SVN 预检，任务状态仍沿用 `checking_environment`，不新增后端状态枚举。
+- 预检期间通过现有 `checking_environment` 进度 stage 显示“校验 SVN 地址和版本”，预检成功后才发送 `preparing_workspace`。
 - 预检失败时任务状态更新为 `failed`。
 - 错误原因写入 `error_message`，并通过现有进度事件立即更新任务看板。
 - 预检失败后不得调用工作区准备、需求文件上传、Codex、报告生成或报告上传。
@@ -265,10 +321,19 @@ report-feedback-window:invalidated
   - BrowserWindow 创建、复用、位置、父子窗口生命周期和会话管理。
 - 主进程 IPC 注册
   - 主页面、反馈窗口和服务端反馈接口之间的消息转发。
+- `electron.vite.config.ts`
+  - 配置反馈窗口 renderer HTML 和专用 preload 多入口构建。
 - 主进程 SVN 预检模块
   - 参数校验、命令执行、超时、取消和错误分类。
 - `main/task-agent.ts`
   - 在工作区准备前插入预检阶段。
+- `code_review_server/backend/app/api/routes/review_tasks.py`
+  - 将版本语义收紧为 `r0` 全量审查或 `old < new`。
+- `code_review_server/backend/tests/api/routes/test_review_tasks.py`
+  - 覆盖相同版本和反向版本范围的 HTTP 400 契约。
+  - 重构 `_create_review_task` 测试辅助函数；该函数当前固定 `new_revision="r2"`，大量无关测试传入大于 2 的旧版本。收紧契约后应由辅助函数生成大于旧版本的合法新版本，避免逐条修改大量非本功能测试。
+- `CLAUDE.md`
+  - 区分模型校验 422 与版本规范化、零值和顺序语义校验 400。
 
 ## 9. 测试策略
 
@@ -281,6 +346,8 @@ report-feedback-window:invalidated
 - 完全匹配时收起。
 - 只有明确点击历史项才改变输入值。
 - `Escape`、`Tab`、失焦和提交成功时收起。
+- 历史项不会进入 Tab 顺序，`Tab` 直接聚焦旧版本号字段。
+- 历史项在 `onMouseDown` 阶段保持输入焦点，明确点击可以稳定完成回填。
 - 历史列表在 DOM 结构中位于表单流内，不使用覆盖版本字段的绝对定位样式。
 - 点击旧版本号和新版本号不会改变 SVN 地址。
 
@@ -288,9 +355,12 @@ report-feedback-window:invalidated
 
 - 主进程只创建一个反馈工具窗口。
 - BrowserWindow 正确绑定主窗口且不是全局置顶窗口。
+- 窗口使用 `show: false` 并在 `ready-to-show` 后显示，且不显示菜单栏。
 - 重复打开时复用窗口并更新会话。
 - 主窗口最小化、恢复、关闭时正确隐藏、显示和销毁工具窗口。
+- 原生关闭按钮销毁窗口并清空单例引用，“稍后提交”只隐藏窗口。
 - 不同任务草稿相互隔离。
+- 切换任务保留原任务草稿，提交成功、任务失效、退出登录或应用退出时按规则清理。
 - 关闭后重新打开可恢复当前任务草稿。
 - 候选项勾选会发送正确锚点。
 - 主窗口收到锚点后滚动并高亮报告。
@@ -299,15 +369,19 @@ report-feedback-window:invalidated
 - 提交失败保留草稿并显示错误。
 - 会话失效后窗口关闭，不能继续提交旧任务。
 - 专用 preload 只暴露允许的 IPC。
+- invoke/handle 通道与 send/listen 事件方向正确，`ipc.test.ts` 的 handle 顺序断言同步更新。
+- 主窗口 preload、反馈窗口 preload、主窗口 API 类型和反馈窗口 API 类型保持一致。
+- 反馈窗口专用 handler 拒绝非当前反馈窗口发送方、过期会话和不匹配的 `taskId`。
 
 ### 9.3 SVN 预检测试
 
 - 地址、旧版本和新版本格式校验。
 - `r`/`R` 前缀规范化。
 - `0` 全量审查模式跳过旧版本 SVN 访问。
-- 旧版本大于新版本时不启动 SVN 命令。
+- 相同版本或旧版本大于新版本时不启动 SVN 命令。
 - 新版本先于旧版本校验。
 - 新旧版本命令参数包含正确 peg revision。
+- 预检使用环境检查探测成功的 SVN 命令和相同 spawn options，不硬编码 `svn`。
 - 路径不存在、版本不存在、认证失败、权限不足、网络失败和 CLI 启动失败的错误映射。
 - 超时会终止子进程。
 - `AbortSignal` 取消会终止子进程并返回取消状态。
@@ -315,9 +389,10 @@ report-feedback-window:invalidated
 ### 9.4 task-agent 测试
 
 - 预检发生在工作区准备前。
+- 预检期间任务状态保持 `checking_environment`，成功后才进入 `preparing_workspace`。
 - 预检失败时任务更新为 `failed`。
 - 预检失败后工作区准备、需求文件上传、Codex、PDF 生成和报告上传均未调用。
-- 预检错误经过敏感信息清理。
+- 已分类预检错误通过 `preflightErrorMessages` 生成，不经过会破坏 URL 语义的通用路径替换；原始 stderr 在日志前脱敏。
 - 重试任务重新执行预检。
 - 预检期间取消任务后状态为 `cancelled`。
 
@@ -329,6 +404,24 @@ report-feedback-window:invalidated
 - 验证勾选反馈项后主报告正确滚动和高亮。
 - 验证历史地址列表不覆盖版本号，填写版本号不会误改 SVN 地址。
 - 使用错误地址、错误新版本、错误旧版本、无权限地址和网络中断分别验证任务立即失败且不生成报告。
+- 使用相同版本和旧版本大于新版本分别验证后端返回 HTTP 400 且不创建任务。
+- 按“后端先部署、客户端后发布”的顺序验证兼容性：旧客户端收到后端 400 时保留表单输入，不创建历史任务。
+
+### 9.6 构建与质量门禁
+
+Electron 改动完成后必须在 `code_review_electron` 执行：
+
+```text
+npm run typecheck
+npm test
+npm run build
+```
+
+`npm run build` 是本功能的强制门禁，用于验证 renderer/preload 多入口在生产构建中都能生成正确产物。
+
+后端版本契约改动至少执行对应路由测试，并按仓库质量约定执行后端检查。实施计划中必须列出准确命令，不依赖 Electron CI 或 pre-commit 兜底。
+
+后端测试还必须验证 `_create_review_task` 等公共夹具生成的版本范围满足新契约，确保任务统计、权限、报告上传等无关测试不会因为非法夹具数据产生连锁失败。
 
 ## 10. 验收标准
 
@@ -337,6 +430,7 @@ report-feedback-window:invalidated
 - 反馈工具窗口能够完全移动到主客户端外部。
 - 反馈窗口与主报告的定位、高亮、提交和 PDF 打开流程保持可用。
 - 错误 SVN 参数不会启动 Codex。
+- 相同版本或反向版本范围由后端在创建任务前拒绝，不产生垃圾失败任务。
 - 预检失败不会生成或上传 Markdown/PDF 报告。
-- 失败任务保留在任务历史中，并显示具体、脱敏的错误原因。
+- 客户端 SVN 地址、版本存在性、认证、权限、网络或超时预检失败的任务保留在任务历史中，并显示具体、脱敏的错误原因。
 - 所有新增自动化测试通过，真实 Electron 窗口行为完成手工验收。
