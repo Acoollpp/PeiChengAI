@@ -1,9 +1,9 @@
 import logging
 import re
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -28,8 +28,8 @@ from app.models import (
     ReviewTaskReportUserStatsPublic,
     ReviewTaskRequirementFile,
     ReviewTasksPublic,
-    ReviewTaskStatsRange,
     ReviewTaskStatsPublic,
+    ReviewTaskStatsRange,
     ReviewTaskStatus,
     ReviewTaskStatusUpdate,
     ReviewTaskTrendPointPublic,
@@ -57,6 +57,8 @@ _FAILED_OR_ERROR_STATUSES = {
     ReviewTaskStatus.environment_error,
     ReviewTaskStatus.cancelled,
 }
+
+ReportFeedbackFilter = Literal["helpful", "not_helpful", "none"]
 
 
 def _utcnow() -> datetime:
@@ -131,6 +133,29 @@ def _range_filters(stats_range: ReviewTaskStatsRange) -> list[Any]:
     if end is not None:
         filters.append(ReviewTask.created_at < end)
     return filters
+
+
+def _parse_started_from(value: str | None) -> datetime | None:
+    if not value or not value.strip():
+        return None
+
+    normalized = value.strip()
+    try:
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", normalized):
+            local_start = datetime.combine(
+                date.fromisoformat(normalized),
+                time.min,
+                tzinfo=TASK_STATS_TIMEZONE,
+            )
+            return local_start.astimezone(timezone.utc).replace(tzinfo=None)
+
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid started_from") from None
+
+    if parsed.tzinfo is None:
+        return parsed
+    return parsed.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def _unlink_file_after_commit(file_path: Path) -> None:
@@ -308,17 +333,35 @@ def read_review_tasks(
     limit: int = 100,
     user_name: str | None = None,
     svn_username: str | None = None,
+    status: ReviewTaskStatus | None = None,
+    report_feedback: ReportFeedbackFilter | None = None,
+    started_from: str | None = None,
 ) -> Any:
     filters = _task_read_scope_filters(session=session, current_user=current_user)
     if user_name and user_name.strip():
         filters.append(col(User.full_name).ilike(f"%{user_name.strip()}%"))
     if svn_username and svn_username.strip():
         filters.append(col(User.svn_username).ilike(f"%{svn_username.strip()}%"))
+    if status is not None:
+        filters.append(ReviewTask.status == status)
+    started_from_datetime = _parse_started_from(started_from)
+    if started_from_datetime is not None:
+        filters.append(ReviewTask.started_at >= started_from_datetime)
+    if report_feedback == "helpful":
+        filters.append(ReviewTaskReportFeedback.helpful.is_(True))
+    elif report_feedback == "not_helpful":
+        filters.append(ReviewTaskReportFeedback.helpful.is_(False))
+    elif report_feedback == "none":
+        filters.append(ReviewTaskReportFeedback.id.is_(None))
 
     count_statement = (
         select(func.count())
         .select_from(ReviewTask)
         .join(User, ReviewTask.user_id == User.id)
+        .outerjoin(
+            ReviewTaskReportFeedback,
+            ReviewTaskReportFeedback.task_id == ReviewTask.id,
+        )
         .where(*filters)
     )
     statement = (

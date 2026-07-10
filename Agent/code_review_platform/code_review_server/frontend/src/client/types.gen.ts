@@ -299,6 +299,8 @@ export type ReviewTaskPublic = {
     report_name?: (string | null);
     pdf_report_path?: (string | null);
     pdf_report_name?: (string | null);
+    report_feedback_helpful?: (boolean | null);
+    report_feedback_useful_issues_text?: (string | null);
     error_message?: (string | null);
     client_hostname?: (string | null);
     client_version?: (string | null);
@@ -306,8 +308,21 @@ export type ReviewTaskPublic = {
     started_at?: (string | null);
     finished_at?: (string | null);
     updated_at?: (string | null);
-    report_feedback_helpful?: boolean | null;
-    report_feedback_useful_issues_text?: string | null;
+};
+
+export type ReviewTaskReportFeedbackCreate = {
+    helpful: boolean;
+    useful_issues_text?: (string | null);
+};
+
+export type ReviewTaskReportFeedbackPublic = {
+    id: string;
+    task_id: string;
+    user_id: string;
+    helpful: boolean;
+    useful_issues_text?: (string | null);
+    created_at?: (string | null);
+    updated_at?: (string | null);
 };
 
 export type ReviewTaskReportUserStatsPublic = {
@@ -322,7 +337,7 @@ export type ReviewTasksPublic = {
 };
 
 export type ReviewTaskStatsPublic = {
-    range: FeedbackStatsRange;
+    range: ReviewTaskStatsRange;
     total: number;
     success: number;
     running: number;
@@ -334,6 +349,8 @@ export type ReviewTaskStatsPublic = {
     reports_by_user?: Array<ReviewTaskReportUserStatsPublic>;
     trend?: Array<ReviewTaskTrendPointPublic>;
 };
+
+export type ReviewTaskStatsRange = 'this_week' | 'last_week' | 'today' | 'yesterday' | 'all';
 
 export type ReviewTaskStatus = 'created' | 'checking_environment' | 'running_codex' | 'uploading_report' | 'success' | 'failed' | 'environment_error' | 'cancelled';
 
@@ -679,7 +696,10 @@ export type ReviewTasksCreateReviewTaskResponse = (ReviewTaskPublic);
 
 export type ReviewTasksReadReviewTasksData = {
     limit?: number;
+    reportFeedback?: ('helpful' | 'not_helpful' | 'none' | null);
     skip?: number;
+    startedFrom?: (string | null);
+    status?: (ReviewTaskStatus | null);
     svnUsername?: (string | null);
     userName?: (string | null);
 };
@@ -687,10 +707,17 @@ export type ReviewTasksReadReviewTasksData = {
 export type ReviewTasksReadReviewTasksResponse = (ReviewTasksPublic);
 
 export type ReviewTasksReadReviewTaskStatsData = {
-    range?: FeedbackStatsRange;
+    range?: ReviewTaskStatsRange;
 };
 
 export type ReviewTasksReadReviewTaskStatsResponse = (ReviewTaskStatsPublic);
+
+export type ReviewTasksSubmitReviewTaskReportFeedbackData = {
+    requestBody: ReviewTaskReportFeedbackCreate;
+    taskId: string;
+};
+
+export type ReviewTasksSubmitReviewTaskReportFeedbackResponse = (ReviewTaskReportFeedbackPublic);
 
 export type ReviewTasksReadReviewTaskData = {
     taskId: string;
