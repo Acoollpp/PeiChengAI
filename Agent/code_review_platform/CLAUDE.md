@@ -143,7 +143,7 @@ code_review_platform/
 |---|---|---|
 | 1 | **上传 MD 报告会强制 `status=success` + 设 `finished_at`；上传 PDF 报告不改状态** | 以为传完 PDF 就成功，实际状态由 MD 上传决定 |
 | 2 | **`started_at`/`finished_at` 由后端派生**（进 running 态设 started，进终态设 finished）；客户端**不能**直接发这两个字段 | 客户端发的时间会被忽略；统计的 `average_duration` 依赖它 |
-| 3 | **版本号必须匹配 `r?\d+`，且 `old != new`** | 裸数字、非数字、相同版本会被后端 422 拒绝 |
+| 3 | **版本号必须匹配 `r?\d+`；`new > 0`；`old == 0` 或 `old < new`** | 请求结构/缺失字段由模型校验返回 422；版本规范化失败、零值和顺序错误由路由返回 400 |
 | 4 | **权限判定是 `role == "admin"`，不是 `is_superuser`**（`is_superuser` 仅向后兼容镜像，不授权任何东西） | 用 `is_superuser` 做权限判断 = 安全漏洞 |
 | 5 | **`/client-updates/*`（electron-updater 拉取）需要 Authorization 头** | 自动更新请求不带 token 会 401/403 |
 | 6 | **登录凭据错误返回 403（非 401）**；无 `/refresh` 端点（refresh_token 返回但未用，access_token 8 天有效） | 客户端鉴权错误处理要兼容 403 |

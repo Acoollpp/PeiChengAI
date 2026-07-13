@@ -273,10 +273,12 @@ def create_review_task(
 ) -> Any:
     old_revision = _normalize_revision(task_in.old_revision)
     new_revision = _normalize_revision(task_in.new_revision)
-    if new_revision == "r0":
+    old_revision_number = int(old_revision[1:])
+    new_revision_number = int(new_revision[1:])
+    if new_revision_number == 0:
         raise HTTPException(status_code=400, detail="新版本号不能为 0")
-    if old_revision != "r0" and old_revision == new_revision:
-        raise HTTPException(status_code=400, detail="旧版本号和新版本号不能相同")
+    if old_revision_number != 0 and old_revision_number >= new_revision_number:
+        raise HTTPException(status_code=400, detail="旧版本号必须小于新版本号")
 
     department = (
         session.get(Department, current_user.department_id)

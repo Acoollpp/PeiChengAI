@@ -2,6 +2,12 @@
 
 ## Latest Changes
 
+### Code Review Platform
+
+* 后端先收紧审查版本范围：除 `r0` 全量审查外必须满足 `old < new`，Electron 客户端随后发布。
+* 旧后端创建的 `old > new` 历史任务在新客户端中不可重试；请按正确顺序新建任务。
+* 安全备忘：Windows SVN 命令当前沿用 `shell: true`；后续统一评估 `shell: false` 与绝对 `svnPath`，本次不改变既有命令执行链。
+
 ### Refactors
 
 * 🔧 Add FastAPI VS Code extension to recommended extensions. PR [#2206](https://github.com/fastapi/full-stack-fastapi-template/pull/2206) by [@tiangolo](https://github.com/tiangolo).

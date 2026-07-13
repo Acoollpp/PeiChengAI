@@ -28,13 +28,22 @@ from tests.utils.utils import random_lower_string
 TASK_STATS_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
+def _revision_number(value: str) -> int:
+    return int(value.strip().removeprefix("r").removeprefix("R"))
+
+
 def _create_review_task(
-    client: TestClient, headers: dict[str, str], old_revision: str = "1"
+    client: TestClient,
+    headers: dict[str, str],
+    old_revision: str = "1",
+    new_revision: str | None = None,
 ) -> dict:
+    old_number = _revision_number(old_revision)
+    normalized_new_revision = new_revision or f"r{max(old_number + 1, 1)}"
     data = {
         "svn_url": "https://svn.example.com/project/trunk",
         "old_revision": old_revision,
-        "new_revision": "r2",
+        "new_revision": normalized_new_revision,
     }
     response = client.post(
         f"{settings.API_V1_STR}/review-tasks",
@@ -265,7 +274,7 @@ def test_create_review_task_rejects_equal_non_zero_revisions(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "旧版本号和新版本号不能相同"
+    assert response.json()["detail"] == "旧版本号必须小于新版本号"
 
 
 def test_create_review_task_stores_template_and_skill_name(
@@ -391,7 +400,24 @@ def test_create_review_task_rejects_same_revision(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Old and new revisions must differ"
+    assert response.json()["detail"] == "旧版本号必须小于新版本号"
+
+
+def test_create_review_task_rejects_reverse_revision_range(
+    client: TestClient, normal_user_token_headers: dict[str, str]
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+        json={
+            "svn_url": "https://svn.example.com/project/trunk",
+            "old_revision": "r200",
+            "new_revision": "r100",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "旧版本号必须小于新版本号"
 
 
 def test_upload_and_read_review_task_report(
