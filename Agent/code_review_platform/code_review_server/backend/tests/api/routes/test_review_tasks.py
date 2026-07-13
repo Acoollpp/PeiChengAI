@@ -260,6 +260,23 @@ def test_create_review_task_rejects_zero_new_revision(
     assert response.json()["detail"] == "新版本号不能为 0"
 
 
+def test_create_review_task_rejects_zero_new_revision_with_nonzero_old(
+    client: TestClient, normal_user_token_headers: dict[str, str]
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+        json={
+            "svn_url": "https://svn.example.com/project/trunk",
+            "old_revision": "r1",
+            "new_revision": "r0",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "新版本号不能为 0"
+
+
 def test_create_review_task_rejects_equal_non_zero_revisions(
     client: TestClient, normal_user_token_headers: dict[str, str]
 ) -> None:
