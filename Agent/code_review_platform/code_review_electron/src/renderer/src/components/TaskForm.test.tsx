@@ -123,6 +123,55 @@ describe('TaskForm', () => {
     expect(screen.queryByRole('listbox', { name: '最近 SVN 地址' })).not.toBeInTheDocument()
   })
 
+  it('输入 SVN 地址时只显示忽略大小写的包含匹配项，完全匹配时收起', async () => {
+    localStorage.setItem(
+      'code-review:recent-svn-urls',
+      JSON.stringify(['https://svn.example.com/Alpha', 'https://svn.example.com/Beta'])
+    )
+    const user = userEvent.setup()
+    render(<TaskForm disabled={false} onSubmit={vi.fn()} />)
+    const input = screen.getByLabelText('SVN 地址')
+
+    await user.click(input)
+    await user.type(input, 'ALPHA')
+    expect(screen.getByRole('option', { name: /Alpha/ })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /Beta/ })).not.toBeInTheDocument()
+
+    await user.clear(input)
+    await user.type(input, 'https://svn.example.com/Alpha')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+
+  it('Escape 和 Tab 收起历史列表且 Tab 直接进入旧版本号', async () => {
+    localStorage.setItem('code-review:recent-svn-urls', JSON.stringify(['https://svn.example.com/A']))
+    const user = userEvent.setup()
+    render(<TaskForm disabled={false} onSubmit={vi.fn()} />)
+    const svnInput = screen.getByLabelText('SVN 地址')
+
+    await user.click(svnInput)
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(svnInput).toHaveFocus()
+
+    await user.click(svnInput)
+    expect(screen.getByRole('option')).toHaveAttribute('tabindex', '-1')
+    await user.tab()
+    expect(screen.getByLabelText('旧版本号')).toHaveFocus()
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+
+  it('点击版本字段不会回填鼠标经过的历史地址', async () => {
+    localStorage.setItem('code-review:recent-svn-urls', JSON.stringify(['https://svn.example.com/A']))
+    const user = userEvent.setup()
+    render(<TaskForm disabled={false} onSubmit={vi.fn()} />)
+    const svnInput = screen.getByLabelText('SVN 地址')
+
+    await user.click(svnInput)
+    await user.click(screen.getByLabelText('旧版本号'))
+    expect(svnInput).toHaveValue('')
+    expect(screen.getByLabelText('旧版本号')).toHaveFocus()
+  })
+
   it('提交时包含产品开发需求表路径和重点审查方向', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn(async () => undefined)

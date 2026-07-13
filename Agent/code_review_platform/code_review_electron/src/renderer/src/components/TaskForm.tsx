@@ -37,6 +37,17 @@ export function TaskForm({
   const [uncontrolledTemplateKey, setUncontrolledTemplateKey] =
     useState<ReviewTemplateKey>(DEFAULT_REVIEW_TEMPLATE_KEY)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const visibleRecentSvnUrls = useMemo(() => {
+    const query = svnUrl.trim().toLocaleLowerCase()
+    if (!query) {
+      return recentSvnUrls
+    }
+    if (recentSvnUrls.some((item) => item.toLocaleLowerCase() === query)) {
+      return []
+    }
+    return recentSvnUrls.filter((item) => item.toLocaleLowerCase().includes(query))
+  }, [recentSvnUrls, svnUrl])
+  const showSvnHistory = isSvnHistoryOpen && visibleRecentSvnUrls.length > 0
   const templateKey = selectedTemplateKey ?? uncontrolledTemplateKey
   const activeSkillNameSet = useMemo(
     () => (activeSkillNames ? new Set(activeSkillNames) : null),
@@ -148,17 +159,27 @@ export function TaskForm({
             value={svnUrl}
             placeholder="https://svn.example.com/project/trunk"
             aria-haspopup="listbox"
-            aria-expanded={isSvnHistoryOpen && recentSvnUrls.length > 0}
+            aria-expanded={showSvnHistory}
             onFocus={() => setIsSvnHistoryOpen(true)}
+            onClick={() => setIsSvnHistoryOpen(true)}
             onBlur={() => setIsSvnHistoryOpen(false)}
-            onChange={(event) => setSvnUrl(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' || event.key === 'Tab') {
+                setIsSvnHistoryOpen(false)
+              }
+            }}
+            onChange={(event) => {
+              setSvnUrl(event.target.value)
+              setIsSvnHistoryOpen(true)
+            }}
           />
-          {isSvnHistoryOpen && recentSvnUrls.length > 0 ? (
+          {showSvnHistory ? (
             <div className="svn-url-history-list" role="listbox" aria-label="最近 SVN 地址">
-              {recentSvnUrls.map((recentSvnUrl) => (
+              {visibleRecentSvnUrls.map((recentSvnUrl) => (
                 <button
                   key={recentSvnUrl}
                   type="button"
+                  tabIndex={-1}
                   className="svn-url-history-item"
                   role="option"
                   onMouseDown={(event) => event.preventDefault()}
@@ -180,6 +201,7 @@ export function TaskForm({
           <span>旧版本号</span>
           <input
             required
+            aria-label="旧版本号"
             value={oldRevision}
             inputMode="numeric"
             placeholder="填 0 表示全量审查新版本代码"
@@ -190,6 +212,7 @@ export function TaskForm({
           <span>新版本号</span>
           <input
             required
+            aria-label="新版本号"
             value={newRevision}
             inputMode="numeric"
             onChange={(event) => setNewRevision(event.target.value)}
