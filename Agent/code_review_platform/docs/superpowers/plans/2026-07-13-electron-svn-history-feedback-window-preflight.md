@@ -1245,3 +1245,27 @@ git commit -m "test: 完成 SVN 预检与反馈窗口验收"
 ```
 
 没有修正时跳过该步骤，不创建空提交。
+
+---
+
+## 执行进度与跨机交接（2026-07-13）
+
+本计划在 `feat/svn-preflight-feedback-window` 分支上用 subagent-driven-development 执行；因原开发机磁盘加密、无法稳定启动 Postgres，中途转移到另一台机器继续。SDD 的 ledger/report 位于 `.superpowers/sdd/`（被该目录 `.gitignore` 忽略，不入 git），故把进度固化在此处供跨机交接。
+
+### 已完成
+
+- **Task 1（后端版本契约）**：代码完成并经 task reviewer 审核（**Approved**）。
+  - `f05968d fix: 收紧审查任务版本顺序契约`：`create_review_task` 字符串比较改为整数比较（`int(rev[1:])`，在 `_normalize_revision` 之后）；`new==0` 先于顺序检查拒绝、`old==0` 为全量审查跳过顺序检查、其余要求 `old<new`，均返回 HTTP 400 不落库；夹具 `_create_review_task` 增加可选 `new_revision`，缺省按 `f"r{max(old+1,1)}"` 生成合法新版本，保证 ~70 个既有调用点等价；更新 2 个既有相等测试断言；新增反向范围测试；更新 `CLAUDE.md` §3.4-#3 与 `code_review_server/release-notes.md`。
+  - `8153bc6 test: 补充非零旧版本下新版本为零的拒绝用例`：补 `test_create_review_task_rejects_zero_new_revision_with_nonzero_old`（`old=r1/new=r0`，单独命名避免与既有 `old=0/new=0` 同名 shadow）。
+  - ⚠️ **未闭环**：真实 pytest RED/GREEN **未运行**（原开发机无 Docker/Postgres）。代码经逻辑驱动验证（9 个版本组合）+ ruff/mypy 0 新增违规，但 **~70 个夹具调用点的回归未运行验证**（reviewer 已核查最可疑的 `test_download_review_task_report`，安全）。新机器须先跑 `cd code_review_server/backend && uv run pytest tests/api/routes/test_review_tasks.py -q` 确认全绿后再继续。
+
+### 未开始
+
+Task 2–9，按本计划顺序执行。Electron 端（Task 2–8）可用 `npm run typecheck && npm test && npm run build` 本机验证；后端全量 `uv run pytest` 留到 Task 9。
+
+### 续作步骤（新机器）
+
+1. `git fetch origin && git checkout feat/svn-preflight-feedback-window`
+2. 启动本机 Postgres（或 Docker），先补跑 Task 1 后端测试确认 GREEN。
+3. 按计划继续 Task 2；后端契约已先收紧，满足“后端先部署、客户端后发布”约束。
+4. 本计划权威设计：`docs/superpowers/specs/2026-07-10-electron-svn-history-feedback-window-preflight-design.md`（已在 main）。
