@@ -910,6 +910,85 @@ describe('TaskPage', () => {
     expect(screen.getByRole('button', { name: '查看PDF报告' })).toBeInTheDocument()
   })
 
+  it('负反馈提交期间切换任务后更新原任务但不打开当前任务PDF', async () => {
+    const user = userEvent.setup()
+    const feedback = createDeferred<{
+      id: string
+      task_id: string
+      user_id: string
+      helpful: boolean
+      useful_issues_text: null
+    }>()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-a', svn_url: 'svn://repo/a', old_revision: '1', new_revision: '2',
+          status: 'success' as const, report_path: '/reports/a.md', report_feedback_helpful: null
+        },
+        {
+          id: 'task-b', svn_url: 'svn://repo/b', old_revision: '2', new_revision: '3',
+          status: 'success' as const, report_path: '/reports/b.md', report_feedback_helpful: null
+        }
+      ],
+      count: 2
+    }))
+    window.codeReview.readTaskReport = vi.fn(async (taskId) => `# ${taskId}`)
+    window.codeReview.submitNegativeReportFeedback = vi.fn(() => feedback.promise)
+    window.codeReview.openPdfReport = vi.fn(async () => ({
+      status: 'ready' as const,
+      pdfPath: '/local/unexpected.pdf'
+    }))
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    const viewButtons = within(historyPanel).getAllByRole('button', { name: '查看报告' })
+    await user.click(viewButtons[0])
+    await user.click(screen.getByRole('button', { name: '没帮助' }))
+    await user.click(viewButtons[1])
+
+    feedback.resolve({
+      id: 'feedback-a', task_id: 'task-a', user_id: 'user-1', helpful: false,
+      useful_issues_text: null
+    })
+
+    await waitFor(() => expect(within(historyPanel).getByText('已完成 · 没帮助')).toBeInTheDocument())
+    expect(window.codeReview.openPdfReport).not.toHaveBeenCalled()
+    expect(screen.queryByText(/PDF报告位置/)).not.toBeInTheDocument()
+  })
+
+  it('PDF请求期间切换任务后忽略原任务返回结果', async () => {
+    const user = userEvent.setup()
+    const pdf = createDeferred<{ status: 'ready'; pdfPath: string }>()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-a', svn_url: 'svn://repo/a', old_revision: '1', new_revision: '2',
+          status: 'success' as const, report_path: '/reports/a.md',
+          report_feedback_helpful: true, report_feedback_useful_issues_text: '1. A'
+        },
+        {
+          id: 'task-b', svn_url: 'svn://repo/b', old_revision: '2', new_revision: '3',
+          status: 'success' as const, report_path: '/reports/b.md', report_feedback_helpful: null
+        }
+      ],
+      count: 2
+    }))
+    window.codeReview.readTaskReport = vi.fn(async (taskId) => `# ${taskId}`)
+    window.codeReview.openPdfReport = vi.fn(() => pdf.promise)
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    const viewButtons = within(historyPanel).getAllByRole('button', { name: '查看报告' })
+    await user.click(viewButtons[0])
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+    await user.click(viewButtons[1])
+
+    pdf.resolve({ status: 'ready', pdfPath: '/local/task-a.pdf' })
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'task-b' })).toBeInTheDocument())
+    expect(screen.queryByText('PDF报告位置：/local/task-a.pdf')).not.toBeInTheDocument()
+  })
+
   it('点击有帮助只打开原生反馈窗口并传递稳定候选项', async () => {
     const user = userEvent.setup()
     window.codeReview.listTasks = vi.fn(async () => ({
@@ -1097,6 +1176,38 @@ describe('TaskPage', () => {
 
     await waitFor(() => expect(window.codeReview.openPdfReport).toHaveBeenCalled())
     expect(screen.getByRole('button', { name: '查看PDF报告' })).toBeInTheDocument()
+  })
+
+  it('正反馈事件更新原任务但不为当前其他任务打开PDF', async () => {
+    const user = userEvent.setup()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-a', svn_url: 'svn://repo/a', old_revision: '1', new_revision: '2',
+          status: 'success' as const, report_path: '/reports/a.md', report_feedback_helpful: null
+        },
+        {
+          id: 'task-b', svn_url: 'svn://repo/b', old_revision: '2', new_revision: '3',
+          status: 'success' as const, report_path: '/reports/b.md', report_feedback_helpful: null
+        }
+      ],
+      count: 2
+    }))
+    window.codeReview.readTaskReport = vi.fn(async (taskId) => `# ${taskId}`)
+    window.codeReview.openPdfReport = vi.fn()
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    const viewButtons = within(historyPanel).getAllByRole('button', { name: '查看报告' })
+    await user.click(viewButtons[0])
+    await user.click(viewButtons[1])
+    const submitted = vi.mocked(window.codeReview.onReportFeedbackSubmitted).mock.calls[0][0]
+
+    submitted({ taskId: 'task-a', usefulIssuesText: '1. A问题' })
+
+    await waitFor(() => expect(within(historyPanel).getByText('已完成 · 有帮助')).toBeInTheDocument())
+    expect(window.codeReview.openPdfReport).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { name: 'task-b' })).toBeInTheDocument()
   })
 
   it('已反馈任务点击查看PDF报告直接打开PDF', async () => {

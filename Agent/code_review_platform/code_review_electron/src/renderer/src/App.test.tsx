@@ -72,6 +72,10 @@ const setupCodeReviewApi = (): void => {
     installSkill: vi.fn(),
     checkEnvironment: vi.fn(async () => ({ status: 'ready' })),
     submitFeedback: vi.fn(),
+    openReportFeedbackWindow: vi.fn(async () => true),
+    submitNegativeReportFeedback: vi.fn(),
+    onReportFeedbackFocusAnchor: vi.fn(() => vi.fn()),
+    onReportFeedbackSubmitted: vi.fn(() => vi.fn()),
     onEnvironmentProgress: vi.fn((callback: EnvironmentProgressListener) => {
       environmentProgressListener = callback
       return vi.fn()

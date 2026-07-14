@@ -1753,6 +1753,13 @@ describe('registerIpcHandlers', () => {
     }
 
     await expect(handler({ sender: { id: 99 } }, payload)).rejects.toThrow('无权')
+    await expect(handler({ sender: { id: 11 } }, { taskId: '', options: [] })).rejects.toThrow(
+      '上下文'
+    )
+    await expect(handler({ sender: { id: 11 } }, {
+      taskId: 'task-1',
+      options: [payload.options[0], payload.options[0]]
+    })).rejects.toThrow('重复')
     await expect(handler({ sender: { id: 11 } }, payload)).resolves.toBe(true)
     expect(open).toHaveBeenCalledWith(payload)
   })
@@ -1793,7 +1800,10 @@ describe('registerIpcHandlers', () => {
     }
     const manager = {
       isCurrentSender: vi.fn((id: number) => id === 22),
-      getContext: vi.fn(() => context)
+      getContext: vi.fn((senderId: number) => {
+        if (senderId !== 22) throw new Error('无权访问当前反馈窗口')
+        return context
+      })
     }
     const { registerIpcHandlers } = await import('../ipc')
     registerIpcHandlers({
@@ -1804,6 +1814,9 @@ describe('registerIpcHandlers', () => {
       ([channel]) => channel === 'report-feedback-window:focus-anchor'
     )?.[1]
 
+    await expect(
+      handler({ sender: { id: 99 } }, { taskId: 'task-1', optionId: 'option-1' })
+    ).rejects.toThrow('无权')
     await expect(
       handler({ sender: { id: 22 } }, { taskId: 'task-1', optionId: 'unknown' })
     ).rejects.toThrow('未知')
@@ -1832,7 +1845,10 @@ describe('registerIpcHandlers', () => {
     }
     const manager = {
       isCurrentSender: vi.fn((id: number) => id === 22),
-      getContext: vi.fn(() => context),
+      getContext: vi.fn((senderId: number) => {
+        if (senderId !== 22) throw new Error('无权访问当前反馈窗口')
+        return context
+      }),
       close
     }
     const { registerIpcHandlers } = await import('../ipc')
@@ -1846,6 +1862,13 @@ describe('registerIpcHandlers', () => {
       ([channel]) => channel === 'report-feedback-window:submit'
     )?.[1]
 
+    await expect(
+      handler({ sender: { id: 99 } }, {
+        taskId: 'task-1',
+        selectedOptionIds: ['option-1'],
+        manualText: ''
+      })
+    ).rejects.toThrow('无权')
     await expect(
       handler({ sender: { id: 22 } }, {
         taskId: 'task-1',
@@ -1865,6 +1888,7 @@ describe('registerIpcHandlers', () => {
       usefulIssuesText: '1. 空指针风险\n2. 越界风险\n3. 手工补充'
     })
     expect(close).toHaveBeenCalledWith(22)
+    expect(send.mock.invocationCallOrder[0]).toBeLessThan(close.mock.invocationCallOrder[0])
   })
 
   it('treats already-existing helpful feedback as submitted and closes the feedback window', async () => {

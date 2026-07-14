@@ -39,6 +39,12 @@ type CompletionNotice = {
 
 type ReportFeedbackStatus = 'idle' | 'submitting'
 
+type PdfReportSnapshot = {
+  taskId: string
+  localPdfPath?: string
+  pdfReportName?: string
+}
+
 const REPORT_FEEDBACK_EXISTS_CODE = 'report_feedback_exists'
 
 const isReportFeedbackExistsError = (error: unknown): boolean => {
@@ -365,11 +371,12 @@ export function TaskPage({
     [updateTask]
   )
 
-  const openSelectedPdfReport = useCallback(async (): Promise<void> => {
-    const taskId = selectedTaskIdRef.current
-
-    if (!taskId) {
-      setError('请先选择一个已完成任务报告。')
+  const openSelectedPdfReport = useCallback(async ({
+    taskId,
+    localPdfPath,
+    pdfReportName
+  }: PdfReportSnapshot): Promise<void> => {
+    if (!isMountedRef.current || selectedTaskIdRef.current !== taskId) {
       return
     }
 
@@ -377,16 +384,16 @@ export function TaskPage({
     try {
       const result = await window.codeReview.openPdfReport({
         taskId,
-        localPdfPath: currentPdfPathRef.current,
-        pdfReportName: currentPdfReportNameRef.current
+        localPdfPath,
+        pdfReportName
       })
-      if (!isMountedRef.current) {
+      if (!isMountedRef.current || selectedTaskIdRef.current !== taskId) {
         return
       }
       setReportMessage(`PDF报告位置：${result.pdfPath}`)
       setActivePdfPath(result.pdfPath)
     } catch (openError) {
-      if (!isMountedRef.current) {
+      if (!isMountedRef.current || selectedTaskIdRef.current !== taskId) {
         return
       }
       const message = openError instanceof Error ? openError.message : 'PDF报告打开失败。'
@@ -409,7 +416,11 @@ export function TaskPage({
       return
     }
 
-    await openSelectedPdfReport()
+    await openSelectedPdfReport({
+      taskId,
+      localPdfPath: currentPdfPathRef.current,
+      pdfReportName: currentPdfReportNameRef.current
+    })
   }, [openSelectedPdfReport])
 
   const handleReportNotUseful = async (): Promise<void> => {
@@ -418,22 +429,33 @@ export function TaskPage({
       setError('请先选择一个已完成任务报告。')
       return
     }
+    const pdfSnapshot = {
+      taskId,
+      localPdfPath: currentPdfPathRef.current,
+      pdfReportName: currentPdfReportNameRef.current
+    }
     setError('')
     setReportFeedbackStatus('submitting')
     try {
       await window.codeReview.submitNegativeReportFeedback(taskId)
       markTaskFeedbackSubmitted(taskId, false, null)
-      setReportFeedbackStatus('idle')
-      await openSelectedPdfReport()
+      if (selectedTaskIdRef.current === taskId) {
+        setReportFeedbackStatus('idle')
+        await openSelectedPdfReport(pdfSnapshot)
+      }
     } catch (submitError) {
       if (isReportFeedbackExistsError(submitError)) {
         markTaskFeedbackSubmitted(taskId, false, null)
-        setReportFeedbackStatus('idle')
-        await openSelectedPdfReport()
+        if (selectedTaskIdRef.current === taskId) {
+          setReportFeedbackStatus('idle')
+          await openSelectedPdfReport(pdfSnapshot)
+        }
         return
       }
-      setReportFeedbackStatus('idle')
-      setError(formatReportFeedbackError(submitError))
+      if (selectedTaskIdRef.current === taskId) {
+        setReportFeedbackStatus('idle')
+        setError(formatReportFeedbackError(submitError))
+      }
     }
   }
 
@@ -466,7 +488,7 @@ export function TaskPage({
   }, [feedbackAnchorScrollRequest])
 
   useEffect(() =>
-    window.codeReview.onReportFeedbackFocusAnchor?.(({ taskId, anchorId }) => {
+    window.codeReview.onReportFeedbackFocusAnchor(({ taskId, anchorId }) => {
       if (selectedTaskIdRef.current !== taskId) {
         return
       }
@@ -480,14 +502,18 @@ export function TaskPage({
     }), [])
 
   useEffect(() =>
-    window.codeReview.onReportFeedbackSubmitted?.(({ taskId, usefulIssuesText }) => {
+    window.codeReview.onReportFeedbackSubmitted(({ taskId, usefulIssuesText }) => {
+      markTaskFeedbackSubmitted(taskId, true, usefulIssuesText)
       if (selectedTaskIdRef.current !== taskId) {
         return
       }
-      markTaskFeedbackSubmitted(taskId, true, usefulIssuesText)
       setReportFeedbackStatus('idle')
       setActiveFeedbackAnchorId(undefined)
-      void openSelectedPdfReport()
+      void openSelectedPdfReport({
+        taskId,
+        localPdfPath: currentPdfPathRef.current,
+        pdfReportName: currentPdfReportNameRef.current
+      })
     }), [markTaskFeedbackSubmitted, openSelectedPdfReport])
 
   return (
