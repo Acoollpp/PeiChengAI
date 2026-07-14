@@ -46,6 +46,18 @@ describe('ReportFeedbackWindow', () => {
     expect(screen.getByRole('button', { name: '提交并打开PDF' })).toBeDisabled()
   })
 
+  it('手工文本仅包含空格和换行时仍禁用提交', async () => {
+    const user = userEvent.setup()
+    render(<ReportFeedbackWindow />)
+
+    await user.type(await screen.findByLabelText('补充说明'), '   {enter}   ')
+    const submitButton = screen.getByRole('button', { name: '提交并打开PDF' })
+
+    expect(submitButton).toBeDisabled()
+    await user.click(submitButton)
+    expect(window.reportFeedback.submit).not.toHaveBeenCalled()
+  })
+
   it('勾选问题时定位锚点且只在提交时发送 option ID', async () => {
     const user = userEvent.setup()
     render(<ReportFeedbackWindow />)
@@ -78,6 +90,24 @@ describe('ReportFeedbackWindow', () => {
     expect(window.reportFeedback.focusAnchor).toHaveBeenLastCalledWith({ taskId: 'task-1' })
   })
 
+  it('勾选两个候选后取消其中一个仅提交剩余 option ID', async () => {
+    const user = userEvent.setup()
+    render(<ReportFeedbackWindow />)
+
+    const firstCheckbox = await screen.findByRole('checkbox', { name: '空指针风险' })
+    const secondCheckbox = screen.getByRole('checkbox', { name: '事务边界不完整' })
+    await user.click(firstCheckbox)
+    await user.click(secondCheckbox)
+    await user.click(firstCheckbox)
+    await user.click(screen.getByRole('button', { name: '提交并打开PDF' }))
+
+    expect(window.reportFeedback.submit).toHaveBeenCalledWith({
+      taskId: 'task-1',
+      selectedOptionIds: ['option-2'],
+      manualText: ''
+    })
+  })
+
   it('手工文本可单独提交并去除首尾空白', async () => {
     const user = userEvent.setup()
     render(<ReportFeedbackWindow />)
@@ -100,6 +130,18 @@ describe('ReportFeedbackWindow', () => {
     await screen.findByRole('checkbox', { name: '空指针风险' })
     await user.click(screen.getByRole('button', { name: '取消' }))
 
+    expect(window.reportFeedback.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('窗口关闭失败时展示固定错误且只调用一次关闭命令', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.reportFeedback.close).mockRejectedValueOnce(new Error('IPC 关闭失败'))
+    render(<ReportFeedbackWindow />)
+
+    await screen.findByRole('checkbox', { name: '空指针风险' })
+    await user.click(screen.getByRole('button', { name: '取消' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('反馈窗口关闭失败，请重试')
     expect(window.reportFeedback.close).toHaveBeenCalledTimes(1)
   })
 

@@ -59,6 +59,15 @@ export function ReportFeedbackWindow(): React.JSX.Element {
     }
   }
 
+  const handleClose = async (): Promise<void> => {
+    setError('')
+    try {
+      await window.reportFeedback.close()
+    } catch {
+      setError('反馈窗口关闭失败，请重试')
+    }
+  }
+
   const canSubmit = Boolean(context) && (selectedOptionIds.length > 0 || Boolean(manualText.trim()))
 
   return (
@@ -111,7 +120,7 @@ export function ReportFeedbackWindow(): React.JSX.Element {
             type="button"
             className="secondary-button"
             disabled={isSubmitting}
-            onClick={() => void window.reportFeedback.close()}
+            onClick={() => void handleClose()}
           >
             取消
           </button>
