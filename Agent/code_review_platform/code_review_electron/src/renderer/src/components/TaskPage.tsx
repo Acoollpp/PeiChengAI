@@ -472,7 +472,9 @@ export function TaskPage({
         options: usefulIssueOptions
       })
     } catch {
-      setError('反馈窗口打开失败，请重试。')
+      if (isMountedRef.current && selectedTaskIdRef.current === taskId) {
+        setError('反馈窗口打开失败，请重试。')
+      }
     }
   }
 

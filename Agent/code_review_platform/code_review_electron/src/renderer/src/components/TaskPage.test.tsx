@@ -989,6 +989,42 @@ describe('TaskPage', () => {
     expect(screen.queryByText('PDF报告位置：/local/task-a.pdf')).not.toBeInTheDocument()
   })
 
+  it('PDF请求期间切换任务后忽略原任务迟到错误', async () => {
+    const user = userEvent.setup()
+    const pdf = createDeferred<{ status: 'ready'; pdfPath: string }>()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-a', svn_url: 'svn://repo/a', old_revision: '1', new_revision: '2',
+          status: 'success' as const, report_path: '/reports/a.md',
+          report_feedback_helpful: true, report_feedback_useful_issues_text: '1. A'
+        },
+        {
+          id: 'task-b', svn_url: 'svn://repo/b', old_revision: '2', new_revision: '3',
+          status: 'success' as const, report_path: '/reports/b.md', report_feedback_helpful: null
+        }
+      ],
+      count: 2
+    }))
+    window.codeReview.readTaskReport = vi.fn(async (taskId) => `# ${taskId}`)
+    window.codeReview.openPdfReport = vi.fn(() => pdf.promise)
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    const viewButtons = within(historyPanel).getAllByRole('button', { name: '查看报告' })
+    await user.click(viewButtons[0])
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+    await user.click(viewButtons[1])
+
+    pdf.reject(new Error('A任务PDF打开失败'))
+    await pdf.promise.catch(() => undefined)
+
+    expect(screen.getByRole('heading', { name: 'task-b' })).toBeInTheDocument()
+    expect(screen.queryByText('A任务PDF打开失败')).not.toBeInTheDocument()
+    expect(screen.queryByText(/PDF报告位置/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '查看PDF报告' })).not.toBeInTheDocument()
+  })
+
   it('点击有帮助只打开原生反馈窗口并传递稳定候选项', async () => {
     const user = userEvent.setup()
     window.codeReview.listTasks = vi.fn(async () => ({
@@ -1097,6 +1133,39 @@ describe('TaskPage', () => {
     await user.click(screen.getByRole('button', { name: '有帮助' }))
 
     expect(await screen.findByText('反馈窗口打开失败，请重试。')).toBeInTheDocument()
+  })
+
+  it('原生反馈窗口打开期间切换任务后忽略原任务迟到错误', async () => {
+    const user = userEvent.setup()
+    const open = createDeferred<true>()
+    window.codeReview.openReportFeedbackWindow = vi.fn(() => open.promise)
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-a', svn_url: 'svn://repo/a', old_revision: '1', new_revision: '2',
+          status: 'success' as const, report_path: '/reports/a.md', report_feedback_helpful: null
+        },
+        {
+          id: 'task-b', svn_url: 'svn://repo/b', old_revision: '2', new_revision: '3',
+          status: 'success' as const, report_path: '/reports/b.md', report_feedback_helpful: null
+        }
+      ],
+      count: 2
+    }))
+    window.codeReview.readTaskReport = vi.fn(async (taskId) => `# ${taskId}`)
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    const viewButtons = within(historyPanel).getAllByRole('button', { name: '查看报告' })
+    await user.click(viewButtons[0])
+    await user.click(screen.getByRole('button', { name: '有帮助' }))
+    await user.click(viewButtons[1])
+
+    open.reject(new Error('A任务反馈窗口打开失败'))
+    await open.promise.catch(() => undefined)
+
+    expect(screen.getByRole('heading', { name: 'task-b' })).toBeInTheDocument()
+    expect(screen.queryByText('反馈窗口打开失败，请重试。')).not.toBeInTheDocument()
   })
 
   it('反馈窗口定位事件仅处理当前任务并可清除高亮', async () => {
