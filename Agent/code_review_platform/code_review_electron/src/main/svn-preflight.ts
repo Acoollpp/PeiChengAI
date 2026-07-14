@@ -5,6 +5,10 @@ import {
 } from 'node:child_process'
 
 export const SVN_PREFLIGHT_TIMEOUT_MS = 30_000
+export const SVN_DIAGNOSTIC_MAX_BYTES = 64 * 1024
+
+const truncatedDiagnosticMarker = Buffer.from('\n[诊断已截断]')
+const ignoreLateChildError = (): void => {}
 
 export interface SvnPreflightInput {
   svnUrl: string
@@ -121,7 +125,17 @@ export const sanitizeSvnDiagnostic = (diagnostic: string): string =>
       /(\b(?:username|password|token)\b\s+)(?:"[^"]*"|'[^']*')/gi,
       '$1[已脱敏]'
     )
+    .replace(
+      /(--[\w.-]*(?:username|password|token)[\w.-]*\s+)(?![=:])(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
+      '$1[已脱敏]'
+    )
+    .replace(
+      /(\b(?=[\w.-]*[_.-])[\w.-]*(?:username|password|token)[\w.-]*\b\s+)(?![=:])(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
+      '$1[已脱敏]'
+    )
     .replace(/\b(?:https?|svn(?:\+ssh)?|file):\/\/[^\s"'<>]+/gi, '[已脱敏URL]')
+    .replace(/(["'])\b[A-Za-z]:\\[^"'\r\n]*\1/g, '[已脱敏路径]')
+    .replace(/(["'])\/[^"'\r\n]*\1/g, '[已脱敏路径]')
     .replace(/\\\\[^\s\\]+\\[^\s"'<>]+/g, '[已脱敏路径]')
     .replace(/\b[A-Za-z]:\\(?:[^\\\r\n]+\\)*[^\\\s\r\n]*/g, '[已脱敏路径]')
     .replace(/(^|[\s"'(=])\/(?:[^/\s"'<>]+\/)*[^/\s"'<>]*/gm, '$1[已脱敏路径]')
@@ -158,7 +172,7 @@ const runSvnInfo = ({
       child = spawnCommand(
         svnCommand,
         buildSvnInfoArgs(svnUrl, revision),
-        commandOptions
+        { ...commandOptions, shell: false }
       )
     } catch (error) {
       logSanitizedDiagnostic(errorToDiagnostic(error), dependencies.logger)
@@ -166,20 +180,29 @@ const runSvnInfo = ({
       return
     }
 
-    const stderrChunks: Buffer[] = []
+    const stderrBuffer = Buffer.allocUnsafe(SVN_DIAGNOSTIC_MAX_BYTES)
+    let stderrBytes = 0
+    let stderrTruncated = false
     let settled = false
     let timeout: ReturnType<typeof setTimeout> | undefined
 
     const cleanup = (): void => {
       if (timeout) {
         clearTimeout(timeout)
+        timeout = undefined
       }
       signal?.removeEventListener('abort', onAbort)
+      child.stderr.off('data', onStderrData)
+      child.off('close', onChildClose)
+      child.off('error', onChildError)
+      if (child.listenerCount('error') === 0) {
+        child.on('error', ignoreLateChildError)
+      }
     }
 
-    const settle = (error?: SvnPreflightError): void => {
+    const settle = (error?: SvnPreflightError): boolean => {
       if (settled) {
-        return
+        return false
       }
 
       settled = true
@@ -189,45 +212,95 @@ const runSvnInfo = ({
       } else {
         resolve()
       }
+      return true
     }
 
-    const killAndSettle = (code: 'TIMEOUT' | 'CANCELLED'): void => {
+    const settleAndKill = (code: 'TIMEOUT' | 'CANCELLED'): void => {
+      if (!settle(new SvnPreflightError(code))) {
+        return
+      }
+
       try {
         child.kill()
       } catch {
         // 终止失败不应覆盖更具体的超时或取消结果。
       }
-      settle(new SvnPreflightError(code))
     }
 
     function onAbort(): void {
-      killAndSettle('CANCELLED')
+      settleAndKill('CANCELLED')
     }
 
-    child.stderr.on('data', (chunk: Buffer | string) => {
-      stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-    })
-    child.on('error', (error) => {
-      logSanitizedDiagnostic(errorToDiagnostic(error), dependencies.logger)
-      settle(new SvnPreflightError('CLI_START_FAILED'))
-    })
-    child.on('close', (code) => {
+    function onStderrData(chunk: Buffer | string): void {
+      if (settled) {
+        return
+      }
+
+      const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+      const remaining = SVN_DIAGNOSTIC_MAX_BYTES - stderrBytes
+      const bytesToCopy = Math.min(remaining, data.length)
+      if (bytesToCopy > 0) {
+        data.copy(stderrBuffer, stderrBytes, 0, bytesToCopy)
+        stderrBytes += bytesToCopy
+      }
+      if (data.length > bytesToCopy) {
+        stderrTruncated = true
+      }
+    }
+
+    function onChildError(error: Error): void {
+      if (settled) {
+        return
+      }
+
+      if (settle(new SvnPreflightError('CLI_START_FAILED'))) {
+        logSanitizedDiagnostic(errorToDiagnostic(error), dependencies.logger)
+      }
+    }
+
+    function onChildClose(code: number | null): void {
+      if (settled) {
+        return
+      }
+
       if (code === 0) {
         settle()
         return
       }
 
-      const diagnostic = Buffer.concat(stderrChunks).toString('utf8')
-      logSanitizedDiagnostic(diagnostic, dependencies.logger)
-      settle(new SvnPreflightError(classifySvnDiagnostic(diagnostic, target)))
-    })
+      const diagnostic = readStderrDiagnostic(stderrBuffer, stderrBytes, stderrTruncated)
+      if (settle(new SvnPreflightError(classifySvnDiagnostic(diagnostic, target)))) {
+        logSanitizedDiagnostic(diagnostic, dependencies.logger)
+      }
+    }
 
-    timeout = setTimeout(() => killAndSettle('TIMEOUT'), SVN_PREFLIGHT_TIMEOUT_MS)
+    child.stderr.on('data', onStderrData)
+    child.on('error', onChildError)
+    child.on('close', onChildClose)
+    child.stdout.resume()
+
+    timeout = setTimeout(() => settleAndKill('TIMEOUT'), SVN_PREFLIGHT_TIMEOUT_MS)
     signal?.addEventListener('abort', onAbort, { once: true })
     if (signal?.aborted) {
       onAbort()
     }
   })
+
+const readStderrDiagnostic = (
+  buffer: Buffer,
+  bytesWritten: number,
+  truncated: boolean
+): string => {
+  if (!truncated) {
+    return buffer.subarray(0, bytesWritten).toString('utf8')
+  }
+
+  const contentBytes = Math.max(0, SVN_DIAGNOSTIC_MAX_BYTES - truncatedDiagnosticMarker.length)
+  return Buffer.concat([
+    buffer.subarray(0, Math.min(bytesWritten, contentBytes)),
+    truncatedDiagnosticMarker
+  ]).toString('utf8')
+}
 
 const parseRevision = (revision: string): ParsedRevision => {
   const trimmed = revision.trim()

@@ -100,6 +100,14 @@ export const buildVersionCommandOptions = (
   windowsHide: true
 })
 
+export const buildDirectCommandOptions = (
+  _platform: NodeJS.Platform = process.platform
+): SpawnOptionsWithoutStdio => ({
+  env: buildCommandEnv(),
+  shell: false,
+  windowsHide: true
+})
+
 const runVersionCommand = (command: string, args: string[]): Promise<CommandResult> =>
   new Promise((resolve) => {
     const child = spawn(command, args, buildVersionCommandOptions())

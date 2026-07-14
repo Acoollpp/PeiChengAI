@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  buildDirectCommandOptions,
   buildVersionCommandOptions,
   checkRuntimeWritable,
   checkSkillPackageReady,
@@ -50,6 +51,19 @@ describe('buildVersionCommandOptions', () => {
     const options = buildVersionCommandOptions('win32')
 
     expect(options.shell).toBe(true)
+  })
+})
+
+describe('buildDirectCommandOptions', () => {
+  it('在 Windows 复用命令环境但固定禁用 shell', () => {
+    const versionOptions = buildVersionCommandOptions('win32')
+    const directOptions = buildDirectCommandOptions('win32')
+
+    expect(directOptions).toEqual({
+      env: versionOptions.env,
+      shell: false,
+      windowsHide: true
+    })
   })
 })
 
