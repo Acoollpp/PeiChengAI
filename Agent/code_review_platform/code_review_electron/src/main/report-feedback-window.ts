@@ -48,6 +48,7 @@ export const createReportFeedbackWindowManager = (
 ): ReportFeedbackWindowManager => {
   let feedbackWindow: BrowserWindow | null = null
   let context: ReportFeedbackContext | null = null
+  let currentLoadPromise: Promise<void> | null = null
 
   const clearCurrent = (window: BrowserWindow): void => {
     if (feedbackWindow !== window) {
@@ -56,12 +57,14 @@ export const createReportFeedbackWindowManager = (
 
     feedbackWindow = null
     context = null
+    currentLoadPromise = null
   }
 
   const destroyCurrent = (): void => {
     const window = feedbackWindow
     feedbackWindow = null
     context = null
+    currentLoadPromise = null
 
     if (window && !window.isDestroyed()) {
       window.destroy()
@@ -75,15 +78,46 @@ export const createReportFeedbackWindowManager = (
         feedbackWindow.webContents.id === senderId
     )
 
+  const waitForWindowLoad = async (
+    window: BrowserWindow,
+    windowLoadPromise: Promise<void>
+  ): Promise<true> => {
+    try {
+      await windowLoadPromise
+    } catch (error) {
+      if (feedbackWindow === window) {
+        clearCurrent(window)
+        if (!window.isDestroyed()) {
+          window.destroy()
+        }
+      }
+      throw error
+    }
+
+    if (feedbackWindow !== window || window.isDestroyed()) {
+      throw new Error('反馈窗口已失效')
+    }
+
+    if (currentLoadPromise === windowLoadPromise) {
+      currentLoadPromise = null
+    }
+    return true
+  }
+
   const manager: ReportFeedbackWindowManager = {
     async open(nextContext) {
       if (feedbackWindow?.isDestroyed()) {
         feedbackWindow = null
         context = null
+        currentLoadPromise = null
       }
 
       if (feedbackWindow && context?.taskId === nextContext.taskId) {
-        feedbackWindow.focus()
+        const window = feedbackWindow
+        window.focus()
+        if (currentLoadPromise) {
+          return waitForWindowLoad(window, currentLoadPromise)
+        }
         return true
       }
 
@@ -102,12 +136,13 @@ export const createReportFeedbackWindowManager = (
         clearCurrent(window)
       })
 
+      let windowLoadPromise: Promise<void>
       try {
         if (process.env.ELECTRON_RENDERER_URL) {
           const rendererUrl = process.env.ELECTRON_RENDERER_URL.replace(/\/$/, '')
-          await window.loadURL(`${rendererUrl}/feedback.html`)
+          windowLoadPromise = window.loadURL(`${rendererUrl}/feedback.html`)
         } else {
-          await window.loadFile(join(__dirname, '../renderer/feedback.html'))
+          windowLoadPromise = window.loadFile(join(__dirname, '../renderer/feedback.html'))
         }
       } catch (error) {
         clearCurrent(window)
@@ -117,7 +152,8 @@ export const createReportFeedbackWindowManager = (
         throw error
       }
 
-      return true
+      currentLoadPromise = windowLoadPromise
+      return waitForWindowLoad(window, windowLoadPromise)
     },
 
     getContext(senderId) {

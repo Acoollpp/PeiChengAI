@@ -1,37 +1,54 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ReportFeedbackContext } from '../../shared/report-feedback-window'
+import type { ReportFeedbackWindowManager } from '../report-feedback-window'
+
+interface Deferred {
+  promise: Promise<void>
+  resolve: () => void
+  reject: (error: Error) => void
+}
+
+interface MockFeedbackWindow {
+  options: Record<string, unknown>
+  handlers: Map<string, () => void>
+  destroy: ReturnType<typeof vi.fn>
+  focus: ReturnType<typeof vi.fn>
+  isDestroyed: () => boolean
+  loadDeferred: Deferred
+  loadFile: ReturnType<typeof vi.fn>
+  loadURL: ReturnType<typeof vi.fn>
+  show: ReturnType<typeof vi.fn>
+  webContents: { id: number }
+}
 
 const electronMock = vi.hoisted(() => ({
-  createdWindows: [] as Array<{
-    options: Record<string, unknown>
-    handlers: Map<string, () => void>
-    destroy: ReturnType<typeof vi.fn>
-    focus: ReturnType<typeof vi.fn>
-    loadFile: ReturnType<typeof vi.fn>
-    loadURL: ReturnType<typeof vi.fn>
-    show: ReturnType<typeof vi.fn>
-    webContents: { id: number }
-  }>,
-  nextSenderId: 100,
-  nextLoadError: null as Error | null
+  createdWindows: [] as MockFeedbackWindow[],
+  nextSenderId: 100
 }))
 
 vi.mock('electron', () => ({
   BrowserWindow: vi.fn(function BrowserWindowMock(options: Record<string, unknown>) {
     const handlers = new Map<string, () => void>()
+    let destroyed = false
+    let resolve!: () => void
+    let reject!: (error: Error) => void
+    const promise = new Promise<void>((resolvePromise, rejectPromise) => {
+      resolve = resolvePromise
+      reject = rejectPromise
+    })
+    const loadDeferred = { promise, resolve, reject }
     const window = {
       options,
       handlers,
-      destroy: vi.fn(),
-      focus: vi.fn(),
-      isDestroyed: vi.fn(() => false),
-      loadFile: vi.fn(async () => {
-        if (electronMock.nextLoadError) {
-          throw electronMock.nextLoadError
-        }
+      destroy: vi.fn(() => {
+        destroyed = true
       }),
-      loadURL: vi.fn(async () => undefined),
+      focus: vi.fn(),
+      isDestroyed: vi.fn(() => destroyed),
+      loadDeferred,
+      loadFile: vi.fn(() => loadDeferred.promise),
+      loadURL: vi.fn(() => loadDeferred.promise),
       once: vi.fn((eventName: string, handler: () => void) => {
         handlers.set(eventName, handler)
       }),
@@ -66,11 +83,25 @@ const createMainWindow = () => {
   }
 }
 
+const openLoadedWindow = async (
+  manager: ReportFeedbackWindowManager,
+  context: ReportFeedbackContext
+): Promise<MockFeedbackWindow> => {
+  const openPromise = manager.open(context)
+  const window = electronMock.createdWindows.at(-1)
+  if (!window) {
+    throw new Error('反馈窗口未创建')
+  }
+
+  window.loadDeferred.resolve()
+  await openPromise
+  return window
+}
+
 describe('ReportFeedbackWindowManager', () => {
   afterEach(() => {
     electronMock.createdWindows.splice(0)
     electronMock.nextSenderId = 100
-    electronMock.nextLoadError = null
     vi.clearAllMocks()
     vi.unstubAllEnvs()
   })
@@ -81,8 +112,7 @@ describe('ReportFeedbackWindowManager', () => {
     const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
 
     const manager = createReportFeedbackWindowManager(mainWindow as never)
-    await expect(manager.open(createContext())).resolves.toBe(true)
-
+    const openPromise = manager.open(createContext())
     const feedbackWindow = electronMock.createdWindows[0]
     expect(feedbackWindow.options).toMatchObject({
       parent: mainWindow,
@@ -102,6 +132,8 @@ describe('ReportFeedbackWindowManager', () => {
 
     feedbackWindow.handlers.get('ready-to-show')?.()
     expect(feedbackWindow.show).toHaveBeenCalledTimes(1)
+    feedbackWindow.loadDeferred.resolve()
+    await expect(openPromise).resolves.toBe(true)
   })
 
   it('生产环境加载反馈页面文件', async () => {
@@ -109,35 +141,117 @@ describe('ReportFeedbackWindowManager', () => {
     const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
     const manager = createReportFeedbackWindowManager(createMainWindow() as never)
 
-    await manager.open(createContext())
+    const feedbackWindow = await openLoadedWindow(manager, createContext())
 
-    expect(electronMock.createdWindows[0].loadFile).toHaveBeenCalledWith(
+    expect(feedbackWindow.loadFile).toHaveBeenCalledWith(
       expect.stringMatching(/renderer\/feedback\.html$/)
     )
   })
 
-  it('同一任务只聚焦现有窗口且不重复创建', async () => {
+  it('同一任务加载完成后只聚焦现有窗口且不重复创建', async () => {
     const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
     const manager = createReportFeedbackWindowManager(createMainWindow() as never)
+    const feedbackWindow = await openLoadedWindow(manager, createContext('task-1'))
 
-    await manager.open(createContext('task-1'))
     await expect(manager.open(createContext('task-1'))).resolves.toBe(true)
 
     expect(electronMock.createdWindows).toHaveLength(1)
-    expect(electronMock.createdWindows[0].focus).toHaveBeenCalledTimes(1)
+    expect(feedbackWindow.focus).toHaveBeenCalledTimes(1)
+  })
+
+  it('同一任务加载中重复打开会共同等待且加载失败时全部拒绝', async () => {
+    const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
+    const manager = createReportFeedbackWindowManager(createMainWindow() as never)
+
+    const firstOpen = manager.open(createContext('task-1'))
+    const feedbackWindow = electronMock.createdWindows[0]
+    const secondOpen = manager.open(createContext('task-1'))
+    let secondSettled = false
+    void secondOpen.then(
+      () => {
+        secondSettled = true
+      },
+      () => {
+        secondSettled = true
+      }
+    )
+    await Promise.resolve()
+
+    expect(electronMock.createdWindows).toHaveLength(1)
+    expect(feedbackWindow.focus).toHaveBeenCalledTimes(1)
+    expect(secondSettled).toBe(false)
+
+    const loadError = new Error('页面加载失败')
+    const firstResult = expect(firstOpen).rejects.toThrow('页面加载失败')
+    const secondResult = expect(secondOpen).rejects.toThrow('页面加载失败')
+    feedbackWindow.loadDeferred.reject(loadError)
+    await Promise.all([firstResult, secondResult])
   })
 
   it('不同任务销毁旧窗口后创建新窗口', async () => {
     const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
     const manager = createReportFeedbackWindowManager(createMainWindow() as never)
 
-    await manager.open(createContext('task-1'))
-    await manager.open(createContext('task-2'))
+    const firstWindow = await openLoadedWindow(manager, createContext('task-1'))
+    const secondWindow = await openLoadedWindow(manager, createContext('task-2'))
 
     expect(electronMock.createdWindows).toHaveLength(2)
-    expect(electronMock.createdWindows[0].destroy).toHaveBeenCalledTimes(1)
-    expect(manager.isCurrentSender(electronMock.createdWindows[0].webContents.id)).toBe(false)
-    expect(manager.isCurrentSender(electronMock.createdWindows[1].webContents.id)).toBe(true)
+    expect(firstWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(manager.isCurrentSender(firstWindow.webContents.id)).toBe(false)
+    expect(manager.isCurrentSender(secondWindow.webContents.id)).toBe(true)
+  })
+
+  it('旧任务 load 晚成功不会让旧 open 成功或覆盖新上下文', async () => {
+    const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
+    const manager = createReportFeedbackWindowManager(createMainWindow() as never)
+
+    const oldOpen = manager.open(createContext('task-1'))
+    const oldWindow = electronMock.createdWindows[0]
+    const newOpen = manager.open(createContext('task-2'))
+    const newWindow = electronMock.createdWindows[1]
+    newWindow.loadDeferred.resolve()
+    await expect(newOpen).resolves.toBe(true)
+
+    const oldResult = expect(oldOpen).rejects.toThrow('反馈窗口已失效')
+    oldWindow.loadDeferred.resolve()
+    await oldResult
+    expect(manager.getContext(newWindow.webContents.id).taskId).toBe('task-2')
+  })
+
+  it('旧任务 load 晚失败不会清理新上下文', async () => {
+    const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
+    const manager = createReportFeedbackWindowManager(createMainWindow() as never)
+
+    const oldOpen = manager.open(createContext('task-1'))
+    const oldWindow = electronMock.createdWindows[0]
+    const newOpen = manager.open(createContext('task-2'))
+    const newWindow = electronMock.createdWindows[1]
+    newWindow.loadDeferred.resolve()
+    await expect(newOpen).resolves.toBe(true)
+
+    const oldResult = expect(oldOpen).rejects.toThrow('旧页面加载失败')
+    oldWindow.loadDeferred.reject(new Error('旧页面加载失败'))
+    await oldResult
+    expect(manager.getContext(newWindow.webContents.id).taskId).toBe('task-2')
+  })
+
+  it('旧窗口延迟 closed 不会清理新窗口', async () => {
+    const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
+    const manager = createReportFeedbackWindowManager(createMainWindow() as never)
+
+    const oldOpen = manager.open(createContext('task-1'))
+    const oldWindow = electronMock.createdWindows[0]
+    const newOpen = manager.open(createContext('task-2'))
+    const newWindow = electronMock.createdWindows[1]
+    oldWindow.handlers.get('closed')?.()
+    expect(manager.isCurrentSender(newWindow.webContents.id)).toBe(true)
+
+    newWindow.loadDeferred.resolve()
+    await expect(newOpen).resolves.toBe(true)
+    const oldResult = expect(oldOpen).rejects.toThrow('反馈窗口已失效')
+    oldWindow.loadDeferred.resolve()
+    await oldResult
+    expect(manager.getContext(newWindow.webContents.id).taskId).toBe('task-2')
   })
 
   it('严格校验 sender 并返回无法篡改内部状态的上下文拷贝', async () => {
@@ -145,8 +259,8 @@ describe('ReportFeedbackWindowManager', () => {
     const manager = createReportFeedbackWindowManager(createMainWindow() as never)
     const original = createContext()
 
-    await manager.open(original)
-    const senderId = electronMock.createdWindows[0].webContents.id
+    const feedbackWindow = await openLoadedWindow(manager, original)
+    const senderId = feedbackWindow.webContents.id
     original.options[0].text = '外部已修改'
     const returned = manager.getContext(senderId)
     returned.options[0].text = '返回值已修改'
@@ -163,33 +277,46 @@ describe('ReportFeedbackWindowManager', () => {
     const mainWindow = createMainWindow()
     const manager = createReportFeedbackWindowManager(mainWindow as never)
 
-    await manager.open(createContext('task-1'))
-    const firstWindow = electronMock.createdWindows[0]
+    const firstWindow = await openLoadedWindow(manager, createContext('task-1'))
     firstWindow.handlers.get('closed')?.()
     expect(manager.isCurrentSender(firstWindow.webContents.id)).toBe(false)
 
-    await manager.open(createContext('task-2'))
-    const secondWindow = electronMock.createdWindows[1]
+    const secondWindow = await openLoadedWindow(manager, createContext('task-2'))
     expect(manager.close(secondWindow.webContents.id)).toBe(true)
     expect(secondWindow.destroy).toHaveBeenCalledTimes(1)
     expect(manager.isCurrentSender(secondWindow.webContents.id)).toBe(false)
 
-    await manager.open(createContext('task-3'))
-    const thirdWindow = electronMock.createdWindows[2]
+    const thirdWindow = await openLoadedWindow(manager, createContext('task-3'))
     mainWindow.handlers.get('closed')?.()
     expect(thirdWindow.destroy).toHaveBeenCalledTimes(1)
     expect(manager.isCurrentSender(thirdWindow.webContents.id)).toBe(false)
   })
 
+  it('窗口在加载期间关闭时 open 不会成功', async () => {
+    const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
+    const manager = createReportFeedbackWindowManager(createMainWindow() as never)
+
+    const openPromise = manager.open(createContext())
+    const feedbackWindow = electronMock.createdWindows[0]
+    manager.close(feedbackWindow.webContents.id)
+
+    const openResult = expect(openPromise).rejects.toThrow('反馈窗口已失效')
+    feedbackWindow.loadDeferred.resolve()
+    await openResult
+  })
+
   it('页面加载失败时销毁窗口、清理上下文并拒绝打开', async () => {
     const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
     const manager = createReportFeedbackWindowManager(createMainWindow() as never)
-    const loadError = new Error('页面加载失败')
-    electronMock.nextLoadError = loadError
 
-    await expect(manager.open(createContext())).rejects.toThrow('页面加载失败')
+    const openPromise = manager.open(createContext())
     const feedbackWindow = electronMock.createdWindows[0]
+    const openResult = expect(openPromise).rejects.toThrow('页面加载失败')
+    feedbackWindow.loadDeferred.reject(new Error('页面加载失败'))
+
+    await openResult
     expect(feedbackWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(feedbackWindow.isDestroyed()).toBe(true)
     expect(manager.isCurrentSender(feedbackWindow.webContents.id)).toBe(false)
   })
 })

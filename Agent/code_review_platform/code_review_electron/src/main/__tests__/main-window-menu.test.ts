@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 describe('main window menu', () => {
-  it('clears Electron default application menu before creating the window', async () => {
+  it('创建主窗口前清除默认菜单并在 activate 时更新稳定 manager getter', async () => {
     vi.resetModules()
     const setApplicationMenu = vi.fn()
     const whenReady = vi.fn(() => Promise.resolve())
@@ -10,28 +10,32 @@ describe('main window menu', () => {
     const loadURL = vi.fn()
     const setWindowOpenHandler = vi.fn()
     const registerIpcHandlers = vi.fn()
-    const feedbackWindowManager = { destroy: vi.fn() }
-    const createReportFeedbackWindowManager = vi.fn(() => feedbackWindowManager)
-    let createdWindow:
-      | {
-          loadFile: typeof loadFile
-          loadURL: typeof loadURL
-          webContents: { setWindowOpenHandler: typeof setWindowOpenHandler }
-        }
-      | undefined
+    const getAllWindows = vi.fn(() => [])
+    const firstFeedbackWindowManager = { destroy: vi.fn() }
+    const secondFeedbackWindowManager = { destroy: vi.fn() }
+    const createReportFeedbackWindowManager = vi
+      .fn()
+      .mockReturnValueOnce(firstFeedbackWindowManager)
+      .mockReturnValueOnce(secondFeedbackWindowManager)
+    const createdWindows: Array<{
+      loadFile: typeof loadFile
+      loadURL: typeof loadURL
+      webContents: { setWindowOpenHandler: typeof setWindowOpenHandler }
+    }> = []
 
     function BrowserWindowMock(): {
       loadFile: typeof loadFile
       loadURL: typeof loadURL
       webContents: { setWindowOpenHandler: typeof setWindowOpenHandler }
     } {
-      createdWindow = {
+      const createdWindow = {
         loadFile,
         loadURL,
         webContents: {
           setWindowOpenHandler
         }
       }
+      createdWindows.push(createdWindow)
       return createdWindow
     }
 
@@ -42,7 +46,7 @@ describe('main window menu', () => {
         quit: vi.fn(),
         setAppUserModelId: vi.fn()
       },
-      BrowserWindow: BrowserWindowMock,
+      BrowserWindow: Object.assign(BrowserWindowMock, { getAllWindows }),
       Menu: {
         setApplicationMenu
       },
@@ -67,13 +71,25 @@ describe('main window menu', () => {
       getMainWindow: expect.any(Function),
       getReportFeedbackWindowManager: expect.any(Function)
     })
-    expect(createReportFeedbackWindowManager).toHaveBeenCalledWith(createdWindow)
+    expect(createReportFeedbackWindowManager).toHaveBeenCalledWith(createdWindows[0])
     expect(createReportFeedbackWindowManager.mock.invocationCallOrder[0]).toBeLessThan(
       registerIpcHandlers.mock.invocationCallOrder[0]
     )
     const { getMainWindow, getReportFeedbackWindowManager } = registerIpcHandlers.mock.calls[0][0]
-    expect(getMainWindow()).toBe(createdWindow)
-    expect(getReportFeedbackWindowManager()).toBe(feedbackWindowManager)
+    expect(getMainWindow()).toBe(createdWindows[0])
+    expect(getReportFeedbackWindowManager()).toBe(firstFeedbackWindowManager)
+
+    const activateHandler = on.mock.calls.find(([eventName]) => eventName === 'activate')?.[1]
+    expect(activateHandler).toBeDefined()
+    activateHandler()
+
+    expect(createdWindows).toHaveLength(2)
+    expect(createReportFeedbackWindowManager).toHaveBeenNthCalledWith(2, createdWindows[1])
+    expect(getMainWindow()).toBe(createdWindows[1])
+    expect(getReportFeedbackWindowManager()).toBe(secondFeedbackWindowManager)
+
+    firstFeedbackWindowManager.destroy()
+    expect(getReportFeedbackWindowManager()).toBe(secondFeedbackWindowManager)
   })
 
   it('registers active task cancellation before app quit', async () => {
