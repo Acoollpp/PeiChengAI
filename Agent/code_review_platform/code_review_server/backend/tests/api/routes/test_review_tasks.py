@@ -1523,6 +1523,9 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
     db: Session,
     tmp_path: Path,
 ) -> None:
+    today_date = datetime.now(TASK_STATS_TIMEZONE).date()
+    week_start = today_date - timedelta(days=today_date.weekday())
+    last_week_start = week_start - timedelta(days=7)
     user, api_key = create_key_user(db)
     user.full_name = "任务统计用户"
     db.add(user)
@@ -1556,7 +1559,7 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
         report_path=str(tmp_path / "older.md"),
     )
     last_week_task = _create_review_task(client, headers, old_revision="304")
-    last_week_date = datetime.now(TASK_STATS_TIMEZONE).date() - timedelta(days=7)
+    last_week_date = today_date - timedelta(days=7)
     _set_review_task_stats_fields(
         db,
         last_week_task["id"],
@@ -1619,17 +1622,35 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
     assert this_week_response.status_code == 200
     this_week_content = this_week_response.json()
     assert this_week_content["range"] == "this_week"
-    assert this_week_content["total"] >= 3
-    assert this_week_content["success"] == 1
-    assert this_week_content["running"] == 1
-    assert this_week_content["failed_or_error"] == 1
+    task_statuses_by_date = [
+        (today_date, ReviewTaskStatus.success),
+        (today_date - timedelta(days=1), ReviewTaskStatus.failed),
+        (today_date - timedelta(days=2), ReviewTaskStatus.running_codex),
+        (last_week_date, ReviewTaskStatus.success),
+    ]
+    this_week_statuses = [
+        status for task_date, status in task_statuses_by_date if task_date >= week_start
+    ]
+    assert this_week_content["total"] == len(this_week_statuses)
+    assert this_week_content["success"] == this_week_statuses.count(ReviewTaskStatus.success)
+    assert this_week_content["running"] == this_week_statuses.count(ReviewTaskStatus.running_codex)
+    assert this_week_content["failed_or_error"] == this_week_statuses.count(
+        ReviewTaskStatus.failed
+    )
 
     assert last_week_response.status_code == 200
     last_week_content = last_week_response.json()
     assert last_week_content["range"] == "last_week"
-    assert last_week_content["total"] == 1
-    assert last_week_content["success"] == 1
-    assert last_week_content["running"] == 0
+    last_week_statuses = [
+        status
+        for task_date, status in task_statuses_by_date
+        if last_week_start <= task_date < week_start
+    ]
+    assert last_week_content["total"] == len(last_week_statuses)
+    assert last_week_content["success"] == last_week_statuses.count(ReviewTaskStatus.success)
+    assert last_week_content["running"] == last_week_statuses.count(
+        ReviewTaskStatus.running_codex
+    )
 
     assert all_response.status_code == 200
     all_content = all_response.json()
@@ -1639,26 +1660,9 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
     assert all_content["running"] == 1
     assert all_content["failed_or_error"] == 1
     assert all_content["reports_by_user"] == []
-    today_label = datetime.now(TASK_STATS_TIMEZONE).date().isoformat()
-    yesterday_label = (
-        datetime.now(TASK_STATS_TIMEZONE).date() - timedelta(days=1)
-    ).isoformat()
-    older_label = (
-        datetime.now(TASK_STATS_TIMEZONE).date() - timedelta(days=2)
-    ).isoformat()
     assert all_content["trend"] == [
-        {
-            "label": older_label,
-            "count": 1,
-        },
-        {
-            "label": yesterday_label,
-            "count": 1,
-        },
-        {
-            "label": today_label,
-            "count": 1,
-        },
+        {"label": task_date.isoformat(), "count": 1}
+        for task_date, _ in sorted(task_statuses_by_date)
     ]
 
 
@@ -2477,7 +2481,11 @@ def test_submit_report_feedback_helpful_requires_useful_text(
 
     assert response.status_code == 400
     assert response.json()["detail"] == "有帮助时请至少填写一条有用信息"
-    assert db.exec(select(ReviewTaskReportFeedback)).all() == []
+    assert db.exec(
+        select(ReviewTaskReportFeedback).where(
+            ReviewTaskReportFeedback.task_id == UUID(task["id"])
+        )
+    ).all() == []
 
 
 def test_submit_report_feedback_helpful_success_and_task_public_fields(

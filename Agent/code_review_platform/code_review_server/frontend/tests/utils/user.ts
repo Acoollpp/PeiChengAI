@@ -4,7 +4,7 @@ export async function logInWithKey(page: Page, key: string) {
   await page.goto("/login")
 
   await page.getByRole("tab", { name: "Key 登录" }).click()
-  await page.getByLabel("Key").fill(key)
+  await page.getByTestId("key-input").fill(key)
   await page.getByRole("button", { name: "登录" }).click()
   await page.waitForURL("/")
   await expect(page.getByTestId("user-menu")).toBeVisible()
