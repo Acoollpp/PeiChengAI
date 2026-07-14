@@ -275,7 +275,7 @@ describe('TaskPage', () => {
     const historyPanel = await openHistoryTasks(user)
     await user.click(within(historyPanel).getAllByRole('button', { name: '查看报告' })[1])
     await screen.findByText('历史报告 2')
-    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+    await user.click(await screen.findByRole('button', { name: '查看PDF报告' }))
 
     expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
       taskId: 'task-history-2',
