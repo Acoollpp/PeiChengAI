@@ -1895,6 +1895,106 @@ describe('registerIpcHandlers', () => {
     expect(closeTask).toHaveBeenCalledWith('task-1')
   })
 
+  it('同一任务队列排空后新一轮冲突会重新发布真实状态', async () => {
+    const { ApiError } = await import('../api-client')
+    const submitReportFeedback = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: 'feedback-1', task_id: 'task-1', user_id: 'user-1', helpful: false,
+        useful_issues_text: null
+      })
+      .mockRejectedValueOnce(new ApiError(409, 'report_feedback_exists'))
+    const readTask = vi.fn(async () => ({
+      id: 'task-1', svn_url: 'svn://repo/project', old_revision: '1', new_revision: '2',
+      status: 'success' as const, report_feedback_helpful: false,
+      report_feedback_useful_issues_text: null
+    }))
+    const send = vi.fn()
+    const closeTask = vi.fn(() => true)
+    const mainWindow = {
+      webContents: { id: 11, send, isDestroyed: () => false }
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      api: { submitReportFeedback, readTask } as never,
+      authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
+      getMainWindow: () => mainWindow as never,
+      getReportFeedbackWindowManager: () => ({ closeTask } as never)
+    })
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback:submit-negative'
+    )?.[1]
+
+    await expect(handler({ sender: { id: 11 } }, 'task-1')).resolves.toEqual({
+      taskId: 'task-1', helpful: false, usefulIssuesText: null
+    })
+    await Promise.resolve()
+    await expect(handler({ sender: { id: 11 } }, 'task-1')).resolves.toEqual({
+      taskId: 'task-1', helpful: false, usefulIssuesText: null
+    })
+
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(closeTask).toHaveBeenCalledTimes(2)
+    expect(readTask).toHaveBeenCalledTimes(1)
+  })
+
+  it('不同任务并发提交时各自发布和关闭且互不等待', async () => {
+    let resolveTask1!: (value: unknown) => void
+    const task1Pending = new Promise((resolve) => {
+      resolveTask1 = resolve
+    })
+    const submitReportFeedback = vi.fn(
+      async (_token: string, taskId: string) => {
+        if (taskId === 'task-1') {
+          return task1Pending
+        }
+        return {
+          id: 'feedback-2', task_id: 'task-2', user_id: 'user-1', helpful: false,
+          useful_issues_text: null
+        }
+      }
+    )
+    const send = vi.fn()
+    const closeTask = vi.fn(() => true)
+    const mainWindow = {
+      webContents: { id: 11, send, isDestroyed: () => false }
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      api: { submitReportFeedback } as never,
+      authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
+      getMainWindow: () => mainWindow as never,
+      getReportFeedbackWindowManager: () => ({ closeTask } as never)
+    })
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback:submit-negative'
+    )?.[1]
+
+    const task1Result = handler({ sender: { id: 11 } }, 'task-1')
+    const task2Result = handler({ sender: { id: 11 } }, 'task-2')
+    await expect(task2Result).resolves.toEqual({
+      taskId: 'task-2', helpful: false, usefulIssuesText: null
+    })
+    expect(send).toHaveBeenCalledWith('report-feedback:submitted', {
+      taskId: 'task-2', helpful: false, usefulIssuesText: null
+    })
+    expect(closeTask).toHaveBeenCalledWith('task-2')
+    expect(send).not.toHaveBeenCalledWith('report-feedback:submitted', expect.objectContaining({
+      taskId: 'task-1'
+    }))
+
+    resolveTask1({
+      id: 'feedback-1', task_id: 'task-1', user_id: 'user-1', helpful: false,
+      useful_issues_text: null
+    })
+    await expect(task1Result).resolves.toEqual({
+      taskId: 'task-1', helpful: false, usefulIssuesText: null
+    })
+    expect(send.mock.calls.filter(([channel]) => channel === 'report-feedback:submitted')).toHaveLength(2)
+    expect(closeTask).toHaveBeenCalledTimes(2)
+    expect(closeTask).toHaveBeenCalledWith('task-1')
+  })
+
   it('首次通知目标已销毁时不标记已发布，后续冲突可在可用窗口补发', async () => {
     const { ApiError } = await import('../api-client')
     const submitReportFeedback = vi

@@ -463,6 +463,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     void tail.then(() => {
       if (reportFeedbackQueues.get(taskId) === tail) {
         reportFeedbackQueues.delete(taskId)
+        publishedReportFeedbackTasks.delete(taskId)
       }
     })
     return result
