@@ -28,6 +28,7 @@ import type {
   TaskCompletionNotificationResult
 } from '../shared/types'
 import { generatePdfReport } from './report-pdf-generator'
+import type { ReportFeedbackWindowManager } from './report-feedback-window'
 import {
   defaultPrepareWorkspace,
   defaultRunCodex,
@@ -76,6 +77,7 @@ export interface IpcHandlerDependencies {
   runtimePaths?: RuntimePaths
   appUpdateService?: AppUpdateService
   getMainWindow?: () => BrowserWindow | undefined
+  getReportFeedbackWindowManager?: () => ReportFeedbackWindowManager | undefined
 }
 
 export interface DownloadCurrentReportResult {

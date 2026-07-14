@@ -3,10 +3,15 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { cancelAllActiveReviewTasks, registerIpcHandlers } from './ipc'
+import {
+  createReportFeedbackWindowManager,
+  type ReportFeedbackWindowManager
+} from './report-feedback-window'
 import { configureExternalLinkHandling } from './window-security'
 
 const APP_USER_MODEL_ID = 'com.peicheng.code-review'
 let mainWindow: BrowserWindow | undefined
+let reportFeedbackWindowManager: ReportFeedbackWindowManager | undefined
 
 const resolvePreloadPath = (): string => {
   const mjsPath = join(__dirname, '../preload/index.mjs')
@@ -31,6 +36,7 @@ const createWindow = (): void => {
     }
   })
   const window = mainWindow
+  reportFeedbackWindowManager = createReportFeedbackWindowManager(window)
 
   configureExternalLinkHandling(window)
 
@@ -44,10 +50,11 @@ const createWindow = (): void => {
 app.whenReady().then(() => {
   app.setAppUserModelId(APP_USER_MODEL_ID)
   Menu.setApplicationMenu(null)
-  registerIpcHandlers({
-    getMainWindow: () => mainWindow
-  })
   createWindow()
+  registerIpcHandlers({
+    getMainWindow: () => mainWindow,
+    getReportFeedbackWindowManager: () => reportFeedbackWindowManager
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -67,6 +74,8 @@ app.on('window-all-closed', () => {
 let isQuittingAfterTaskCleanup = false
 
 app.on('before-quit', (event) => {
+  reportFeedbackWindowManager?.destroy()
+
   if (isQuittingAfterTaskCleanup) {
     return
   }

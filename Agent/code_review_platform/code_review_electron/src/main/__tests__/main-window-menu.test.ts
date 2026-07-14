@@ -10,6 +10,8 @@ describe('main window menu', () => {
     const loadURL = vi.fn()
     const setWindowOpenHandler = vi.fn()
     const registerIpcHandlers = vi.fn()
+    const feedbackWindowManager = { destroy: vi.fn() }
+    const createReportFeedbackWindowManager = vi.fn(() => feedbackWindowManager)
     let createdWindow:
       | {
           loadFile: typeof loadFile
@@ -51,6 +53,9 @@ describe('main window menu', () => {
     vi.doMock('../ipc', () => ({
       registerIpcHandlers
     }))
+    vi.doMock('../report-feedback-window', () => ({
+      createReportFeedbackWindowManager
+    }))
 
     await import('../index')
     await Promise.resolve()
@@ -59,10 +64,16 @@ describe('main window menu', () => {
     expect(app.setAppUserModelId).toHaveBeenCalledWith('com.peicheng.code-review')
     expect(setApplicationMenu).toHaveBeenCalledWith(null)
     expect(registerIpcHandlers).toHaveBeenCalledWith({
-      getMainWindow: expect.any(Function)
+      getMainWindow: expect.any(Function),
+      getReportFeedbackWindowManager: expect.any(Function)
     })
-    const getMainWindow = registerIpcHandlers.mock.calls[0][0].getMainWindow
+    expect(createReportFeedbackWindowManager).toHaveBeenCalledWith(createdWindow)
+    expect(createReportFeedbackWindowManager.mock.invocationCallOrder[0]).toBeLessThan(
+      registerIpcHandlers.mock.invocationCallOrder[0]
+    )
+    const { getMainWindow, getReportFeedbackWindowManager } = registerIpcHandlers.mock.calls[0][0]
     expect(getMainWindow()).toBe(createdWindow)
+    expect(getReportFeedbackWindowManager()).toBe(feedbackWindowManager)
   })
 
   it('registers active task cancellation before app quit', async () => {
@@ -74,6 +85,8 @@ describe('main window menu', () => {
     const loadURL = vi.fn()
     const setWindowOpenHandler = vi.fn()
     const cancelAllActiveReviewTasks = vi.fn(async () => undefined)
+    const feedbackWindowManager = { destroy: vi.fn() }
+    const createReportFeedbackWindowManager = vi.fn(() => feedbackWindowManager)
 
     function BrowserWindowMock(): {
       loadFile: typeof loadFile
@@ -108,6 +121,9 @@ describe('main window menu', () => {
       registerIpcHandlers: vi.fn(),
       cancelAllActiveReviewTasks
     }))
+    vi.doMock('../report-feedback-window', () => ({
+      createReportFeedbackWindowManager
+    }))
 
     await import('../index')
     await Promise.resolve()
@@ -119,6 +135,7 @@ describe('main window menu', () => {
 
     await beforeQuitHandler(event)
 
+    expect(feedbackWindowManager.destroy).toHaveBeenCalledTimes(1)
     expect(cancelAllActiveReviewTasks).toHaveBeenCalledWith()
     expect(event.preventDefault).toHaveBeenCalledWith()
   })
@@ -132,6 +149,7 @@ describe('main window menu', () => {
     const loadURL = vi.fn()
     const setWindowOpenHandler = vi.fn()
     const cancelAllActiveReviewTasks = vi.fn(async () => undefined)
+    const createReportFeedbackWindowManager = vi.fn(() => ({ destroy: vi.fn() }))
 
     function BrowserWindowMock(): {
       loadFile: typeof loadFile
@@ -165,6 +183,9 @@ describe('main window menu', () => {
     vi.doMock('../ipc', () => ({
       registerIpcHandlers: vi.fn(),
       cancelAllActiveReviewTasks
+    }))
+    vi.doMock('../report-feedback-window', () => ({
+      createReportFeedbackWindowManager
     }))
 
     await import('../index')
