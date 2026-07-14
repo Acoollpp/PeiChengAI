@@ -578,8 +578,9 @@ describe('registerIpcHandlers', () => {
       api: api as never,
       authStore: authStore as never,
       syncSkill,
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      preflightSvn: vi.fn(),
       runCodex: vi.fn(async () => {
         await writeFile(reportPath, '# latest report\n')
       })
@@ -681,8 +682,9 @@ describe('registerIpcHandlers', () => {
       api: api as never,
       authStore: authStore as never,
       syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      preflightSvn: vi.fn(),
       runCodex: vi.fn(async () => {
         await writeFile(reportPath, '# report\n')
       })
@@ -746,8 +748,9 @@ describe('registerIpcHandlers', () => {
       api: api as never,
       authStore: authStore as never,
       syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      preflightSvn: vi.fn(),
       runCodex: vi.fn(async () => {
         await writeFile(reportPath, '# retry report\n')
       })
@@ -813,8 +816,9 @@ describe('registerIpcHandlers', () => {
       api: api as never,
       authStore: authStore as never,
       syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      preflightSvn: vi.fn(),
       runCodex: vi.fn(async ({ onProgress }) => {
         onProgress?.({
           taskId: 'task-1',
@@ -872,7 +876,7 @@ describe('registerIpcHandlers', () => {
       api: api as never,
       authStore: authStore as never,
       syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       runtimePaths: {
         runtimeRoot: cwd,
         skillPackagesDir: join(cwd, 'skill-packages'),
@@ -884,6 +888,7 @@ describe('registerIpcHandlers', () => {
         imagesDirForTask: () => imagesDir
       },
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      preflightSvn: vi.fn(),
       runCodex: vi.fn(async ({ onProgress }) => {
         onProgress?.({
           taskId: 'task-log',
@@ -969,8 +974,9 @@ describe('registerIpcHandlers', () => {
       api: api as never,
       authStore: authStore as never,
       syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      preflightSvn: vi.fn(),
       runCodex: runCodex as never
     })
 
@@ -1037,8 +1043,9 @@ describe('registerIpcHandlers', () => {
       api: api as never,
       authStore: authStore as never,
       syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      preflightSvn: vi.fn(),
       runCodex: runCodex as never
     })
 
@@ -1419,12 +1426,13 @@ describe('registerIpcHandlers', () => {
       api: api as never,
       authStore: authStore as never,
       syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({
         cwd: latestWorkspace,
         reportPath: latestReportPath,
         imagesDir: join(latestWorkspace, 'images')
       })),
+      preflightSvn: vi.fn(),
       runCodex: vi.fn(async () => {
         await mkdir(latestWorkspace, { recursive: true })
         await writeFile(latestReportPath, '# latest report\n')

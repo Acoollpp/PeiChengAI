@@ -2,7 +2,11 @@ import { copyFile, mkdir, readFile, stat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 
 import type { ApiClient, CreateTaskRequest, UpdateTaskStatusRequest } from './api-client'
-import { checkEnvironment, type EnvironmentCheckResult } from './environment-checker'
+import {
+  buildDirectCommandOptions,
+  checkEnvironment,
+  type EnvironmentCheckResult
+} from './environment-checker'
 import { buildReviewPrompt, CodexReviewError, runCodexReview, type CodexErrorCode } from './codex-runner'
 import { generatePdfReport, type GeneratePdfReportResult } from './report-pdf-generator'
 import {
@@ -12,6 +16,11 @@ import {
   uploadRequirementFile
 } from './report-uploader'
 import { getRuntimePaths } from './runtime-paths'
+import {
+  runSvnPreflight,
+  SvnPreflightError,
+  type SvnPreflightInput
+} from './svn-preflight'
 import { resolveReviewReportFileName, type RunSvnLog } from './svn-report-name-resolver'
 import { CODEX_REVIEW_LOG_FILE_NAME } from './task-log'
 import type {
@@ -50,6 +59,7 @@ export interface PrepareWorkspaceInput {
   svnUrl: string
   oldRevision: string
   newRevision: string
+  svnCommand: string
   requirementFilePath?: string
   generatedAt?: Date
   runSvnLog?: RunSvnLog
@@ -92,6 +102,7 @@ export interface TaskAgentApi {
 export interface TaskAgentDependencies {
   api: TaskAgentApi
   checkEnvironment: () => Promise<EnvironmentCheckResult>
+  preflightSvn: (input: SvnPreflightInput) => Promise<void>
   prepareWorkspace: (input: PrepareWorkspaceInput) => Promise<PreparedWorkspace>
   runCodex: (input: RunCodexInput) => Promise<unknown>
   generatePdfReport: (reportPath: string) => Promise<GeneratePdfReportResult>
@@ -146,6 +157,7 @@ export const defaultPrepareWorkspace = async ({
   svnUrl,
   oldRevision,
   newRevision,
+  svnCommand,
   requirementFilePath,
   generatedAt,
   runSvnLog
@@ -154,6 +166,7 @@ export const defaultPrepareWorkspace = async ({
   const cwd = runtimePaths.workspaceForTask(taskId)
   const imagesDir = runtimePaths.imagesDirForTask(taskId)
   const reportFileName = await resolveReviewReportFileName({
+    svnCommand,
     svnUrl,
     oldRevision,
     newRevision,
@@ -252,6 +265,7 @@ export const defaultRunCodex = async ({
 export const createTaskAgentDependencies = (api: ApiClient): TaskAgentDependencies => ({
   api,
   checkEnvironment,
+  preflightSvn: runSvnPreflight,
   prepareWorkspace: defaultPrepareWorkspace,
   runCodex: defaultRunCodex,
   generatePdfReport,
@@ -344,12 +358,34 @@ const runExistingReviewTask = async (
       return { taskId: task.id, status: 'environment_error' }
     }
 
+    if (!environment.svnPath) {
+      throw new Error('环境检查已通过但未返回 SVN CLI 路径')
+    }
+
+    emitStage(
+      onProgress,
+      task.id,
+      input.clientTaskId,
+      'checking_environment',
+      '校验 SVN 地址和版本'
+    )
+    await dependencies.preflightSvn({
+      svnUrl: task.svn_url,
+      oldRevision: task.old_revision,
+      newRevision: task.new_revision,
+      svnCommand: environment.svnPath,
+      commandOptions: buildDirectCommandOptions(),
+      signal: input.signal
+    })
+    throwIfCancelled(input.signal)
+
     emitStage(onProgress, task.id, input.clientTaskId, 'preparing_workspace', '准备任务工作区')
     const workspace = await dependencies.prepareWorkspace({
       taskId: task.id,
       svnUrl: task.svn_url,
       oldRevision: task.old_revision,
       newRevision: task.new_revision,
+      svnCommand: environment.svnPath,
       requirementFilePath: input.requirementFilePath
     })
     throwIfCancelled(input.signal)
@@ -420,7 +456,9 @@ const runExistingReviewTask = async (
 
     const errorMessage = error instanceof CodexReviewError
       ? `${codexErrorMessages[error.errorCode]}（Codex 分析：${error.message}）`
-      : toUserFacingErrorMessage(sanitizeErrorSummary(error, input.token))
+      : error instanceof SvnPreflightError
+        ? toSvnPreflightUserMessage(error, task)
+        : toUserFacingErrorMessage(sanitizeErrorSummary(error, input.token))
 
     await updateStatus(dependencies, input.token, task.id, {
       status: 'failed',
@@ -440,7 +478,33 @@ const throwIfCancelled = (signal: AbortSignal | undefined): void => {
 
 const isCancelledError = (error: unknown): boolean =>
   error instanceof ReviewTaskCancelledError ||
+  (error instanceof SvnPreflightError && error.code === 'CANCELLED') ||
   (error instanceof Error && error.message === '任务已取消')
+
+const toSvnPreflightUserMessage = (error: SvnPreflightError, task: ReviewTask): string => {
+  switch (error.code) {
+    case 'NEW_REVISION_UNAVAILABLE':
+      return `新版本 ${task.new_revision} 在该 SVN 地址下不存在或不可访问。`
+    case 'OLD_REVISION_UNAVAILABLE':
+      return `旧版本 ${task.old_revision} 在该 SVN 地址下不存在或不可访问。`
+    case 'AUTHENTICATION_FAILED':
+      return 'SVN 认证失败，请先在本机 SVN 客户端更新登录凭据。'
+    case 'PERMISSION_DENIED':
+      return '当前 SVN 账号无权访问该地址或版本，请联系管理员开通权限。'
+    case 'NETWORK_FAILED':
+      return '无法连接 SVN 服务，请检查网络后重试。'
+    case 'TIMEOUT':
+      return 'SVN 地址或版本校验超时，请检查网络后重试。'
+    case 'CLI_START_FAILED':
+      return 'SVN CLI 启动失败，请联系管理员处理。'
+    case 'INVALID_ARGUMENT':
+      return 'SVN 地址或版本参数无效，请检查后重试。'
+    case 'INVALID_REVISION_ORDER':
+      return 'SVN 新旧版本范围无效，请确保旧版本小于新版本。'
+    case 'CANCELLED':
+      return '任务已取消'
+  }
+}
 
 const resolveSkillName = (
   requestSkillName: string | undefined,

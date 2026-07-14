@@ -12,6 +12,7 @@ import {
   retryReviewTask,
   type TaskAgentDependencies
 } from '../task-agent'
+import { SvnPreflightError } from '../svn-preflight'
 import type { ReviewTask } from '../../shared/types'
 
 const request = {
@@ -34,12 +35,16 @@ const makeTask = (overrides: Partial<ReviewTask> = {}): ReviewTask => ({
 const withPdfDependencies = (
   dependencies: Omit<
     TaskAgentDependencies,
-    'generatePdfReport' | 'uploadPdfReport' | 'uploadRequirementFile'
+    'preflightSvn' | 'generatePdfReport' | 'uploadPdfReport' | 'uploadRequirementFile'
   > &
     Partial<
-      Pick<TaskAgentDependencies, 'generatePdfReport' | 'uploadPdfReport' | 'uploadRequirementFile'>
+      Pick<
+        TaskAgentDependencies,
+        'preflightSvn' | 'generatePdfReport' | 'uploadPdfReport' | 'uploadRequirementFile'
+      >
     >
 ): TaskAgentDependencies => ({
+  preflightSvn: vi.fn(),
   generatePdfReport: vi.fn(async (reportPath: string) => ({
     status: 'ready' as const,
     reportPath,
@@ -76,6 +81,7 @@ describe('executeReviewTask', () => {
 
     const workspace = await defaultPrepareWorkspace({
       taskId: 'task-dynamic-report',
+      svnCommand: '/fake/bin/svn',
       svnUrl: 'svn://repo/project',
       oldRevision: 'r12',
       newRevision: '14',
@@ -152,7 +158,10 @@ describe('executeReviewTask', () => {
       },
       checkEnvironment: vi.fn(async () => {
         calls.push('checkEnvironment')
-        return { status: 'ready' as const }
+        return { status: 'ready' as const, svnPath: '/fake/bin/svn' }
+      }),
+      preflightSvn: vi.fn(async () => {
+        calls.push('preflight')
       }),
       prepareWorkspace: vi.fn(async () => {
         calls.push('prepareWorkspace')
@@ -216,12 +225,14 @@ describe('executeReviewTask', () => {
       taskId: 'task-1',
       svnUrl: 'svn://repo/project',
       oldRevision: '12',
-      newRevision: '14'
+      newRevision: '14',
+      svnCommand: '/fake/bin/svn'
     })
     expect(calls).toEqual([
       'createTask',
       'status:checking_environment',
       'checkEnvironment',
+      'preflight',
       'prepareWorkspace',
       'uploadRequirementFile',
       'status:running_codex',
@@ -239,6 +250,186 @@ describe('executeReviewTask', () => {
         report_path: reportPath
       })
     )
+  })
+
+  it('在工作区准备前使用环境探测到的命令执行 SVN 预检', async () => {
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => makeTask()),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({
+        status: 'ready' as const,
+        svnPath: '/opt/company/bin/svn'
+      })),
+      prepareWorkspace: vi.fn(async () => {
+        throw new Error('顺序断言完成后停止')
+      }),
+      runCodex: vi.fn(),
+      uploadReport: vi.fn()
+    })
+    const events: string[] = []
+
+    await expect(
+      executeReviewTask({ token: 'token-123', request }, dependencies, (event) => {
+        if (event.type === 'stage') events.push(`${event.stage}:${event.message}`)
+      })
+    ).rejects.toThrow('顺序断言完成后停止')
+
+    expect(dependencies.preflightSvn).toHaveBeenCalledWith({
+      svnUrl: request.svn_url,
+      oldRevision: request.old_revision,
+      newRevision: request.new_revision,
+      svnCommand: '/opt/company/bin/svn',
+      commandOptions: expect.objectContaining({
+        env: expect.objectContaining({ PATH: expect.any(String) }),
+        shell: false,
+        windowsHide: true
+      }),
+      signal: undefined
+    })
+    expect(vi.mocked(dependencies.preflightSvn).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(dependencies.prepareWorkspace).mock.invocationCallOrder[0]
+    )
+    expect(events).toContain('checking_environment:校验 SVN 地址和版本')
+  })
+
+  it.each([
+    ['NEW_REVISION_UNAVAILABLE', '新版本 14 在该 SVN 地址下不存在或不可访问。'],
+    ['OLD_REVISION_UNAVAILABLE', '旧版本 12 在该 SVN 地址下不存在或不可访问。'],
+    ['AUTHENTICATION_FAILED', 'SVN 认证失败，请先在本机 SVN 客户端更新登录凭据。'],
+    ['PERMISSION_DENIED', '当前 SVN 账号无权访问该地址或版本，请联系管理员开通权限。'],
+    ['NETWORK_FAILED', '无法连接 SVN 服务，请检查网络后重试。'],
+    ['TIMEOUT', 'SVN 地址或版本校验超时，请检查网络后重试。'],
+    ['CLI_START_FAILED', 'SVN CLI 启动失败，请联系管理员处理。'],
+    ['INVALID_ARGUMENT', 'SVN 地址或版本参数无效，请检查后重试。'],
+    ['INVALID_REVISION_ORDER', 'SVN 新旧版本范围无效，请确保旧版本小于新版本。']
+  ] as const)('预检错误 %s 使用固定用户消息并短路后续步骤', async (code, expectedMessage) => {
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => makeTask()),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      preflightSvn: vi.fn(async () => {
+        throw new SvnPreflightError(code)
+      }),
+      prepareWorkspace: vi.fn(),
+      runCodex: vi.fn(),
+      generatePdfReport: vi.fn(),
+      uploadRequirementFile: vi.fn(),
+      uploadReport: vi.fn(),
+      uploadPdfReport: vi.fn()
+    })
+
+    await expect(executeReviewTask({ token: 'token-123', request }, dependencies)).rejects.toThrow(
+      expectedMessage
+    )
+
+    expect(dependencies.api.updateTaskStatus).toHaveBeenLastCalledWith('token-123', 'task-1', {
+      status: 'failed',
+      error_message: expectedMessage
+    })
+    expect(dependencies.prepareWorkspace).not.toHaveBeenCalled()
+    expect(dependencies.uploadRequirementFile).not.toHaveBeenCalled()
+    expect(dependencies.runCodex).not.toHaveBeenCalled()
+    expect(dependencies.generatePdfReport).not.toHaveBeenCalled()
+    expect(dependencies.uploadReport).not.toHaveBeenCalled()
+    expect(dependencies.uploadPdfReport).not.toHaveBeenCalled()
+  })
+
+  it('环境 ready 但缺少 svnPath 时失败且不执行预检和后续步骤', async () => {
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => makeTask()),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      prepareWorkspace: vi.fn(),
+      runCodex: vi.fn(),
+      generatePdfReport: vi.fn(),
+      uploadRequirementFile: vi.fn(),
+      uploadReport: vi.fn(),
+      uploadPdfReport: vi.fn()
+    })
+
+    await expect(executeReviewTask({ token: 'token-123', request }, dependencies)).rejects.toThrow(
+      '环境检查已通过但未返回 SVN CLI 路径'
+    )
+    expect(dependencies.preflightSvn).not.toHaveBeenCalled()
+    expect(dependencies.prepareWorkspace).not.toHaveBeenCalled()
+    expect(dependencies.runCodex).not.toHaveBeenCalled()
+    expect(dependencies.generatePdfReport).not.toHaveBeenCalled()
+    expect(dependencies.uploadReport).not.toHaveBeenCalled()
+    expect(dependencies.uploadPdfReport).not.toHaveBeenCalled()
+  })
+
+  it('重试反向历史版本任务时由预检拒绝且不准备工作区', async () => {
+    const reverseTask = makeTask({
+      id: 'task-reverse',
+      old_revision: '20',
+      new_revision: '10',
+      skill_name: request.skill_name,
+      status: 'failed'
+    })
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(),
+        readTask: vi.fn(async () => reverseTask),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      preflightSvn: vi.fn(async () => {
+        throw new SvnPreflightError('INVALID_REVISION_ORDER')
+      }),
+      prepareWorkspace: vi.fn(),
+      runCodex: vi.fn(),
+      uploadReport: vi.fn()
+    })
+
+    await expect(
+      retryReviewTask({ token: 'token-123', taskId: reverseTask.id }, dependencies)
+    ).rejects.toThrow('SVN 新旧版本范围无效，请确保旧版本小于新版本。')
+
+    expect(dependencies.preflightSvn).toHaveBeenCalledWith(
+      expect.objectContaining({ oldRevision: '20', newRevision: '10' })
+    )
+    expect(dependencies.prepareWorkspace).not.toHaveBeenCalled()
+    expect(dependencies.runCodex).not.toHaveBeenCalled()
+    expect(dependencies.generatePdfReport).not.toHaveBeenCalled()
+    expect(dependencies.uploadReport).not.toHaveBeenCalled()
+    expect(dependencies.uploadPdfReport).not.toHaveBeenCalled()
+  })
+
+  it('预检期间取消时返回 cancelled 且不执行任何后续步骤', async () => {
+    const controller = new AbortController()
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => makeTask()),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      preflightSvn: vi.fn(async () => {
+        controller.abort()
+        throw new SvnPreflightError('CANCELLED')
+      }),
+      prepareWorkspace: vi.fn(),
+      runCodex: vi.fn(),
+      generatePdfReport: vi.fn(),
+      uploadRequirementFile: vi.fn(),
+      uploadReport: vi.fn(),
+      uploadPdfReport: vi.fn()
+    })
+
+    await expect(
+      executeReviewTask({ token: 'token-123', request, signal: controller.signal }, dependencies)
+    ).resolves.toEqual({ taskId: 'task-1', status: 'cancelled' })
+    expect(dependencies.prepareWorkspace).not.toHaveBeenCalled()
+    expect(dependencies.uploadRequirementFile).not.toHaveBeenCalled()
+    expect(dependencies.runCodex).not.toHaveBeenCalled()
+    expect(dependencies.generatePdfReport).not.toHaveBeenCalled()
+    expect(dependencies.uploadReport).not.toHaveBeenCalled()
+    expect(dependencies.uploadPdfReport).not.toHaveBeenCalled()
   })
 
   it('retries an existing failed task without creating a new review task', async () => {
@@ -264,7 +455,10 @@ describe('executeReviewTask', () => {
           calls.push(`status:${payload.status}`)
         })
       },
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      preflightSvn: vi.fn(async () => {
+        calls.push('preflight')
+      }),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
       runCodex: vi.fn(async () => {
         await writeFile(reportPath, '# retry report\n')
@@ -299,10 +493,12 @@ describe('executeReviewTask', () => {
       svnUrl: 'svn://repo/project',
       oldRevision: '12',
       newRevision: '14',
+      svnCommand: '/fake/bin/svn',
       requirementFilePath: '/tmp/产品开发需求表.xls'
     })
     expect(calls).toEqual([
       'status:checking_environment',
+      'preflight',
       'status:running_codex',
       'status:uploading_report'
     ])
@@ -318,7 +514,7 @@ describe('executeReviewTask', () => {
         createTask: vi.fn(async () => makeTask()),
         updateTaskStatus: vi.fn(async () => undefined)
       },
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
       runCodex: vi.fn(async () => {
         await writeFile(reportPath, '# report\n')
@@ -357,7 +553,7 @@ describe('executeReviewTask', () => {
         createTask: vi.fn(async () => makeTask()),
         updateTaskStatus: vi.fn(async () => undefined)
       },
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
       runCodex: vi.fn(async () => {
         await writeFile(reportPath, '# 不应上传\n')
@@ -394,7 +590,7 @@ describe('executeReviewTask', () => {
         createTask: vi.fn(async () => makeTask()),
         updateTaskStatus: vi.fn(async () => undefined)
       },
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
       runCodex: vi.fn(async ({ onProgress }) => {
         onProgress?.({
@@ -420,6 +616,7 @@ describe('executeReviewTask', () => {
     expect(events).toEqual([
       'local-task-1:task-1:stage:created:任务已创建',
       'local-task-1:task-1:stage:checking_environment:检查本机环境',
+      'local-task-1:task-1:stage:checking_environment:校验 SVN 地址和版本',
       'local-task-1:task-1:stage:preparing_workspace:准备任务工作区',
       'local-task-1:task-1:stage:running_codex:启动 Codex 执行审查 Skill',
       'local-task-1:task-1:codex_output:stdout:读取 Skill\n',
@@ -440,7 +637,7 @@ describe('executeReviewTask', () => {
         createTask: vi.fn(async () => makeTask()),
         updateTaskStatus: vi.fn(async () => undefined)
       },
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({
         cwd,
         reportPath,
@@ -486,7 +683,7 @@ describe('executeReviewTask', () => {
         createTask: vi.fn(async () => makeTask()),
         updateTaskStatus: vi.fn(async () => undefined)
       },
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
       runCodex: vi.fn(async () => {
         throw new Error(`failure using token secret-token at ${cwd}`)
@@ -535,7 +732,7 @@ describe('executeReviewTask', () => {
           createTask: vi.fn(async () => makeTask()),
           updateTaskStatus: vi.fn(async () => undefined)
         },
-        checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+        checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
         prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
         runCodex: vi.fn(async () => {
           throw new Error(item.raw)
@@ -564,7 +761,7 @@ describe('executeReviewTask', () => {
         createTask: vi.fn(async () => makeTask()),
         updateTaskStatus: vi.fn(async () => undefined)
       },
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
       runCodex: vi.fn(async () => {
         throw new Error('failed with password=hunter2 access_token: abc Bearer xyz')
@@ -642,6 +839,7 @@ describe('defaultPrepareWorkspace', () => {
     const { defaultPrepareWorkspace } = await import('../task-agent')
     const workspace = await defaultPrepareWorkspace({
       taskId: 'task-runtime-workspace',
+      svnCommand: '/fake/bin/svn',
       svnUrl: 'svn://repo/project',
       oldRevision: 'r12',
       newRevision: 'r14',
@@ -689,6 +887,7 @@ describe('defaultPrepareWorkspace', () => {
     const { defaultPrepareWorkspace } = await import('../task-agent')
     const workspace = await defaultPrepareWorkspace({
       taskId: 'task-with-requirement',
+      svnCommand: '/fake/bin/svn',
       svnUrl: 'svn://repo/project',
       oldRevision: '12',
       newRevision: '14',

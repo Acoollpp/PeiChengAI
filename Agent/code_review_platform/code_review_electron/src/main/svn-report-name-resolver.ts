@@ -7,6 +7,7 @@ const REVIEW_REPORT_SUFFIX = '_审查报告.md'
 const MAX_REPORT_BASENAME_LENGTH = 180
 
 export interface ResolveReviewReportFileNameInput {
+  svnCommand: string
   svnUrl: string
   oldRevision: string
   newRevision: string
@@ -22,11 +23,12 @@ export interface RunSvnLogInput {
 export type RunSvnLog = (input: RunSvnLogInput) => Promise<string>
 
 export const resolveReviewReportFileName = async ({
+  svnCommand,
   svnUrl,
   oldRevision,
   newRevision,
   generatedAt,
-  runSvnLog = defaultRunSvnLog
+  runSvnLog = (input) => defaultRunSvnLog(svnCommand, input)
 }: ResolveReviewReportFileNameInput): Promise<string> => {
   const softwareVersion = await tryReadSoftwareVersionFromSvnLog({
     svnUrl,
@@ -83,9 +85,16 @@ const tryReadSoftwareVersionFromSvnLog = async ({
   }
 }
 
-const defaultRunSvnLog = ({ svnUrl, revision }: RunSvnLogInput): Promise<string> =>
+const defaultRunSvnLog = (
+  svnCommand: string,
+  { svnUrl, revision }: RunSvnLogInput
+): Promise<string> =>
   new Promise((resolve, reject) => {
-    const child = spawn('svn', buildSvnLogArgs({ svnUrl, revision }), buildVersionCommandOptions())
+    const child = spawn(
+      svnCommand,
+      buildSvnLogArgs({ svnUrl, revision }),
+      buildVersionCommandOptions()
+    )
     const stdoutChunks: Buffer[] = []
     const stderrChunks: Buffer[] = []
     let settled = false

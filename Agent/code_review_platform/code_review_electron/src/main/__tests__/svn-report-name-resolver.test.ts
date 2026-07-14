@@ -1,4 +1,14 @@
+import { EventEmitter } from 'node:events'
+import { PassThrough } from 'node:stream'
+
 import { describe, expect, it, vi } from 'vitest'
+
+const spawnMock = vi.hoisted(() => vi.fn())
+
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
+  spawn: spawnMock
+}))
 
 import {
   buildSvnLogArgs,
@@ -35,6 +45,7 @@ P16S100A-41662-1.30-000
 </log>`)
 
     const reportFileName = await resolveReviewReportFileName({
+      svnCommand: '/fake/bin/svn',
       svnUrl: 'https://192.168.0.233/svn/src_home/PCB_31154V110/SST24-1662',
       oldRevision: '16701',
       newRevision: '28957',
@@ -59,6 +70,7 @@ P16S100A-41662-1.30-000
 
     await expect(
       resolveReviewReportFileName({
+        svnCommand: '/fake/bin/svn',
         svnUrl: 'https://192.168.0.233/svn/src_home/PCB_1447V330/SST23-1144-T',
         oldRevision: '42634',
         newRevision: '42977',
@@ -75,6 +87,7 @@ P16S100A-41662-1.30-000
 
     await expect(
       resolveReviewReportFileName({
+        svnCommand: '/fake/bin/svn',
         svnUrl: 'https://192.168.0.233/',
         oldRevision: 'r12',
         newRevision: '14',
@@ -82,6 +95,43 @@ P16S100A-41662-1.30-000
         runSvnLog
       })
     ).resolves.toBe('r12_r14审查报告_20260610_142530.md')
+  })
+
+  it('默认日志执行器使用调用方提供的 SVN 命令和版本命令选项', async () => {
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: PassThrough
+      stderr: PassThrough
+    }
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit(
+          'data',
+          Buffer.from('<log><logentry revision="14"><msg>代码：APP-1.2.3</msg></logentry></log>')
+        )
+        child.emit('close', 0)
+      })
+      return child
+    })
+
+    await expect(
+      resolveReviewReportFileName({
+        svnCommand: '/opt/company/bin/svn',
+        svnUrl: 'svn://repo/project',
+        oldRevision: '12',
+        newRevision: '14'
+      })
+    ).resolves.toBe('APP-1.2.3_审查报告.md')
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      '/opt/company/bin/svn',
+      ['log', '--xml', '-r', '14', 'svn://repo/project@14'],
+      expect.objectContaining({
+        env: expect.objectContaining({ PATH: expect.any(String) }),
+        windowsHide: true
+      })
+    )
   })
 
   it('extracts XML escaped code field values safely', () => {

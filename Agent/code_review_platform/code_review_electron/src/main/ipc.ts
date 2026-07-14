@@ -50,6 +50,7 @@ import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
 import { ServerConfigStore, normalizeServerUrl } from './server-config-store'
 import { createSkillSyncService, type SkillSyncResult } from './skill-sync'
 import { appendTaskLogEvent, CODEX_REVIEW_LOG_FILE_NAME } from './task-log'
+import { runSvnPreflight } from './svn-preflight'
 
 interface SerializedFeedbackScreenshot {
   name: string
@@ -68,6 +69,7 @@ export interface IpcHandlerDependencies {
   credentialStore?: CredentialStore
   serverConfigStore?: ServerConfigStore
   checkEnvironment?: () => Promise<EnvironmentCheckResult>
+  preflightSvn?: TaskAgentDependencies['preflightSvn']
   installCodexCli?: () => Promise<EnvironmentCheckResult>
   installSvnCli?: () => Promise<EnvironmentCheckResult>
   syncSkill?: (token: string) => Promise<SkillSyncResult>
@@ -723,6 +725,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
         {
           api: taskApi,
           checkEnvironment: checkLocalEnvironment,
+          preflightSvn: dependencies.preflightSvn ?? runSvnPreflight,
           prepareWorkspace: async (input) => {
             activeTask.taskId = input.taskId
             registerActiveTask(activeTask)
@@ -815,6 +818,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
         {
           api: taskApi,
           checkEnvironment: checkLocalEnvironment,
+          preflightSvn: dependencies.preflightSvn ?? runSvnPreflight,
           prepareWorkspace: async (input) => {
             activeTask.taskId = input.taskId
             registerActiveTask(activeTask)
