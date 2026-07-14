@@ -1,5 +1,9 @@
 import type { ReviewTemplateKey } from '../../shared/review-templates'
 import type {
+  OpenReportFeedbackWindowPayload,
+  ReportFeedbackSubmittedEvent
+} from '../../shared/report-feedback-window'
+import type {
   EnvironmentProgressEvent,
   EnvironmentStatus,
   CurrentUser,
@@ -241,6 +245,14 @@ export interface CodeReviewApi {
   onEnvironmentProgress(callback: (event: EnvironmentProgressEvent) => void): () => void
   submitFeedback(payload: SubmitFeedbackPayload): Promise<SubmitFeedbackResult>
   submitReportFeedback(payload: SubmitReportFeedbackPayload): Promise<SubmitReportFeedbackResult>
+  openReportFeedbackWindow(payload: OpenReportFeedbackWindowPayload): Promise<true>
+  submitNegativeReportFeedback(taskId: string): Promise<SubmitReportFeedbackResult>
+  onReportFeedbackFocusAnchor(
+    callback: (payload: { taskId: string; anchorId?: string }) => void
+  ): () => void
+  onReportFeedbackSubmitted(
+    callback: (payload: ReportFeedbackSubmittedEvent) => void
+  ): () => void
   bindSvnCredential(payload: SvnCredentialPayload): Promise<true>
   checkForAppUpdate(): Promise<boolean>
   downloadAppUpdate(): Promise<true>
