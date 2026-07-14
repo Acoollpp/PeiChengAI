@@ -93,6 +93,12 @@ describe('registerIpcHandlers', () => {
       'task:open-log',
       'feedback:submit',
       'report-feedback:submit',
+      'report-feedback:open',
+      'report-feedback:submit-negative',
+      'report-feedback-window:get-context',
+      'report-feedback-window:focus-anchor',
+      'report-feedback-window:submit',
+      'report-feedback-window:close',
       'report:asset',
       'report:download-current',
       'report:open-pdf'
@@ -1701,7 +1707,8 @@ describe('registerIpcHandlers', () => {
     await expect(screenshots?.[1].text()).resolves.toBe('jpeg-bytes')
   })
 
-  it('submits report feedback through authenticated API client', async () => {
+  it('submits negative report feedback with a fixed payload', async () => {
+    const mainWindow = { webContents: { id: 11 } }
     const submitReportFeedback = vi.fn(async () => ({
       id: 'report-feedback-1',
       task_id: 'task-1',
@@ -1714,23 +1721,206 @@ describe('registerIpcHandlers', () => {
       api: { submitReportFeedback } as never,
       authStore: {
         load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh' }))
-      } as never
+      } as never,
+      getMainWindow: () => mainWindow as never
     })
     const handler = handleMock.mock.calls.find(
-      ([channel]) => channel === 'report-feedback:submit'
+      ([channel]) => channel === 'report-feedback:submit-negative'
     )?.[1]
 
     await expect(
-      handler({}, {
-        taskId: 'task-1',
-        helpful: false,
-        useful_issues_text: ''
-      })
+      handler({ sender: { id: 11 } }, 'task-1')
     ).resolves.toMatchObject({ id: 'report-feedback-1', helpful: false })
     expect(submitReportFeedback).toHaveBeenCalledWith('token-123', 'task-1', {
       helpful: false,
-      useful_issues_text: ''
+      useful_issues_text: null
     })
+  })
+
+  it('opens report feedback window only for the main renderer sender', async () => {
+    const open = vi.fn(async () => true as const)
+    const mainWindow = { webContents: { id: 11 } }
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      getMainWindow: () => mainWindow as never,
+      getReportFeedbackWindowManager: () => ({ open } as never)
+    })
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback:open'
+    )?.[1]
+    const payload = {
+      taskId: 'task-1',
+      options: [{ id: 'option-1', text: '空指针风险', anchorId: 'anchor-1' }]
+    }
+
+    await expect(handler({ sender: { id: 99 } }, payload)).rejects.toThrow('无权')
+    await expect(handler({ sender: { id: 11 } }, payload)).resolves.toBe(true)
+    expect(open).toHaveBeenCalledWith(payload)
+  })
+
+  it('gets context and closes only for the active feedback window sender', async () => {
+    const context = {
+      taskId: 'task-1',
+      options: [{ id: 'option-1', text: '空指针风险', anchorId: 'anchor-1' }]
+    }
+    const getContext = vi.fn((senderId: number) => {
+      if (senderId !== 22) throw new Error('无权访问当前反馈窗口')
+      return context
+    })
+    const close = vi.fn((senderId: number) => {
+      if (senderId !== 22) throw new Error('无权关闭当前反馈窗口')
+      return true as const
+    })
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({ getReportFeedbackWindowManager: () => ({ getContext, close } as never) })
+    const getHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:get-context'
+    )?.[1]
+    const closeHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:close'
+    )?.[1]
+
+    await expect(getHandler({ sender: { id: 99 } })).rejects.toThrow('无权')
+    await expect(getHandler({ sender: { id: 22 } })).resolves.toEqual(context)
+    await expect(closeHandler({ sender: { id: 99 } })).rejects.toThrow('无权')
+    await expect(closeHandler({ sender: { id: 22 } })).resolves.toBe(true)
+  })
+
+  it('maps feedback option IDs to anchors and clears focus without an option ID', async () => {
+    const send = vi.fn()
+    const context = {
+      taskId: 'task-1',
+      options: [{ id: 'option-1', text: '空指针风险', anchorId: 'anchor-1' }]
+    }
+    const manager = {
+      isCurrentSender: vi.fn((id: number) => id === 22),
+      getContext: vi.fn(() => context)
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      getMainWindow: () => ({ webContents: { send, isDestroyed: () => false } }) as never,
+      getReportFeedbackWindowManager: () => manager as never
+    })
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:focus-anchor'
+    )?.[1]
+
+    await expect(
+      handler({ sender: { id: 22 } }, { taskId: 'task-1', optionId: 'unknown' })
+    ).rejects.toThrow('未知')
+    await expect(
+      handler({ sender: { id: 22 } }, { taskId: 'task-1', optionId: 'option-1' })
+    ).resolves.toBe(true)
+    await expect(
+      handler({ sender: { id: 22 } }, { taskId: 'task-1' })
+    ).resolves.toBe(true)
+    expect(send.mock.calls).toEqual([
+      ['report-feedback:focus-anchor', { taskId: 'task-1', anchorId: 'anchor-1' }],
+      ['report-feedback:focus-anchor', { taskId: 'task-1' }]
+    ])
+  })
+
+  it('validates and submits helpful feedback in context order with deduplicated manual lines', async () => {
+    const submitReportFeedback = vi.fn(async () => ({ id: 'feedback-1', helpful: true }))
+    const send = vi.fn()
+    const close = vi.fn(() => true as const)
+    const context = {
+      taskId: 'task-1',
+      options: [
+        { id: 'option-1', text: '空指针风险', anchorId: 'anchor-1' },
+        { id: 'option-2', text: '越界风险', anchorId: 'anchor-2' }
+      ]
+    }
+    const manager = {
+      isCurrentSender: vi.fn((id: number) => id === 22),
+      getContext: vi.fn(() => context),
+      close
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      api: { submitReportFeedback } as never,
+      authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
+      getMainWindow: () => ({ webContents: { send, isDestroyed: () => false } }) as never,
+      getReportFeedbackWindowManager: () => manager as never
+    })
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:submit'
+    )?.[1]
+
+    await expect(
+      handler({ sender: { id: 22 } }, {
+        taskId: 'task-1',
+        selectedOptionIds: ['option-2', 'option-1'],
+        manualText: ' 空指针风险\n 手工补充 \n手工补充\n'
+      })
+    ).resolves.toEqual({
+      taskId: 'task-1',
+      usefulIssuesText: '1. 空指针风险\n2. 越界风险\n3. 手工补充'
+    })
+    expect(submitReportFeedback).toHaveBeenCalledWith('token-123', 'task-1', {
+      helpful: true,
+      useful_issues_text: '1. 空指针风险\n2. 越界风险\n3. 手工补充'
+    })
+    expect(send).toHaveBeenCalledWith('report-feedback:submitted', {
+      taskId: 'task-1',
+      usefulIssuesText: '1. 空指针风险\n2. 越界风险\n3. 手工补充'
+    })
+    expect(close).toHaveBeenCalledWith(22)
+  })
+
+  it('treats already-existing helpful feedback as submitted and closes the feedback window', async () => {
+    const submitReportFeedback = vi.fn(async () => {
+      const { ApiError } = await import('../api-client')
+      throw new ApiError(409, 'report_feedback_exists')
+    })
+    const send = vi.fn()
+    const close = vi.fn(() => true as const)
+    const context = {
+      taskId: 'task-1',
+      options: [{ id: 'option-1', text: '空指针风险', anchorId: 'anchor-1' }]
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      api: { submitReportFeedback } as never,
+      authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
+      getMainWindow: () => ({ webContents: { send, isDestroyed: () => false } }) as never,
+      getReportFeedbackWindowManager: () => ({ getContext: () => context, close } as never)
+    })
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:submit'
+    )?.[1]
+
+    await expect(handler({ sender: { id: 22 } }, {
+      taskId: 'task-1', selectedOptionIds: ['option-1'], manualText: ''
+    })).resolves.toEqual({ taskId: 'task-1', usefulIssuesText: '1. 空指针风险' })
+    expect(send).toHaveBeenCalledWith('report-feedback:submitted', {
+      taskId: 'task-1', usefulIssuesText: '1. 空指针风险'
+    })
+    expect(close).toHaveBeenCalledWith(22)
+  })
+
+  it.each([
+    [{ taskId: 'other-task', selectedOptionIds: ['option-1'], manualText: '' }, '任务'],
+    [{ taskId: 'task-1', selectedOptionIds: ['unknown'], manualText: '' }, '未知'],
+    [{ taskId: 'task-1', selectedOptionIds: ['option-1', 'option-1'], manualText: '' }, '重复'],
+    [{ taskId: 'task-1', selectedOptionIds: [], manualText: '  \n ' }, '至少']
+  ])('rejects invalid helpful feedback payload %#', async (payload, message) => {
+    const context = {
+      taskId: 'task-1',
+      options: [{ id: 'option-1', text: '空指针风险', anchorId: 'anchor-1' }]
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      getReportFeedbackWindowManager: () => ({
+        isCurrentSender: () => true,
+        getContext: () => context
+      }) as never
+    })
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:submit'
+    )?.[1]
+
+    await expect(handler({ sender: { id: 22 } }, payload)).rejects.toThrow(message)
   })
 
   it('installs Codex CLI on demand', async () => {

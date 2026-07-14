@@ -125,6 +125,54 @@ describe('preload codeReview API', () => {
     })
   })
 
+  it('invokes report feedback window and fixed negative feedback IPC', async () => {
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+    const payload = {
+      taskId: 'task-1',
+      options: [{ id: 'option-1', text: '空指针风险', anchorId: 'anchor-1' }]
+    }
+
+    await api.openReportFeedbackWindow(payload)
+    await api.submitNegativeReportFeedback('task-1')
+
+    expect(invokeMock).toHaveBeenCalledWith('report-feedback:open', payload)
+    expect(invokeMock).toHaveBeenCalledWith('report-feedback:submit-negative', 'task-1')
+  })
+
+  it.each([
+    [
+      'onReportFeedbackFocusAnchor',
+      'report-feedback:focus-anchor',
+      { taskId: 'task-1', anchorId: 'anchor-1' }
+    ],
+    [
+      'onReportFeedbackSubmitted',
+      'report-feedback:submitted',
+      { taskId: 'task-1', usefulIssuesText: '1. 空指针风险' }
+    ]
+  ])('subscribes and cleans up %s with the same listener', async (method, channel, payload) => {
+    const onMock = vi.mocked((await import('electron')).ipcRenderer.on)
+    const removeListenerMock = vi.mocked((await import('electron')).ipcRenderer.removeListener)
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+    const callback = vi.fn()
+
+    const unsubscribe = api[method](callback)
+    const listener = onMock.mock.calls.find(
+      ([registeredChannel]) => registeredChannel === channel
+    )?.[1]
+    expect(listener).toBeDefined()
+    if (!listener) {
+      throw new Error(`未注册 ${channel} 监听器`)
+    }
+    listener({} as IpcRendererEvent, payload)
+    expect(callback).toHaveBeenCalledWith(payload)
+
+    unsubscribe()
+    expect(removeListenerMock).toHaveBeenCalledWith(channel, listener)
+  })
+
   it('invokes report asset IPC with report path and asset path', async () => {
     await import('./index')
     const api = exposeInMainWorldMock.mock.calls[0][1]

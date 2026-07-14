@@ -21,6 +21,14 @@ import { installSvnCli } from './svn-cli-installer'
 import { CredentialStore, type RememberedCredentials } from './credential-store'
 import { checkEnvironment } from './environment-checker'
 import type {
+  FocusReportFeedbackAnchorPayload,
+  OpenReportFeedbackWindowPayload,
+  ReportFeedbackContext,
+  ReportFeedbackSubmittedEvent,
+  SubmitHelpfulReportFeedbackPayload,
+  ReportFeedbackOption
+} from '../shared/report-feedback-window'
+import type {
   CurrentUser,
   DepartmentsResponse,
   EnvironmentProgressEvent,
@@ -341,6 +349,86 @@ const sendToRenderer = (
   }
 }
 
+const requireReportFeedbackManager = (
+  getManager: () => ReportFeedbackWindowManager | undefined
+): ReportFeedbackWindowManager => {
+  const manager = getManager()
+  if (!manager) {
+    throw new Error('反馈窗口尚未初始化')
+  }
+  return manager
+}
+
+const assertMainWindowSender = (
+  event: Electron.IpcMainInvokeEvent,
+  getMainWindow: () => BrowserWindow | undefined
+): void => {
+  if (getMainWindow()?.webContents.id !== event.sender.id) {
+    throw new Error('无权调用主窗口反馈通道')
+  }
+}
+
+const validateReportFeedbackOption = (option: ReportFeedbackOption): void => {
+  if (!option?.id?.trim() || !option.text?.trim() || !option.anchorId?.trim()) {
+    throw new Error('反馈候选项无效')
+  }
+}
+
+const validateReportFeedbackContext = (
+  payload: OpenReportFeedbackWindowPayload
+): ReportFeedbackContext => {
+  if (!payload?.taskId?.trim() || !Array.isArray(payload.options)) {
+    throw new Error('反馈窗口上下文无效')
+  }
+  payload.options.forEach(validateReportFeedbackOption)
+  const optionIds = payload.options.map((option) => option.id)
+  if (new Set(optionIds).size !== optionIds.length) {
+    throw new Error('反馈候选项 ID 重复')
+  }
+  return {
+    taskId: payload.taskId,
+    options: payload.options.map((option) => ({ ...option }))
+  }
+}
+
+const stripFeedbackNumber = (value: string): string =>
+  value.replace(/^\s*\d+[\.)、]\s*/, '').trim()
+
+const buildUsefulIssuesText = (
+  context: ReportFeedbackContext,
+  payload: SubmitHelpfulReportFeedbackPayload
+): string => {
+  if (payload.taskId !== context.taskId) {
+    throw new Error('反馈任务与当前窗口不一致')
+  }
+  if (!Array.isArray(payload.selectedOptionIds) || typeof payload.manualText !== 'string') {
+    throw new Error('反馈提交内容无效')
+  }
+  if (new Set(payload.selectedOptionIds).size !== payload.selectedOptionIds.length) {
+    throw new Error('反馈候选项 ID 重复')
+  }
+
+  const selectedIds = new Set(payload.selectedOptionIds)
+  const knownIds = new Set(context.options.map((option) => option.id))
+  if (payload.selectedOptionIds.some((optionId) => !knownIds.has(optionId))) {
+    throw new Error('包含未知反馈候选项 ID')
+  }
+
+  const issues = context.options
+    .filter((option) => selectedIds.has(option.id))
+    .map((option) => stripFeedbackNumber(option.text))
+  payload.manualText
+    .split(/\r?\n/)
+    .map(stripFeedbackNumber)
+    .filter(Boolean)
+    .forEach((issue) => issues.push(issue))
+  const uniqueIssues = issues.filter((issue, index) => issues.indexOf(issue) === index)
+  if (uniqueIssues.length === 0) {
+    throw new Error('请至少标记或填写一条有用信息')
+  }
+  return uniqueIssues.map((issue, index) => `${index + 1}. ${issue}`).join('\n')
+}
+
 export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): void => {
   const apiOverride = dependencies.api
   const authStore = dependencies.authStore ?? new AuthStore()
@@ -349,6 +437,8 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   const appUpdateService =
     dependencies.appUpdateService ?? createAppUpdateService(authStore, serverConfigStore)
   const getMainWindow = dependencies.getMainWindow ?? (() => undefined)
+  const getReportFeedbackWindowManager =
+    dependencies.getReportFeedbackWindowManager ?? (() => undefined)
   const checkLocalEnvironment = dependencies.checkEnvironment ?? checkEnvironment
   const installLocalCodexCli = dependencies.installCodexCli ?? installCodexCli
   const installLocalSvnCli = dependencies.installSvnCli ?? installSvnCli
@@ -841,6 +931,106 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
         useful_issues_text: payload.useful_issues_text ?? null
       })
     }
+  )
+
+  ipcMain.handle(
+    'report-feedback:open',
+    async (
+      event,
+      payload: OpenReportFeedbackWindowPayload
+    ): Promise<true> => {
+      assertMainWindowSender(event, getMainWindow)
+      const context = validateReportFeedbackContext(payload)
+      return requireReportFeedbackManager(getReportFeedbackWindowManager).open(context)
+    }
+  )
+
+  ipcMain.handle(
+    'report-feedback:submit-negative',
+    async (event, taskId: string): Promise<ReportFeedbackResult> => {
+      assertMainWindowSender(event, getMainWindow)
+      if (typeof taskId !== 'string' || !taskId.trim()) {
+        throw new Error('反馈任务 ID 无效')
+      }
+      const token = await loadAccessToken(authStore)
+      const api = await createApiClient()
+      return api.submitReportFeedback(token, taskId, {
+        helpful: false,
+        useful_issues_text: null
+      })
+    }
+  )
+
+  ipcMain.handle(
+    'report-feedback-window:get-context',
+    async (event): Promise<ReportFeedbackContext> =>
+      requireReportFeedbackManager(getReportFeedbackWindowManager).getContext(event.sender.id)
+  )
+
+  ipcMain.handle(
+    'report-feedback-window:focus-anchor',
+    async (
+      event,
+      payload: FocusReportFeedbackAnchorPayload
+    ): Promise<true> => {
+      const manager = requireReportFeedbackManager(getReportFeedbackWindowManager)
+      const context = manager.getContext(event.sender.id)
+      if (!payload || payload.taskId !== context.taskId) {
+        throw new Error('反馈任务与当前窗口不一致')
+      }
+
+      let anchorId: string | undefined
+      if (payload.optionId !== undefined) {
+        const option = context.options.find((candidate) => candidate.id === payload.optionId)
+        if (!option) {
+          throw new Error('包含未知反馈候选项 ID')
+        }
+        anchorId = option.anchorId
+      }
+      sendToRenderer(getMainWindow()?.webContents, 'report-feedback:focus-anchor', {
+        taskId: context.taskId,
+        ...(anchorId ? { anchorId } : {})
+      })
+      return true
+    }
+  )
+
+  ipcMain.handle(
+    'report-feedback-window:submit',
+    async (
+      event,
+      payload: SubmitHelpfulReportFeedbackPayload
+    ): Promise<ReportFeedbackSubmittedEvent> => {
+      const manager = requireReportFeedbackManager(getReportFeedbackWindowManager)
+      const context = manager.getContext(event.sender.id)
+      const usefulIssuesText = buildUsefulIssuesText(context, payload)
+      const token = await loadAccessToken(authStore)
+      const api = await createApiClient()
+
+      try {
+        await api.submitReportFeedback(token, context.taskId, {
+          helpful: true,
+          useful_issues_text: usefulIssuesText
+        })
+      } catch (error) {
+        if (
+          !(error instanceof ApiError) ||
+          error.status !== 409 ||
+          !error.message.includes('report_feedback_exists')
+        ) {
+          throw error
+        }
+      }
+
+      const submittedEvent = { taskId: context.taskId, usefulIssuesText }
+      sendToRenderer(getMainWindow()?.webContents, 'report-feedback:submitted', submittedEvent)
+      manager.close(event.sender.id)
+      return submittedEvent
+    }
+  )
+
+  ipcMain.handle('report-feedback-window:close', async (event): Promise<true> =>
+    requireReportFeedbackManager(getReportFeedbackWindowManager).close(event.sender.id)
   )
 
   ipcMain.handle('report:asset', (_event, payload: ReadReportAssetRequest) =>

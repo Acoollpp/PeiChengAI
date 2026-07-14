@@ -130,6 +130,20 @@ contextBridge.exposeInMainWorld('codeReview', {
     payload: SubmitReportFeedbackPayload
   ): Promise<SubmitReportFeedbackResult> =>
     ipcRenderer.invoke('report-feedback:submit', payload),
+  openReportFeedbackWindow: (
+    payload: Parameters<CodeReviewApi['openReportFeedbackWindow']>[0]
+  ): Promise<true> =>
+    ipcRenderer.invoke('report-feedback:open', payload),
+  submitNegativeReportFeedback: (taskId: string): Promise<SubmitReportFeedbackResult> =>
+    ipcRenderer.invoke('report-feedback:submit-negative', taskId),
+  onReportFeedbackFocusAnchor: (
+    callback: Parameters<CodeReviewApi['onReportFeedbackFocusAnchor']>[0]
+  ): (() => void) =>
+    listen('report-feedback:focus-anchor', callback),
+  onReportFeedbackSubmitted: (
+    callback: Parameters<CodeReviewApi['onReportFeedbackSubmitted']>[0]
+  ): (() => void) =>
+    listen('report-feedback:submitted', callback),
   checkForAppUpdate: (): Promise<boolean> => ipcRenderer.invoke('app-update:check'),
   downloadAppUpdate: (): Promise<true> => ipcRenderer.invoke('app-update:download'),
   installAppUpdate: (): Promise<true> => ipcRenderer.invoke('app-update:install'),
