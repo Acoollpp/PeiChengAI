@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
+from app.api.routes import review_tasks as review_tasks_route
 from app.core.config import settings
 from app.models import (
     Department,
@@ -1522,10 +1523,21 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
     client: TestClient,
     db: Session,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    today_date = datetime.now(TASK_STATS_TIMEZONE).date()
+    fixed_now = datetime(2026, 7, 14, 12, tzinfo=timezone.utc)
+    monkeypatch.setattr(review_tasks_route, "_utcnow", lambda: fixed_now)
+    today_date = fixed_now.astimezone(TASK_STATS_TIMEZONE).date()
     week_start = today_date - timedelta(days=today_date.weekday())
     last_week_start = week_start - timedelta(days=7)
+
+    def task_time(days_delta: int, hour: int) -> datetime:
+        return datetime.combine(
+            today_date + timedelta(days=days_delta),
+            time(hour=hour),
+            tzinfo=TASK_STATS_TIMEZONE,
+        ).astimezone(timezone.utc).replace(tzinfo=None)
+
     user, api_key = create_key_user(db)
     user.full_name = "任务统计用户"
     db.add(user)
@@ -1536,17 +1548,17 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
     _set_review_task_stats_fields(
         db,
         today_task["id"],
-        created_at=_today_elapsed_datetime(60),
+        created_at=task_time(0, 19),
         status=ReviewTaskStatus.success,
-        started_at=_today_elapsed_datetime(60),
-        finished_at=_today_elapsed_datetime(60) + timedelta(minutes=10),
+        started_at=task_time(0, 19),
+        finished_at=task_time(0, 19) + timedelta(minutes=10),
         report_path=str(tmp_path / "today.md"),
     )
     yesterday_task = _create_review_task(client, headers, old_revision="302")
     _set_review_task_stats_fields(
         db,
         yesterday_task["id"],
-        created_at=_shanghai_datetime(-1, 10),
+        created_at=task_time(-1, 10),
         status=ReviewTaskStatus.failed,
         report_path=str(tmp_path / "yesterday.md"),
     )
@@ -1554,7 +1566,7 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
     _set_review_task_stats_fields(
         db,
         older_task["id"],
-        created_at=_shanghai_datetime(-2, 10),
+        created_at=task_time(-2, 10),
         status=ReviewTaskStatus.running_codex,
         report_path=str(tmp_path / "older.md"),
     )
@@ -1563,13 +1575,7 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
     _set_review_task_stats_fields(
         db,
         last_week_task["id"],
-        created_at=datetime.combine(
-            last_week_date,
-            time(10),
-            tzinfo=TASK_STATS_TIMEZONE,
-        )
-        .astimezone(timezone.utc)
-        .replace(tzinfo=None),
+        created_at=task_time(-7, 10),
         status=ReviewTaskStatus.success,
         report_path=str(tmp_path / "last-week.md"),
     )
