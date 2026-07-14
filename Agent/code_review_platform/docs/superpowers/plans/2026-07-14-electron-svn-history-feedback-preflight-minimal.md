@@ -21,6 +21,7 @@
 - 预检必须发生在 `prepareWorkspace`、需求文件上传、Codex、PDF 和报告上传之前。
 - 原始 SVN stderr 只能分类并经专用脱敏后写受控日志，不得直接展示给用户或写入服务端 `error_message`。
 - SVN 预检必须使用环境检查探测到的绝对命令、相同 PATH/env 和 `shell:false` 的 `spawn(command, args)`；本次不扩展重构其他既有 Windows `shell:true` 命令。
+- 公司加密 SVN 在本机 Mac 无法访问；Mac 自动化测试只使用注入 fake，不运行真实公司 SVN 成功用例。真实成功链路在具备 SVN 认证缓存的 Windows 客户端手工验收。
 - Electron IPC invoke 通道顺序必须与 `src/main/__tests__/ipc.test.ts` 的全等数组一致；send/listen 事件不进入该数组。
 - 所有 spec、plan、报告和 git commit 使用中文。
 
@@ -601,6 +602,7 @@ git commit -m "docs: 更新 SVN 预检与反馈窗口说明"
 - 同任务重复点击聚焦窗口，不重复创建；另一任务打开时替换旧窗口。
 - “没帮助”仍提交成功。
 - 错误新版本、错误旧版本、不可访问 SVN URL 均在工作区和 Codex 前停止，不生成报告。
+- 在具备当前 Windows 用户 SVN 认证缓存的 Windows 客户端上，合法公司 SVN URL 和版本可通过预检并继续任务；Mac 上真实访问失败不计为代码回归。
 
 - [ ] **Step 8: 生成全分支差异包并执行最终代码评审**
 
