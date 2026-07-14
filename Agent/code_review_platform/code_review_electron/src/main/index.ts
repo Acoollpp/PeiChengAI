@@ -36,7 +36,13 @@ const createWindow = (): void => {
     }
   })
   const window = mainWindow
-  reportFeedbackWindowManager = createReportFeedbackWindowManager(window)
+  reportFeedbackWindowManager = createReportFeedbackWindowManager(window, {
+    onContextCleared: (taskId) => {
+      if (!window.webContents.isDestroyed()) {
+        window.webContents.send('report-feedback:focus-anchor', { taskId })
+      }
+    }
+  })
 
   configureExternalLinkHandling(window)
 

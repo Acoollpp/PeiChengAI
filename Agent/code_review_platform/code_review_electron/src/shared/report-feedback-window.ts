@@ -24,5 +24,6 @@ export interface SubmitHelpfulReportFeedbackPayload {
 
 export interface ReportFeedbackSubmittedEvent {
   taskId: string
-  usefulIssuesText: string
+  helpful: boolean
+  usefulIssuesText: string | null
 }

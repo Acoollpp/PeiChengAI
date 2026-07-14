@@ -39,12 +39,10 @@ const setupCodeReviewApi = (): void => {
     bindSvnCredential: vi.fn(),
     submitFeedback: vi.fn(async () => ({ id: 'feedback-1', status: 'pending' })),
     openReportFeedbackWindow: vi.fn(async () => true),
-    submitNegativeReportFeedback: vi.fn(async () => ({
-      id: 'report-feedback-1',
-      task_id: 'task-history-2',
-      user_id: 'user-1',
+    submitNegativeReportFeedback: vi.fn(async (taskId: string) => ({
+      taskId,
       helpful: false,
-      useful_issues_text: null
+      usefulIssuesText: null
     })),
     onReportFeedbackFocusAnchor: vi.fn(() => vi.fn()),
     onReportFeedbackSubmitted: vi.fn(() => vi.fn())
@@ -366,11 +364,9 @@ describe('TaskPage', () => {
       pdfPath: '/app/reports/task-local-success.pdf'
     }))
     window.codeReview.submitNegativeReportFeedback = vi.fn(async () => ({
-      id: 'report-feedback-local-success',
-      task_id: 'task-local-success',
-      user_id: 'user-1',
+      taskId: 'task-local-success',
       helpful: false,
-      useful_issues_text: null
+      usefulIssuesText: null
     }))
 
     renderReadyTaskPage()
@@ -887,11 +883,9 @@ describe('TaskPage', () => {
     }))
     window.codeReview.readTaskReport = vi.fn(async () => '# 审查报告')
     window.codeReview.submitNegativeReportFeedback = vi.fn(async () => ({
-      id: 'report-feedback-1',
-      task_id: 'task-history-1',
-      user_id: 'user-1',
+      taskId: 'task-history-1',
       helpful: false,
-      useful_issues_text: null
+      usefulIssuesText: null
     }))
     window.codeReview.openPdfReport = vi.fn(async () => ({
       status: 'ready' as const,
@@ -913,11 +907,9 @@ describe('TaskPage', () => {
   it('负反馈提交期间切换任务后更新原任务但不打开当前任务PDF', async () => {
     const user = userEvent.setup()
     const feedback = createDeferred<{
-      id: string
-      task_id: string
-      user_id: string
+      taskId: string
       helpful: boolean
-      useful_issues_text: null
+      usefulIssuesText: null
     }>()
     window.codeReview.listTasks = vi.fn(async () => ({
       data: [
@@ -947,8 +939,7 @@ describe('TaskPage', () => {
     await user.click(viewButtons[1])
 
     feedback.resolve({
-      id: 'feedback-a', task_id: 'task-a', user_id: 'user-1', helpful: false,
-      useful_issues_text: null
+      taskId: 'task-a', helpful: false, usefulIssuesText: null
     })
 
     await waitFor(() => expect(within(historyPanel).getByText('已完成 · 没帮助')).toBeInTheDocument())
@@ -1239,9 +1230,9 @@ describe('TaskPage', () => {
     const historyPanel = await openHistoryTasks(user)
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
     const submitted = vi.mocked(window.codeReview.onReportFeedbackSubmitted).mock.calls[0][0]
-    submitted({ taskId: 'other-task', usefulIssuesText: '1. 不应采用' })
+    submitted({ taskId: 'other-task', helpful: false, usefulIssuesText: null })
     expect(window.codeReview.openPdfReport).not.toHaveBeenCalled()
-    submitted({ taskId: 'task-history-1', usefulIssuesText: '1. 空指针风险' })
+    submitted({ taskId: 'task-history-1', helpful: true, usefulIssuesText: '1. 空指针风险' })
 
     await waitFor(() => expect(window.codeReview.openPdfReport).toHaveBeenCalled())
     expect(screen.getByRole('button', { name: '查看PDF报告' })).toBeInTheDocument()
@@ -1272,7 +1263,7 @@ describe('TaskPage', () => {
     await user.click(viewButtons[1])
     const submitted = vi.mocked(window.codeReview.onReportFeedbackSubmitted).mock.calls[0][0]
 
-    submitted({ taskId: 'task-a', usefulIssuesText: '1. A问题' })
+    submitted({ taskId: 'task-a', helpful: true, usefulIssuesText: '1. A问题' })
 
     await waitFor(() => expect(within(historyPanel).getByText('已完成 · 有帮助')).toBeInTheDocument())
     expect(window.codeReview.openPdfReport).not.toHaveBeenCalled()
@@ -1312,7 +1303,7 @@ describe('TaskPage', () => {
     expect(window.codeReview.openPdfReport).toHaveBeenCalled()
   })
 
-  it('后端返回报告反馈已存在(409)时也放行打开PDF，不卡死在选择态', async () => {
+  it('负反馈冲突后主进程回查为正反馈时按真实状态放行打开PDF', async () => {
     const user = userEvent.setup()
     window.codeReview.listTasks = vi.fn(async () => ({
       data: [
@@ -1330,9 +1321,11 @@ describe('TaskPage', () => {
       count: 1
     }))
     window.codeReview.readTaskReport = vi.fn(async () => '# 审查报告')
-    window.codeReview.submitNegativeReportFeedback = vi.fn(async () => {
-      throw new Error('请求失败：409 Client Error: Bad Request for url ... detail: report_feedback_exists')
-    })
+    window.codeReview.submitNegativeReportFeedback = vi.fn(async () => ({
+      taskId: 'task-history-1',
+      helpful: true,
+      usefulIssuesText: '1. 服务端已保存问题'
+    }))
     window.codeReview.openPdfReport = vi.fn(async () => ({
       status: 'ready' as const,
       pdfPath: '/local/task-history.pdf'
@@ -1348,7 +1341,6 @@ describe('TaskPage', () => {
     expect(screen.queryByRole('button', { name: '有帮助' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '没帮助' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '查看PDF报告' })).toBeInTheDocument()
-    // 不向用户展示冲突错误
-    expect(screen.queryByText(/report_feedback_exists/)).not.toBeInTheDocument()
+    expect(within(historyPanel).getByText('已完成 · 有帮助')).toBeInTheDocument()
   })
 })

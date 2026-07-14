@@ -45,15 +45,6 @@ type PdfReportSnapshot = {
   pdfReportName?: string
 }
 
-const REPORT_FEEDBACK_EXISTS_CODE = 'report_feedback_exists'
-
-const isReportFeedbackExistsError = (error: unknown): boolean => {
-  if (!(error instanceof Error)) {
-    return false
-  }
-  return error.message.includes(REPORT_FEEDBACK_EXISTS_CODE)
-}
-
 const formatReportFeedbackError = (error: unknown): string => {
   if (!(error instanceof Error)) {
     return '报告反馈提交失败，请稍后重试。'
@@ -437,21 +428,13 @@ export function TaskPage({
     setError('')
     setReportFeedbackStatus('submitting')
     try {
-      await window.codeReview.submitNegativeReportFeedback(taskId)
-      markTaskFeedbackSubmitted(taskId, false, null)
+      const result = await window.codeReview.submitNegativeReportFeedback(taskId)
+      markTaskFeedbackSubmitted(taskId, result.helpful, result.usefulIssuesText)
       if (selectedTaskIdRef.current === taskId) {
         setReportFeedbackStatus('idle')
         await openSelectedPdfReport(pdfSnapshot)
       }
     } catch (submitError) {
-      if (isReportFeedbackExistsError(submitError)) {
-        markTaskFeedbackSubmitted(taskId, false, null)
-        if (selectedTaskIdRef.current === taskId) {
-          setReportFeedbackStatus('idle')
-          await openSelectedPdfReport(pdfSnapshot)
-        }
-        return
-      }
       if (selectedTaskIdRef.current === taskId) {
         setReportFeedbackStatus('idle')
         setError(formatReportFeedbackError(submitError))
@@ -504,8 +487,8 @@ export function TaskPage({
     }), [])
 
   useEffect(() =>
-    window.codeReview.onReportFeedbackSubmitted(({ taskId, usefulIssuesText }) => {
-      markTaskFeedbackSubmitted(taskId, true, usefulIssuesText)
+    window.codeReview.onReportFeedbackSubmitted(({ taskId, helpful, usefulIssuesText }) => {
+      markTaskFeedbackSubmitted(taskId, helpful, usefulIssuesText)
       if (selectedTaskIdRef.current !== taskId) {
         return
       }

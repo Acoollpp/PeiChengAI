@@ -237,7 +237,10 @@ describe('ReportFeedbackWindowManager', () => {
 
   it('旧窗口延迟 closed 不会清理新窗口', async () => {
     const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
-    const manager = createReportFeedbackWindowManager(createMainWindow() as never)
+    const onContextCleared = vi.fn()
+    const manager = createReportFeedbackWindowManager(createMainWindow() as never, {
+      onContextCleared
+    })
 
     const oldOpen = manager.open(createContext('task-1'))
     const oldWindow = electronMock.createdWindows[0]
@@ -245,6 +248,8 @@ describe('ReportFeedbackWindowManager', () => {
     const newWindow = electronMock.createdWindows[1]
     oldWindow.handlers.get('closed')?.()
     expect(manager.isCurrentSender(newWindow.webContents.id)).toBe(true)
+    expect(onContextCleared).toHaveBeenCalledTimes(1)
+    expect(onContextCleared).toHaveBeenCalledWith('task-1')
 
     newWindow.loadDeferred.resolve()
     await expect(newOpen).resolves.toBe(true)
@@ -252,6 +257,7 @@ describe('ReportFeedbackWindowManager', () => {
     oldWindow.loadDeferred.resolve()
     await oldResult
     expect(manager.getContext(newWindow.webContents.id).taskId).toBe('task-2')
+    expect(onContextCleared).toHaveBeenCalledTimes(1)
   })
 
   it('严格校验 sender 并返回无法篡改内部状态的上下文拷贝', async () => {
@@ -275,21 +281,26 @@ describe('ReportFeedbackWindowManager', () => {
   it('原生关闭、显式关闭和主窗口销毁都会清理窗口上下文', async () => {
     const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
     const mainWindow = createMainWindow()
-    const manager = createReportFeedbackWindowManager(mainWindow as never)
+    const onContextCleared = vi.fn()
+    const manager = createReportFeedbackWindowManager(mainWindow as never, { onContextCleared })
 
     const firstWindow = await openLoadedWindow(manager, createContext('task-1'))
     firstWindow.handlers.get('closed')?.()
     expect(manager.isCurrentSender(firstWindow.webContents.id)).toBe(false)
+    expect(onContextCleared).toHaveBeenLastCalledWith('task-1')
 
     const secondWindow = await openLoadedWindow(manager, createContext('task-2'))
     expect(manager.close(secondWindow.webContents.id)).toBe(true)
     expect(secondWindow.destroy).toHaveBeenCalledTimes(1)
     expect(manager.isCurrentSender(secondWindow.webContents.id)).toBe(false)
+    expect(onContextCleared).toHaveBeenLastCalledWith('task-2')
 
     const thirdWindow = await openLoadedWindow(manager, createContext('task-3'))
     mainWindow.handlers.get('closed')?.()
     expect(thirdWindow.destroy).toHaveBeenCalledTimes(1)
     expect(manager.isCurrentSender(thirdWindow.webContents.id)).toBe(false)
+    expect(onContextCleared).toHaveBeenLastCalledWith('task-3')
+    expect(onContextCleared).toHaveBeenCalledTimes(3)
   })
 
   it('窗口在加载期间关闭时 open 不会成功', async () => {

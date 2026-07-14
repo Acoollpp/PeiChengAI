@@ -23,7 +23,6 @@ import type {
   SubmitFeedbackIpcPayload,
   SubmitFeedbackPayload,
   SubmitFeedbackResult,
-  SubmitReportFeedbackResult,
   SvnCredentialPayload,
   SvnLoginRequest,
   ReviewTasksResponse,
@@ -129,7 +128,7 @@ contextBridge.exposeInMainWorld('codeReview', {
     payload: Parameters<CodeReviewApi['openReportFeedbackWindow']>[0]
   ): Promise<true> =>
     ipcRenderer.invoke('report-feedback:open', payload),
-  submitNegativeReportFeedback: (taskId: string): Promise<SubmitReportFeedbackResult> =>
+  submitNegativeReportFeedback: (taskId: string): ReturnType<CodeReviewApi['submitNegativeReportFeedback']> =>
     ipcRenderer.invoke('report-feedback:submit-negative', taskId),
   onReportFeedbackFocusAnchor: (
     callback: Parameters<CodeReviewApi['onReportFeedbackFocusAnchor']>[0]

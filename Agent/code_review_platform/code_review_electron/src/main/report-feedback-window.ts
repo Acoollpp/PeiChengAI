@@ -12,6 +12,10 @@ export interface ReportFeedbackWindowManager {
   destroy(): void
 }
 
+interface ReportFeedbackWindowManagerOptions {
+  onContextCleared?: (taskId: string) => void
+}
+
 const cloneContext = (context: ReportFeedbackContext): ReportFeedbackContext => ({
   taskId: context.taskId,
   options: context.options.map((option) => ({ ...option }))
@@ -44,7 +48,8 @@ const createWindowOptions = (mainWindow: BrowserWindow): BrowserWindowConstructo
 })
 
 export const createReportFeedbackWindowManager = (
-  mainWindow: BrowserWindow
+  mainWindow: BrowserWindow,
+  options: ReportFeedbackWindowManagerOptions = {}
 ): ReportFeedbackWindowManager => {
   let feedbackWindow: BrowserWindow | null = null
   let context: ReportFeedbackContext | null = null
@@ -55,16 +60,20 @@ export const createReportFeedbackWindowManager = (
       return
     }
 
+    const clearedContext = context
     feedbackWindow = null
     context = null
     currentLoadPromise = null
+    if (clearedContext) {
+      options.onContextCleared?.(clearedContext.taskId)
+    }
   }
 
   const destroyCurrent = (): void => {
     const window = feedbackWindow
-    feedbackWindow = null
-    context = null
-    currentLoadPromise = null
+    if (window) {
+      clearCurrent(window)
+    }
 
     if (window && !window.isDestroyed()) {
       window.destroy()
@@ -107,9 +116,7 @@ export const createReportFeedbackWindowManager = (
   const manager: ReportFeedbackWindowManager = {
     async open(nextContext) {
       if (feedbackWindow?.isDestroyed()) {
-        feedbackWindow = null
-        context = null
-        currentLoadPromise = null
+        clearCurrent(feedbackWindow)
       }
 
       if (feedbackWindow && context?.taskId === nextContext.taskId) {

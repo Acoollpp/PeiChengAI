@@ -133,14 +133,6 @@ export interface SubmitFeedbackResult {
   status: 'pending' | 'processing' | 'resolved'
 }
 
-export interface SubmitReportFeedbackResult {
-  id: string
-  task_id: string
-  user_id: string
-  helpful: boolean
-  useful_issues_text?: string | null
-}
-
 export interface ReviewTasksResponse {
   data: ReviewTask[]
   count: number
@@ -239,7 +231,7 @@ export interface CodeReviewApi {
   onEnvironmentProgress(callback: (event: EnvironmentProgressEvent) => void): () => void
   submitFeedback(payload: SubmitFeedbackPayload): Promise<SubmitFeedbackResult>
   openReportFeedbackWindow(payload: OpenReportFeedbackWindowPayload): Promise<true>
-  submitNegativeReportFeedback(taskId: string): Promise<SubmitReportFeedbackResult>
+  submitNegativeReportFeedback(taskId: string): Promise<ReportFeedbackSubmittedEvent>
   onReportFeedbackFocusAnchor(
     callback: (payload: { taskId: string; anchorId?: string }) => void
   ): () => void

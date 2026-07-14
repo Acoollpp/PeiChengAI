@@ -19,7 +19,9 @@ const context = {
 const setupApi = (): ReportFeedbackWindowApi => ({
   getContext: vi.fn(async () => context),
   focusAnchor: vi.fn(async () => true as const),
-  submit: vi.fn(async () => ({ taskId: 'task-1', usefulIssuesText: '空指针风险' })),
+  submit: vi.fn(async () => ({
+    taskId: 'task-1', helpful: true, usefulIssuesText: '空指针风险'
+  })),
   close: vi.fn(async () => true as const)
 })
 
@@ -164,7 +166,9 @@ describe('ReportFeedbackWindow', () => {
 
   it('提交期间禁用勾选、手工文本和操作按钮', async () => {
     const user = userEvent.setup()
-    let resolveSubmit: ((value: { taskId: string; usefulIssuesText: string }) => void) | undefined
+    let resolveSubmit:
+      ((value: { taskId: string; helpful: boolean; usefulIssuesText: string | null }) => void)
+      | undefined
     vi.mocked(window.reportFeedback.submit).mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -183,7 +187,7 @@ describe('ReportFeedbackWindow', () => {
     expect(screen.getByRole('button', { name: '取消' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '提交中...' })).toBeDisabled()
 
-    resolveSubmit?.({ taskId: 'task-1', usefulIssuesText: '空指针风险' })
+    resolveSubmit?.({ taskId: 'task-1', helpful: true, usefulIssuesText: '空指针风险' })
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '提交并打开PDF' })).toBeEnabled()
     })

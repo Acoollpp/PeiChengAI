@@ -9,6 +9,7 @@ describe('main window menu', () => {
     const loadFile = vi.fn()
     const loadURL = vi.fn()
     const setWindowOpenHandler = vi.fn()
+    const send = vi.fn()
     const registerIpcHandlers = vi.fn()
     const getAllWindows = vi.fn(() => [])
     const firstFeedbackWindowManager = { destroy: vi.fn() }
@@ -20,19 +21,29 @@ describe('main window menu', () => {
     const createdWindows: Array<{
       loadFile: typeof loadFile
       loadURL: typeof loadURL
-      webContents: { setWindowOpenHandler: typeof setWindowOpenHandler }
+      webContents: {
+        setWindowOpenHandler: typeof setWindowOpenHandler
+        send: typeof send
+        isDestroyed: () => boolean
+      }
     }> = []
 
     function BrowserWindowMock(): {
       loadFile: typeof loadFile
       loadURL: typeof loadURL
-      webContents: { setWindowOpenHandler: typeof setWindowOpenHandler }
+      webContents: {
+        setWindowOpenHandler: typeof setWindowOpenHandler
+        send: typeof send
+        isDestroyed: () => boolean
+      }
     } {
       const createdWindow = {
         loadFile,
         loadURL,
         webContents: {
-          setWindowOpenHandler
+          setWindowOpenHandler,
+          send,
+          isDestroyed: () => false
         }
       }
       createdWindows.push(createdWindow)
@@ -71,20 +82,27 @@ describe('main window menu', () => {
       getMainWindow: expect.any(Function),
       getReportFeedbackWindowManager: expect.any(Function)
     })
-    expect(createReportFeedbackWindowManager).toHaveBeenCalledWith(createdWindows[0])
+    expect(createReportFeedbackWindowManager).toHaveBeenCalledWith(createdWindows[0], {
+      onContextCleared: expect.any(Function)
+    })
     expect(createReportFeedbackWindowManager.mock.invocationCallOrder[0]).toBeLessThan(
       registerIpcHandlers.mock.invocationCallOrder[0]
     )
     const { getMainWindow, getReportFeedbackWindowManager } = registerIpcHandlers.mock.calls[0][0]
     expect(getMainWindow()).toBe(createdWindows[0])
     expect(getReportFeedbackWindowManager()).toBe(firstFeedbackWindowManager)
+    const { onContextCleared } = createReportFeedbackWindowManager.mock.calls[0][1]
+    onContextCleared('task-1')
+    expect(send).toHaveBeenCalledWith('report-feedback:focus-anchor', { taskId: 'task-1' })
 
     const activateHandler = on.mock.calls.find(([eventName]) => eventName === 'activate')?.[1]
     expect(activateHandler).toBeDefined()
     activateHandler()
 
     expect(createdWindows).toHaveLength(2)
-    expect(createReportFeedbackWindowManager).toHaveBeenNthCalledWith(2, createdWindows[1])
+    expect(createReportFeedbackWindowManager).toHaveBeenNthCalledWith(2, createdWindows[1], {
+      onContextCleared: expect.any(Function)
+    })
     expect(getMainWindow()).toBe(createdWindows[1])
     expect(getReportFeedbackWindowManager()).toBe(secondFeedbackWindowManager)
 

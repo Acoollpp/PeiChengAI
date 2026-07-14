@@ -9,7 +9,7 @@ import {
   type CreateTaskRequest,
   type FeedbackResult,
   type KeyLoginRequest,
-  type ReportFeedbackResult,
+  type SubmitReportFeedbackRequest,
   type SubmitFeedbackRequest,
   type SvnLoginRequest
 } from './api-client'
@@ -449,6 +449,55 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     const config = await serverConfigStore.load()
     return new ApiClient(config.server_url)
   }
+  const reportFeedbackQueues = new Map<string, Promise<void>>()
+  const serializeReportFeedback = <T>(taskId: string, submit: () => Promise<T>): Promise<T> => {
+    const previous = reportFeedbackQueues.get(taskId) ?? Promise.resolve()
+    const result = previous.catch(() => undefined).then(submit)
+    const tail = result.then(
+      () => undefined,
+      () => undefined
+    )
+    reportFeedbackQueues.set(taskId, tail)
+    void tail.then(() => {
+      if (reportFeedbackQueues.get(taskId) === tail) {
+        reportFeedbackQueues.delete(taskId)
+      }
+    })
+    return result
+  }
+  const submitReportFeedback = (
+    taskId: string,
+    payload: SubmitReportFeedbackRequest
+  ): Promise<ReportFeedbackSubmittedEvent> =>
+    serializeReportFeedback(taskId, async () => {
+      const token = await loadAccessToken(authStore)
+      const api = await createApiClient()
+      let helpful: boolean
+      let usefulIssuesText: string | null
+
+      try {
+        const result = await api.submitReportFeedback(token, taskId, payload)
+        helpful = result.helpful
+        usefulIssuesText = result.useful_issues_text ?? null
+      } catch (error) {
+        if (
+          !(error instanceof ApiError) ||
+          error.status !== 409 ||
+          !error.message.includes('report_feedback_exists')
+        ) {
+          throw error
+        }
+
+        const task = await api.readTask(token, taskId)
+        if (typeof task.report_feedback_helpful !== 'boolean') {
+          throw new Error('反馈已存在，但无法确认服务端反馈状态')
+        }
+        helpful = task.report_feedback_helpful
+        usefulIssuesText = task.report_feedback_useful_issues_text ?? null
+      }
+
+      return { taskId, helpful, usefulIssuesText }
+    })
   const syncSkill =
     dependencies.syncSkill ??
     (async (token: string): Promise<SkillSyncResult> => {
@@ -926,14 +975,12 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
   ipcMain.handle(
     'report-feedback:submit-negative',
-    async (event, taskId: string): Promise<ReportFeedbackResult> => {
+    async (event, taskId: string): Promise<ReportFeedbackSubmittedEvent> => {
       assertMainWindowSender(event, getMainWindow)
       if (typeof taskId !== 'string' || !taskId.trim()) {
         throw new Error('反馈任务 ID 无效')
       }
-      const token = await loadAccessToken(authStore)
-      const api = await createApiClient()
-      return api.submitReportFeedback(token, taskId, {
+      return submitReportFeedback(taskId, {
         helpful: false,
         useful_issues_text: null
       })
@@ -983,25 +1030,10 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       const manager = requireReportFeedbackManager(getReportFeedbackWindowManager)
       const context = manager.getContext(event.sender.id)
       const usefulIssuesText = buildUsefulIssuesText(context, payload)
-      const token = await loadAccessToken(authStore)
-      const api = await createApiClient()
-
-      try {
-        await api.submitReportFeedback(token, context.taskId, {
-          helpful: true,
-          useful_issues_text: usefulIssuesText
-        })
-      } catch (error) {
-        if (
-          !(error instanceof ApiError) ||
-          error.status !== 409 ||
-          !error.message.includes('report_feedback_exists')
-        ) {
-          throw error
-        }
-      }
-
-      const submittedEvent = { taskId: context.taskId, usefulIssuesText }
+      const submittedEvent = await submitReportFeedback(context.taskId, {
+        helpful: true,
+        useful_issues_text: usefulIssuesText
+      })
       sendToRenderer(getMainWindow()?.webContents, 'report-feedback:submitted', submittedEvent)
       manager.close(event.sender.id)
       return submittedEvent
