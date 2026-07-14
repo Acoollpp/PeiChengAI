@@ -20,7 +20,7 @@
 - 预检保持 `checking_environment` 状态；每次 `svn info` 独立超时 30 秒。
 - 预检必须发生在 `prepareWorkspace`、需求文件上传、Codex、PDF 和报告上传之前。
 - 原始 SVN stderr 只能分类并经专用脱敏后写受控日志，不得直接展示给用户或写入服务端 `error_message`。
-- SVN 命令必须使用 `spawn(command, args)` 参数数组；本次不扩展到 Windows `shell:true` 安全债务重构。
+- SVN 预检必须使用环境检查探测到的绝对命令、相同 PATH/env 和 `shell:false` 的 `spawn(command, args)`；本次不扩展重构其他既有 Windows `shell:true` 命令。
 - Electron IPC invoke 通道顺序必须与 `src/main/__tests__/ipc.test.ts` 的全等数组一致；send/listen 事件不进入该数组。
 - 所有 spec、plan、报告和 git commit 使用中文。
 
@@ -441,7 +441,7 @@ export type SvnPreflightErrorCode =
 
 - [ ] **Step 6: 复用环境命令 options**
 
-预检调用方使用 `buildVersionCommandOptions()`，不得复制 PATH 或环境构造逻辑；不注入服务端 SVN 账号密码。
+在 `environment-checker.ts` 导出 `buildDirectCommandOptions()`：复用现有 PATH/env 和 `windowsHide`，但固定 `shell:false`。预检调用方使用该函数；预检模块还必须防御性覆盖误传的 `shell:true`。不得复制 PATH 逻辑或注入服务端 SVN 账号密码。
 
 - [ ] **Step 7: 运行测试和类型检查**
 
@@ -518,7 +518,7 @@ TIMEOUT: 'SVN 地址或版本校验超时，请检查网络后重试。'
 
 - [ ] **Step 5: 统一报告名解析命令来源**
 
-`svn-report-name-resolver` 输入增加必填 `svnCommand`，生产路径传环境检查探测到的 `svnPath`；删除硬编码 `spawn('svn', ...)`，继续复用 `buildVersionCommandOptions()`。
+`svn-report-name-resolver` 输入增加必填 `svnCommand`，生产路径传环境检查探测到的 `svnPath`；删除硬编码 `spawn('svn', ...)`。报告名解析继续复用既有 `buildVersionCommandOptions()`，本次 direct-spawn 收紧只作用于接收用户 URL 的新预检模块。
 
 - [ ] **Step 6: 运行 agent、resolver、IPC 和全量测试**
 
