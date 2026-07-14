@@ -37,7 +37,7 @@
 
 - 保留后端版本契约：`old == 0` 表示全量审查；其他情况必须满足 `0 < old < new`，且 `new > 0`。
 - Electron 在工作区准备前执行相同的防御性版本校验。
-- 使用环境检查实际探测到的绝对 `svnCommand`、相同 PATH/env 和当前操作系统用户的 SVN 认证缓存；预检固定 `shell:false` 直接启动 SVN，不把 URL 参数交给系统 shell。
+- 使用环境检查实际探测到的 `svnCommand`、相同 PATH/env 和当前操作系统用户的 SVN 认证缓存；预检固定 `shell:false` 直接启动 SVN，不把 URL 参数交给系统 shell。`svnCommand` 可能是绝对路径，也可能是由 PATH 解析的命令名。
 - 命令继续使用 `spawn(command, args)` 参数数组，不拼接命令字符串。
 - 对新版本执行 `svn info --non-interactive -r <new> <svnUrl>`。
 - `old > 0` 时，再对旧版本执行相同检查；`old == 0` 时只检查新版本。

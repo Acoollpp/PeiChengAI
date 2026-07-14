@@ -20,7 +20,7 @@
 - 预检保持 `checking_environment` 状态；每次 `svn info` 独立超时 30 秒。
 - 预检必须发生在 `prepareWorkspace`、需求文件上传、Codex、PDF 和报告上传之前。
 - 原始 SVN stderr 只能分类并经专用脱敏后写受控日志，不得直接展示给用户或写入服务端 `error_message`。
-- SVN 预检必须使用环境检查探测到的绝对命令、相同 PATH/env 和 `shell:false` 的 `spawn(command, args)`；本次不扩展重构其他既有 Windows `shell:true` 命令。
+- SVN 预检必须使用环境检查探测到的命令（绝对路径或由 PATH 解析的命令名）、相同 PATH/env 和 `shell:false` 的 `spawn(command, args)`；本次不扩展重构其他既有 Windows `shell:true` 命令。
 - 公司加密 SVN 在本机 Mac 无法访问；Mac 自动化测试只使用注入 fake，不运行真实公司 SVN 成功用例。真实成功链路在具备 SVN 认证缓存的 Windows 客户端手工验收。
 - Electron IPC invoke 通道顺序必须与 `src/main/__tests__/ipc.test.ts` 的全等数组一致；send/listen 事件不进入该数组。
 - 所有 spec、plan、报告和 git commit 使用中文。
