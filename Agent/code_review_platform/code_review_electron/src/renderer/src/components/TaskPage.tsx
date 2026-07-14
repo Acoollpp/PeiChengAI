@@ -420,20 +420,10 @@ export function TaskPage({
       setError('请先选择一个已完成任务报告。')
       return
     }
-    const pdfSnapshot = {
-      taskId,
-      localPdfPath: currentPdfPathRef.current,
-      pdfReportName: currentPdfReportNameRef.current
-    }
     setError('')
     setReportFeedbackStatus('submitting')
     try {
-      const result = await window.codeReview.submitNegativeReportFeedback(taskId)
-      markTaskFeedbackSubmitted(taskId, result.helpful, result.usefulIssuesText)
-      if (selectedTaskIdRef.current === taskId) {
-        setReportFeedbackStatus('idle')
-        await openSelectedPdfReport(pdfSnapshot)
-      }
+      await window.codeReview.submitNegativeReportFeedback(taskId)
     } catch (submitError) {
       if (selectedTaskIdRef.current === taskId) {
         setReportFeedbackStatus('idle')

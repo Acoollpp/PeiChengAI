@@ -382,6 +382,9 @@ describe('TaskPage', () => {
     expect(window.codeReview.submitNegativeReportFeedback).toHaveBeenCalledWith(
       'task-local-success'
     )
+    vi.mocked(window.codeReview.onReportFeedbackSubmitted).mock.calls[0][0]({
+      taskId: 'task-local-success', helpful: false, usefulIssuesText: null
+    })
     await waitFor(() => expect(screen.getByRole('button', { name: '查看PDF报告' })).toBeInTheDocument())
     expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
       taskId: 'task-local-success',
@@ -900,8 +903,47 @@ describe('TaskPage', () => {
     expect(window.codeReview.submitNegativeReportFeedback).toHaveBeenCalledWith(
       'task-history-1'
     )
+    vi.mocked(window.codeReview.onReportFeedbackSubmitted).mock.calls[0][0]({
+      taskId: 'task-history-1', helpful: false, usefulIssuesText: null
+    })
     await waitFor(() => expect(window.codeReview.openPdfReport).toHaveBeenCalled())
     expect(screen.getByRole('button', { name: '查看PDF报告' })).toBeInTheDocument()
+  })
+
+  it('统一反馈事件与负反馈调用返回重叠时只打开一次PDF', async () => {
+    const user = userEvent.setup()
+    const feedback = createDeferred<{
+      taskId: string
+      helpful: boolean
+      usefulIssuesText: null
+    }>()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [{
+        id: 'task-history-1', svn_url: 'svn://repo/project', old_revision: '1', new_revision: '2',
+        status: 'success' as const, report_path: '/reports/task-history.md',
+        report_feedback_helpful: null
+      }],
+      count: 1
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () => '# 审查报告')
+    window.codeReview.submitNegativeReportFeedback = vi.fn(() => feedback.promise)
+    window.codeReview.openPdfReport = vi.fn(async () => ({
+      status: 'ready' as const,
+      pdfPath: '/local/task-history.pdf'
+    }))
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
+    await user.click(screen.getByRole('button', { name: '没帮助' }))
+
+    const submitted = vi.mocked(window.codeReview.onReportFeedbackSubmitted).mock.calls[0][0]
+    submitted({ taskId: 'task-history-1', helpful: false, usefulIssuesText: null })
+    feedback.resolve({ taskId: 'task-history-1', helpful: false, usefulIssuesText: null })
+
+    await waitFor(() => expect(window.codeReview.openPdfReport).toHaveBeenCalled())
+    await waitFor(() => expect(window.codeReview.submitNegativeReportFeedback).toHaveResolved())
+    expect(window.codeReview.openPdfReport).toHaveBeenCalledTimes(1)
   })
 
   it('负反馈提交期间切换任务后更新原任务但不打开当前任务PDF', async () => {
@@ -938,6 +980,9 @@ describe('TaskPage', () => {
     await user.click(screen.getByRole('button', { name: '没帮助' }))
     await user.click(viewButtons[1])
 
+    vi.mocked(window.codeReview.onReportFeedbackSubmitted).mock.calls[0][0]({
+      taskId: 'task-a', helpful: false, usefulIssuesText: null
+    })
     feedback.resolve({
       taskId: 'task-a', helpful: false, usefulIssuesText: null
     })
@@ -1336,6 +1381,9 @@ describe('TaskPage', () => {
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
     await user.click(screen.getByRole('button', { name: '没帮助' }))
 
+    vi.mocked(window.codeReview.onReportFeedbackSubmitted).mock.calls[0][0]({
+      taskId: 'task-history-1', helpful: true, usefulIssuesText: '1. 服务端已保存问题'
+    })
     await waitFor(() => expect(window.codeReview.openPdfReport).toHaveBeenCalled())
     // 反馈选择面板不再展示（已放行）
     expect(screen.queryByRole('button', { name: '有帮助' })).not.toBeInTheDocument()

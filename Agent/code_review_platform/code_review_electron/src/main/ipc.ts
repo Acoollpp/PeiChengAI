@@ -450,6 +450,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     return new ApiClient(config.server_url)
   }
   const reportFeedbackQueues = new Map<string, Promise<void>>()
+  const publishedReportFeedbackTasks = new Set<string>()
   const serializeReportFeedback = <T>(taskId: string, submit: () => Promise<T>): Promise<T> => {
     const previous = reportFeedbackQueues.get(taskId) ?? Promise.resolve()
     const result = previous.catch(() => undefined).then(submit)
@@ -496,7 +497,13 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
         usefulIssuesText = task.report_feedback_useful_issues_text ?? null
       }
 
-      return { taskId, helpful, usefulIssuesText }
+      const submittedEvent = { taskId, helpful, usefulIssuesText }
+      if (!publishedReportFeedbackTasks.has(taskId)) {
+        publishedReportFeedbackTasks.add(taskId)
+        sendToRenderer(getMainWindow()?.webContents, 'report-feedback:submitted', submittedEvent)
+        getReportFeedbackWindowManager()?.closeTask?.(taskId)
+      }
+      return submittedEvent
     })
   const syncSkill =
     dependencies.syncSkill ??
@@ -1034,8 +1041,6 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
         helpful: true,
         useful_issues_text: usefulIssuesText
       })
-      sendToRenderer(getMainWindow()?.webContents, 'report-feedback:submitted', submittedEvent)
-      manager.close(event.sender.id)
       return submittedEvent
     }
   )

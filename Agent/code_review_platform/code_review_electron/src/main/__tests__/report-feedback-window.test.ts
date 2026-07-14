@@ -278,6 +278,20 @@ describe('ReportFeedbackWindowManager', () => {
     expect(() => manager.close(senderId + 1)).toThrow('无权关闭当前反馈窗口')
   })
 
+  it('仅按匹配的任务 ID 关闭当前反馈窗口', async () => {
+    const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
+    const manager = createReportFeedbackWindowManager(createMainWindow() as never)
+    const feedbackWindow = await openLoadedWindow(manager, createContext('task-1'))
+
+    expect(manager.closeTask('task-2')).toBe(false)
+    expect(feedbackWindow.destroy).not.toHaveBeenCalled()
+    expect(manager.isCurrentSender(feedbackWindow.webContents.id)).toBe(true)
+
+    expect(manager.closeTask('task-1')).toBe(true)
+    expect(feedbackWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(manager.isCurrentSender(feedbackWindow.webContents.id)).toBe(false)
+  })
+
   it('原生关闭、显式关闭和主窗口销毁都会清理窗口上下文', async () => {
     const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
     const mainWindow = createMainWindow()

@@ -9,6 +9,7 @@ export interface ReportFeedbackWindowManager {
   getContext(senderId: number): ReportFeedbackContext
   isCurrentSender(senderId: number): boolean
   close(senderId: number): true
+  closeTask(taskId: string): boolean
   destroy(): void
 }
 
@@ -176,6 +177,15 @@ export const createReportFeedbackWindowManager = (
     close(senderId) {
       if (!isCurrentSender(senderId)) {
         throw new Error('无权关闭当前反馈窗口')
+      }
+
+      destroyCurrent()
+      return true
+    },
+
+    closeTask(taskId) {
+      if (!feedbackWindow || context?.taskId !== taskId) {
+        return false
       }
 
       destroyCurrent()

@@ -1715,7 +1715,9 @@ describe('registerIpcHandlers', () => {
   })
 
   it('submits negative report feedback with a fixed payload', async () => {
-    const mainWindow = { webContents: { id: 11 } }
+    const send = vi.fn()
+    const closeTask = vi.fn(() => false)
+    const mainWindow = { webContents: { id: 11, send, isDestroyed: () => false } }
     const submitReportFeedback = vi.fn(async () => ({
       id: 'report-feedback-1',
       task_id: 'task-1',
@@ -1729,7 +1731,8 @@ describe('registerIpcHandlers', () => {
       authStore: {
         load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh' }))
       } as never,
-      getMainWindow: () => mainWindow as never
+      getMainWindow: () => mainWindow as never,
+      getReportFeedbackWindowManager: () => ({ closeTask } as never)
     })
     const handler = handleMock.mock.calls.find(
       ([channel]) => channel === 'report-feedback:submit-negative'
@@ -1742,6 +1745,10 @@ describe('registerIpcHandlers', () => {
       helpful: false,
       useful_issues_text: null
     })
+    expect(send).toHaveBeenCalledWith('report-feedback:submitted', {
+      taskId: 'task-1', helpful: false, usefulIssuesText: null
+    })
+    expect(closeTask).toHaveBeenCalledWith('task-1')
   })
 
   it('同一任务负反馈先成功、正反馈后冲突时以服务端负反馈状态为准', async () => {
@@ -1765,6 +1772,7 @@ describe('registerIpcHandlers', () => {
       report_feedback_useful_issues_text: null
     }))
     const send = vi.fn()
+    const closeTask = vi.fn(() => true)
     const context = {
       taskId: 'task-1',
       options: [{ id: 'option-1', text: '空指针风险', anchorId: 'anchor-1' }]
@@ -1773,7 +1781,11 @@ describe('registerIpcHandlers', () => {
       api: { submitReportFeedback, readTask } as never,
       authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
       getMainWindow: () => ({ webContents: { id: 11, send, isDestroyed: () => false } }) as never,
-      getReportFeedbackWindowManager: () => ({ getContext: () => context, close: vi.fn(() => true) } as never)
+      getReportFeedbackWindowManager: () => ({
+        getContext: () => context,
+        close: vi.fn(() => true),
+        closeTask
+      } as never)
     })
     const negativeHandler = handleMock.mock.calls.find(
       ([channel]) => channel === 'report-feedback:submit-negative'
@@ -1806,6 +1818,9 @@ describe('registerIpcHandlers', () => {
     expect(send).toHaveBeenLastCalledWith('report-feedback:submitted', {
       taskId: 'task-1', helpful: false, usefulIssuesText: null
     })
+    expect(send.mock.calls.filter(([channel]) => channel === 'report-feedback:submitted')).toHaveLength(1)
+    expect(closeTask).toHaveBeenCalledTimes(1)
+    expect(closeTask).toHaveBeenCalledWith('task-1')
   })
 
   it('同一任务正反馈先成功、负反馈后冲突时以服务端正反馈状态为准', async () => {
@@ -1831,12 +1846,18 @@ describe('registerIpcHandlers', () => {
       taskId: 'task-1',
       options: [{ id: 'option-1', text: '空指针风险', anchorId: 'anchor-1' }]
     }
+    const send = vi.fn()
+    const closeTask = vi.fn(() => true)
     const { registerIpcHandlers } = await import('../ipc')
     registerIpcHandlers({
       api: { submitReportFeedback, readTask } as never,
       authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
-      getMainWindow: () => ({ webContents: { id: 11, send: vi.fn(), isDestroyed: () => false } }) as never,
-      getReportFeedbackWindowManager: () => ({ getContext: () => context, close: vi.fn(() => true) } as never)
+      getMainWindow: () => ({ webContents: { id: 11, send, isDestroyed: () => false } }) as never,
+      getReportFeedbackWindowManager: () => ({
+        getContext: () => context,
+        close: vi.fn(() => true),
+        closeTask
+      } as never)
     })
     const negativeHandler = handleMock.mock.calls.find(
       ([channel]) => channel === 'report-feedback:submit-negative'
@@ -1866,6 +1887,12 @@ describe('registerIpcHandlers', () => {
       taskId: 'task-1', helpful: true, usefulIssuesText: '1. 空指针风险'
     })
     expect(readTask).toHaveBeenCalledWith('token-123', 'task-1')
+    expect(send.mock.calls.filter(([channel]) => channel === 'report-feedback:submitted')).toHaveLength(1)
+    expect(send).toHaveBeenCalledWith('report-feedback:submitted', {
+      taskId: 'task-1', helpful: true, usefulIssuesText: '1. 空指针风险'
+    })
+    expect(closeTask).toHaveBeenCalledTimes(1)
+    expect(closeTask).toHaveBeenCalledWith('task-1')
   })
 
   it('反馈冲突后仍查不到服务端真实反馈时拒绝成功', async () => {
@@ -1995,7 +2022,7 @@ describe('registerIpcHandlers', () => {
       useful_issues_text: '1. 空指针风险\n2. 越界风险\n3. 手工补充'
     }))
     const send = vi.fn()
-    const close = vi.fn(() => true as const)
+    const closeTask = vi.fn(() => true)
     const context = {
       taskId: 'task-1',
       options: [
@@ -2009,7 +2036,7 @@ describe('registerIpcHandlers', () => {
         if (senderId !== 22) throw new Error('无权访问当前反馈窗口')
         return context
       }),
-      close
+      closeTask
     }
     const { registerIpcHandlers } = await import('../ipc')
     registerIpcHandlers({
@@ -2049,8 +2076,8 @@ describe('registerIpcHandlers', () => {
       helpful: true,
       usefulIssuesText: '1. 空指针风险\n2. 越界风险\n3. 手工补充'
     })
-    expect(close).toHaveBeenCalledWith(22)
-    expect(send.mock.invocationCallOrder[0]).toBeLessThan(close.mock.invocationCallOrder[0])
+    expect(closeTask).toHaveBeenCalledWith('task-1')
+    expect(send.mock.invocationCallOrder[0]).toBeLessThan(closeTask.mock.invocationCallOrder[0])
   })
 
   it('反馈已存在时读取服务端真实状态并关闭反馈窗口', async () => {
@@ -2068,7 +2095,7 @@ describe('registerIpcHandlers', () => {
       report_feedback_useful_issues_text: '1. 服务端已保存内容'
     }))
     const send = vi.fn()
-    const close = vi.fn(() => true as const)
+    const closeTask = vi.fn(() => true)
     const context = {
       taskId: 'task-1',
       options: [{ id: 'option-1', text: '空指针风险', anchorId: 'anchor-1' }]
@@ -2078,7 +2105,7 @@ describe('registerIpcHandlers', () => {
       api: { submitReportFeedback, readTask } as never,
       authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
       getMainWindow: () => ({ webContents: { send, isDestroyed: () => false } }) as never,
-      getReportFeedbackWindowManager: () => ({ getContext: () => context, close } as never)
+      getReportFeedbackWindowManager: () => ({ getContext: () => context, closeTask } as never)
     })
     const handler = handleMock.mock.calls.find(
       ([channel]) => channel === 'report-feedback-window:submit'
@@ -2092,7 +2119,7 @@ describe('registerIpcHandlers', () => {
     expect(send).toHaveBeenCalledWith('report-feedback:submitted', {
       taskId: 'task-1', helpful: true, usefulIssuesText: '1. 服务端已保存内容'
     })
-    expect(close).toHaveBeenCalledWith(22)
+    expect(closeTask).toHaveBeenCalledWith('task-1')
   })
 
   it.each([
