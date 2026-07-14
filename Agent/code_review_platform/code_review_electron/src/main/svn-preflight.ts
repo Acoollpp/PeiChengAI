@@ -118,6 +118,10 @@ export const buildSvnInfoArgs = (svnUrl: string, revision: string): string[] => 
 export const sanitizeSvnDiagnostic = (diagnostic: string): string =>
   diagnostic
     .replace(
+      /^(\s*(?:username|password|token)\s+)(?:"[^"]*"|'[^']*'|[^\s,;]+)(\s*)$/gim,
+      '$1[已脱敏]$2'
+    )
+    .replace(
       /((?:["']?)\b[\w.-]*(?:username|password|token)[\w.-]*\b(?:["']?)\s*(?:=|:)\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
       '$1[已脱敏]'
     )
@@ -132,6 +136,10 @@ export const sanitizeSvnDiagnostic = (diagnostic: string): string =>
     .replace(
       /(\b(?=[\w.-]*[_.-])[\w.-]*(?:username|password|token)[\w.-]*\b\s+)(?![=:])(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
       '$1[已脱敏]'
+    )
+    .replace(
+      /(\bspawn\s+)((?:\/|\\\\|[A-Za-z]:\\)[^\r\n]*?)(\s+(?:ENOENT|EACCES|EPERM)\b)/gi,
+      '$1[已脱敏路径]$3'
     )
     .replace(/\b(?:https?|svn(?:\+ssh)?|file):\/\/[^\s"'<>]+/gi, '[已脱敏URL]')
     .replace(/(["'])\b[A-Za-z]:\\[^"'\r\n]*\1/g, '[已脱敏路径]')

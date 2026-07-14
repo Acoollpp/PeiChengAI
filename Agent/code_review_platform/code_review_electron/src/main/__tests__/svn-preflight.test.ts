@@ -411,6 +411,37 @@ describe('SVN 诊断脱敏', () => {
     expect(sanitized.match(/\[已脱敏路径\]/g)).toHaveLength(2)
   })
 
+  it('仅对整行裸 username、password、token 字段值脱敏', () => {
+    const diagnostic = [
+      'token abc',
+      '  PASSWORD secret  ',
+      'username alice',
+      'Authentication token expired while requesting username lookup'
+    ].join('\n')
+
+    const sanitized = sanitizeSvnDiagnostic(diagnostic)
+
+    expect(sanitized).not.toMatch(/\babc\b|secret|alice/i)
+    expect(sanitized).toContain('token [已脱敏]')
+    expect(sanitized).toContain('PASSWORD [已脱敏]')
+    expect(sanitized).toContain('username [已脱敏]')
+    expect(sanitized).toContain('Authentication token expired while requesting username lookup')
+  })
+
+  it.each([
+    ['spawn /Applications/My SVN/bin/svn ENOENT', 'spawn [已脱敏路径] ENOENT'],
+    ['spawn \\\\server\\Share Name\\svn.exe EACCES', 'spawn [已脱敏路径] EACCES'],
+    ['spawn C:\\Program Files\\SVN\\svn.exe EPERM', 'spawn [已脱敏路径] EPERM']
+  ])('完整脱敏 Node spawn 错误路径：%s', (diagnostic, expected) => {
+    expect(sanitizeSvnDiagnostic(diagnostic)).toBe(expected)
+  })
+
+  it('保留不含绝对路径的普通 spawn 诊断', () => {
+    const diagnostic = 'process spawn worker ENOENT while retrying'
+
+    expect(sanitizeSvnDiagnostic(diagnostic)).toBe(diagnostic)
+  })
+
   it('保留未赋值的普通诊断文本', () => {
     const diagnostic = 'Authentication token expired while requesting username lookup'
 
