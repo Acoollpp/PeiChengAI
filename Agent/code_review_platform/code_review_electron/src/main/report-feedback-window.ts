@@ -66,18 +66,26 @@ export const createReportFeedbackWindowManager = (
     context = null
     currentLoadPromise = null
     if (clearedContext) {
-      options.onContextCleared?.(clearedContext.taskId)
+      try {
+        options.onContextCleared?.(clearedContext.taskId)
+      } catch {
+        // 高亮清理失败不应阻断反馈窗口生命周期。
+      }
     }
   }
 
   const destroyCurrent = (): void => {
     const window = feedbackWindow
-    if (window) {
-      clearCurrent(window)
+    if (!window) {
+      return
     }
 
-    if (window && !window.isDestroyed()) {
-      window.destroy()
+    try {
+      clearCurrent(window)
+    } finally {
+      if (!window.isDestroyed()) {
+        window.destroy()
+      }
     }
   }
 

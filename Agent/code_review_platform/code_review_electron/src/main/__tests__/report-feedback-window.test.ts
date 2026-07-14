@@ -292,6 +292,53 @@ describe('ReportFeedbackWindowManager', () => {
     expect(manager.isCurrentSender(feedbackWindow.webContents.id)).toBe(false)
   })
 
+  it('清理回调抛错时按任务关闭仍销毁窗口并清空上下文', async () => {
+    const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
+    const onContextCleared = vi.fn(() => {
+      throw new Error('清理高亮失败')
+    })
+    const manager = createReportFeedbackWindowManager(createMainWindow() as never, {
+      onContextCleared
+    })
+    const feedbackWindow = await openLoadedWindow(manager, createContext('task-1'))
+
+    expect(() => manager.closeTask('task-1')).not.toThrow()
+    expect(feedbackWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(manager.isCurrentSender(feedbackWindow.webContents.id)).toBe(false)
+    expect(() => manager.getContext(feedbackWindow.webContents.id)).toThrow(
+      '无权访问当前反馈窗口'
+    )
+    expect(onContextCleared).toHaveBeenCalledTimes(1)
+    expect(onContextCleared).toHaveBeenCalledWith('task-1')
+  })
+
+  it('替换任务时清理回调抛错仍打开新窗口且旧窗口迟到关闭不影响新上下文', async () => {
+    const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
+    const onContextCleared = vi.fn((taskId: string) => {
+      if (taskId === 'task-1') {
+        throw new Error('清理旧任务高亮失败')
+      }
+    })
+    const manager = createReportFeedbackWindowManager(createMainWindow() as never, {
+      onContextCleared
+    })
+
+    const oldWindow = await openLoadedWindow(manager, createContext('task-1'))
+    const newOpen = manager.open(createContext('task-2'))
+    const newWindow = electronMock.createdWindows[1]
+    expect(newWindow).toBeDefined()
+    newWindow.loadDeferred.resolve()
+
+    await expect(newOpen).resolves.toBe(true)
+    expect(oldWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(manager.getContext(newWindow.webContents.id).taskId).toBe('task-2')
+
+    oldWindow.handlers.get('closed')?.()
+    expect(manager.getContext(newWindow.webContents.id).taskId).toBe('task-2')
+    expect(onContextCleared).toHaveBeenCalledTimes(1)
+    expect(onContextCleared).toHaveBeenCalledWith('task-1')
+  })
+
   it('原生关闭、显式关闭和主窗口销毁都会清理窗口上下文', async () => {
     const { createReportFeedbackWindowManager } = await import('../report-feedback-window')
     const mainWindow = createMainWindow()
