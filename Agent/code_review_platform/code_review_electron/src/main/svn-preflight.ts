@@ -114,7 +114,11 @@ export const buildSvnInfoArgs = (svnUrl: string, revision: string): string[] => 
 export const sanitizeSvnDiagnostic = (diagnostic: string): string =>
   diagnostic
     .replace(
-      /(\b(?:username|password|token)\b\s*(?:(?:=|:)\s*|\s+))(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
+      /((?:["']?)\b[\w.-]*(?:username|password|token)[\w.-]*\b(?:["']?)\s*(?:=|:)\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
+      '$1[已脱敏]'
+    )
+    .replace(
+      /(\b(?:username|password|token)\b\s+)(?:"[^"]*"|'[^']*')/gi,
       '$1[已脱敏]'
     )
     .replace(/\b(?:https?|svn(?:\+ssh)?|file):\/\/[^\s"'<>]+/gi, '[已脱敏URL]')
@@ -242,16 +246,16 @@ const classifySvnDiagnostic = (
   diagnostic: string,
   target: RevisionTarget
 ): SvnPreflightErrorCode => {
-  if (/\b(?:E170001|E215004)\b|authentication failed|no more credentials/i.test(diagnostic)) {
-    return 'AUTHENTICATION_FAILED'
-  }
-
   if (
-    /\b(?:E175013|E220004)\b|permission denied|access[^\r\n]*forbidden|not authorized|authorization failed|http status 403/i.test(
+    /permission denied|forbidden|not authorized|authorization failed|http status 403|\b(?:E175013|E220004)\b/i.test(
       diagnostic
     )
   ) {
     return 'PERMISSION_DENIED'
+  }
+
+  if (/\b(?:E170001|E215004)\b|authentication failed|no more credentials/i.test(diagnostic)) {
+    return 'AUTHENTICATION_FAILED'
   }
 
   if (

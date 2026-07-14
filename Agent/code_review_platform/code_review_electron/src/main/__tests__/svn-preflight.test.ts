@@ -166,6 +166,7 @@ describe('runSvnPreflight 执行顺序', () => {
 describe('runSvnPreflight 错误分类', () => {
   it.each([
     ['svn: E170001: Authentication failed', 'AUTHENTICATION_FAILED'],
+    ['svn: E170001: Authorization failed', 'PERMISSION_DENIED'],
     ['svn: E215004: No more credentials or we tried too many times', 'AUTHENTICATION_FAILED'],
     ['svn: E175013: Access to /trunk forbidden', 'PERMISSION_DENIED'],
     ['svn: E220004: Item is not readable', 'PERMISSION_DENIED'],
@@ -265,5 +266,54 @@ describe('SVN 诊断脱敏', () => {
 
     expect(logger).toHaveBeenCalledOnce()
     expect(logger.mock.calls[0][0]).not.toMatch(/alice|secret|svn\.example\.com/i)
+  })
+
+  it('脱敏字段名中包含 username、password 或 token 的赋值', () => {
+    const diagnostic = [
+      'svn_username=alice',
+      'svn_password = secret',
+      'ACCESS_TOKEN=abc',
+      'refresh_token: abc-refresh',
+      'CustomUserName: Bob',
+      '"session_token": "json-token"',
+      'token "quoted-token"'
+    ].join('\n')
+
+    const sanitized = sanitizeSvnDiagnostic(diagnostic)
+
+    expect(sanitized).not.toMatch(
+      /alice|secret|abc-refresh|\babc\b|Bob|json-token|quoted-token/i
+    )
+    expect(sanitized).toContain('svn_username=[已脱敏]')
+    expect(sanitized).toContain('svn_password = [已脱敏]')
+    expect(sanitized).toContain('ACCESS_TOKEN=[已脱敏]')
+    expect(sanitized).toContain('refresh_token: [已脱敏]')
+    expect(sanitized).toContain('CustomUserName: [已脱敏]')
+    expect(sanitized).toContain('"session_token": [已脱敏]')
+    expect(sanitized).toContain('token [已脱敏]')
+  })
+
+  it('保留未赋值的普通诊断文本', () => {
+    const diagnostic = 'Authentication token expired while requesting username lookup'
+
+    expect(sanitizeSvnDiagnostic(diagnostic)).toBe(diagnostic)
+  })
+
+  it('logger 不接收带前缀敏感字段的原值', async () => {
+    const logger = vi.fn()
+    const { spawn } = createSpawn([
+      {
+        code: 1,
+        stderr:
+          'svn: E170001: Authentication failed svn_username=alice svn_password=secret access_token=abc refresh_token: refresh-secret'
+      }
+    ])
+
+    await expect(runSvnPreflight(validInput, { spawn, logger })).rejects.toMatchObject({
+      code: 'AUTHENTICATION_FAILED'
+    })
+
+    expect(logger).toHaveBeenCalledOnce()
+    expect(logger.mock.calls[0][0]).not.toMatch(/alice|secret|\babc\b/i)
   })
 })
