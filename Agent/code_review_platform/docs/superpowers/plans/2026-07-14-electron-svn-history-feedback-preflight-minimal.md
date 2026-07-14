@@ -41,6 +41,7 @@
 - Create: `code_review_electron/src/preload/report-feedback.ts`
 - Create: `code_review_electron/src/preload/report-feedback.test.ts`
 - Create: `code_review_electron/src/renderer/feedback.html`
+- Create: `code_review_electron/src/renderer/src/report-feedback-main.tsx`
 - Modify: `code_review_electron/electron.vite.config.ts`
 
 **Interfaces:**
@@ -123,7 +124,7 @@ close(): Promise<true>
 
 - [ ] **Step 4: 实现最小 preload 和 HTML**
 
-`report-feedback.ts` 只调用四个专用 invoke 通道。`feedback.html` 只包含 `#root` 并加载 `/src/report-feedback-main.tsx`，不得加载主应用入口。
+`report-feedback.ts` 只调用四个专用 invoke 通道。`feedback.html` 只包含 `#root` 并加载 `/src/report-feedback-main.tsx`，不得加载主应用入口。Task 1 的 renderer 入口只渲染“正在加载反馈窗口...”占位，保证独立构建；Task 2 再替换为正式反馈组件。
 
 - [ ] **Step 5: 配置多入口构建**
 
@@ -142,14 +143,14 @@ Expected: PASS，且存在 `out/preload/report-feedback.mjs`（或 `.js`）和 `
 - [ ] **Step 7: 提交**
 
 ```powershell
-git add code_review_electron/electron.vite.config.ts code_review_electron/src/shared/report-feedback-window.ts code_review_electron/src/renderer/src/code-review-api.ts code_review_electron/src/renderer/src/report-feedback-api.ts code_review_electron/src/preload/report-feedback.ts code_review_electron/src/preload/report-feedback.test.ts code_review_electron/src/renderer/feedback.html
+git add code_review_electron/electron.vite.config.ts code_review_electron/src/shared/report-feedback-window.ts code_review_electron/src/renderer/src/code-review-api.ts code_review_electron/src/renderer/src/report-feedback-api.ts code_review_electron/src/preload/report-feedback.ts code_review_electron/src/preload/report-feedback.test.ts code_review_electron/src/renderer/feedback.html code_review_electron/src/renderer/src/report-feedback-main.tsx
 git commit -m "feat: 定义最小反馈窗口契约"
 ```
 
 ### Task 2: 实现无草稿恢复的反馈窗口界面
 
 **Files:**
-- Create: `code_review_electron/src/renderer/src/report-feedback-main.tsx`
+- Modify: `code_review_electron/src/renderer/src/report-feedback-main.tsx`
 - Create: `code_review_electron/src/renderer/src/components/ReportFeedbackWindow.tsx`
 - Create: `code_review_electron/src/renderer/src/components/ReportFeedbackWindow.test.tsx`
 - Create: `code_review_electron/src/renderer/src/report-feedback.css`
