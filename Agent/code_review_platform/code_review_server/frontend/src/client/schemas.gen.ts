@@ -1787,6 +1787,92 @@ export const ReviewTaskPublicSchema = {
     title: 'ReviewTaskPublic'
 } as const;
 
+export const ReviewTaskReportFeedbackCreateSchema = {
+    properties: {
+        helpful: {
+            type: 'boolean',
+            title: 'Helpful'
+        },
+        useful_issues_text: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 4096
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Useful Issues Text'
+        }
+    },
+    type: 'object',
+    required: ['helpful'],
+    title: 'ReviewTaskReportFeedbackCreate'
+} as const;
+
+export const ReviewTaskReportFeedbackPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Task Id'
+        },
+        user_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'User Id'
+        },
+        helpful: {
+            type: 'boolean',
+            title: 'Helpful'
+        },
+        useful_issues_text: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Useful Issues Text'
+        },
+        created_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created At'
+        },
+        updated_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'task_id', 'user_id', 'helpful'],
+    title: 'ReviewTaskReportFeedbackPublic'
+} as const;
+
 export const ReviewTaskReportUserStatsPublicSchema = {
     properties: {
         user_name: {
@@ -1824,7 +1910,7 @@ export const ReviewTaskReportUserStatsPublicSchema = {
 export const ReviewTaskStatsPublicSchema = {
     properties: {
         range: {
-            '$ref': '#/components/schemas/FeedbackStatsRange'
+            '$ref': '#/components/schemas/ReviewTaskStatsRange'
         },
         total: {
             type: 'integer',
@@ -1881,6 +1967,12 @@ export const ReviewTaskStatsPublicSchema = {
     type: 'object',
     required: ['range', 'total', 'success', 'running', 'failed_or_error', 'by_status'],
     title: 'ReviewTaskStatsPublic'
+} as const;
+
+export const ReviewTaskStatsRangeSchema = {
+    type: 'string',
+    enum: ['this_week', 'last_week', 'today', 'yesterday', 'all'],
+    title: 'ReviewTaskStatsRange'
 } as const;
 
 export const ReviewTaskStatusSchema = {

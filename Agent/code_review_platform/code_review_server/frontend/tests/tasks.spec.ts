@@ -156,10 +156,16 @@ test.describe("Admin task navigation", () => {
     await page.goto("/tasks/review")
 
     await expect(
-      page.getByText("Codex 审查超过 60 分钟仍未完成，请稍后重试或联系管理员。"),
+      page.getByText(
+        "Codex 审查超过 60 分钟仍未完成，请稍后重试或联系管理员。",
+      ),
     ).toBeVisible()
-    await expect(page.getByText("SVN权限不足（或者SVN账号未登录）")).toBeVisible()
-    await expect(page.getByText("Codex报错请检查Codex对话后重试。")).toBeVisible()
+    await expect(
+      page.getByText("SVN权限不足（或者SVN账号未登录）"),
+    ).toBeVisible()
+    await expect(
+      page.getByText("Codex报错请检查Codex对话后重试。"),
+    ).toBeVisible()
     await expect(page.getByText("Codex review timed out")).not.toBeVisible()
   })
 
@@ -211,6 +217,38 @@ test.describe("Admin task navigation", () => {
     const cells = taskRow.getByRole("cell")
     await expect(cells.nth(5)).toContainText("2026-06-11 14:03:20")
     await expect(cells.nth(6)).toHaveText("-")
+  })
+
+  test("Admin task filters combine status feedback and started date", async ({
+    page,
+  }) => {
+    await logInWithKey(page, testApiKey)
+
+    const requestedUrls: string[] = []
+    await page.route("**/api/v1/review-tasks?**", async (route) => {
+      requestedUrls.push(route.request().url())
+      await route.fulfill({
+        contentType: "application/json",
+        json: {
+          data: [],
+          count: 0,
+        },
+      })
+    })
+
+    await page.goto("/tasks/review")
+    await page.getByLabel("状态").click()
+    await page.getByRole("option", { name: "已完成" }).click()
+    await page.getByLabel("是否有帮助").click()
+    await page.getByRole("option", { name: "未反馈" }).click()
+    await page.getByLabel("开始时间").fill("2026-07-07")
+    await page.getByRole("button", { name: "搜索" }).click()
+
+    await expect.poll(() => requestedUrls.length).toBeGreaterThan(1)
+    const searchRequest = new URL(requestedUrls.at(-1) ?? "")
+    expect(searchRequest.searchParams.get("status")).toBe("success")
+    expect(searchRequest.searchParams.get("report_feedback")).toBe("none")
+    expect(searchRequest.searchParams.get("started_from")).toBe("2026-07-07")
   })
 
   test("Admin task table shows PDF download button for tasks with PDF report", async ({
@@ -278,7 +316,8 @@ test.describe("Admin task navigation", () => {
               started_at: "2026-06-11T14:03:20",
               finished_at: "2026-06-11T14:08:20",
               report_feedback_helpful: true,
-              report_feedback_useful_issues_text: "1. 空指针风险\n2. 越界访问风险",
+              report_feedback_useful_issues_text:
+                "1. 空指针风险\n2. 越界访问风险",
             },
             {
               id: "33333333-3333-3333-3333-333333333333",
@@ -305,19 +344,25 @@ test.describe("Admin task navigation", () => {
 
     await page.goto("/tasks/review")
 
-    await expect(page.getByRole("columnheader", { name: "是否有帮助" })).toBeVisible()
-    await expect(page.getByRole("columnheader", { name: "有用信息" })).toBeVisible()
+    await expect(
+      page.getByRole("columnheader", { name: "是否有帮助" }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole("columnheader", { name: "有用信息" }),
+    ).toBeVisible()
     await expect(page.getByText("有帮助")).toBeVisible()
     await expect(page.getByText("未反馈")).toBeVisible()
     const usefulCell = page.getByTitle("1. 空指针风险\n2. 越界访问风险")
     await expect(usefulCell).toBeVisible()
 
     await page.setViewportSize({ width: 1600, height: 900 })
-    await expect(page.locator('[data-testid="review-tasks-content"]')).toHaveClass(
-      /max-w-\[1600px\]/,
-    )
+    await expect(
+      page.locator('[data-testid="review-tasks-content"]'),
+    ).toHaveClass(/max-w-\[1600px\]/)
     const hasPageHorizontalOverflow = await page.evaluate(
-      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      () =>
+        document.documentElement.scrollWidth >
+        document.documentElement.clientWidth,
     )
     expect(hasPageHorizontalOverflow).toBe(false)
   })

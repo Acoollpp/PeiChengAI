@@ -1303,6 +1303,86 @@ def test_review_task_filters_are_combined_with_and(
     assert svn_only["task"]["id"] not in listed_ids
 
 
+def test_review_task_filters_include_status_feedback_and_started_from(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    matching = _create_review_task(client, normal_user_token_headers, old_revision="21")
+    helpful = _create_review_task(client, normal_user_token_headers, old_revision="22")
+    wrong_status = _create_review_task(
+        client, normal_user_token_headers, old_revision="23"
+    )
+    older_unfeedback = _create_review_task(
+        client, normal_user_token_headers, old_revision="24"
+    )
+    started_from = _today_elapsed_datetime(90)
+    recent_started = _today_elapsed_datetime(30)
+    older_started = started_from - timedelta(minutes=10)
+
+    _set_review_task_stats_fields(
+        db,
+        matching["id"],
+        created_at=recent_started,
+        status=ReviewTaskStatus.success,
+        started_at=recent_started,
+        finished_at=recent_started + timedelta(minutes=5),
+        report_path="/tmp/matching.md",
+    )
+    _set_review_task_report(db, helpful["id"])
+    _submit_report_feedback(
+        client,
+        normal_user_token_headers,
+        helpful["id"],
+        helpful=True,
+        useful_issues_text="1. 命中有效问题",
+    )
+    _set_review_task_stats_fields(
+        db,
+        helpful["id"],
+        created_at=recent_started,
+        status=ReviewTaskStatus.success,
+        started_at=recent_started,
+        finished_at=recent_started + timedelta(minutes=5),
+        report_path="/tmp/helpful.md",
+    )
+    _set_review_task_stats_fields(
+        db,
+        wrong_status["id"],
+        created_at=recent_started,
+        status=ReviewTaskStatus.failed,
+        started_at=recent_started,
+        finished_at=recent_started + timedelta(minutes=5),
+    )
+    _set_review_task_stats_fields(
+        db,
+        older_unfeedback["id"],
+        created_at=older_started,
+        status=ReviewTaskStatus.success,
+        started_at=older_started,
+        finished_at=older_started + timedelta(minutes=5),
+        report_path="/tmp/older.md",
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=superuser_token_headers,
+        params={
+            "status": "success",
+            "report_feedback": "none",
+            "started_from": started_from.isoformat(),
+        },
+    )
+
+    assert response.status_code == 200
+    listed_ids = {task["id"] for task in response.json()["data"]}
+    assert matching["id"] in listed_ids
+    assert helpful["id"] not in listed_ids
+    assert wrong_status["id"] not in listed_ids
+    assert older_unfeedback["id"] not in listed_ids
+
+
 def test_normal_user_filters_only_search_own_review_tasks(
     client: TestClient,
     db: Session,

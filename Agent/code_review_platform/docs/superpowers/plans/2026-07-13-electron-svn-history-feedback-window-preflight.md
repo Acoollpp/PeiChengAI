@@ -1,5 +1,7 @@
 # Electron SVN 历史框、反馈工具窗口与 SVN 预检 Implementation Plan
 
+> 已被 `docs/superpowers/plans/2026-07-14-electron-svn-history-feedback-preflight-minimal.md` 替代；仅保留作历史记录，不作为当前实现依据。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 优化 SVN 地址历史交互，将“有帮助”表单迁移到可移出主客户端的原生工具窗口，并在 Codex 启动前完成与后端契约一致的 SVN 参数和可访问性预检。
@@ -16,9 +18,6 @@
 - SVN 历史最多保留 3 条，列表必须位于正常文档流中，不得覆盖版本字段。
 - 反馈窗口必须是单实例、非模态、有 `parent`、无全局 `alwaysOnTop`，允许移出主窗口边界。
 - 原生关闭按钮销毁反馈窗口；“稍后提交”只隐藏窗口；草稿仅保存在主进程内存。
-- 反馈草稿只保存候选项 ID（`selectedOptionIds`），提交时由主进程根据当前会话映射为问题文本；renderer 不得直接提交候选问题文本。
-- 主窗口最小化前必须记录反馈窗口是否可见；恢复主窗口时只恢复此前可见的反馈窗口，不得重新显示用户已“稍后提交”隐藏的窗口。
-- 反馈窗口创建或加载失败时，`openReportFeedbackWindow` 必须拒绝，主页面固定显示“反馈窗口打开失败，请重试。”，且不影响报告查看和其他任务操作。
 - 预检保持 `checking_environment` 状态，不增加后端状态枚举；每次 `svn info` 独立超时 30 秒。
 - 预检必须发生在 `prepareWorkspace`、需求文件上传、Codex 和报告生成之前。
 - 用户可读预检错误使用 `preflightErrorMessages`，不得再次经过 `sanitizeErrorSummary`；原始 stderr 只能分类并经专用脱敏后写受控日志。
@@ -29,9 +28,8 @@
 
 1. **SVN 凭据链路：** 当前实际审查不会把服务端 `/me/svn-credential` 返回的账号密码注入 Codex 或本地 SVN 子进程，而是由当前 Windows 用户运行 SVN CLI，并读取 SVN 全局认证缓存。预检必须使用同一 `svnCommand`、同一 `buildVersionCommandOptions()` 环境和同一 OS 用户，附加 `--non-interactive` 仅阻止交互等待，不得另取或拼接服务端凭据。
 2. **历史反向任务：** 新客户端重试旧时代创建的 `old > new` 历史任务时会在预检防御性校验阶段失败，这是预期兼容性变化。发布说明必须明确“反向版本历史任务不可重试，请新建合法版本范围任务”。
-3. **Windows shell 注入备忘：** 本项目在公司内部受控环境使用，本次保持与环境检查一致的 `buildVersionCommandOptions()`，Windows 仍为 `shell: true`，作为已知安全债务记录但不阻塞本计划。命令必须继续使用 `spawn(command, args)` 的参数数组，禁止自行拼接命令字符串；另在发布说明记录后续安全改造应评估 `shell: false + 绝对 svnPath`，并覆盖包含 `&`、`|`、`>` 等 shell 元字符的输入。本次不扩大到安装器和既有 SVN 命令链路的统一重构。
+3. **Windows shell 注入备忘：** 本次保持与环境检查一致的 `buildVersionCommandOptions()`，Windows 仍为 `shell: true`。命令必须继续使用 `spawn(command, args)` 的参数数组，禁止自行拼接命令字符串；另在发布说明记录后续安全改造应评估 `shell: false + 绝对 svnPath`。本次不扩大到安装器和既有 SVN 命令链路的统一重构。
 4. **测试夹具范围：** 实施前执行 `rg -n "_create_review_task\\(" code_review_server/backend/tests/api/routes/test_review_tasks.py`，确认所有调用点。辅助函数必须根据 `old_revision` 计算合法的默认 `new_revision`，不能逐个修改无关测试数据。
-5. **反馈草稿身份：** 权威设计中的“已选择的问题文本”描述用户可见内容；实现层统一保存 `selectedOptionIds`，提交时才由主进程映射为文本。这是存储身份细化，不改变设计规定的展示内容、草稿生命周期或服务端提交格式。
 
 ## File Map
 
@@ -435,7 +433,7 @@ export interface ReportFeedbackOption {
 }
 
 export interface ReportFeedbackDraft {
-  selectedOptionIds: string[]
+  selectedIssueTexts: string[]
   manualText: string
   updatedAt: number
 }
@@ -456,7 +454,7 @@ export interface OpenReportFeedbackWindowPayload {
 
 export interface UpdateReportFeedbackDraftPayload {
   taskId: string
-  selectedOptionIds: string[]
+  selectedIssueTexts: string[]
   manualText: string
 }
 
@@ -604,7 +602,7 @@ contextBridge.exposeInMainWorld('reportFeedback', {
 await user.click(screen.getByRole('checkbox', { name: '空指针风险' }))
 expect(api.updateDraft).toHaveBeenCalledWith({
   taskId: 'task-1',
-  selectedOptionIds: ['option-1'],
+  selectedIssueTexts: ['空指针风险'],
   manualText: ''
 })
 expect(api.focusAnchor).toHaveBeenCalledWith({ taskId: 'task-1', anchorId: 'anchor-1' })
@@ -612,7 +610,7 @@ expect(api.focusAnchor).toHaveBeenCalledWith({ taskId: 'task-1', anchorId: 'anch
 
 - [ ] **Step 5: 实现反馈窗口组件、HTML 和 renderer 入口**
 
-组件只持有 session 展示状态；每次编辑先调用 `updateDraft`，以主进程返回的 session 为准。checkbox 的 `value` 和草稿选择值都使用稳定的 option ID，不使用显示文本作为身份。提交内容由主进程根据当前 session 的 option ID 映射到文本，再与 manualText 去重、统一编号；renderer 不直接调用旧 `report-feedback:submit`。
+组件只持有 session 展示状态；每次编辑先调用 `updateDraft`，以主进程返回的 session 为准。提交内容由主进程根据 option ID 和 manualText 统一编号，renderer 不直接调用旧 `report-feedback:submit`。
 
 入口固定为：
 
@@ -705,9 +703,7 @@ git commit -m "feat: 新增报告反馈工具窗口入口"
 - 开发加载 `${ELECTRON_RENDERER_URL}/feedback.html`，生产加载 `../renderer/feedback.html`。
 - preload 解析 `report-feedback.mjs` 后回退 `.js`。
 - 原生 close 后窗口引用清空但草稿保留；hide 不销毁。
-- 主窗口 minimize 时记录窗口原本是否可见并隐藏；restore 只恢复最小化前可见的窗口；“稍后提交”隐藏的窗口在主窗口 restore 后仍保持隐藏；主窗口 closed 销毁。
-- `createWindow` 抛错或 `loadURL`/`loadFile` 拒绝时清理窗口引用并让 `openOrSync(mode='show')` 拒绝，不保留半初始化窗口。
-- 草稿更新只接受当前 options 中存在的 ID；重复 ID 和伪造 ID 被过滤，options 刷新后已不存在的 ID 从草稿移除。
+- 主窗口 minimize 隐藏，restore 恢复；主窗口 closed 销毁。
 - 不允许反馈、任务失效、提交成功清草稿并发送 invalidated。
 - sender 或 taskId 不匹配时抛出 `Invalid report feedback window sender/session`。
 
@@ -736,12 +732,8 @@ export class ReportFeedbackWindowManager {
   private feedbackWindow?: BrowserWindow
   private session?: ReportFeedbackSession
   private readonly drafts = new Map<string, ReportFeedbackDraft>()
-  private restoreFeedbackWindowAfterMainRestore = false
 }
 ```
-
-公开方法 `openOrSync` 的签名固定为 `(payload: OpenReportFeedbackWindowPayload) => Promise<true>`；后续 IPC `open` handler 必须 `await` 该 Promise，让窗口创建或加载失败可传播到主 renderer。
-
 窗口选项固定包含：
 
 ```ts
@@ -766,13 +758,9 @@ export class ReportFeedbackWindowManager {
 
 初始位置以主窗口 bounds 右上区域为基准，并通过 `screen.getDisplayMatching()` 限制在当前显示器 workArea 内；之后不监听 move，不把用户拖动位置夹回主窗口。
 
-`mode='show'` 创建窗口时必须 `await window.loadURL(...)` 或 `await window.loadFile(...)`。`createWindow` 抛错、加载 Promise 拒绝或窗口在加载完成前被销毁时，清理窗口引用、解绑本次生命周期监听器并向 IPC 调用方抛出错误；不得返回 `true`。`mode='sync'` 且无窗口时仍直接返回 `true`，不触发加载。
-
 - [ ] **Step 4: 实现草稿与会话失效规则**
 
-默认草稿为 `{ selectedOptionIds: [], manualText: '', updatedAt: Date.now() }`。更新时只保留当前 options 中存在且去重后的 option ID，manualText 最大 4096 字符；提交时按当前 options 顺序把 ID 映射为问题文本，再与 manualText 中的非空行去重并统一编号。切换 taskId 从 `Map` 读取各自草稿。`allowed=false` 或当前任务变更时向窗口发送 invalidated 并销毁窗口；普通原生 close 不清草稿。
-
-主窗口 `minimize` 时设置 `restoreFeedbackWindowAfterMainRestore = feedbackWindow?.isVisible() === true` 后隐藏窗口；`restore` 时仅当该标记为 `true` 才显示窗口，并立即清除标记。“稍后提交”、原生 close、会话失效和 destroy 都必须清除该标记。
+默认草稿为 `{ selectedIssueTexts: [], manualText: '', updatedAt: Date.now() }`。更新时只保留当前 options 中存在且去重后的问题文本，manualText 最大 4096 字符；切换 taskId 从 `Map` 读取各自草稿。`allowed=false` 或当前任务变更时向窗口发送 invalidated 并销毁窗口；普通原生 close 不清草稿。
 
 - [ ] **Step 5: 在主进程创建单实例并清理退出状态**
 
@@ -791,7 +779,7 @@ Expected: PASS。
 - [ ] **Step 7: 提交窗口管理器**
 
 ```powershell
-git add code_review_electron/src/main/report-feedback-window.ts code_review_electron/src/main/__tests__/report-feedback-window.test.ts code_review_electron/src/main/index.ts code_review_electron/src/main/ipc.ts
+git add code_review_electron/src/main/report-feedback-window.ts code_review_electron/src/main/__tests__/report-feedback-window.test.ts code_review_electron/src/main/index.ts
 git commit -m "feat: 管理报告反馈原生工具窗口"
 ```
 
@@ -823,7 +811,7 @@ git commit -m "feat: 管理报告反馈原生工具窗口"
 'report-feedback-window:hide',
 ```
 
-另写测试：主窗口 sender 才能 open；反馈 sender 才能 get/update/focus/submit/hide；taskId 不匹配拒绝；伪造或重复的 `selectedOptionIds` 被过滤；submit 只根据 manager 当前 session 中的 ID 映射文本，不能接收 renderer 提供的问题文本；submit 成功和 `report_feedback_exists` 都清草稿并通知主窗口；其他错误保留草稿。
+另写测试：主窗口 sender 才能 open；反馈 sender 才能 get/update/focus/submit/hide；taskId 不匹配拒绝；submit 成功和 `report_feedback_exists` 都清草稿并通知主窗口；其他错误保留草稿。
 
 - [ ] **Step 2: 运行 IPC 测试确认失败**
 
@@ -887,35 +875,11 @@ expect(window.codeReview.openReportFeedbackWindow).toHaveBeenCalledWith({
 })
 ```
 
-再增加打开失败用例，固定用户提示且不影响当前报告：
-
-```tsx
-window.codeReview.openReportFeedbackWindow = vi
-  .fn()
-  .mockRejectedValue(new Error('feedback renderer load failed'))
-
-await user.click(screen.getByRole('button', { name: '有帮助' }))
-
-expect(await screen.findByText('反馈窗口打开失败，请重试。')).toBeInTheDocument()
-expect(document.querySelector('.markdown-preview')).not.toBeNull()
-```
-
-覆盖 `focus-anchor-requested` 只在当前选中 taskId 匹配时滚动/高亮；不匹配时发 `mode:'sync', allowed:false` 使会话失效；`submitted` 更新 task feedback 并调用现有 PDF 打开 API。窗口管理器和 IPC 测试还必须覆盖 `createWindow` 抛错、开发模式 `loadURL` 拒绝、生产模式 `loadFile` 拒绝，三种情况都由 `report-feedback-window:open` 原样拒绝且窗口引用被清理。
+覆盖 `focus-anchor-requested` 只在当前选中 taskId 匹配时滚动/高亮；不匹配时发 `mode:'sync', allowed:false` 使会话失效；`submitted` 更新 task feedback 并调用现有 PDF 打开 API。
 
 - [ ] **Step 6: 精简 TaskPage 状态和实现会话同步**
 
-删除 `showUsefulFeedbackDialog`、位置、drag offset、dialog ref、Pointer Event listeners 和内嵌 `<section role="dialog">`。保留 `activeFeedbackAnchorId` 和滚动请求。点击“有帮助/继续标记”时通过异步函数调用 `mode:'show'`：调用前清理旧错误，成功后不改变主报告状态，失败时只设置固定消息 `反馈窗口打开失败，请重试。`。任务选择、状态、候选项变化时调用 `mode:'sync'`，但无窗口时 manager 不创建；后台 `sync` 拒绝时不得形成未处理的 Promise rejection，应捕获并清除本地 `activeFeedbackAnchorId`，等待用户下次主动打开时重建会话。
-
-打开函数固定采用以下错误边界，不把主进程异常详情直接展示给用户：
-
-```tsx
-try {
-  setError('')
-  await window.codeReview.openReportFeedbackWindow(payload)
-} catch {
-  setError('反馈窗口打开失败，请重试。')
-}
-```
+删除 `showUsefulFeedbackDialog`、位置、drag offset、dialog ref、Pointer Event listeners 和内嵌 `<section role="dialog">`。保留 `activeFeedbackAnchorId` 和滚动请求。点击“有帮助/继续标记”调用 `mode:'show'`；任务选择、状态、候选项变化时调用 `mode:'sync'`，但无窗口时 manager 不创建。
 
 取消选择当前高亮项时，反馈窗口发送 `anchorId: undefined`，TaskPage 清除高亮且不滚动。“没帮助”按钮、`handleSubmitReportFeedback(false)` 及其调用 `window.codeReview.submitReportFeedback` 的链路保持不变，本任务只迁移“有帮助”弹窗，不改动“没帮助”直达提交逻辑。
 
@@ -1258,7 +1222,7 @@ npm run dev
 
 - [ ] **Step 6: 手工验收反馈工具窗口**
 
-验收：点击“有帮助”创建原生窗口；可拖出主客户端边界；不覆盖其他应用为全局置顶；再次点击复用；“稍后提交”隐藏并恢复草稿；原生关闭后重开恢复草稿；可见窗口随主窗口最小化/恢复，已“稍后提交”隐藏的窗口在主窗口恢复后仍保持隐藏；切换任务不串草稿；提交成功/409 后更新主页面并打开 PDF。分别模拟窗口创建失败、开发入口加载失败和生产入口加载失败，主页面显示“反馈窗口打开失败，请重试。”且报告仍可查看。
+验收：点击“有帮助”创建原生窗口；可拖出主客户端边界；不覆盖其他应用为全局置顶；再次点击复用；“稍后提交”隐藏并恢复草稿；原生关闭后重开恢复草稿；主窗口最小化/恢复联动；切换任务不串草稿；提交成功/409 后更新主页面并打开 PDF。
 
 - [ ] **Step 7: 手工验收 SVN 预检短路**
 
