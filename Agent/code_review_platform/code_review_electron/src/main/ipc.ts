@@ -330,16 +330,17 @@ const sendToRenderer = (
   sender: Electron.WebContents | undefined,
   channel: string,
   payload: unknown
-): void => {
+): boolean => {
   if (!sender || (typeof sender.isDestroyed === 'function' && sender.isDestroyed())) {
-    return
+    return false
   }
 
   try {
     sender.send(channel, payload)
+    return true
   } catch (error) {
     if (error instanceof Error && error.message.includes('Object has been destroyed')) {
-      return
+      return false
     }
 
     throw error
@@ -499,9 +500,19 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
       const submittedEvent = { taskId, helpful, usefulIssuesText }
       if (!publishedReportFeedbackTasks.has(taskId)) {
-        publishedReportFeedbackTasks.add(taskId)
-        sendToRenderer(getMainWindow()?.webContents, 'report-feedback:submitted', submittedEvent)
-        getReportFeedbackWindowManager()?.closeTask?.(taskId)
+        try {
+          if (
+            sendToRenderer(
+              getMainWindow()?.webContents,
+              'report-feedback:submitted',
+              submittedEvent
+            )
+          ) {
+            publishedReportFeedbackTasks.add(taskId)
+          }
+        } finally {
+          getReportFeedbackWindowManager()?.closeTask?.(taskId)
+        }
       }
       return submittedEvent
     })
