@@ -92,7 +92,6 @@ describe('registerIpcHandlers', () => {
       'task:cancel',
       'task:open-log',
       'feedback:submit',
-      'report-feedback:submit',
       'report-feedback:open',
       'report-feedback:submit-negative',
       'report-feedback-window:get-context',

@@ -23,7 +23,6 @@ import type {
   SubmitFeedbackIpcPayload,
   SubmitFeedbackPayload,
   SubmitFeedbackResult,
-  SubmitReportFeedbackPayload,
   SubmitReportFeedbackResult,
   SvnCredentialPayload,
   SvnLoginRequest,
@@ -126,10 +125,6 @@ contextBridge.exposeInMainWorld('codeReview', {
     listen('environment:progress', callback),
   submitFeedback: async (payload: SubmitFeedbackPayload): Promise<SubmitFeedbackResult> =>
     ipcRenderer.invoke('feedback:submit', await serializeFeedbackPayload(payload)),
-  submitReportFeedback: (
-    payload: SubmitReportFeedbackPayload
-  ): Promise<SubmitReportFeedbackResult> =>
-    ipcRenderer.invoke('report-feedback:submit', payload),
   openReportFeedbackWindow: (
     payload: Parameters<CodeReviewApi['openReportFeedbackWindow']>[0]
   ): Promise<true> =>

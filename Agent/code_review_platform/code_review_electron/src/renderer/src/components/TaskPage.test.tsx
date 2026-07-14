@@ -38,13 +38,16 @@ const setupCodeReviewApi = (): void => {
     onEnvironmentProgress: vi.fn(() => vi.fn()),
     bindSvnCredential: vi.fn(),
     submitFeedback: vi.fn(async () => ({ id: 'feedback-1', status: 'pending' })),
-    submitReportFeedback: vi.fn(async () => ({
+    openReportFeedbackWindow: vi.fn(async () => true),
+    submitNegativeReportFeedback: vi.fn(async () => ({
       id: 'report-feedback-1',
       task_id: 'task-history-2',
       user_id: 'user-1',
-      helpful: true,
-      useful_issues_text: '1. 空指针风险'
-    }))
+      helpful: false,
+      useful_issues_text: null
+    })),
+    onReportFeedbackFocusAnchor: vi.fn(() => vi.fn()),
+    onReportFeedbackSubmitted: vi.fn(() => vi.fn())
   } as unknown as CodeReviewApi
 }
 
@@ -362,7 +365,7 @@ describe('TaskPage', () => {
       status: 'ready' as const,
       pdfPath: '/app/reports/task-local-success.pdf'
     }))
-    window.codeReview.submitReportFeedback = vi.fn(async () => ({
+    window.codeReview.submitNegativeReportFeedback = vi.fn(async () => ({
       id: 'report-feedback-local-success',
       task_id: 'task-local-success',
       user_id: 'user-1',
@@ -380,11 +383,9 @@ describe('TaskPage', () => {
     expect(screen.queryByRole('button', { name: '查看PDF报告' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '没帮助' }))
 
-    expect(window.codeReview.submitReportFeedback).toHaveBeenCalledWith({
-      taskId: 'task-local-success',
-      helpful: false,
-      useful_issues_text: ''
-    })
+    expect(window.codeReview.submitNegativeReportFeedback).toHaveBeenCalledWith(
+      'task-local-success'
+    )
     await waitFor(() => expect(screen.getByRole('button', { name: '查看PDF报告' })).toBeInTheDocument())
     expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
       taskId: 'task-local-success',
@@ -885,7 +886,7 @@ describe('TaskPage', () => {
       count: 1
     }))
     window.codeReview.readTaskReport = vi.fn(async () => '# 审查报告')
-    window.codeReview.submitReportFeedback = vi.fn(async () => ({
+    window.codeReview.submitNegativeReportFeedback = vi.fn(async () => ({
       id: 'report-feedback-1',
       task_id: 'task-history-1',
       user_id: 'user-1',
@@ -902,19 +903,15 @@ describe('TaskPage', () => {
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
     await user.click(screen.getByRole('button', { name: '没帮助' }))
 
-    expect(window.codeReview.submitReportFeedback).toHaveBeenCalledWith({
-      taskId: 'task-history-1',
-      helpful: false,
-      useful_issues_text: ''
-    })
+    expect(window.codeReview.submitNegativeReportFeedback).toHaveBeenCalledWith(
+      'task-history-1'
+    )
     await waitFor(() => expect(window.codeReview.openPdfReport).toHaveBeenCalled())
     expect(screen.getByRole('button', { name: '查看PDF报告' })).toBeInTheDocument()
   })
 
-  it('点击有帮助后滚动到选项区域并要求至少选择或填写一条有用信息才能提交', async () => {
+  it('点击有帮助只打开原生反馈窗口并传递稳定候选项', async () => {
     const user = userEvent.setup()
-    const scrollIntoView = vi.fn()
-    window.HTMLElement.prototype.scrollIntoView = scrollIntoView
     window.codeReview.listTasks = vi.fn(async () => ({
       data: [
         {
@@ -937,13 +934,18 @@ describe('TaskPage', () => {
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
     await user.click(screen.getByRole('button', { name: '有帮助' }))
 
-    const dialog = screen.getByRole('dialog', { name: '报告有用信息反馈' })
-    expect(within(dialog).getByRole('button', { name: '提交并打开PDF' })).toBeDisabled()
-    expect(scrollIntoView).not.toHaveBeenCalled()
-    await user.click(within(dialog).getByRole('checkbox', { name: '空指针风险' }))
-    expect(within(dialog).getByRole('button', { name: '提交并打开PDF' })).toBeEnabled()
-    const preview = document.querySelector('.markdown-preview')
-    expect(preview).not.toContainElement(screen.getByLabelText('可标记的有用信息'))
+    expect(window.codeReview.openReportFeedbackWindow).toHaveBeenCalledWith({
+      taskId: 'task-history-1',
+      options: [
+        {
+          id: '2-空指针风险',
+          level: 3,
+          text: '空指针风险',
+          anchorId: 'report-option-2'
+        }
+      ]
+    })
+    expect(screen.queryByRole('dialog', { name: '报告有用信息反馈' })).not.toBeInTheDocument()
   })
 
   it('历史失败任务点击重试后复用原任务重新执行', async () => {
@@ -988,8 +990,11 @@ describe('TaskPage', () => {
     expect(window.codeReview.executeTask).not.toHaveBeenCalled()
   })
 
-  it('点击有帮助后用弹窗展示说明、计数、输入框和提交按钮', async () => {
+  it('原生反馈窗口打开失败时显示固定错误', async () => {
     const user = userEvent.setup()
+    window.codeReview.openReportFeedbackWindow = vi.fn(async () => {
+      throw new Error('内部窗口创建错误')
+    })
     window.codeReview.listTasks = vi.fn(async () => ({
       data: [
         {
@@ -1012,91 +1017,10 @@ describe('TaskPage', () => {
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
     await user.click(screen.getByRole('button', { name: '有帮助' }))
 
-    const dialog = screen.getByRole('dialog', { name: '报告有用信息反馈' })
-    expect(dialog).toHaveClass('report-feedback-dialog')
-    expect(within(dialog).getByText('标记报告中的有用内容')).toBeInTheDocument()
-    expect(
-      within(dialog).getByText('请勾选这份报告里真正有参考价值的问题或建议，也可以手动补充。提交后会用于统计报告质量，并帮助后续优化 AI 输出。')
-    ).toBeInTheDocument()
-    expect(within(dialog).getByText('已标记 0 条')).toBeInTheDocument()
-    expect(within(dialog).getByRole('checkbox', { name: '空指针风险' })).toBeInTheDocument()
-    expect(within(dialog).getByRole('textbox', { name: '有用内容' })).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: '提交并打开PDF' })).toBeDisabled()
-    expect(screen.queryByLabelText('报告有用信息反馈', { selector: '.report-feedback-panel' })).not.toBeInTheDocument()
+    expect(await screen.findByText('反馈窗口打开失败，请重试。')).toBeInTheDocument()
   })
 
-  it('报告有用信息弹窗可以拖动', async () => {
-    const user = userEvent.setup()
-    window.codeReview.listTasks = vi.fn(async () => ({
-      data: [
-        {
-          id: 'task-history-1',
-          svn_url: 'svn://repo/project',
-          old_revision: 'r1',
-          new_revision: 'r2',
-          status: 'success' as const,
-          report_path: '/app/reports/task-history.md',
-          pdf_report_path: '/app/reports/task-history.pdf',
-          report_feedback_helpful: null
-        }
-      ],
-      count: 1
-    }))
-    window.codeReview.readTaskReport = vi.fn(async () => '# 审查报告\n\n### 空指针风险')
-
-    renderReadyTaskPage()
-    const historyPanel = await openHistoryTasks(user)
-    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
-    await user.click(screen.getByRole('button', { name: '有帮助' }))
-
-    const dialog = screen.getByRole('dialog', { name: '报告有用信息反馈' })
-    vi.spyOn(dialog, 'offsetWidth', 'get').mockReturnValue(360)
-    vi.spyOn(dialog, 'offsetHeight', 'get').mockReturnValue(420)
-    vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue({
-      x: 440,
-      y: 88,
-      left: 440,
-      top: 88,
-      right: 800,
-      bottom: 508,
-      width: 360,
-      height: 420,
-      toJSON: () => ({})
-    })
-    const dragHandle = within(dialog).getByLabelText('拖动反馈弹窗')
-    const topDragZone = within(dialog).getByLabelText('拖动反馈弹窗顶部空白')
-    expect(dialog).toHaveStyle({ right: '24px', top: '88px' })
-
-    await user.pointer([
-      { keys: '[MouseLeft>]', target: dragHandle, coords: { x: 500, y: 120 } },
-      { coords: { x: 620, y: 180 } },
-      { keys: '[/MouseLeft]' }
-    ])
-
-    expect(dialog).toHaveStyle({ left: '560px', top: '148px' })
-
-    vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue({
-      x: 560,
-      y: 148,
-      left: 560,
-      top: 148,
-      right: 920,
-      bottom: 568,
-      width: 360,
-      height: 420,
-      toJSON: () => ({})
-    })
-
-    await user.pointer([
-      { keys: '[MouseLeft>]', target: topDragZone, coords: { x: 590, y: 152 } },
-      { coords: { x: 610, y: 172 } },
-      { keys: '[/MouseLeft]' }
-    ])
-
-    expect(dialog).toHaveStyle({ left: '580px', top: '168px' })
-  })
-
-  it('点击弹窗选项后定位并高亮报告对应内容', async () => {
+  it('反馈窗口定位事件仅处理当前任务并可清除高亮', async () => {
     const user = userEvent.setup()
     const scrollIntoView = vi.fn()
     window.HTMLElement.prototype.scrollIntoView = scrollIntoView
@@ -1122,69 +1046,25 @@ describe('TaskPage', () => {
     renderReadyTaskPage()
     const historyPanel = await openHistoryTasks(user)
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
-    await user.click(screen.getByRole('button', { name: '有帮助' }))
+    const focusAnchor = vi.mocked(window.codeReview.onReportFeedbackFocusAnchor).mock.calls[0][0]
+    focusAnchor({ taskId: 'other-task', anchorId: 'report-option-2' })
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    focusAnchor({ taskId: 'task-history-1', anchorId: 'report-option-2' })
 
-    const dialog = screen.getByRole('dialog', { name: '报告有用信息反馈' })
-    await user.click(within(dialog).getByRole('checkbox', { name: '空指针风险' }))
-
-    const heading = screen.getByRole('heading', { name: '空指针风险' })
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' })
-    expect(heading).toHaveClass('report-anchor-highlight')
-  })
-
-  it('取消弹窗选项时清除高亮，再次选中时重新定位报告内容', async () => {
-    const user = userEvent.setup()
-    const scrollIntoView = vi.fn()
-    window.HTMLElement.prototype.scrollIntoView = scrollIntoView
-    window.codeReview.listTasks = vi.fn(async () => ({
-      data: [
-        {
-          id: 'task-history-1',
-          svn_url: 'svn://repo/project',
-          old_revision: 'r1',
-          new_revision: 'r2',
-          status: 'success' as const,
-          report_path: '/app/reports/task-history.md',
-          pdf_report_path: '/app/reports/task-history.pdf',
-          report_feedback_helpful: null
-        }
-      ],
-      count: 1
-    }))
-    window.codeReview.readTaskReport = vi.fn(async () =>
-      ['# 审查报告', '## 高风险问题', '### 空指针风险', '正文'].join('\n')
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' }))
+    expect(screen.getByRole('heading', { name: '空指针风险' })).toHaveClass(
+      'report-anchor-highlight'
     )
 
-    renderReadyTaskPage()
-    const historyPanel = await openHistoryTasks(user)
-    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
-    await user.click(screen.getByRole('button', { name: '有帮助' }))
-
-    const dialog = screen.getByRole('dialog', { name: '报告有用信息反馈' })
-    const option = within(dialog).getByRole('checkbox', { name: '空指针风险' })
-
-    await user.click(option)
-    const heading = screen.getByRole('heading', { name: '空指针风险' })
-    expect(scrollIntoView).toHaveBeenCalledTimes(1)
-    expect(heading).toHaveClass('report-anchor-highlight')
-
-    await user.click(option)
-    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    focusAnchor({ taskId: 'task-history-1' })
     await waitFor(() =>
       expect(screen.getByRole('heading', { name: '空指针风险' })).not.toHaveClass(
         'report-anchor-highlight'
       )
     )
-
-    await user.click(option)
-
-    expect(scrollIntoView).toHaveBeenCalledTimes(2)
-    expect(screen.getByRole('heading', { name: '空指针风险' })).toHaveClass(
-      'report-anchor-highlight'
-    )
   })
 
-  it('勾选已有编号的有用信息时提交内容不会重复编号', async () => {
+  it('反馈窗口提交事件更新任务反馈并打开PDF', async () => {
     const user = userEvent.setup()
     window.codeReview.listTasks = vi.fn(async () => ({
       data: [
@@ -1201,9 +1081,7 @@ describe('TaskPage', () => {
       ],
       count: 1
     }))
-    window.codeReview.readTaskReport = vi.fn(async () =>
-      ['# 审查报告', '### 1. 空指针风险', '正文', '### 4. 越界访问风险'].join('\n')
-    )
+    window.codeReview.readTaskReport = vi.fn(async () => '# 审查报告\n\n### 空指针风险')
     window.codeReview.openPdfReport = vi.fn(async () => ({
       status: 'ready' as const,
       pdfPath: '/local/task-history.pdf'
@@ -1212,17 +1090,13 @@ describe('TaskPage', () => {
     renderReadyTaskPage()
     const historyPanel = await openHistoryTasks(user)
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
-    await user.click(screen.getByRole('button', { name: '有帮助' }))
-    const dialog = screen.getByRole('dialog', { name: '报告有用信息反馈' })
-    await user.click(within(dialog).getByRole('checkbox', { name: '空指针风险' }))
-    await user.click(within(dialog).getByRole('checkbox', { name: '越界访问风险' }))
-    await user.click(within(dialog).getByRole('button', { name: '提交并打开PDF' }))
+    const submitted = vi.mocked(window.codeReview.onReportFeedbackSubmitted).mock.calls[0][0]
+    submitted({ taskId: 'other-task', usefulIssuesText: '1. 不应采用' })
+    expect(window.codeReview.openPdfReport).not.toHaveBeenCalled()
+    submitted({ taskId: 'task-history-1', usefulIssuesText: '1. 空指针风险' })
 
-    expect(window.codeReview.submitReportFeedback).toHaveBeenCalledWith({
-      taskId: 'task-history-1',
-      helpful: true,
-      useful_issues_text: '1. 空指针风险\n2. 越界访问风险'
-    })
+    await waitFor(() => expect(window.codeReview.openPdfReport).toHaveBeenCalled())
+    expect(screen.getByRole('button', { name: '查看PDF报告' })).toBeInTheDocument()
   })
 
   it('已反馈任务点击查看PDF报告直接打开PDF', async () => {
@@ -1254,7 +1128,7 @@ describe('TaskPage', () => {
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
     await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
 
-    expect(window.codeReview.submitReportFeedback).not.toHaveBeenCalled()
+    expect(window.codeReview.openReportFeedbackWindow).not.toHaveBeenCalled()
     expect(window.codeReview.openPdfReport).toHaveBeenCalled()
   })
 
@@ -1276,7 +1150,7 @@ describe('TaskPage', () => {
       count: 1
     }))
     window.codeReview.readTaskReport = vi.fn(async () => '# 审查报告')
-    window.codeReview.submitReportFeedback = vi.fn(async () => {
+    window.codeReview.submitNegativeReportFeedback = vi.fn(async () => {
       throw new Error('请求失败：409 Client Error: Bad Request for url ... detail: report_feedback_exists')
     })
     window.codeReview.openPdfReport = vi.fn(async () => ({

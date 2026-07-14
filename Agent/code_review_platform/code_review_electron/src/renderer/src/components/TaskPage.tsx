@@ -3,8 +3,7 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent
+  useState
 } from 'react'
 
 import paceLogo from '../assets/pace-logo.png'
@@ -38,22 +37,7 @@ type CompletionNotice = {
   task: TaskViewItem
 }
 
-type ReportFeedbackStatus = 'idle' | 'useful' | 'submitting'
-
-const stripMarkerListPrefix = (value: string): string =>
-  value.replace(/^\s*\d+[\.)、]\s*/, '').trim()
-
-const parseUsefulIssuesText = (value: string): string[] =>
-  value
-    .split(/\r?\n/)
-    .map(stripMarkerListPrefix)
-    .filter(Boolean)
-
-const formatUsefulIssues = (issues: string[]): string =>
-  issues.map((issue, index) => `${index + 1}. ${issue}`).join('\n')
-
-const uniqueIssues = (issues: string[]): string[] =>
-  issues.filter((issue, index) => issues.indexOf(issue) === index)
+type ReportFeedbackStatus = 'idle' | 'submitting'
 
 const REPORT_FEEDBACK_EXISTS_CODE = 'report_feedback_exists'
 
@@ -104,23 +88,11 @@ export function TaskPage({
   const [completionNotice, setCompletionNotice] = useState<CompletionNotice | null>(null)
   const [reportFeedbackStatus, setReportFeedbackStatus] =
     useState<ReportFeedbackStatus>('idle')
-  const [selectedUsefulIssues, setSelectedUsefulIssues] = useState<string[]>([])
-  const [usefulIssuesText, setUsefulIssuesText] = useState('')
-  const [showUsefulFeedbackDialog, setShowUsefulFeedbackDialog] = useState(false)
-  const [usefulFeedbackDialogPosition, setUsefulFeedbackDialogPosition] = useState<{
-    left?: number
-    top: number
-  }>(() => ({ top: 88 }))
-  const [usefulFeedbackDialogDragOffset, setUsefulFeedbackDialogDragOffset] = useState<{
-    x: number
-    y: number
-  } | null>(null)
   const [activeFeedbackAnchorId, setActiveFeedbackAnchorId] = useState<string>()
   const [feedbackAnchorScrollRequest, setFeedbackAnchorScrollRequest] = useState<{
     anchorId: string
     requestId: number
   }>()
-  const usefulFeedbackDialogRef = useRef<HTMLElement | null>(null)
   const selectedTaskIdRef = useRef<string | undefined>(undefined)
   const currentPdfPathRef = useRef<string | undefined>(undefined)
   const currentPdfReportNameRef = useRef<string | undefined>(undefined)
@@ -218,9 +190,7 @@ export function TaskPage({
       setSelectedTaskId(undefined)
       setLoadingReportTaskId(undefined)
       setReportFeedbackStatus('idle')
-      setSelectedUsefulIssues([])
-      setUsefulIssuesText('')
-      setShowUsefulFeedbackDialog(false)
+      setActiveFeedbackAnchorId(undefined)
       setError('')
     },
     [setActivePdfPath, setActivePdfReportName]
@@ -288,9 +258,7 @@ export function TaskPage({
     updateSelectedTaskId(undefined)
     setLoadingReportTaskId(undefined)
     setReportFeedbackStatus('idle')
-    setSelectedUsefulIssues([])
-    setUsefulIssuesText('')
-    setShowUsefulFeedbackDialog(false)
+    setActiveFeedbackAnchorId(undefined)
     await retryTask(task)
   }
 
@@ -303,9 +271,7 @@ export function TaskPage({
     setReportMessage('')
     updateSelectedTaskId(task.id)
     setReportFeedbackStatus('idle')
-    setSelectedUsefulIssues([])
-    setUsefulIssuesText('')
-    setShowUsefulFeedbackDialog(false)
+    setActiveFeedbackAnchorId(undefined)
 
     if (task.reportMarkdown && task.report_path) {
       setMarkdown(task.reportMarkdown)
@@ -455,11 +421,7 @@ export function TaskPage({
     setError('')
     setReportFeedbackStatus('submitting')
     try {
-      await window.codeReview.submitReportFeedback({
-        taskId,
-        helpful: false,
-        useful_issues_text: ''
-      })
+      await window.codeReview.submitNegativeReportFeedback(taskId)
       markTaskFeedbackSubmitted(taskId, false, null)
       setReportFeedbackStatus('idle')
       await openSelectedPdfReport()
@@ -475,57 +437,22 @@ export function TaskPage({
     }
   }
 
-  const handleReportUseful = (): void => {
-    setReportFeedbackStatus('useful')
-    setShowUsefulFeedbackDialog(true)
-  }
-
-  const startUsefulFeedbackDialogDrag = (event: ReactPointerEvent): void => {
-    event.preventDefault()
-    const rect = usefulFeedbackDialogRef.current?.getBoundingClientRect()
-    setUsefulFeedbackDialogDragOffset({
-      x: event.clientX - (rect?.left ?? event.clientX),
-      y: event.clientY - (rect?.top ?? event.clientY)
-    })
-  }
-
-  useEffect(() => {
-    if (reportFeedbackStatus !== 'useful') {
+  const handleReportUseful = async (): Promise<void> => {
+    const taskId = selectedTaskIdRef.current
+    if (!taskId) {
+      setError('请先选择一个已完成任务报告。')
       return
     }
-
-    setShowUsefulFeedbackDialog(true)
-  }, [reportFeedbackStatus])
-
-  useEffect(() => {
-    if (!usefulFeedbackDialogDragOffset) {
-      return
-    }
-
-    const handlePointerMove = (event: PointerEvent): void => {
-      const dialog = usefulFeedbackDialogRef.current
-      const dialogWidth = dialog?.offsetWidth ?? 0
-      const dialogHeight = dialog?.offsetHeight ?? 0
-      const maxLeft = Math.max(8, window.innerWidth - dialogWidth - 8)
-      const maxTop = Math.max(8, window.innerHeight - dialogHeight - 8)
-      setUsefulFeedbackDialogPosition({
-        left: Math.min(Math.max(8, event.clientX - usefulFeedbackDialogDragOffset.x), maxLeft),
-        top: Math.min(Math.max(8, event.clientY - usefulFeedbackDialogDragOffset.y), maxTop)
+    setError('')
+    try {
+      await window.codeReview.openReportFeedbackWindow({
+        taskId,
+        options: usefulIssueOptions
       })
+    } catch {
+      setError('反馈窗口打开失败，请重试。')
     }
-
-    const handlePointerUp = (): void => {
-      setUsefulFeedbackDialogDragOffset(null)
-    }
-
-    window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', handlePointerUp)
-
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', handlePointerUp)
-    }
-  }, [usefulFeedbackDialogDragOffset])
+  }
 
   useEffect(() => {
     if (!feedbackAnchorScrollRequest) {
@@ -538,73 +465,30 @@ export function TaskPage({
     target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
   }, [feedbackAnchorScrollRequest])
 
-  const handleUsefulIssueToggle = (issue: string): void => {
-    const next = selectedUsefulIssues.includes(issue)
-      ? selectedUsefulIssues.filter((item) => item !== issue)
-      : [...selectedUsefulIssues, issue]
-    setSelectedUsefulIssues(next)
-    setUsefulIssuesText(formatUsefulIssues(next))
-  }
-
-  const handleUsefulIssueOptionToggle = (issue: string, anchorId: string): void => {
-    const isSelected = selectedUsefulIssues.includes(issue)
-    handleUsefulIssueToggle(issue)
-    if (isSelected) {
-      if (activeFeedbackAnchorId === anchorId) {
-        setActiveFeedbackAnchorId(undefined)
-      }
-      return
-    }
-
-    setActiveFeedbackAnchorId(anchorId)
-    setFeedbackAnchorScrollRequest((current) => ({
-      anchorId,
-      requestId: (current?.requestId ?? 0) + 1
-    }))
-  }
-
-  const handleUsefulIssuesTextChange = (value: string): void => {
-    setUsefulIssuesText(value)
-    setSelectedUsefulIssues(uniqueIssues(parseUsefulIssuesText(value)))
-  }
-
-  const handleSubmitUsefulIssuesAndOpenPdf = async (): Promise<void> => {
-    const taskId = selectedTaskIdRef.current
-    const issues = uniqueIssues(parseUsefulIssuesText(usefulIssuesText))
-    if (!taskId) {
-      setError('请先选择一个已完成任务报告。')
-      return
-    }
-    if (issues.length === 0) {
-      setError('请至少标记或填写一条有用信息。')
-      return
-    }
-    const formatted = formatUsefulIssues(issues)
-    setError('')
-    setReportFeedbackStatus('submitting')
-    try {
-      await window.codeReview.submitReportFeedback({
-        taskId,
-        helpful: true,
-        useful_issues_text: formatted
-      })
-      markTaskFeedbackSubmitted(taskId, true, formatted)
-      setReportFeedbackStatus('idle')
-      setShowUsefulFeedbackDialog(false)
-      await openSelectedPdfReport()
-    } catch (submitError) {
-      if (isReportFeedbackExistsError(submitError)) {
-        markTaskFeedbackSubmitted(taskId, true, formatted)
-        setReportFeedbackStatus('idle')
-        setShowUsefulFeedbackDialog(false)
-        await openSelectedPdfReport()
+  useEffect(() =>
+    window.codeReview.onReportFeedbackFocusAnchor?.(({ taskId, anchorId }) => {
+      if (selectedTaskIdRef.current !== taskId) {
         return
       }
-      setReportFeedbackStatus('useful')
-      setShowUsefulFeedbackDialog(true)
-      setError(formatReportFeedbackError(submitError))
-    }
-  }
+      setActiveFeedbackAnchorId(anchorId)
+      if (anchorId) {
+        setFeedbackAnchorScrollRequest((current) => ({
+          anchorId,
+          requestId: (current?.requestId ?? 0) + 1
+        }))
+      }
+    }), [])
+
+  useEffect(() =>
+    window.codeReview.onReportFeedbackSubmitted?.(({ taskId, usefulIssuesText }) => {
+      if (selectedTaskIdRef.current !== taskId) {
+        return
+      }
+      markTaskFeedbackSubmitted(taskId, true, usefulIssuesText)
+      setReportFeedbackStatus('idle')
+      setActiveFeedbackAnchorId(undefined)
+      void openSelectedPdfReport()
+    }), [markTaskFeedbackSubmitted, openSelectedPdfReport])
 
   return (
     <section className="review-workspace">
@@ -686,24 +570,14 @@ export function TaskPage({
                     <strong>报告反馈</strong>
                     <span>用于统计这份 AI 审查报告是否真的有参考价值。</span>
                   </div>
-                  {reportFeedbackStatus === 'useful' ? (
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      onClick={() => setShowUsefulFeedbackDialog(true)}
-                    >
-                      继续标记
-                    </button>
-                  ) : (
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      disabled={reportFeedbackStatus === 'submitting'}
-                      onClick={handleReportUseful}
-                    >
-                      有帮助
-                    </button>
-                  )}
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={reportFeedbackStatus === 'submitting'}
+                    onClick={handleReportUseful}
+                  >
+                    有帮助
+                  </button>
                   <button
                     className="secondary-button"
                     type="button"
@@ -754,95 +628,6 @@ export function TaskPage({
             </button>
           </div>
         </aside>
-      )}
-      {showUsefulFeedbackDialog && selectedTask?.report_feedback_helpful == null && (
-          <section
-            ref={usefulFeedbackDialogRef}
-            className="dialog-card report-feedback-dialog"
-            role="dialog"
-            aria-label="报告有用信息反馈"
-            style={
-              usefulFeedbackDialogPosition.left == null
-                ? { right: '24px', top: `${usefulFeedbackDialogPosition.top}px` }
-                : {
-                    left: `${usefulFeedbackDialogPosition.left}px`,
-                    top: `${usefulFeedbackDialogPosition.top}px`
-                  }
-            }
-          >
-            <div
-              className="report-feedback-dialog-top-drag-zone"
-              aria-label="拖动反馈弹窗顶部空白"
-              role="button"
-              tabIndex={0}
-              onPointerDown={startUsefulFeedbackDialogDrag}
-            />
-            <button
-              className="dialog-close"
-              type="button"
-              aria-label="关闭"
-              onClick={() => setShowUsefulFeedbackDialog(false)}
-            >
-              ×
-            </button>
-            <div
-              className="report-feedback-dialog-drag-handle"
-              aria-label="拖动反馈弹窗"
-              role="button"
-              tabIndex={0}
-              onPointerDown={startUsefulFeedbackDialogDrag}
-            >
-              <h2>标记报告中的有用内容</h2>
-              <p className="dialog-desc">
-                请勾选这份报告里真正有参考价值的问题或建议，也可以手动补充。提交后会用于统计报告质量，并帮助后续优化 AI 输出。
-              </p>
-            </div>
-            <div className="report-feedback-dialog-body">
-              <div className="report-feedback-dialog-meta">
-                <span>已标记 {parseUsefulIssuesText(usefulIssuesText).length} 条</span>
-                <span>可从下方选择，也可以手动补充</span>
-              </div>
-              <div className="report-feedback-option-list" aria-label="可标记的有用信息">
-                {usefulIssueOptions.map((option) => (
-                  <label className="report-feedback-option" key={option.id}>
-                    <input
-                      type="checkbox"
-                      checked={selectedUsefulIssues.includes(option.text)}
-                      onChange={() => handleUsefulIssueOptionToggle(option.text, option.anchorId)}
-                    />
-                    <span>{option.text}</span>
-                  </label>
-                ))}
-              </div>
-              <label className="report-feedback-dialog-field">
-                <span>有用内容</span>
-                <textarea
-                  aria-label="有用内容"
-                  value={usefulIssuesText}
-                  onChange={(event) => handleUsefulIssuesTextChange(event.target.value)}
-                  placeholder="可补充报告中有价值的问题或建议点，每行一条"
-                  maxLength={4096}
-                />
-              </label>
-            </div>
-            <div className="dialog-actions">
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() => setShowUsefulFeedbackDialog(false)}
-              >
-                稍后提交
-              </button>
-              <button
-                className="primary-button"
-                type="button"
-                disabled={parseUsefulIssuesText(usefulIssuesText).length === 0}
-                onClick={() => void handleSubmitUsefulIssuesAndOpenPdf()}
-              >
-                提交并打开PDF
-              </button>
-            </div>
-          </section>
       )}
       <SubmitFeedbackDialog open={showSubmitFeedback} onClose={() => setShowSubmitFeedback(false)} />
     </section>

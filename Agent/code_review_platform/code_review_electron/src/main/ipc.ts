@@ -11,7 +11,6 @@ import {
   type KeyLoginRequest,
   type ReportFeedbackResult,
   type SubmitFeedbackRequest,
-  type SubmitReportFeedbackRequest,
   type SvnLoginRequest
 } from './api-client'
 import { createAppUpdateService, type AppUpdateService } from './app-updater'
@@ -61,10 +60,6 @@ interface SerializedFeedbackScreenshot {
 interface SubmitFeedbackIpcPayload {
   description: string
   screenshots?: SerializedFeedbackScreenshot[]
-}
-
-interface SubmitReportFeedbackIpcPayload extends SubmitReportFeedbackRequest {
-  taskId: string
 }
 
 export interface IpcHandlerDependencies {
@@ -910,26 +905,6 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
       const api = await createApiClient()
       return api.submitFeedback(tokens.access_token, toSubmitFeedbackRequest(payload))
-    }
-  )
-
-  ipcMain.handle(
-    'report-feedback:submit',
-    async (
-      _event,
-      payload: SubmitReportFeedbackIpcPayload
-    ): Promise<ReportFeedbackResult> => {
-      const tokens = await authStore.load()
-
-      if (!tokens) {
-        throw new Error('Not authenticated')
-      }
-
-      const api = await createApiClient()
-      return api.submitReportFeedback(tokens.access_token, payload.taskId, {
-        helpful: payload.helpful,
-        useful_issues_text: payload.useful_issues_text ?? null
-      })
     }
   )
 
