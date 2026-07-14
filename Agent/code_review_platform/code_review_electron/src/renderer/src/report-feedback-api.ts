@@ -11,3 +11,11 @@ export interface ReportFeedbackWindowApi {
   submit(payload: SubmitHelpfulReportFeedbackPayload): Promise<ReportFeedbackSubmittedEvent>
   close(): Promise<true>
 }
+
+declare global {
+  interface Window {
+    reportFeedback: ReportFeedbackWindowApi
+  }
+}
+
+export type ReportFeedbackWindowApiFromWindow = Window['reportFeedback']
