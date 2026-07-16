@@ -29,6 +29,7 @@ export function TaskForm({
   const [svnUrl, setSvnUrl] = useState('')
   const [recentSvnUrls, setRecentSvnUrls] = useState<string[]>(() => readRecentSvnUrls())
   const [isSvnHistoryOpen, setIsSvnHistoryOpen] = useState(false)
+  const [activeSvnHistoryIndex, setActiveSvnHistoryIndex] = useState<number | null>(null)
   const [oldRevision, setOldRevision] = useState('')
   const [newRevision, setNewRevision] = useState('')
   const [requirementFilePath, setRequirementFilePath] = useState('')
@@ -80,6 +81,12 @@ export function TaskForm({
     onTemplateChange?.(nextTemplateKey)
   }
 
+  const selectSvnHistoryItem = (selectedSvnUrl: string): void => {
+    setSvnUrl(selectedSvnUrl)
+    setActiveSvnHistoryIndex(null)
+    setIsSvnHistoryOpen(false)
+  }
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
     setIsSubmitting(true)
@@ -104,6 +111,7 @@ export function TaskForm({
         focus_direction_snapshot: focusDirectionSnapshot.trim() || undefined
       })
       setRecentSvnUrls(rememberRecentSvnUrl(normalizedSvnUrl))
+      setActiveSvnHistoryIndex(null)
       setIsSvnHistoryOpen(false)
       setSvnUrl('')
       setOldRevision('')
@@ -160,33 +168,71 @@ export function TaskForm({
             placeholder="https://svn.example.com/project/trunk"
             aria-haspopup="listbox"
             aria-expanded={showSvnHistory}
-            onFocus={() => setIsSvnHistoryOpen(true)}
-            onClick={() => setIsSvnHistoryOpen(true)}
-            onBlur={() => setIsSvnHistoryOpen(false)}
+            aria-activedescendant={
+              activeSvnHistoryIndex === null
+                ? undefined
+                : `svn-url-history-option-${activeSvnHistoryIndex}`
+            }
+            onFocus={() => {
+              setActiveSvnHistoryIndex(null)
+              setIsSvnHistoryOpen(true)
+            }}
+            onClick={() => {
+              setActiveSvnHistoryIndex(null)
+              setIsSvnHistoryOpen(true)
+            }}
+            onBlur={() => {
+              setActiveSvnHistoryIndex(null)
+              setIsSvnHistoryOpen(false)
+            }}
             onKeyDown={(event) => {
+              if (showSvnHistory && event.key === 'ArrowDown') {
+                event.preventDefault()
+                setActiveSvnHistoryIndex((currentIndex) =>
+                  currentIndex === null
+                    ? 0
+                    : (currentIndex + 1) % visibleRecentSvnUrls.length
+                )
+                return
+              }
+              if (showSvnHistory && event.key === 'ArrowUp') {
+                event.preventDefault()
+                setActiveSvnHistoryIndex((currentIndex) =>
+                  currentIndex === null
+                    ? visibleRecentSvnUrls.length - 1
+                    : (currentIndex - 1 + visibleRecentSvnUrls.length) % visibleRecentSvnUrls.length
+                )
+                return
+              }
+              if (showSvnHistory && event.key === 'Enter' && activeSvnHistoryIndex !== null) {
+                event.preventDefault()
+                selectSvnHistoryItem(visibleRecentSvnUrls[activeSvnHistoryIndex])
+                return
+              }
               if (event.key === 'Escape' || event.key === 'Tab') {
+                setActiveSvnHistoryIndex(null)
                 setIsSvnHistoryOpen(false)
               }
             }}
             onChange={(event) => {
               setSvnUrl(event.target.value)
+              setActiveSvnHistoryIndex(null)
               setIsSvnHistoryOpen(true)
             }}
           />
           {showSvnHistory ? (
             <div className="svn-url-history-list" role="listbox" aria-label="最近 SVN 地址">
-              {visibleRecentSvnUrls.map((recentSvnUrl) => (
+              {visibleRecentSvnUrls.map((recentSvnUrl, index) => (
                 <button
+                  id={`svn-url-history-option-${index}`}
                   key={recentSvnUrl}
                   type="button"
                   tabIndex={-1}
                   className="svn-url-history-item"
                   role="option"
+                  aria-selected={activeSvnHistoryIndex === index}
                   onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    setSvnUrl(recentSvnUrl)
-                    setIsSvnHistoryOpen(false)
-                  }}
+                  onClick={() => selectSvnHistoryItem(recentSvnUrl)}
                 >
                   {recentSvnUrl}
                 </button>

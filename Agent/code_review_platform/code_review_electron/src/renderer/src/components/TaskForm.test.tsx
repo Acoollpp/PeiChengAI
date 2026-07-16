@@ -160,6 +160,40 @@ describe('TaskForm', () => {
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
   })
 
+  it('使用上下方向键高亮历史地址并用 Enter 回填', async () => {
+    localStorage.setItem(
+      'code-review:recent-svn-urls',
+      JSON.stringify(['https://svn.example.com/A', 'https://svn.example.com/B', 'https://svn.example.com/C'])
+    )
+    const user = userEvent.setup()
+    render(<TaskForm disabled={false} onSubmit={vi.fn()} />)
+    const svnInput = screen.getByLabelText('SVN 地址')
+
+    await user.click(svnInput)
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('option', { name: 'https://svn.example.com/A' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('option', { name: 'https://svn.example.com/B' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+
+    await user.keyboard('{ArrowUp}')
+    await user.keyboard('{ArrowUp}')
+    expect(screen.getByRole('option', { name: 'https://svn.example.com/C' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+
+    await user.keyboard('{Enter}')
+    expect(svnInput).toHaveValue('https://svn.example.com/C')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+
   it('点击版本字段不会回填鼠标经过的历史地址', async () => {
     localStorage.setItem('code-review:recent-svn-urls', JSON.stringify(['https://svn.example.com/A']))
     const user = userEvent.setup()

@@ -263,7 +263,8 @@ h2 {
   text-align: left;
 }
 
-.svn-url-history-item:hover {
+.svn-url-history-item:hover,
+.svn-url-history-item[aria-selected='true'] {
   color: #28313d;
   background: #f4f6f8;
 }
