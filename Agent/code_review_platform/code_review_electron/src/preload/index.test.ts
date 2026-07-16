@@ -122,6 +122,32 @@ describe('preload codeReview API', () => {
     expect(invokeMock).toHaveBeenCalledWith('report-feedback:submit-negative', 'task-1')
   })
 
+  it('invokes SVN 预检 IPC before a task enters the local queue', async () => {
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+    const payload = {
+      svn_url: 'svn://repo/project',
+      old_revision: '1',
+      new_revision: '2'
+    }
+
+    await api.preflightTask(payload)
+
+    expect(invokeMock).toHaveBeenCalledWith('task:preflight', payload)
+  })
+
+  it('移除任务 IPC 错误中的 Electron 英文调用前缀', async () => {
+    invokeMock.mockRejectedValueOnce(
+      new Error("Error invoking remote method 'task:execute': Error: SVN 新旧版本范围无效，请确保旧版本小于新版本。")
+    )
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+
+    await expect(
+      api.executeTask({ svn_url: 'svn://repo/project', old_revision: '20', new_revision: '10' })
+    ).rejects.toThrow('SVN 新旧版本范围无效，请确保旧版本小于新版本。')
+  })
+
   it.each([
     [
       'onReportFeedbackFocusAnchor',

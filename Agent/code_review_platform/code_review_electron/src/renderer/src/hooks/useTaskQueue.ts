@@ -8,6 +8,7 @@ import type {
   ExecuteTaskResult,
   RetryTaskRequest
 } from '../code-review-api'
+import { toUserFacingIpcErrorMessage } from '../../../shared/ipc-error'
 
 export const MAX_CONCURRENT_REVIEW_TASKS = 2
 export const REVIEW_TASK_TIMEOUT_MS = 60 * 60 * 1000
@@ -127,7 +128,7 @@ const isMatchingUnboundLocalTask = (
     (localTask.requirement_file_name ?? undefined) === serverTask.requirement_file_name)
 
 const getErrorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : '审查任务执行失败。'
+  toUserFacingIpcErrorMessage(error, '审查任务执行失败。')
 
 const nowIso = (): string => new Date().toISOString()
 

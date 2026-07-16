@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { toUserFacingIpcErrorMessage } from '../shared/ipc-error'
 
 import type {
   AppUpdateError,
@@ -42,6 +43,11 @@ const listen = <T>(channel: string, callback: (event: T) => void): (() => void) 
   }
 }
 
+const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> =>
+  ipcRenderer.invoke(channel, ...args).catch((error: unknown) => {
+    throw new Error(toUserFacingIpcErrorMessage(error, '客户端请求失败。'))
+  })
+
 const serializeFeedbackPayload = async (
   payload: SubmitFeedbackPayload
 ): Promise<SubmitFeedbackIpcPayload> => {
@@ -81,10 +87,10 @@ contextBridge.exposeInMainWorld('codeReview', {
     ipcRenderer.invoke('server-config:load'),
   listTasks: (): Promise<ReviewTasksResponse> => ipcRenderer.invoke('task:list'),
   readTaskReport: (taskId: string): Promise<string> => ipcRenderer.invoke('task:report', taskId),
-  executeTask: (payload: ExecuteTaskRequest): Promise<ExecuteTaskResult> =>
-    ipcRenderer.invoke('task:execute', payload),
-  retryTask: (payload: RetryTaskRequest): Promise<ExecuteTaskResult> =>
-    ipcRenderer.invoke('task:retry', payload),
+  preflightTask: (payload: Parameters<CodeReviewApi['preflightTask']>[0]) =>
+    invoke('task:preflight', payload),
+  executeTask: (payload: ExecuteTaskRequest): Promise<ExecuteTaskResult> => invoke('task:execute', payload),
+  retryTask: (payload: RetryTaskRequest): Promise<ExecuteTaskResult> => invoke('task:retry', payload),
   cancelTask: (payload: CancelTaskRequest): Promise<CancelTaskResult> =>
     ipcRenderer.invoke('task:cancel', payload),
   openTaskLog: (taskId: string): ReturnType<CodeReviewApi['openTaskLog']> =>

@@ -15,6 +15,7 @@ import type {
   TaskCompletionNotificationResult,
   TaskProgressEvent
 } from '../../shared/types'
+import type { TaskPreflightErrorField, TaskPreflightResult } from '../../shared/task-preflight'
 
 export type { EnvironmentProgressEvent, TaskProgressEvent }
 export type { CurrentUser, DepartmentsResponse }
@@ -58,6 +59,20 @@ export interface ExecuteTaskRequest {
   focus_direction_id?: string
   focus_direction_snapshot?: string
   client_task_id?: string
+}
+
+export type TaskPreflightRequest = Pick<
+  ExecuteTaskRequest,
+  'svn_url' | 'old_revision' | 'new_revision'
+>
+
+export class TaskPreflightValidationError extends Error {
+  constructor(
+    readonly errors: Partial<Record<TaskPreflightErrorField, string>>
+  ) {
+    super('SVN 地址或版本校验失败。')
+    this.name = 'TaskPreflightValidationError'
+  }
 }
 
 export interface RetryTaskRequest {
@@ -208,6 +223,7 @@ export interface CodeReviewApi {
   loadServerConfig(): Promise<{ server_url: string }>
   listTasks(): Promise<ReviewTasksResponse>
   readTaskReport(taskId: string): Promise<string>
+  preflightTask(payload: TaskPreflightRequest): Promise<TaskPreflightResult>
   executeTask(payload: ExecuteTaskRequest): Promise<ExecuteTaskResult>
   retryTask(payload: RetryTaskRequest): Promise<ExecuteTaskResult>
   cancelTask(payload: CancelTaskRequest): Promise<CancelTaskResult>

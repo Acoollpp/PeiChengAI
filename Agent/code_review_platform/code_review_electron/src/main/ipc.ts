@@ -40,7 +40,9 @@ import {
   defaultPrepareWorkspace,
   defaultRunCodex,
   executeReviewTask,
+  getEnvironmentErrorMessage,
   retryReviewTask,
+  toSvnPreflightUserMessage,
   type ExecuteReviewTaskResult,
   type TaskAgentDependencies
 } from './task-agent'
@@ -50,7 +52,14 @@ import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
 import { ServerConfigStore, normalizeServerUrl } from './server-config-store'
 import { createSkillSyncService, type SkillSyncResult } from './skill-sync'
 import { appendTaskLogEvent, CODEX_REVIEW_LOG_FILE_NAME } from './task-log'
-import { runSvnPreflight } from './svn-preflight'
+import {
+  runSvnPreflight,
+  runSvnUrlPreflight,
+  SvnPreflightError,
+  validateSvnRevisionRange
+} from './svn-preflight'
+import { buildDirectCommandOptions } from './environment-checker'
+import type { TaskPreflightErrorField, TaskPreflightResult } from '../shared/task-preflight'
 
 interface SerializedFeedbackScreenshot {
   name: string
@@ -70,6 +79,7 @@ export interface IpcHandlerDependencies {
   serverConfigStore?: ServerConfigStore
   checkEnvironment?: () => Promise<EnvironmentCheckResult>
   preflightSvn?: TaskAgentDependencies['preflightSvn']
+  preflightSvnUrl?: typeof runSvnUrlPreflight
   installCodexCli?: () => Promise<EnvironmentCheckResult>
   installSvnCli?: () => Promise<EnvironmentCheckResult>
   syncSkill?: (token: string) => Promise<SkillSyncResult>
@@ -427,6 +437,29 @@ const buildUsefulIssuesText = (
   return uniqueIssues.map((issue, index) => `${index + 1}. ${issue}`).join('\n')
 }
 
+const revisionPattern = /^[rR]?\d+$/
+
+const resolvePreflightErrorField = (
+  error: SvnPreflightError,
+  payload: Pick<CreateTaskRequest, 'svn_url' | 'old_revision' | 'new_revision'>
+): TaskPreflightErrorField => {
+  if (error.code === 'NEW_REVISION_UNAVAILABLE' || error.code === 'INVALID_REVISION_ORDER') {
+    return 'new_revision'
+  }
+  if (error.code === 'OLD_REVISION_UNAVAILABLE') {
+    return 'old_revision'
+  }
+  if (error.code === 'INVALID_ARGUMENT') {
+    if (!revisionPattern.test(payload.old_revision.trim())) {
+      return 'old_revision'
+    }
+    if (!revisionPattern.test(payload.new_revision.trim())) {
+      return 'new_revision'
+    }
+  }
+  return 'svn_url'
+}
+
 export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): void => {
   const apiOverride = dependencies.api
   const authStore = dependencies.authStore ?? new AuthStore()
@@ -751,6 +784,76 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     const result = await checkLocalEnvironment()
     return withSkillSyncResult(result, skillSyncResult)
   })
+
+  ipcMain.handle(
+    'task:preflight',
+    async (
+      _event,
+      payload: Pick<CreateTaskRequest, 'svn_url' | 'old_revision' | 'new_revision'>
+    ): Promise<TaskPreflightResult> => {
+      const environment = await checkLocalEnvironment()
+      if (environment.status !== 'ready') {
+        return { status: 'invalid', errors: { svn_url: getEnvironmentErrorMessage(environment.status) } }
+      }
+      if (!environment.svnPath) {
+        return {
+          status: 'invalid',
+          errors: { svn_url: '环境检查已通过但未返回 SVN CLI 路径' }
+        }
+      }
+
+      const errors: Partial<Record<TaskPreflightErrorField, string>> = {}
+      try {
+        validateSvnRevisionRange(payload.old_revision, payload.new_revision)
+      } catch (error) {
+        if (error instanceof SvnPreflightError) {
+          errors[resolvePreflightErrorField(error, payload)] = toSvnPreflightUserMessage(error, payload)
+        } else {
+          throw error
+        }
+      }
+
+      try {
+        await (dependencies.preflightSvnUrl ?? runSvnUrlPreflight)({
+          svnUrl: payload.svn_url,
+          svnCommand: environment.svnPath,
+          commandOptions: buildDirectCommandOptions()
+        })
+      } catch (error) {
+        if (error instanceof SvnPreflightError) {
+          errors.svn_url = toSvnPreflightUserMessage(error, payload)
+        } else {
+          throw error
+        }
+      }
+
+      if (Object.keys(errors).length > 0) {
+        return { status: 'invalid', errors }
+      }
+
+      try {
+        await (dependencies.preflightSvn ?? runSvnPreflight)({
+          svnUrl: payload.svn_url,
+          oldRevision: payload.old_revision,
+          newRevision: payload.new_revision,
+          svnCommand: environment.svnPath,
+          commandOptions: buildDirectCommandOptions()
+        })
+      } catch (error) {
+        if (error instanceof SvnPreflightError) {
+          return {
+            status: 'invalid',
+            errors: {
+              [resolvePreflightErrorField(error, payload)]: toSvnPreflightUserMessage(error, payload)
+            }
+          }
+        }
+        throw error
+      }
+
+      return { status: 'valid' }
+    }
+  )
 
   ipcMain.handle(
     'task:execute',

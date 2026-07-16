@@ -19,9 +19,12 @@ export interface SvnPreflightInput {
   signal?: AbortSignal
 }
 
+export type SvnUrlPreflightInput = Omit<SvnPreflightInput, 'oldRevision' | 'newRevision'>
+
 export type SvnPreflightErrorCode =
   | 'INVALID_ARGUMENT'
   | 'INVALID_REVISION_ORDER'
+  | 'SVN_URL_UNAVAILABLE'
   | 'NEW_REVISION_UNAVAILABLE'
   | 'OLD_REVISION_UNAVAILABLE'
   | 'AUTHENTICATION_FAILED'
@@ -49,7 +52,7 @@ export interface SvnPreflightDependencies {
   logger?: (diagnostic: string) => void
 }
 
-type RevisionTarget = 'new' | 'old'
+type RevisionTarget = 'url' | 'new' | 'old'
 
 interface ParsedRevision {
   normalized: string
@@ -61,6 +64,7 @@ const revisionPattern = /^[rR]?\d+$/
 const errorMessages: Record<SvnPreflightErrorCode, string> = {
   INVALID_ARGUMENT: 'SVN 地址、命令或版本格式无效。',
   INVALID_REVISION_ORDER: 'SVN 新旧版本范围无效。',
+  SVN_URL_UNAVAILABLE: 'SVN 地址不存在或不可访问。',
   NEW_REVISION_UNAVAILABLE: 'SVN 新版本不存在或不可访问。',
   OLD_REVISION_UNAVAILABLE: 'SVN 旧版本不存在或不可访问。',
   AUTHENTICATION_FAILED: 'SVN 认证失败。',
@@ -81,14 +85,10 @@ export const runSvnPreflight = async (
     throw new SvnPreflightError('INVALID_ARGUMENT')
   }
 
-  const oldRevision = parseRevision(input.oldRevision)
-  const newRevision = parseRevision(input.newRevision)
-  if (
-    newRevision.value === 0n ||
-    (oldRevision.value !== 0n && oldRevision.value >= newRevision.value)
-  ) {
-    throw new SvnPreflightError('INVALID_REVISION_ORDER')
-  }
+  const { oldRevision, newRevision } = validateSvnRevisionRange(
+    input.oldRevision,
+    input.newRevision
+  )
 
   throwIfCancelled(input.signal)
 
@@ -107,11 +107,45 @@ export const runSvnPreflight = async (
   }
 }
 
-export const buildSvnInfoArgs = (svnUrl: string, revision: string): string[] => [
+export const runSvnUrlPreflight = async (
+  input: SvnUrlPreflightInput,
+  dependencies: SvnPreflightDependencies = {}
+): Promise<void> => {
+  const svnUrl = input.svnUrl.trim()
+  const svnCommand = input.svnCommand.trim()
+  if (!svnUrl || !svnCommand) {
+    throw new SvnPreflightError('INVALID_ARGUMENT')
+  }
+
+  await runSvnInfo({
+    svnUrl,
+    target: 'url',
+    svnCommand,
+    commandOptions: input.commandOptions,
+    signal: input.signal,
+    dependencies
+  })
+}
+
+export const validateSvnRevisionRange = (
+  oldRevisionInput: string,
+  newRevisionInput: string
+): { oldRevision: ParsedRevision; newRevision: ParsedRevision } => {
+  const oldRevision = parseRevision(oldRevisionInput)
+  const newRevision = parseRevision(newRevisionInput)
+  if (
+    newRevision.value === 0n ||
+    (oldRevision.value !== 0n && oldRevision.value >= newRevision.value)
+  ) {
+    throw new SvnPreflightError('INVALID_REVISION_ORDER')
+  }
+  return { oldRevision, newRevision }
+}
+
+export const buildSvnInfoArgs = (svnUrl: string, revision?: string): string[] => [
   'info',
   '--non-interactive',
-  '-r',
-  parseRevision(revision).normalized,
+  ...(revision === undefined ? [] : ['-r', parseRevision(revision).normalized]),
   svnUrl.trim()
 ]
 
@@ -151,7 +185,7 @@ export const sanitizeSvnDiagnostic = (diagnostic: string): string =>
 
 interface RunSvnInfoInput {
   svnUrl: string
-  revision: string
+  revision?: string
   target: RevisionTarget
   svnCommand: string
   commandOptions: SpawnOptionsWithoutStdio
@@ -347,6 +381,9 @@ const classifySvnDiagnostic = (
     return 'NETWORK_FAILED'
   }
 
+  if (target === 'url') {
+    return 'SVN_URL_UNAVAILABLE'
+  }
   return target === 'new' ? 'NEW_REVISION_UNAVAILABLE' : 'OLD_REVISION_UNAVAILABLE'
 }
 

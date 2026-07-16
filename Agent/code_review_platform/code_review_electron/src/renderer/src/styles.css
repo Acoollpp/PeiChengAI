@@ -810,6 +810,11 @@ h2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  align-items: start;
+}
+
+.revision-grid .field {
+  min-width: 0;
 }
 
 .hint {

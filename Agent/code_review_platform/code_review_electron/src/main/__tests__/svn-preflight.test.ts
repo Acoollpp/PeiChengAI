@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildSvnInfoArgs,
   runSvnPreflight,
+  runSvnUrlPreflight,
   sanitizeSvnDiagnostic,
   SVN_DIAGNOSTIC_MAX_BYTES,
   SvnPreflightError
@@ -133,6 +134,18 @@ describe('runSvnPreflight 参数校验', () => {
 })
 
 describe('runSvnPreflight 执行顺序', () => {
+  it('地址探测不携带版本号，独立验证 SVN 地址可访问性', async () => {
+    const { spawn } = createSpawn([{ code: 0 }])
+
+    await runSvnUrlPreflight(validInput, { spawn })
+
+    expect(spawn).toHaveBeenCalledWith(
+      validInput.svnCommand,
+      ['info', '--non-interactive', 'https://svn.example.com/trunk'],
+      { ...validInput.commandOptions, shell: false }
+    )
+  })
+
   it('先检查新版本，成功后再检查旧版本，并原样复用命令 options', async () => {
     const { spawn } = createSpawn([{ code: 0 }, { code: 0 }])
 

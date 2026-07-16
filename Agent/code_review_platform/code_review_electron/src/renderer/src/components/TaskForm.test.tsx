@@ -72,6 +72,7 @@ describe('TaskForm', () => {
     expect(screen.getByLabelText('旧版本号')).toHaveValue('12')
     expect(screen.getByLabelText('新版本号')).toHaveValue('14')
     expect(localStorage.getItem('code-review:recent-svn-urls')).toBeNull()
+    expect(screen.getByText('提交失败')).toBeInTheDocument()
   })
 
   it('成功提交后只保存最近三条 SVN 地址并去重', async () => {

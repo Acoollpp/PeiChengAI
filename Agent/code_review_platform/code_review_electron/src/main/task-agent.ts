@@ -122,6 +122,9 @@ const environmentErrorMessages: Record<Exclude<EnvironmentStatus, 'ready'>, stri
   failed: '本机审查环境检查失败，请联系管理员处理。'
 }
 
+export const getEnvironmentErrorMessage = (status: Exclude<EnvironmentStatus, 'ready'>): string =>
+  environmentErrorMessages[status]
+
 const codexErrorMessages: Record<CodexErrorCode, string> = {
   SVN_ERROR: 'SVN 操作失败，请检查项目路径和版本号是否正确。',
   SKILL_ERROR: '代码审查 Skill 执行异常，请联系管理员处理。',
@@ -481,12 +484,17 @@ const isCancelledError = (error: unknown): boolean =>
   (error instanceof SvnPreflightError && error.code === 'CANCELLED') ||
   (error instanceof Error && error.message === '任务已取消')
 
-const toSvnPreflightUserMessage = (error: SvnPreflightError, task: ReviewTask): string => {
+export const toSvnPreflightUserMessage = (
+  error: SvnPreflightError,
+  task: Pick<ReviewTask, 'old_revision' | 'new_revision'>
+): string => {
   switch (error.code) {
     case 'NEW_REVISION_UNAVAILABLE':
       return `新版本 ${task.new_revision} 在该 SVN 地址下不存在或不可访问。`
     case 'OLD_REVISION_UNAVAILABLE':
       return `旧版本 ${task.old_revision} 在该 SVN 地址下不存在或不可访问。`
+    case 'SVN_URL_UNAVAILABLE':
+      return 'SVN 地址不存在或不可访问。'
     case 'AUTHENTICATION_FAILED':
       return 'SVN 认证失败，请先在本机 SVN 客户端更新登录凭据。'
     case 'PERMISSION_DENIED':

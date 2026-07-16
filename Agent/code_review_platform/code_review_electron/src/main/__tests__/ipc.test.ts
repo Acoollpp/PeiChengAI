@@ -87,6 +87,7 @@ describe('registerIpcHandlers', () => {
       'svn:install',
       'skill:install',
       'environment:check',
+      'task:preflight',
       'task:execute',
       'task:retry',
       'task:cancel',
@@ -102,6 +103,54 @@ describe('registerIpcHandlers', () => {
       'report:download-current',
       'report:open-pdf'
     ])
+  })
+
+  it('SVN 预检失败时返回中文错误且不创建审查任务', async () => {
+    const api = { createTask: vi.fn() }
+    const preflightSvn = vi.fn(async () => {
+      const { SvnPreflightError } = await import('../svn-preflight')
+      throw new SvnPreflightError('NEW_REVISION_UNAVAILABLE')
+    })
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      preflightSvn,
+      preflightSvnUrl: vi.fn()
+    })
+
+    const handler = handleMock.mock.calls.find(([channel]) => channel === 'task:preflight')?.[1]
+
+    await expect(
+      handler({}, { svn_url: 'svn://repo/project', old_revision: '12', new_revision: '14' })
+    ).resolves.toEqual({
+      status: 'invalid',
+      errors: { new_revision: '新版本 14 在该 SVN 地址下不存在或不可访问。' }
+    })
+    expect(api.createTask).not.toHaveBeenCalled()
+  })
+
+  it('同时返回 SVN 地址和版本范围错误', async () => {
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      preflightSvnUrl: vi.fn(async () => {
+        const { SvnPreflightError } = await import('../svn-preflight')
+        throw new SvnPreflightError('SVN_URL_UNAVAILABLE')
+      })
+    })
+    const handler = handleMock.mock.calls.find(([channel]) => channel === 'task:preflight')?.[1]
+
+    await expect(
+      handler({}, { svn_url: 'sadasdsada', old_revision: '34', new_revision: '23' })
+    ).resolves.toEqual({
+      status: 'invalid',
+      errors: {
+        svn_url: 'SVN 地址不存在或不可访问。',
+        new_revision: 'SVN 新旧版本范围无效，请确保旧版本小于新版本。'
+      }
+    })
   })
 
   it('selects a requirement Excel file through IPC', async () => {

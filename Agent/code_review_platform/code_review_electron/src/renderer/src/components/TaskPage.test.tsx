@@ -22,6 +22,7 @@ const setupCodeReviewApi = (): void => {
       dataUrl: 'data:image/png;base64,aW1hZ2U=',
       contentType: 'image/png'
     })),
+    preflightTask: vi.fn(async () => ({ status: 'valid' as const })),
     executeTask: vi.fn(),
     retryTask: vi.fn(),
     cancelTask: vi.fn(async () => ({ status: 'cancelled' })),
@@ -109,6 +110,30 @@ afterEach(() => {
 })
 
 describe('TaskPage', () => {
+  it('SVN 预检失败时不入队且在输入框下方显示中文错误', async () => {
+    const user = userEvent.setup()
+    window.codeReview.preflightTask = vi.fn(async () => ({
+      status: 'invalid' as const,
+      errors: {
+        svn_url: 'SVN 地址不存在或不可访问。',
+        new_revision: '新版本 11 在该 SVN 地址下不存在或不可访问。'
+      }
+    }))
+    renderReadyTaskPage()
+
+    await fillTaskForm(user, '1')
+    await user.click(screen.getByRole('button', { name: '开始审查' }))
+
+    const newRevisionField = screen.getByLabelText('新版本号').closest('label')
+    expect(newRevisionField).not.toBeNull()
+    expect(within(newRevisionField as HTMLElement).getByText('新版本 11 在该 SVN 地址下不存在或不可访问。')).toBeInTheDocument()
+    expect(screen.getByLabelText('SVN 地址').closest('.field')).toHaveTextContent(
+      'SVN 地址不存在或不可访问。'
+    )
+    expect(window.codeReview.executeTask).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('SVN 地址')).toHaveValue('svn://repo/project-1')
+  })
+
   it('环境检查通过且无安装任务时隐藏环境状态卡片', () => {
     renderReadyTaskPage()
 

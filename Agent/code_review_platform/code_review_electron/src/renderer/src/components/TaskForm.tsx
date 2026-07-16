@@ -6,7 +6,7 @@ import {
   resolveReviewTemplate,
   type ReviewTemplateKey
 } from '../../../shared/review-templates'
-import type { ExecuteTaskRequest } from '../code-review-api'
+import { TaskPreflightValidationError, type ExecuteTaskRequest } from '../code-review-api'
 
 const RECENT_SVN_URLS_STORAGE_KEY = 'code-review:recent-svn-urls'
 const MAX_RECENT_SVN_URLS = 3
@@ -30,6 +30,11 @@ export function TaskForm({
   const [recentSvnUrls, setRecentSvnUrls] = useState<string[]>(() => readRecentSvnUrls())
   const [isSvnHistoryOpen, setIsSvnHistoryOpen] = useState(false)
   const [activeSvnHistoryIndex, setActiveSvnHistoryIndex] = useState<number | null>(null)
+  const [svnValidationErrors, setSvnValidationErrors] = useState({
+    svnUrl: '',
+    oldRevision: '',
+    newRevision: ''
+  })
   const [oldRevision, setOldRevision] = useState('')
   const [newRevision, setNewRevision] = useState('')
   const [requirementFilePath, setRequirementFilePath] = useState('')
@@ -89,6 +94,7 @@ export function TaskForm({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
+    setSvnValidationErrors({ svnUrl: '', oldRevision: '', newRevision: '' })
     setIsSubmitting(true)
 
     try {
@@ -119,7 +125,20 @@ export function TaskForm({
       setRequirementFilePath('')
       setFocusDirectionSnapshot('')
       setRequirementFileError('')
-    } catch {
+    } catch (error) {
+      if (error instanceof TaskPreflightValidationError) {
+        setSvnValidationErrors({
+          svnUrl: error.errors.svn_url ?? '',
+          oldRevision: error.errors.old_revision ?? '',
+          newRevision: error.errors.new_revision ?? ''
+        })
+      } else {
+        setSvnValidationErrors({
+          svnUrl: error instanceof Error ? error.message : 'SVN 地址或版本校验失败。',
+          oldRevision: '',
+          newRevision: ''
+        })
+      }
       return
     } finally {
       setIsSubmitting(false)
@@ -216,6 +235,7 @@ export function TaskForm({
             }}
             onChange={(event) => {
               setSvnUrl(event.target.value)
+              setSvnValidationErrors((current) => ({ ...current, svnUrl: '' }))
               setActiveSvnHistoryIndex(null)
               setIsSvnHistoryOpen(true)
             }}
@@ -240,6 +260,7 @@ export function TaskForm({
             </div>
           ) : null}
         </div>
+        {svnValidationErrors.svnUrl ? <span className="form-error">{svnValidationErrors.svnUrl}</span> : null}
       </div>
 
       <div className="revision-grid">
@@ -251,8 +272,14 @@ export function TaskForm({
             value={oldRevision}
             inputMode="numeric"
             placeholder="填 0 表示全量审查新版本代码"
-            onChange={(event) => setOldRevision(event.target.value)}
+            onChange={(event) => {
+              setOldRevision(event.target.value)
+              setSvnValidationErrors((current) => ({ ...current, oldRevision: '' }))
+            }}
           />
+          {svnValidationErrors.oldRevision ? (
+            <span className="form-error">{svnValidationErrors.oldRevision}</span>
+          ) : null}
         </label>
         <label className="field">
           <span>新版本号</span>
@@ -261,8 +288,14 @@ export function TaskForm({
             aria-label="新版本号"
             value={newRevision}
             inputMode="numeric"
-            onChange={(event) => setNewRevision(event.target.value)}
+            onChange={(event) => {
+              setNewRevision(event.target.value)
+              setSvnValidationErrors((current) => ({ ...current, newRevision: '' }))
+            }}
           />
+          {svnValidationErrors.newRevision ? (
+            <span className="form-error">{svnValidationErrors.newRevision}</span>
+          ) : null}
         </label>
       </div>
 

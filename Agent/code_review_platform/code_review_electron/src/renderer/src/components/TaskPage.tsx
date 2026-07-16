@@ -7,7 +7,11 @@ import {
 } from 'react'
 
 import paceLogo from '../assets/pace-logo.png'
-import type { EnvironmentCheckResult, ExecuteTaskRequest } from '../code-review-api'
+import {
+  TaskPreflightValidationError,
+  type EnvironmentCheckResult,
+  type ExecuteTaskRequest
+} from '../code-review-api'
 import { useTaskQueue, type TaskViewItem } from '../hooks/useTaskQueue'
 import { EnvironmentStatus } from './EnvironmentStatus'
 import { extractDetailedHeadingOptions, MarkdownPreview } from './MarkdownPreview'
@@ -238,6 +242,14 @@ export function TaskPage({
 
     setError('')
     setReportMessage('')
+    const preflightResult = await window.codeReview.preflightTask({
+      svn_url: payload.svn_url,
+      old_revision: payload.old_revision,
+      new_revision: payload.new_revision
+    })
+    if (preflightResult.status === 'invalid') {
+      throw new TaskPreflightValidationError(preflightResult.errors)
+    }
     await submitTask(payload)
   }
 
