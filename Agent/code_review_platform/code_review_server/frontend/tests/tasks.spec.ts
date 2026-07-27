@@ -3,6 +3,22 @@ import { testApiKey, testSvnPassword } from "./config.ts"
 import { createUser, uniqueSvnUsername } from "./utils/privateApi"
 import { logInWithKey, logInWithSvn } from "./utils/user"
 
+const pagedReviewTask = (index: number) => ({
+  id: `11111111-1111-1111-1111-${String(index).padStart(12, "0")}`,
+  user_id: "22222222-2222-2222-2222-222222222222",
+  user_name: `分页用户${index}`,
+  svn_username: `page_user_${index}`,
+  svn_url: `https://example.test/svn/project-${index}`,
+  old_revision: `r${index}`,
+  new_revision: `r${index + 1}`,
+  status: "success",
+  report_path: null,
+  pdf_report_path: null,
+  error_message: null,
+  started_at: "2026-07-24T10:00:00",
+  finished_at: "2026-07-24T10:05:00",
+})
+
 test.describe("Normal user task navigation", () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
@@ -249,6 +265,57 @@ test.describe("Admin task navigation", () => {
     expect(searchRequest.searchParams.get("status")).toBe("success")
     expect(searchRequest.searchParams.get("report_feedback")).toBe("none")
     expect(searchRequest.searchParams.get("started_from")).toBe("2026-07-07")
+  })
+
+  test("Admin task table requests server pages and shows pagination controls", async ({
+    page,
+  }) => {
+    const requestedUrls: string[] = []
+    await page.addInitScript(() => {
+      localStorage.setItem("access_token", "test-token")
+    })
+    await page.route("**/api/v1/users/me", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: {
+          id: "22222222-2222-2222-2222-222222222222",
+          full_name: "分页管理员",
+          svn_username: "admin",
+          role: "admin",
+          is_active: true,
+          is_superuser: true,
+        },
+      })
+    })
+    await page.route("**/api/v1/review-tasks?**", async (route) => {
+      const requestUrl = new URL(route.request().url())
+      requestedUrls.push(route.request().url())
+      const skip = Number(requestUrl.searchParams.get("skip") ?? 0)
+      await route.fulfill({
+        contentType: "application/json",
+        json: {
+          data: [pagedReviewTask(skip + 1)],
+          count: 21,
+        },
+      })
+    })
+
+    await page.goto("/tasks/review")
+
+    await expect(page.getByText("显示第 1 至 10 条，共")).toBeVisible()
+    await expect(page.getByText("分页用户1")).toBeVisible()
+
+    const firstRequest = new URL(requestedUrls.at(-1) ?? "")
+    expect(firstRequest.searchParams.get("skip")).toBe("0")
+    expect(firstRequest.searchParams.get("limit")).toBe("10")
+
+    await page.getByRole("button", { name: "下一页" }).click()
+
+    await expect(page.getByText("分页用户11")).toBeVisible()
+    await expect(page.getByText("显示第 11 至 20 条，共")).toBeVisible()
+    const secondRequest = new URL(requestedUrls.at(-1) ?? "")
+    expect(secondRequest.searchParams.get("skip")).toBe("10")
+    expect(secondRequest.searchParams.get("limit")).toBe("10")
   })
 
   test("Admin task table shows PDF download button for tasks with PDF report", async ({

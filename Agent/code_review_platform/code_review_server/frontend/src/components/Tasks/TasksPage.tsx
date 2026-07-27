@@ -3,6 +3,7 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query"
+import type { ColumnDef, PaginationState } from "@tanstack/react-table"
 import {
   Download,
   ExternalLink,
@@ -11,10 +12,11 @@ import {
   Trash2,
   X,
 } from "lucide-react"
-import { type FormEvent, Suspense, useState } from "react"
+import { type FormEvent, Suspense, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { OpenAPI, type ReviewTaskPublic, type ReviewTaskStatus } from "@/client"
+import { DataTable } from "@/components/Common/DataTable"
 import {
   type DisplayableReviewTaskStatus,
   formatReviewTaskDateTime,
@@ -41,14 +43,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import useAuth from "@/hooks/useAuth"
 import { hasAdminPrivileges } from "@/lib/authz"
 
@@ -68,8 +62,6 @@ type ReviewTaskFilters = {
   reportFeedback: "all" | "helpful" | "not_helpful" | "none"
   startedFrom: string
 }
-
-const REVIEW_TASK_TABLE_COLUMN_COUNT = 12
 
 const emptyFilters: ReviewTaskFilters = {
   userName: "",
@@ -134,9 +126,13 @@ function formatUsefulIssuesSummary(value?: string | null) {
 async function readReviewTasks(
   filters: ReviewTaskFilters,
   canFilterUsers: boolean,
+  pagination: PaginationState,
 ): Promise<ReviewTasksResponse> {
   const token = localStorage.getItem("access_token")
-  const searchParams = new URLSearchParams({ limit: "100" })
+  const searchParams = new URLSearchParams({
+    skip: `${pagination.pageIndex * pagination.pageSize}`,
+    limit: `${pagination.pageSize}`,
+  })
   const userName = filters.userName.trim()
   const svnUsername = filters.svnUsername.trim()
 
@@ -177,10 +173,16 @@ async function readReviewTasks(
 function getReviewTasksQueryOptions(
   filters: ReviewTaskFilters,
   canFilterUsers: boolean,
+  pagination: PaginationState,
 ) {
   return {
-    queryFn: () => readReviewTasks(filters, canFilterUsers),
-    queryKey: ["review-tasks", canFilterUsers ? "admin" : "me", filters],
+    queryFn: () => readReviewTasks(filters, canFilterUsers, pagination),
+    queryKey: [
+      "review-tasks",
+      canFilterUsers ? "admin" : "me",
+      filters,
+      pagination,
+    ],
   }
 }
 
@@ -253,17 +255,184 @@ function formatReviewTaskRevisionRange(task: ReviewTask) {
   return `${task.old_revision} → ${task.new_revision}`
 }
 
+function createReviewTaskColumns({
+  onDelete,
+}: {
+  onDelete: (task: ReviewTask) => void
+}): ColumnDef<ReviewTask>[] {
+  return [
+    {
+      accessorKey: "user_name",
+      header: "用户名称",
+      cell: ({ row }) => row.original.user_name || "-",
+    },
+    {
+      accessorKey: "svn_username",
+      header: "SVN账号",
+      cell: ({ row }) => row.original.svn_username || "-",
+    },
+    {
+      accessorKey: "svn_url",
+      header: "SVN地址",
+      cell: ({ row }) => (
+        <div className="max-w-sm truncate font-medium">
+          {row.original.svn_url}
+        </div>
+      ),
+    },
+    {
+      id: "revision",
+      header: "版本",
+      cell: ({ row }) => formatReviewTaskRevisionRange(row.original),
+    },
+    {
+      accessorKey: "status",
+      header: "状态",
+      cell: ({ row }) => <ReviewTaskStatusBadge status={row.original.status} />,
+    },
+    {
+      accessorKey: "started_at",
+      header: "开始时间",
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap text-muted-foreground">
+          {formatReviewTaskDateTime(row.original.started_at)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "finished_at",
+      header: "结束时间",
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap text-muted-foreground">
+          {formatReviewTaskDateTime(row.original.finished_at)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "error_message",
+      header: "错误信息",
+      cell: ({ row }) => {
+        const errorMessage = formatReviewTaskErrorMessage(
+          row.original.error_message,
+        )
+
+        return (
+          <div
+            className="max-w-xs truncate text-muted-foreground"
+            title={errorMessage === "-" ? undefined : errorMessage}
+          >
+            {errorMessage}
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "report_feedback_helpful",
+      header: "是否有帮助",
+      cell: ({ row }) => (
+        <ReportFeedbackHelpfulBadge
+          helpful={row.original.report_feedback_helpful}
+        />
+      ),
+    },
+    {
+      accessorKey: "report_feedback_useful_issues_text",
+      header: "有用信息",
+      cell: ({ row }) => (
+        <div
+          className="max-w-xs truncate text-muted-foreground"
+          title={row.original.report_feedback_useful_issues_text || undefined}
+        >
+          {row.original.report_feedback_helpful
+            ? formatUsefulIssuesSummary(
+                row.original.report_feedback_useful_issues_text,
+              )
+            : "-"}
+        </div>
+      ),
+    },
+    {
+      id: "report",
+      header: "报告",
+      cell: ({ row }) => {
+        const task = row.original
+
+        if (!task.report_path) {
+          return <span className="text-muted-foreground">-</span>
+        }
+
+        return (
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="打开报告"
+              onClick={() => void openReport(task)}
+            >
+              <ExternalLink />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="下载报告"
+              onClick={() => void downloadReport(task)}
+            >
+              <Download />
+            </Button>
+            {task.pdf_report_path ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="下载 PDF 报告"
+                onClick={() => void downloadPdfReport(task)}
+              >
+                <FileDown />
+              </Button>
+            ) : null}
+          </div>
+        )
+      },
+    },
+    {
+      id: "actions",
+      header: "操作",
+      cell: ({ row }) => (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="删除任务"
+          onClick={() => onDelete(row.original)}
+        >
+          <Trash2 />
+        </Button>
+      ),
+    },
+  ]
+}
+
 function ReviewTasksTable({
   filters,
   canFilterUsers,
+  pagination,
+  setPagination,
 }: {
   filters: ReviewTaskFilters
   canFilterUsers: boolean
+  pagination: PaginationState
+  setPagination: (pagination: PaginationState) => void
 }) {
   const queryClient = useQueryClient()
   const [taskToDelete, setTaskToDelete] = useState<ReviewTask | null>(null)
   const { data: tasks } = useSuspenseQuery(
-    getReviewTasksQueryOptions(filters, canFilterUsers),
+    getReviewTasksQueryOptions(filters, canFilterUsers, pagination),
+  )
+  const columns = useMemo(
+    () => createReviewTaskColumns({ onDelete: setTaskToDelete }),
+    [],
   )
   const deleteMutation = useMutation({
     mutationFn: deleteReviewTask,
@@ -282,131 +451,15 @@ function ReviewTasksTable({
 
   return (
     <>
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead>用户名称</TableHead>
-            <TableHead>SVN账号</TableHead>
-            <TableHead>SVN地址</TableHead>
-            <TableHead>版本</TableHead>
-            <TableHead>状态</TableHead>
-            <TableHead>开始时间</TableHead>
-            <TableHead>结束时间</TableHead>
-            <TableHead>错误信息</TableHead>
-            <TableHead>是否有帮助</TableHead>
-            <TableHead>有用信息</TableHead>
-            <TableHead>报告</TableHead>
-            <TableHead>操作</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {tasks.data.length === 0 ? (
-            <TableRow className="hover:bg-transparent">
-              <TableCell
-                colSpan={REVIEW_TASK_TABLE_COLUMN_COUNT}
-                className="h-32 text-center text-muted-foreground"
-              >
-                暂无审查任务
-              </TableCell>
-            </TableRow>
-          ) : (
-            tasks.data.map((task) => {
-              const errorMessage = formatReviewTaskErrorMessage(
-                task.error_message,
-              )
-
-              return (
-                <TableRow key={task.id}>
-                  <TableCell>{task.user_name || "-"}</TableCell>
-                  <TableCell>{task.svn_username || "-"}</TableCell>
-                  <TableCell className="max-w-sm truncate font-medium">
-                    {task.svn_url}
-                  </TableCell>
-                  <TableCell>{formatReviewTaskRevisionRange(task)}</TableCell>
-                  <TableCell>
-                    <ReviewTaskStatusBadge status={task.status} />
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {formatReviewTaskDateTime(task.started_at)}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {formatReviewTaskDateTime(task.finished_at)}
-                  </TableCell>
-                  <TableCell
-                    className="max-w-xs truncate text-muted-foreground"
-                    title={errorMessage === "-" ? undefined : errorMessage}
-                  >
-                    {errorMessage}
-                  </TableCell>
-                  <TableCell>
-                    <ReportFeedbackHelpfulBadge
-                      helpful={task.report_feedback_helpful}
-                    />
-                  </TableCell>
-                  <TableCell
-                    className="max-w-xs truncate text-muted-foreground"
-                    title={task.report_feedback_useful_issues_text || undefined}
-                  >
-                    {task.report_feedback_helpful
-                      ? formatUsefulIssuesSummary(
-                          task.report_feedback_useful_issues_text,
-                        )
-                      : "-"}
-                  </TableCell>
-                  <TableCell>
-                    {task.report_path ? (
-                      <div className="flex items-center gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label="打开报告"
-                          onClick={() => void openReport(task)}
-                        >
-                          <ExternalLink />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label="下载报告"
-                          onClick={() => void downloadReport(task)}
-                        >
-                          <Download />
-                        </Button>
-                        {task.pdf_report_path ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label="下载 PDF 报告"
-                            onClick={() => void downloadPdfReport(task)}
-                          >
-                            <FileDown />
-                          </Button>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="删除任务"
-                      onClick={() => setTaskToDelete(task)}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              )
-            })
-          )}
-        </TableBody>
-      </Table>
+      <DataTable
+        columns={columns}
+        data={tasks.data}
+        manualPagination
+        onPaginationChange={setPagination}
+        pageCount={Math.max(1, Math.ceil(tasks.count / pagination.pageSize))}
+        pagination={pagination}
+        totalCount={tasks.count}
+      />
       <Dialog
         open={taskToDelete !== null}
         onOpenChange={(isOpen) => {
@@ -450,13 +503,22 @@ function ReviewTasksTable({
 function ReviewTasksSection({
   filters,
   canFilterUsers,
+  pagination,
+  setPagination,
 }: {
   filters: ReviewTaskFilters
   canFilterUsers: boolean
+  pagination: PaginationState
+  setPagination: (pagination: PaginationState) => void
 }) {
   return (
     <Suspense fallback={<div className="text-muted-foreground">加载中...</div>}>
-      <ReviewTasksTable filters={filters} canFilterUsers={canFilterUsers} />
+      <ReviewTasksTable
+        filters={filters}
+        canFilterUsers={canFilterUsers}
+        pagination={pagination}
+        setPagination={setPagination}
+      />
     </Suspense>
   )
 }
@@ -464,6 +526,10 @@ function ReviewTasksSection({
 export function TasksPage() {
   const { user: currentUser } = useAuth()
   const queryClient = useQueryClient()
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 10,
+  })
   const [draftFilters, setDraftFilters] =
     useState<ReviewTaskFilters>(emptyFilters)
   const [filters, setFilters] = useState<ReviewTaskFilters>(emptyFilters)
@@ -476,12 +542,14 @@ export function TasksPage() {
 
   const handleSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    setPagination((current) => ({ ...current, pageIndex: 0 }))
     setFilters({ ...draftFilters })
   }
 
   const handleReset = () => {
     setDraftFilters({ ...emptyFilters })
     setFilters({ ...emptyFilters })
+    setPagination((current) => ({ ...current, pageIndex: 0 }))
     void queryClient.invalidateQueries({ queryKey: ["review-tasks"] })
   }
 
@@ -607,7 +675,12 @@ export function TasksPage() {
           </Button>
         </div>
       </form>
-      <ReviewTasksSection filters={filters} canFilterUsers={canFilterUsers} />
+      <ReviewTasksSection
+        filters={filters}
+        canFilterUsers={canFilterUsers}
+        pagination={pagination}
+        setPagination={setPagination}
+      />
     </div>
   )
 }
