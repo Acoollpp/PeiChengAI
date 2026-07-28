@@ -224,9 +224,11 @@ function EmptyPanel({ message }: { message: string }) {
 
 function WeeklyTaskDetailDialog({
   issue,
+  open,
   onOpenChange,
 }: {
   issue: WeeklyRepresentativeIssue | null
+  open: boolean
   onOpenChange: (open: boolean) => void
 }) {
   const [downloadingFormat, setDownloadingFormat] = useState<
@@ -238,7 +240,7 @@ function WeeklyTaskDetailDialog({
     isError,
     isLoading,
   } = useQuery({
-    enabled: Boolean(taskId),
+    enabled: open && Boolean(taskId),
     queryFn: () => readReviewTask(taskId as string),
     queryKey: ["review-task-detail", taskId],
     staleTime: 5 * 60 * 1000,
@@ -265,7 +267,7 @@ function WeeklyTaskDetailDialog({
     : "-"
 
   return (
-    <Dialog open={issue !== null} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>任务详情</DialogTitle>
@@ -372,6 +374,7 @@ function WeeklyTaskDetailDialog({
 
 export function WeeklyInsightsPanel() {
   const { user: currentUser } = useAuth()
+  const [isTaskDetailOpen, setIsTaskDetailOpen] = useState(false)
   const [selectedIssue, setSelectedIssue] =
     useState<WeeklyRepresentativeIssue | null>(null)
   const {
@@ -854,7 +857,10 @@ export function WeeklyInsightsPanel() {
                         variant="ghost"
                         size="icon-sm"
                         aria-label="查看任务详情"
-                        onClick={() => setSelectedIssue(issue)}
+                        onClick={() => {
+                          setSelectedIssue(issue)
+                          setIsTaskDetailOpen(true)
+                        }}
                       >
                         <Eye aria-hidden="true" />
                       </Button>
@@ -874,7 +880,9 @@ export function WeeklyInsightsPanel() {
 
       <WeeklyTaskDetailDialog
         issue={selectedIssue}
+        open={isTaskDetailOpen}
         onOpenChange={(open) => {
+          setIsTaskDetailOpen(open)
           if (!open) {
             setSelectedIssue(null)
           }
