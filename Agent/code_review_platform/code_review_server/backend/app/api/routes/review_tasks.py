@@ -33,10 +33,15 @@ from app.models import (
     ReviewTaskStatus,
     ReviewTaskStatusUpdate,
     ReviewTaskTrendPointPublic,
+    ReviewTaskWeeklyInsightsPublic,
     User,
     UserRole,
 )
 from app.services import report_service
+from app.services.weekly_insight_service import (
+    build_weekly_insights,
+    previous_complete_week_bounds,
+)
 
 router = APIRouter(prefix="/review-tasks", tags=["review-tasks"])
 logger = logging.getLogger(__name__)
@@ -465,6 +470,48 @@ def read_review_task_stats(
         by_status=by_status,
         reports_by_user=reports_by_user,
         trend=_trend_points(session=session, filters=filters),
+    )
+
+
+@router.get("/weekly-insights", response_model=ReviewTaskWeeklyInsightsPublic)
+def read_review_task_weekly_insights(
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> ReviewTaskWeeklyInsightsPublic:
+    generated_at = _utcnow()
+    period_start, period_end_exclusive, start_utc, end_utc = (
+        previous_complete_week_bounds(generated_at)
+    )
+    filters = [
+        *_task_read_scope_filters(session=session, current_user=current_user),
+        ReviewTask.status == ReviewTaskStatus.success,
+        ReviewTask.created_at >= start_utc,
+        ReviewTask.created_at < end_utc,
+    ]
+    rows = session.exec(
+        select(ReviewTask, ReviewTaskReportFeedback)
+        .outerjoin(
+            ReviewTaskReportFeedback,
+            ReviewTaskReportFeedback.task_id == ReviewTask.id,
+        )
+        .where(*filters)
+        .order_by(col(ReviewTask.created_at))
+    ).all()
+
+    if has_admin_privileges(current_user):
+        scope_label = "全部部门"
+    elif current_user.role == UserRole.department_admin:
+        department = session.get(Department, current_user.department_id)
+        scope_label = department.name if department else "本部门"
+    else:
+        scope_label = "个人"
+
+    return build_weekly_insights(
+        rows=list(rows),
+        period_start=period_start,
+        period_end_exclusive=period_end_exclusive,
+        generated_at=generated_at,
+        scope_label=scope_label,
     )
 
 

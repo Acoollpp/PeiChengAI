@@ -2,6 +2,8 @@
 __MACOSX/
 logs/
 *.log
+.ops-backups/
+**/.ops-backups/
 .worktrees/
 
 # Local environment and generated build artifacts

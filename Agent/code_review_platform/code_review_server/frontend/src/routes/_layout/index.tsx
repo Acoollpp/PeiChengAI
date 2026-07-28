@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 
 import { FeedbackStatsPanel } from "@/components/Home/FeedbackStatsPanel"
 import { TaskStatsPanel } from "@/components/Home/TaskStatsPanel"
+import { WeeklyInsightsPanel } from "@/components/Home/WeeklyInsightsPanel"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useAuth from "@/hooks/useAuth"
 
@@ -33,12 +34,16 @@ function Home() {
         <TabsList>
           <TabsTrigger value="tasks">任务统计</TabsTrigger>
           <TabsTrigger value="feedback">意见统计</TabsTrigger>
+          <TabsTrigger value="weekly">周报统计</TabsTrigger>
         </TabsList>
         <TabsContent value="tasks">
           <TaskStatsPanel />
         </TabsContent>
         <TabsContent value="feedback">
           <FeedbackStatsPanel />
+        </TabsContent>
+        <TabsContent value="weekly">
+          <WeeklyInsightsPanel />
         </TabsContent>
       </Tabs>
     </div>

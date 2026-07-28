@@ -2691,3 +2691,101 @@ def test_review_task_list_includes_report_feedback_fields(
     assert by_id[first_task["id"]]["report_feedback_useful_issues_text"] == "1. 有价值内容"
     assert by_id[second_task["id"]]["report_feedback_helpful"] is None
     assert by_id[second_task["id"]]["report_feedback_useful_issues_text"] is None
+
+
+def test_weekly_insights_uses_previous_week_and_current_user_scope(
+    client: TestClient,
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixed_now = datetime(2026, 7, 27, 9, tzinfo=timezone.utc)
+    monkeypatch.setattr(review_tasks_route, "_utcnow", lambda: fixed_now)
+
+    def task_time(day: int, hour: int = 10) -> datetime:
+        return datetime(
+            2026,
+            7,
+            day,
+            hour,
+            tzinfo=TASK_STATS_TIMEZONE,
+        ).astimezone(timezone.utc).replace(tzinfo=None)
+
+    user, api_key = create_key_user(db)
+    headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
+    helpful_task = _create_review_task(client, headers, old_revision="701")
+    not_helpful_task = _create_review_task(client, headers, old_revision="702")
+    no_feedback_task = _create_review_task(client, headers, old_revision="703")
+    for task, created_at in (
+        (helpful_task, task_time(20)),
+        (not_helpful_task, task_time(21)),
+        (no_feedback_task, task_time(22)),
+    ):
+        _set_review_task_stats_fields(
+            db,
+            task["id"],
+            created_at=created_at,
+            status=ReviewTaskStatus.success,
+        )
+
+    db.add(
+        ReviewTaskReportFeedback(
+            task_id=UUID(helpful_task["id"]),
+            user_id=user.id,
+            helpful=True,
+            useful_issues_text=(
+                "1. 高风险：CAN 超时后未执行重发\n"
+                "2. 中风险：Flash 写入地址未校验"
+            ),
+        )
+    )
+    db.add(
+        ReviewTaskReportFeedback(
+            task_id=UUID(not_helpful_task["id"]),
+            user_id=user.id,
+            helpful=False,
+        )
+    )
+    db.commit()
+
+    other_user, other_api_key = create_key_user(db)
+    other_headers = authentication_token_from_key(
+        client=client,
+        key=other_api_key.key,
+        db=db,
+    )
+    other_task = _create_review_task(client, other_headers, old_revision="704")
+    _set_review_task_stats_fields(
+        db,
+        other_task["id"],
+        created_at=task_time(20),
+        status=ReviewTaskStatus.success,
+    )
+    assert other_user.id != user.id
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/weekly-insights",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["period_start"] == "2026-07-20"
+    assert content["period_end"] == "2026-07-26"
+    assert content["scope_label"] == "个人"
+    assert content["success_tasks"] == 3
+    assert content["helpful"] == 1
+    assert content["not_helpful"] == 1
+    assert content["no_feedback"] == 1
+    assert content["feedback_coverage_rate"] == pytest.approx(2 / 3)
+    assert content["explicit_useful_rate"] == 0.5
+    assert content["valid_useful_tasks"] == 1
+    assert content["valid_issue_count"] == 2
+    assert content["risk_counts"]["high"] == 1
+    assert content["risk_counts"]["medium"] == 1
+    assert len(content["daily"]) == 7
+    assert sum(item["success"] for item in content["daily"]) == 3
+    by_subcategory = {
+        item["subcategory"]: item for item in content["categories"]
+    }
+    assert by_subcategory["超时重发审核"]["useful_count"] == 1
+    assert by_subcategory["Flash操作审核"]["useful_count"] == 1

@@ -9,29 +9,29 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as LoginRouteImport } from './routes/login'
 import { Route as LayoutRouteImport } from './routes/_layout'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
-import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
-import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
-import { Route as LayoutFeedbackRouteImport } from './routes/_layout/feedback'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
+import { Route as LayoutFeedbackRouteImport } from './routes/_layout/feedback'
+import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
+import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutAdminIndexRouteImport } from './routes/_layout/admin.index'
-import { Route as LayoutTasksReviewRouteImport } from './routes/_layout/tasks.review'
-import { Route as LayoutAdminUsersRouteImport } from './routes/_layout/admin.users'
-import { Route as LayoutAdminTasksRouteImport } from './routes/_layout/admin.tasks'
-import { Route as LayoutAdminSkillsRouteImport } from './routes/_layout/admin.skills'
-import { Route as LayoutAdminReviewFocusDirectionsRouteImport } from './routes/_layout/admin.review-focus-directions'
 import { Route as LayoutAdminClientReleasesRouteImport } from './routes/_layout/admin.client-releases'
+import { Route as LayoutAdminReviewFocusDirectionsRouteImport } from './routes/_layout/admin.review-focus-directions'
+import { Route as LayoutAdminSkillsRouteImport } from './routes/_layout/admin.skills'
+import { Route as LayoutAdminTasksRouteImport } from './routes/_layout/admin.tasks'
+import { Route as LayoutAdminUsersRouteImport } from './routes/_layout/admin.users'
+import { Route as LayoutTasksReviewRouteImport } from './routes/_layout/tasks.review'
 import { Route as LayoutAdminTasksReviewRouteImport } from './routes/_layout/admin.tasks.review'
 
+const LayoutRoute = LayoutRouteImport.update({
+  id: '/_layout',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LayoutRoute = LayoutRouteImport.update({
-  id: '/_layout',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LayoutIndexRoute = LayoutIndexRouteImport.update({
@@ -39,14 +39,9 @@ const LayoutIndexRoute = LayoutIndexRouteImport.update({
   path: '/',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutSettingsRoute = LayoutSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutItemsRoute = LayoutItemsRouteImport.update({
-  id: '/items',
-  path: '/items',
+const LayoutAdminRoute = LayoutAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutFeedbackRoute = LayoutFeedbackRouteImport.update({
@@ -54,9 +49,14 @@ const LayoutFeedbackRoute = LayoutFeedbackRouteImport.update({
   path: '/feedback',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutAdminRoute = LayoutAdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
+const LayoutItemsRoute = LayoutItemsRouteImport.update({
+  id: '/items',
+  path: '/items',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutSettingsRoute = LayoutSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutAdminIndexRoute = LayoutAdminIndexRouteImport.update({
@@ -64,14 +64,21 @@ const LayoutAdminIndexRoute = LayoutAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => LayoutAdminRoute,
 } as any)
-const LayoutTasksReviewRoute = LayoutTasksReviewRouteImport.update({
-  id: '/tasks/review',
-  path: '/tasks/review',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutAdminUsersRoute = LayoutAdminUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
+const LayoutAdminClientReleasesRoute =
+  LayoutAdminClientReleasesRouteImport.update({
+    id: '/client-releases',
+    path: '/client-releases',
+    getParentRoute: () => LayoutAdminRoute,
+  } as any)
+const LayoutAdminReviewFocusDirectionsRoute =
+  LayoutAdminReviewFocusDirectionsRouteImport.update({
+    id: '/review-focus-directions',
+    path: '/review-focus-directions',
+    getParentRoute: () => LayoutAdminRoute,
+  } as any)
+const LayoutAdminSkillsRoute = LayoutAdminSkillsRouteImport.update({
+  id: '/skills',
+  path: '/skills',
   getParentRoute: () => LayoutAdminRoute,
 } as any)
 const LayoutAdminTasksRoute = LayoutAdminTasksRouteImport.update({
@@ -79,23 +86,16 @@ const LayoutAdminTasksRoute = LayoutAdminTasksRouteImport.update({
   path: '/tasks',
   getParentRoute: () => LayoutAdminRoute,
 } as any)
-const LayoutAdminSkillsRoute = LayoutAdminSkillsRouteImport.update({
-  id: '/skills',
-  path: '/skills',
+const LayoutAdminUsersRoute = LayoutAdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
   getParentRoute: () => LayoutAdminRoute,
 } as any)
-const LayoutAdminReviewFocusDirectionsRoute =
-  LayoutAdminReviewFocusDirectionsRouteImport.update({
-    id: '/review-focus-directions',
-    path: '/review-focus-directions',
-    getParentRoute: () => LayoutAdminRoute,
-  } as any)
-const LayoutAdminClientReleasesRoute =
-  LayoutAdminClientReleasesRouteImport.update({
-    id: '/client-releases',
-    path: '/client-releases',
-    getParentRoute: () => LayoutAdminRoute,
-  } as any)
+const LayoutTasksReviewRoute = LayoutTasksReviewRouteImport.update({
+  id: '/tasks/review',
+  path: '/tasks/review',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutAdminTasksReviewRoute = LayoutAdminTasksReviewRouteImport.update({
   id: '/review',
   path: '/review',
@@ -209,18 +209,18 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_layout': {
       id: '/_layout'
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof LayoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_layout/': {
@@ -230,18 +230,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutIndexRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/settings': {
-      id: '/_layout/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof LayoutSettingsRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/items': {
-      id: '/_layout/items'
-      path: '/items'
-      fullPath: '/items'
-      preLoaderRoute: typeof LayoutItemsRouteImport
+    '/_layout/admin': {
+      id: '/_layout/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof LayoutAdminRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/feedback': {
@@ -251,11 +244,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutFeedbackRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/admin': {
-      id: '/_layout/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof LayoutAdminRouteImport
+    '/_layout/items': {
+      id: '/_layout/items'
+      path: '/items'
+      fullPath: '/items'
+      preLoaderRoute: typeof LayoutItemsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/settings': {
+      id: '/_layout/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof LayoutSettingsRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/admin/': {
@@ -265,32 +265,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminIndexRouteImport
       parentRoute: typeof LayoutAdminRoute
     }
-    '/_layout/tasks/review': {
-      id: '/_layout/tasks/review'
-      path: '/tasks/review'
-      fullPath: '/tasks/review'
-      preLoaderRoute: typeof LayoutTasksReviewRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/admin/users': {
-      id: '/_layout/admin/users'
-      path: '/users'
-      fullPath: '/admin/users'
-      preLoaderRoute: typeof LayoutAdminUsersRouteImport
-      parentRoute: typeof LayoutAdminRoute
-    }
-    '/_layout/admin/tasks': {
-      id: '/_layout/admin/tasks'
-      path: '/tasks'
-      fullPath: '/admin/tasks'
-      preLoaderRoute: typeof LayoutAdminTasksRouteImport
-      parentRoute: typeof LayoutAdminRoute
-    }
-    '/_layout/admin/skills': {
-      id: '/_layout/admin/skills'
-      path: '/skills'
-      fullPath: '/admin/skills'
-      preLoaderRoute: typeof LayoutAdminSkillsRouteImport
+    '/_layout/admin/client-releases': {
+      id: '/_layout/admin/client-releases'
+      path: '/client-releases'
+      fullPath: '/admin/client-releases'
+      preLoaderRoute: typeof LayoutAdminClientReleasesRouteImport
       parentRoute: typeof LayoutAdminRoute
     }
     '/_layout/admin/review-focus-directions': {
@@ -300,12 +279,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminReviewFocusDirectionsRouteImport
       parentRoute: typeof LayoutAdminRoute
     }
-    '/_layout/admin/client-releases': {
-      id: '/_layout/admin/client-releases'
-      path: '/client-releases'
-      fullPath: '/admin/client-releases'
-      preLoaderRoute: typeof LayoutAdminClientReleasesRouteImport
+    '/_layout/admin/skills': {
+      id: '/_layout/admin/skills'
+      path: '/skills'
+      fullPath: '/admin/skills'
+      preLoaderRoute: typeof LayoutAdminSkillsRouteImport
       parentRoute: typeof LayoutAdminRoute
+    }
+    '/_layout/admin/tasks': {
+      id: '/_layout/admin/tasks'
+      path: '/tasks'
+      fullPath: '/admin/tasks'
+      preLoaderRoute: typeof LayoutAdminTasksRouteImport
+      parentRoute: typeof LayoutAdminRoute
+    }
+    '/_layout/admin/users': {
+      id: '/_layout/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof LayoutAdminUsersRouteImport
+      parentRoute: typeof LayoutAdminRoute
+    }
+    '/_layout/tasks/review': {
+      id: '/_layout/tasks/review'
+      path: '/tasks/review'
+      fullPath: '/tasks/review'
+      preLoaderRoute: typeof LayoutTasksReviewRouteImport
+      parentRoute: typeof LayoutRoute
     }
     '/_layout/admin/tasks/review': {
       id: '/_layout/admin/tasks/review'

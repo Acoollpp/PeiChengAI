@@ -202,6 +202,141 @@ const taskStatsByRange = {
   },
 }
 
+const weeklyInsights = {
+  period_start: "2026-07-20",
+  period_end: "2026-07-26",
+  generated_at: "2026-07-27T09:00:00Z",
+  scope_label: "全部部门",
+  taxonomy_version: "fixed-audit-taxonomy-v1",
+  success_tasks: 24,
+  helpful: 12,
+  not_helpful: 4,
+  no_feedback: 8,
+  feedback_coverage_rate: 2 / 3,
+  explicit_useful_rate: 0.75,
+  valid_useful_tasks: 10,
+  cleaning_tasks: 2,
+  valid_issue_count: 21,
+  risk_counts: {
+    high: 5,
+    medium: 8,
+    low: 4,
+    recommendation: 2,
+    unspecified: 2,
+  },
+  attention_points: [
+    "上周完成 24 个成功任务，反馈覆盖率 66.7%；仍有 8 个任务未反馈。",
+    "已反馈任务中 12 个被确认有帮助，明确有用率 75.0%；没帮助任务 4 个。",
+    "10 个任务包含可分析描述，共归类 21 条有效信息，其中高风险 5 条。",
+    "有用信息主要集中在：保护策略审核 5 条、通讯协议内容审核 4 条、变更点审核 3 条。",
+  ],
+  daily: [
+    {
+      date: "2026-07-20",
+      success: 3,
+      helpful: 2,
+      not_helpful: 0,
+      no_feedback: 1,
+    },
+    {
+      date: "2026-07-21",
+      success: 5,
+      helpful: 3,
+      not_helpful: 1,
+      no_feedback: 1,
+    },
+    {
+      date: "2026-07-22",
+      success: 4,
+      helpful: 2,
+      not_helpful: 1,
+      no_feedback: 1,
+    },
+    {
+      date: "2026-07-23",
+      success: 6,
+      helpful: 3,
+      not_helpful: 1,
+      no_feedback: 2,
+    },
+    {
+      date: "2026-07-24",
+      success: 4,
+      helpful: 2,
+      not_helpful: 1,
+      no_feedback: 1,
+    },
+    {
+      date: "2026-07-25",
+      success: 1,
+      helpful: 0,
+      not_helpful: 0,
+      no_feedback: 1,
+    },
+    {
+      date: "2026-07-26",
+      success: 1,
+      helpful: 0,
+      not_helpful: 0,
+      no_feedback: 1,
+    },
+  ],
+  categories: [
+    ["日常提交审核", "变更点审核", 3, 1],
+    ["日常提交审核", "编码规范审核", 1, 0],
+    ["日常提交审核", "基础逻辑审核", 1, 0],
+    ["日常提交审核", "测试补充审核", 1, 0],
+    ["日常提交审核", "自检项检查", 0, 0],
+    ["品质风险审核", "客诉高频问题", 1, 1],
+    ["重点项目发布审核", "全规则审核", 0, 0],
+    ["协议专项审核", "通讯协议内容审核", 4, 1],
+    ["协议专项审核", "异常通信审核", 1, 0],
+    ["协议专项审核", "超时重发审核", 1, 1],
+    ["协议专项审核", "缓冲区大小检查", 0, 0],
+    ["驱动专项审核", "MCU驱动审核", 0, 0],
+    ["驱动专项审核", "AFE驱动审核", 0, 0],
+    ["驱动专项审核", "Flash操作审核", 1, 0],
+    ["控制逻辑专项审核", "状态机审核", 1, 0],
+    ["控制逻辑专项审核", "保护策略审核", 5, 1],
+    ["控制逻辑专项审核", "控制闭环审核", 1, 0],
+    ["控制逻辑专项审核", "故障恢复审核", 0, 0],
+  ].map(([category, subcategory, usefulCount, highRiskCount]) => ({
+    category,
+    subcategory,
+    useful_count: usefulCount,
+    high_risk_count: highRiskCount,
+    medium_risk_count: 0,
+    low_risk_count: 0,
+  })),
+  departments: [
+    {
+      department_name: "软件一部",
+      success: 14,
+      helpful: 8,
+      not_helpful: 2,
+      no_feedback: 4,
+    },
+    {
+      department_name: "软件二部",
+      success: 10,
+      helpful: 4,
+      not_helpful: 2,
+      no_feedback: 4,
+    },
+  ],
+  representative_issues: [
+    {
+      task_id: "00000000-0000-0000-0000-000000000001",
+      task_date: "2026-07-23",
+      department_name: "软件一部",
+      description: "高风险：过流保护恢复条件会导致保护提前退出。",
+      category: "控制逻辑专项审核",
+      subcategory: "保护策略审核",
+      risk_level: "high",
+    },
+  ],
+}
+
 async function mockFeedbackStats(
   page: Page,
   options?: { includeUsers?: boolean },
@@ -245,6 +380,61 @@ async function mockTaskStats(page: Page, options?: { includeUsers?: boolean }) {
   return requestedRanges
 }
 
+async function mockWeeklyInsights(page: Page) {
+  await page.route("**/api/v1/review-tasks/weekly-insights", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      json: weeklyInsights,
+    })
+  })
+}
+
+async function mockRepresentativeTaskDetail(page: Page) {
+  const taskId = "00000000-0000-0000-0000-000000000001"
+  await page.route(`**/api/v1/review-tasks/${taskId}`, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      json: {
+        id: taskId,
+        user_id: "11111111-1111-1111-1111-111111111111",
+        user_name: "张三",
+        svn_username: "zhangsan",
+        svn_url: "svn://example.com/firmware/trunk",
+        old_revision: "r100",
+        new_revision: "r120",
+        department_name: "软件一部",
+        status: "success",
+        report_path: "/reports/task.md",
+        report_name: "代码审查报告.md",
+        pdf_report_path: "/reports/task.pdf",
+        pdf_report_name: "代码审查报告.pdf",
+        report_feedback_helpful: true,
+        report_feedback_useful_issues_text:
+          "1. 高风险：过流保护恢复条件会导致保护提前退出。\n2. 中风险：保护恢复计数缺少边界检查。",
+        created_at: "2026-07-23T03:20:00Z",
+      },
+    })
+  })
+  await page.route(
+    `**/api/v1/review-tasks/${taskId}/download`,
+    async (route) => {
+      await route.fulfill({
+        body: "# 代码审查报告\n",
+        contentType: "text/markdown",
+      })
+    },
+  )
+  await page.route(
+    `**/api/v1/review-tasks/${taskId}/pdf/download`,
+    async (route) => {
+      await route.fulfill({
+        body: "%PDF-1.4\n",
+        contentType: "application/pdf",
+      })
+    },
+  )
+}
+
 function cardByText(page: Page, text: string) {
   return page.getByText(text).locator("xpath=ancestor::div[@data-slot='card']")
 }
@@ -263,6 +453,7 @@ test("Home page is renamed and shows task statistics", async ({ page }) => {
   await expect(page.getByRole("link", { name: "主页" })).toBeVisible()
   await expect(page.getByRole("heading", { name: /你好，/ })).toBeVisible()
   await expect(page.getByRole("tab", { name: "任务统计" })).toBeVisible()
+  await expect(page.getByRole("tab", { name: "周报统计" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "任务统计" })).toBeVisible()
   await expect(page.getByText("总任务数")).toBeVisible()
   await expect(page.getByText("成功数")).toBeVisible()
@@ -362,6 +553,88 @@ test("Home page can switch to feedback statistics", async ({ page }) => {
   await expect(page.getByText("提交人排行")).toBeVisible()
   await expect(page.getByText("汪思雨")).not.toBeVisible()
   expect(requestedRanges).toContain("all")
+})
+
+test("Home page can switch to weekly insights with fixed categories", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("access_token", "test-token")
+  })
+  await page.route("**/api/v1/users/me", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      json: {
+        id: "22222222-2222-2222-2222-222222222222",
+        full_name: "周报管理员",
+        svn_username: "weekly-admin",
+        role: "admin",
+        is_active: true,
+        is_superuser: true,
+      },
+    })
+  })
+  await mockTaskStats(page)
+  await mockFeedbackStats(page)
+  await mockWeeklyInsights(page)
+  await mockRepresentativeTaskDetail(page)
+  await page.goto("/")
+
+  await page.getByRole("tab", { name: "周报统计" }).click()
+
+  await expect(page.getByRole("heading", { name: "周报统计" })).toBeVisible()
+  await expect(page.getByText("07-20 至 07-26")).toBeVisible()
+  await expect(summaryCard(page, "成功任务").getByText("24")).toBeVisible()
+  await expect(summaryCard(page, "有帮助").getByText("12")).toBeVisible()
+  await expect(summaryCard(page, "没帮助").getByText("4")).toBeVisible()
+  await expect(summaryCard(page, "未反馈").getByText("8")).toBeVisible()
+  await expect(
+    page.getByRole("img", {
+      name: "上一周成功任务反馈饼图：有帮助 12，没帮助 4，未反馈 8",
+    }),
+  ).toBeVisible()
+  await expect(page.getByText("固定分类 TOP 5")).toBeVisible()
+  await expect(
+    page.getByText("6 个大类、18 个小类固定展示，便于跨周对比。"),
+  ).toBeVisible()
+  await expect(page.getByText("保护策略审核").first()).toBeVisible()
+  await expect(page.getByTitle("客诉高频问题")).toBeVisible()
+  await expect(page.getByTitle("全规则审核")).toBeVisible()
+  await expect(page.getByTitle("通讯协议内容审核")).toBeVisible()
+  await expect(page.getByTitle("MCU驱动审核")).toBeVisible()
+  await expect(page.getByTitle("故障恢复审核")).toBeVisible()
+  await expect(
+    page.getByText("过流保护恢复条件会导致保护提前退出", { exact: false }),
+  ).toBeVisible()
+
+  await page.getByRole("button", { name: "查看任务详情" }).click()
+  await expect(page.getByRole("heading", { name: "任务详情" })).toBeVisible()
+  await expect(page.getByText("张三")).toBeVisible()
+  await expect(page.getByText("zhangsan")).toBeVisible()
+  await expect(
+    page.getByText("中风险：保护恢复计数缺少边界检查。", { exact: false }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "下载 Markdown" }),
+  ).toBeEnabled()
+  await expect(page.getByRole("button", { name: "下载 PDF" })).toBeEnabled()
+
+  const markdownDownloadPromise = page.waitForEvent("download")
+  await page.getByRole("button", { name: "下载 Markdown" }).click()
+  const markdownDownload = await markdownDownloadPromise
+  expect(markdownDownload.suggestedFilename()).toBe("代码审查报告.md")
+
+  const pdfDownloadPromise = page.waitForEvent("download")
+  await page.getByRole("button", { name: "下载 PDF" }).click()
+  const pdfDownload = await pdfDownloadPromise
+  expect(pdfDownload.suggestedFilename()).toBe("代码审查报告.pdf")
+
+  await page.getByRole("button", { name: "Close" }).click()
+
+  await page.getByRole("tab", { name: "任务统计" }).click()
+  await expect(page.getByRole("heading", { name: "任务统计" })).toBeVisible()
+  await page.getByRole("tab", { name: "意见统计" }).click()
+  await expect(page.getByRole("heading", { name: "意见统计" })).toBeVisible()
 })
 
 test("Feedback statistics supports today yesterday and all ranges", async ({

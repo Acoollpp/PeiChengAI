@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -556,6 +556,70 @@ class ReviewTaskStatsPublic(SQLModel):
     by_status: dict[ReviewTaskStatus, int]
     reports_by_user: list[ReviewTaskReportUserStatsPublic] = Field(default_factory=list)
     trend: list[ReviewTaskTrendPointPublic] = Field(default_factory=list)
+
+
+class ReviewTaskWeeklyDailyPointPublic(SQLModel):
+    date: date
+    success: int
+    helpful: int
+    not_helpful: int
+    no_feedback: int
+
+
+class ReviewTaskWeeklyCategoryStatsPublic(SQLModel):
+    category: str
+    subcategory: str
+    useful_count: int
+    high_risk_count: int
+    medium_risk_count: int
+    low_risk_count: int
+
+
+class ReviewTaskWeeklyDepartmentStatsPublic(SQLModel):
+    department_name: str
+    success: int
+    helpful: int
+    not_helpful: int
+    no_feedback: int
+
+
+class ReviewTaskWeeklyRepresentativeIssuePublic(SQLModel):
+    task_id: uuid.UUID
+    task_date: date
+    department_name: str
+    description: str
+    category: str
+    subcategory: str
+    risk_level: str
+
+
+class ReviewTaskWeeklyInsightsPublic(SQLModel):
+    period_start: date
+    period_end: date
+    generated_at: datetime
+    scope_label: str
+    taxonomy_version: str
+    success_tasks: int
+    helpful: int
+    not_helpful: int
+    no_feedback: int
+    feedback_coverage_rate: float
+    explicit_useful_rate: float
+    valid_useful_tasks: int
+    cleaning_tasks: int
+    valid_issue_count: int
+    risk_counts: dict[str, int]
+    attention_points: list[str] = Field(default_factory=list)
+    daily: list[ReviewTaskWeeklyDailyPointPublic] = Field(default_factory=list)
+    categories: list[ReviewTaskWeeklyCategoryStatsPublic] = Field(
+        default_factory=list
+    )
+    departments: list[ReviewTaskWeeklyDepartmentStatsPublic] = Field(
+        default_factory=list
+    )
+    representative_issues: list[ReviewTaskWeeklyRepresentativeIssuePublic] = Field(
+        default_factory=list
+    )
 
 
 class FeedbackScreenshotPublic(SQLModel):
