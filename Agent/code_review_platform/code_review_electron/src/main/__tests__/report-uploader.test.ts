@@ -62,18 +62,24 @@ describe('report uploader', () => {
       '- **报告输出地址:** /tmp/review/report.md',
       '正文中的普通路径：`src/main.c:42`',
       '**项目路径：** svn://repo/project',
+      '    报告输出路径：/docs/indented-example.md',
       '```markdown',
       '**报告输出路径：** /docs/example.md',
       '```',
+      '## 风险问题',
+      '**报告输出路径：** 用户输入未经过滤，可能覆盖其他文件。',
       ''
     ].join('\r\n')
     const expectedReport = [
       '# 代码审查报告',
       '正文中的普通路径：`src/main.c:42`',
       '**项目路径：** svn://repo/project',
+      '    报告输出路径：/docs/indented-example.md',
       '```markdown',
       '**报告输出路径：** /docs/example.md',
       '```',
+      '## 风险问题',
+      '**报告输出路径：** 用户输入未经过滤，可能覆盖其他文件。',
       ''
     ].join('\r\n')
     const api = {
