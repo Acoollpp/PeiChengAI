@@ -22,8 +22,8 @@ import { checkEnvironment } from './environment-checker'
 import type {
   FocusReportFeedbackAnchorPayload,
   OpenReportFeedbackWindowPayload,
-  PrepareIssueFeedbackSubmissionPayload,
-  PrepareIssueFeedbackSubmissionResult,
+  SubmitIssueFeedbackPayload,
+  SubmitIssueFeedbackResult,
   ReportFeedbackContext,
   ReportFeedbackSubmittedEvent,
   SaveIssueFeedbackDraftPayload,
@@ -39,6 +39,7 @@ import type {
   TaskCompletionNotificationResult
 } from '../shared/types'
 import { generatePdfReport } from './report-pdf-generator'
+import { submitIssueFeedback as submitFinalIssueFeedback } from './issue-feedback-submitter'
 import type { ReportFeedbackWindowManager } from './report-feedback-window'
 import {
   defaultPrepareWorkspace,
@@ -1325,11 +1326,11 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   )
 
   ipcMain.handle(
-    'report-feedback-window:prepare-issue-submit',
+    'report-feedback-window:submit-issues',
     async (
       event,
-      payload: PrepareIssueFeedbackSubmissionPayload
-    ): Promise<PrepareIssueFeedbackSubmissionResult> => {
+      payload: SubmitIssueFeedbackPayload
+    ): Promise<SubmitIssueFeedbackResult> => {
       const manager = requireReportFeedbackManager(getReportFeedbackWindowManager)
       const context = manager.getContext(event.sender.id)
       if (
@@ -1342,14 +1343,24 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       await waitForIssueFeedbackDrafts(context.taskId)
       const token = await loadAccessToken(authStore)
       const api = await createApiClient()
-      const response = await api.readTaskIssues(token, context.taskId)
-      if (response.feedback_submitted_at) {
-        throw new Error('问题反馈已正式提交，不能重复提交')
+      const result = await submitFinalIssueFeedback({
+        api,
+        token,
+        taskId: context.taskId,
+        runtimePaths: await loadRuntimePaths(),
+        generatePdf: dependencies.generatePdfReport ?? generatePdfReport
+      })
+      let pdfOpenError = ''
+      try {
+        pdfOpenError = await shell.openPath(result.pdfPath)
+      } catch (openError) {
+        pdfOpenError = openError instanceof Error ? openError.message : '系统无法打开最终 PDF'
       }
-      if (response.data.some((issue) => issue.helpful == null)) {
-        throw new Error('请先评价所有审查问题')
+      if (pdfOpenError) {
+        shell.showItemInFolder(result.pdfPath)
+        return { ...result, pdfOpenError }
       }
-      return { status: 'ready' }
+      return result
     }
   )
 

@@ -154,6 +154,7 @@ function IssueFeedbackForm({
   const [drafts, setDrafts] = useState(initialDrafts)
   const [error, setError] = useState('')
   const [isPreparing, setIsPreparing] = useState(false)
+  const [submittedAt, setSubmittedAt] = useState(context.feedbackSubmittedAt)
   const draftsRef = useRef(initialDrafts)
   const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>())
   const queuesRef = useRef(new Map<string, Promise<void>>())
@@ -161,7 +162,7 @@ function IssueFeedbackForm({
     new Map(initialDrafts.map((draft) => [draft.id, draft.revision]))
   )
   const mountedRef = useRef(true)
-  const isReadOnly = context.feedbackSubmittedAt !== null
+  const isReadOnly = submittedAt !== null
 
   useEffect(() => {
     mountedRef.current = true
@@ -299,7 +300,9 @@ function IssueFeedbackForm({
     void enqueueSave(issueId, true).catch(() => undefined)
   }
 
-  const handlePrepareSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+  const handleSubmitIssueFeedback = async (
+    event: React.FormEvent<HTMLFormElement>
+  ): Promise<void> => {
     event.preventDefault()
     if (isPreparing || isReadOnly) {
       return
@@ -331,7 +334,17 @@ function IssueFeedbackForm({
     }
 
     try {
-      await window.reportFeedback.prepareIssueSubmit({ taskId: context.taskId })
+      const result = await window.reportFeedback.submitIssueFeedback({ taskId: context.taskId })
+      setSubmittedAt(result.feedbackSubmittedAt)
+      if (result.pdfOpenError) {
+        setError('反馈已正式提交，但 PDF 打开失败，已在文件夹中定位最终报告。')
+        return
+      }
+      try {
+        await window.reportFeedback.close()
+      } catch {
+        setError('反馈已正式提交，但窗口关闭失败，请手动关闭。')
+      }
     } catch (prepareError) {
       setError(prepareError instanceof Error ? prepareError.message : '提交前校验失败，请重试。')
     } finally {
@@ -367,7 +380,10 @@ function IssueFeedbackForm({
   }
 
   return (
-    <form className="report-feedback-form" onSubmit={(event) => void handlePrepareSubmit(event)}>
+    <form
+      className="report-feedback-form"
+      onSubmit={(event) => void handleSubmitIssueFeedback(event)}
+    >
       <div className="report-feedback-scroll">
         {drafts.length === 0 && (
           <p className="report-feedback-status">报告中没有需要逐项反馈的审查问题。</p>
@@ -456,7 +472,7 @@ function IssueFeedbackForm({
         </button>
         {!isReadOnly && (
           <button type="submit" className="primary-button" disabled={isPreparing}>
-            {isPreparing ? '正在检查...' : '提交反馈并查看PDF报告'}
+            {isPreparing ? '正在生成最终PDF...' : '提交反馈并查看PDF报告'}
           </button>
         )}
       </div>

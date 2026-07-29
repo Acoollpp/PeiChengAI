@@ -1,7 +1,7 @@
 import type {
   FocusReportFeedbackAnchorPayload,
-  PrepareIssueFeedbackSubmissionPayload,
-  PrepareIssueFeedbackSubmissionResult,
+  SubmitIssueFeedbackPayload,
+  SubmitIssueFeedbackResult,
   ReportFeedbackContext,
   ReportFeedbackSubmittedEvent,
   SaveIssueFeedbackDraftPayload,
@@ -14,9 +14,7 @@ export interface ReportFeedbackWindowApi {
   focusAnchor(payload: FocusReportFeedbackAnchorPayload): Promise<true>
   submit(payload: SubmitHelpfulReportFeedbackPayload): Promise<ReportFeedbackSubmittedEvent>
   saveIssueDraft(payload: SaveIssueFeedbackDraftPayload): Promise<ReviewTaskIssue>
-  prepareIssueSubmit(
-    payload: PrepareIssueFeedbackSubmissionPayload
-  ): Promise<PrepareIssueFeedbackSubmissionResult>
+  submitIssueFeedback(payload: SubmitIssueFeedbackPayload): Promise<SubmitIssueFeedbackResult>
   close(): Promise<true>
 }
 

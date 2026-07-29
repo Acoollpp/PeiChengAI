@@ -20,6 +20,7 @@ type PdfWindowLike = {
 export interface GeneratePdfReportDependencies {
   createWindow?: (options: BrowserWindowConstructorOptions) => PdfWindowLike
   removeFile?: typeof rm
+  markdown?: string
 }
 
 const imageContentTypes: Record<string, string> = {
@@ -228,6 +229,15 @@ const collectMarkdownImages = (markdown: string): MarkdownImage[] => {
       break
     }
 
+    let precedingBackslashes = 0
+    for (let cursor = markerIndex - 1; cursor >= 0 && markdown[cursor] === '\\'; cursor -= 1) {
+      precedingBackslashes += 1
+    }
+    if (precedingBackslashes % 2 === 1) {
+      index = markerIndex + 2
+      continue
+    }
+
     const altEnd = markdown.indexOf('](', markerIndex + 2)
     if (altEnd === -1) {
       index = markerIndex + 2
@@ -364,7 +374,9 @@ const renderInline = (value: string, imageDataUrls: Map<string, string>): string
     return `<a href="${escapeHtml(href)}">${escapeHtml(text)}</a>`
   })
 
-  return html.replace(/\u0000CODE(\d+)\u0000/g, (_match, index: string) => codeTokens[Number(index)])
+  return html
+    .replace(/&lt;br\s*\/?&gt;/gi, '<br />')
+    .replace(/\u0000CODE(\d+)\u0000/g, (_match, index: string) => codeTokens[Number(index)])
 }
 
 const isTableDivider = (line: string): boolean =>
@@ -556,17 +568,19 @@ export const generatePdfReport = async (
     throw new Error('PDF生成失败：请选择 Markdown 报告文件')
   }
 
-  let reportStat
-  try {
-    reportStat = await stat(reportPath)
-  } catch {
-    throw new Error(`PDF生成失败：报告文件不存在：${reportPath}`)
+  let markdown = dependencies.markdown
+  if (markdown === undefined) {
+    let reportStat
+    try {
+      reportStat = await stat(reportPath)
+    } catch {
+      throw new Error(`PDF生成失败：报告文件不存在：${reportPath}`)
+    }
+    if (!reportStat.isFile()) {
+      throw new Error(`PDF生成失败：报告文件不存在：${reportPath}`)
+    }
+    markdown = await readFile(reportPath, 'utf8')
   }
-  if (!reportStat.isFile()) {
-    throw new Error(`PDF生成失败：报告文件不存在：${reportPath}`)
-  }
-
-  const markdown = await readFile(reportPath, 'utf8')
   if (!markdown.trim()) {
     throw new Error('PDF生成失败：报告文件为空')
   }

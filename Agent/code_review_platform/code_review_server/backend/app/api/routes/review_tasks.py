@@ -1028,17 +1028,50 @@ async def upload_review_task_pdf_report(
     task_id: uuid.UUID,
     upload: UploadFile = File(...),
 ) -> Any:
-    task = _get_task_for_write(
-        session=session, current_user=current_user, task_id=task_id
+    existing_task = session.get(ReviewTask, task_id)
+    if existing_task is None:
+        raise HTTPException(status_code=404, detail="Review task not found")
+    is_issue_feedback_submission = existing_task.feedback_protocol_version == 1
+    task = (
+        _get_task_for_issue_feedback_write_locked(
+            session=session,
+            current_user=current_user,
+            task_id=task_id,
+        )
+        if is_issue_feedback_submission
+        else _get_task_for_write(
+            session=session,
+            current_user=current_user,
+            task_id=task_id,
+        )
     )
+    if is_issue_feedback_submission:
+        issues = list(
+            session.exec(
+                select(ReviewTaskIssue)
+                .where(col(ReviewTaskIssue.task_id) == task.id)
+                .order_by(col(ReviewTaskIssue.order))
+            ).all()
+        )
+        if any(issue.helpful is None for issue in issues):
+            raise HTTPException(status_code=409, detail="issue_feedback_incomplete")
+
     report_path = await report_service.save_pdf_upload(task_id, upload)
     now = _utcnow()
     task.pdf_report_path = str(report_path)
     task.pdf_report_name = upload.filename or PDF_REPORT_FILE_NAME
+    if is_issue_feedback_submission:
+        task.feedback_submitted_at = now
     task.updated_at = now
 
     session.add(task)
-    session.commit()
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        if is_issue_feedback_submission:
+            report_path.unlink(missing_ok=True)
+        raise
     session.refresh(task)
     return task
 

@@ -725,6 +725,32 @@ describe('ApiClient', () => {
     await expect((upload as File).arrayBuffer()).resolves.toEqual(pdfBytes.buffer)
   })
 
+  it('按任务和相对路径下载报告图片资产', async () => {
+    const imageBytes = Uint8Array.from([1, 2, 3, 4])
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(imageBytes, {
+        status: 200,
+        headers: { 'content-type': 'image/png' }
+      })
+    )
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    const result = await client.downloadReportAsset(
+      'token-123',
+      'task/1',
+      'images/证据 图.png'
+    )
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://server.example/api/v1/review-tasks/task%2F1/assets/images/%E8%AF%81%E6%8D%AE%20%E5%9B%BE.png',
+      {
+        method: 'GET',
+        headers: { authorization: 'Bearer token-123' }
+      }
+    )
+    expect(new Uint8Array(result)).toEqual(imageBytes)
+  })
+
   it('uploads requirement file as multipart form data with Excel content type', async () => {
     vi.stubGlobal('File', File)
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'task-1' }))

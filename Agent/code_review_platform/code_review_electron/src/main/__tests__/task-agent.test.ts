@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -148,7 +148,7 @@ describe('executeReviewTask', () => {
     ])
   })
 
-  it('runs codex, uploads the report, and returns markdown after the environment is ready', async () => {
+  it('环境就绪后只上传原始Markdown并等待反馈后再生成PDF', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-'))
     tempDirs.push(cwd)
     const reportPath = join(cwd, '代码审查报告.md')
@@ -208,8 +208,6 @@ describe('executeReviewTask', () => {
       status: 'success',
       reportMarkdown: '# report\n',
       reportPath,
-      pdfPath,
-      pdfReportName: basename(pdfPath),
       feedbackProtocolVersion: 1
     })
     expect(dependencies.runCodex).toHaveBeenCalledWith({
@@ -223,7 +221,7 @@ describe('executeReviewTask', () => {
       signal: undefined,
       onProgress: undefined
     })
-    expect(dependencies.generatePdfReport).toHaveBeenCalledWith(reportPath)
+    expect(dependencies.generatePdfReport).not.toHaveBeenCalled()
     expect(dependencies.uploadRequirementFile).toHaveBeenCalledWith(
       'token-123',
       'task-1',
@@ -235,7 +233,7 @@ describe('executeReviewTask', () => {
       reportPath,
       '# report\n'
     )
-    expect(dependencies.uploadPdfReport).toHaveBeenCalledWith('token-123', 'task-1', pdfPath)
+    expect(dependencies.uploadPdfReport).not.toHaveBeenCalled()
     expect(dependencies.prepareWorkspace).toHaveBeenCalledWith({
       taskId: 'task-1',
       svnUrl: 'svn://repo/project',
@@ -253,9 +251,7 @@ describe('executeReviewTask', () => {
       'status:running_codex',
       'runCodex',
       'status:uploading_report',
-      'generatePdfReport',
-      'uploadReport',
-      'uploadPdfReport'
+      'uploadReport'
     ])
     expect(dependencies.api.updateTaskStatus).not.toHaveBeenCalledWith(
       'token-123',
@@ -267,7 +263,7 @@ describe('executeReviewTask', () => {
     )
   })
 
-  it('在生成 PDF 前清理报告输出元数据并返回稳定的原始 Markdown', async () => {
+  it('发布前清理报告输出元数据并返回稳定的原始Markdown', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-report-metadata-'))
     tempDirs.push(cwd)
     const reportPath = join(cwd, '代码审查报告.md')
@@ -567,7 +563,7 @@ describe('executeReviewTask', () => {
     ])
   })
 
-  it('marks task failed when PDF generation fails after markdown is ready', async () => {
+  it('任务完成阶段不调用PDF生成或上传依赖', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-pdf-fail-'))
     tempDirs.push(cwd)
     const reportPath = join(cwd, '代码审查报告.md')
@@ -589,20 +585,15 @@ describe('executeReviewTask', () => {
       uploadPdfReport: vi.fn()
     })
 
-    await expect(executeReviewTask({ token: 'token-123', request }, dependencies)).rejects.toThrow(
-      'PDF报告生成失败'
+    await expect(
+      executeReviewTask({ token: 'token-123', request }, dependencies)
+    ).resolves.toEqual(
+      expect.objectContaining({ status: 'success', reportMarkdown: '# report\n' })
     )
 
-    expect(dependencies.uploadReport).not.toHaveBeenCalled()
+    expect(dependencies.generatePdfReport).not.toHaveBeenCalled()
+    expect(dependencies.uploadReport).toHaveBeenCalledTimes(1)
     expect(dependencies.uploadPdfReport).not.toHaveBeenCalled()
-    expect(dependencies.api.updateTaskStatus).toHaveBeenLastCalledWith(
-      'token-123',
-      'task-1',
-      expect.objectContaining({
-        status: 'failed',
-        error_message: expect.stringContaining('PDF报告生成失败')
-      })
-    )
   })
 
   it('取消信号触发后标记任务为已取消且不上传报告', async () => {

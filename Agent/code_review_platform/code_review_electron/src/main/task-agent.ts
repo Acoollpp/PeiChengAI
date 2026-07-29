@@ -439,8 +439,6 @@ const runExistingReviewTask = async (
 
     const reportMarkdown = await dependencies.prepareReport(workspace.reportPath)
     throwIfCancelled(input.signal)
-    const pdfResult = await dependencies.generatePdfReport(workspace.reportPath)
-    throwIfCancelled(input.signal)
     await dependencies.uploadReport(
       input.token,
       task.id,
@@ -448,17 +446,12 @@ const runExistingReviewTask = async (
       reportMarkdown
     )
     throwIfCancelled(input.signal)
-    await dependencies.uploadPdfReport(input.token, task.id, pdfResult.pdfPath)
-    throwIfCancelled(input.signal)
-
     emitStage(onProgress, task.id, input.clientTaskId, 'success', '审查完成')
     return {
       taskId: task.id,
       status: 'success',
       reportMarkdown,
       reportPath: workspace.reportPath,
-      pdfPath: pdfResult.pdfPath,
-      pdfReportName: basename(pdfResult.pdfPath),
       ...(workspace.codexLogPath ? { codexLogPath: workspace.codexLogPath } : {}),
       feedbackProtocolVersion: 1
     }

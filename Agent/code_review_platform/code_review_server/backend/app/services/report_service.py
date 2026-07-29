@@ -626,8 +626,20 @@ async def save_pdf_upload(task_id: uuid.UUID, upload: UploadFile) -> Path:
     content = await upload.read()
     if not content:
         raise HTTPException(status_code=400, detail="PDF report file must not be empty")
+    if not content.startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="PDF report file is invalid")
 
     report_path = pdf_path_for_task(task_id)
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_bytes(content)
+    file_descriptor, temporary_name = tempfile.mkstemp(
+        dir=report_path.parent,
+        prefix=f".{task_id}-pdf-",
+    )
+    os.close(file_descriptor)
+    temporary_path = Path(temporary_name)
+    try:
+        temporary_path.write_bytes(content)
+        os.replace(temporary_path, report_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
     return report_path

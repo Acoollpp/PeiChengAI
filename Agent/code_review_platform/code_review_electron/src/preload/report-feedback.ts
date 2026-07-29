@@ -8,8 +8,8 @@ const reportFeedbackApi: ReportFeedbackWindowApi = {
   submit: (payload) => ipcRenderer.invoke('report-feedback-window:submit', payload),
   saveIssueDraft: (payload) =>
     ipcRenderer.invoke('report-feedback-window:save-issue-draft', payload),
-  prepareIssueSubmit: (payload) =>
-    ipcRenderer.invoke('report-feedback-window:prepare-issue-submit', payload),
+  submitIssueFeedback: (payload) =>
+    ipcRenderer.invoke('report-feedback-window:submit-issues', payload),
   close: () => ipcRenderer.invoke('report-feedback-window:close')
 }
 

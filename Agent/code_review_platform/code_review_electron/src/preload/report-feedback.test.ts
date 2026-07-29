@@ -28,9 +28,9 @@ describe('preload reportFeedback API', () => {
       'close',
       'focusAnchor',
       'getContext',
-      'prepareIssueSubmit',
       'saveIssueDraft',
-      'submit'
+      'submit',
+      'submitIssueFeedback'
     ])
 
     await api.getContext()
@@ -61,9 +61,9 @@ describe('preload reportFeedback API', () => {
     )
 
     const preparePayload = { taskId: 'task-1' }
-    await api.prepareIssueSubmit(preparePayload)
+    await api.submitIssueFeedback(preparePayload)
     expect(invokeMock).toHaveBeenCalledWith(
-      'report-feedback-window:prepare-issue-submit',
+      'report-feedback-window:submit-issues',
       preparePayload
     )
 

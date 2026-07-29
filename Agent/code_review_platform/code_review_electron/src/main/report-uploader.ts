@@ -57,7 +57,7 @@ const walkMarkdownAst = (
   }
 }
 
-const extractRelativeImagePaths = (markdown: string): string[] => {
+export const extractRelativeImagePaths = (markdown: string): string[] => {
   const tree = unified().use(remarkParse).parse(markdown) as MarkdownAstNode
   const definitions = new Map<string, string>()
   walkMarkdownAst(tree, (node) => {
@@ -609,7 +609,7 @@ export const uploadPdfReportFile = async (
   token: string,
   taskId: string,
   pdfPath: string
-): Promise<unknown> => {
+): Promise<Awaited<ReturnType<ApiClient['uploadPdfReport']>>> => {
   await ensurePdfReportReady(pdfPath)
 
   const pdfContent = await readFile(pdfPath)

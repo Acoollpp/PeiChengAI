@@ -392,7 +392,11 @@ export class ApiClient {
     )
   }
 
-  uploadPdfReport(token: string, taskId: string, payload: UploadPdfReportRequest): Promise<unknown> {
+  uploadPdfReport(
+    token: string,
+    taskId: string,
+    payload: UploadPdfReportRequest
+  ): Promise<ReviewTask> {
     const body = new FormData()
     const pdfBlob =
       payload.pdf_content instanceof Blob
@@ -414,6 +418,30 @@ export class ApiClient {
       },
       { json: false }
     )
+  }
+
+  async downloadReportAsset(
+    token: string,
+    taskId: string,
+    assetPath: string
+  ): Promise<ArrayBuffer> {
+    const encodedAssetPath = assetPath
+      .split('/')
+      .map((part) => encodeURIComponent(part))
+      .join('/')
+    const response = await this.fetchImpl(
+      `${this.baseUrl}/api/v1/review-tasks/${encodeURIComponent(taskId)}/assets/${encodedAssetPath}`,
+      {
+        method: 'GET',
+        headers: this.authHeaders(token)
+      }
+    )
+
+    if (!response.ok) {
+      throw new ApiError(response.status, await this.readErrorMessage(response))
+    }
+
+    return response.arrayBuffer()
   }
 
   uploadRequirementFile(

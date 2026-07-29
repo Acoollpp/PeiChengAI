@@ -8,6 +8,7 @@ import type { SubmitFeedbackRequest } from '../api-client'
 
 const handleMock = vi.fn()
 const showItemInFolderMock = vi.fn()
+const openPathMock = vi.fn(async () => '')
 const showOpenDialogMock = vi.hoisted(() => vi.fn())
 const notificationIsSupportedMock = vi.hoisted(() => vi.fn(() => true))
 const notificationShowMock = vi.hoisted(() => vi.fn())
@@ -45,7 +46,8 @@ vi.mock('electron', () => ({
   },
   Notification: NotificationMock,
   shell: {
-    showItemInFolder: showItemInFolderMock
+    showItemInFolder: showItemInFolderMock,
+    openPath: openPathMock
   }
 }))
 
@@ -99,7 +101,7 @@ describe('registerIpcHandlers', () => {
       'report-feedback-window:focus-anchor',
       'report-feedback-window:submit',
       'report-feedback-window:save-issue-draft',
-      'report-feedback-window:prepare-issue-submit',
+      'report-feedback-window:submit-issues',
       'report-feedback-window:close',
       'report:asset',
       'report:download-current',
@@ -1216,6 +1218,65 @@ describe('registerIpcHandlers', () => {
       pdfPath
     })
     expect(authStore.load).not.toHaveBeenCalled()
+    expect(showItemInFolderMock).toHaveBeenCalledWith(pdfPath)
+  })
+
+  it('最终反馈已锁定但打开 PDF 抛出异常时返回只读提示并定位文件', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'code-review-ipc-open-final-pdf-'))
+    tempDirs.push(tempDir)
+    const reportPath = join(tempDir, '代码审查报告.md')
+    const pdfPath = join(tempDir, '代码审查报告.pdf')
+    openPathMock.mockRejectedValueOnce(new Error('没有可用于打开 PDF 的应用'))
+    const context = {
+      mode: 'issues' as const,
+      taskId: 'task-1',
+      feedbackSubmittedAt: null,
+      issues: [
+        {
+          id: 'issue-1', issueText: '问题', descriptionText: '描述', order: 0,
+          helpful: true, feedbackText: ''
+        }
+      ]
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      api: {
+        readTask: vi.fn(async () => ({
+          id: 'task-1', svn_url: 'svn://repo/project', old_revision: '1', new_revision: '2',
+          status: 'success', feedback_protocol_version: 1, report_name: '代码审查报告.md'
+        })),
+        readTaskReport: vi.fn(async () => '# 审查报告\n'),
+        readTaskIssues: vi.fn(async () => ({
+          data: [], count: 0, evaluated_count: 0, feedback_submitted_at: null
+        })),
+        downloadReportAsset: vi.fn(),
+        uploadPdfReport: vi.fn(async () => ({
+          id: 'task-1', svn_url: 'svn://repo/project', old_revision: '1', new_revision: '2',
+          status: 'success' as const, feedback_protocol_version: 1,
+          feedback_submitted_at: '2026-07-29T12:00:00Z', pdf_report_name: '代码审查报告.pdf'
+        }))
+      } as never,
+      authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
+      getReportFeedbackWindowManager: () => ({ getContext: () => context } as never),
+      runtimePaths: { reportPathForTask: () => reportPath } as never,
+      generatePdfReport: vi.fn(async () => {
+        await writeFile(pdfPath, '%PDF-1.4\nfinal')
+        return { status: 'ready' as const, reportPath, pdfPath }
+      })
+    })
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:submit-issues'
+    )?.[1]
+
+    await expect(handler({ sender: { id: 22 } }, { taskId: 'task-1' })).resolves.toEqual({
+      status: 'submitted',
+      taskId: 'task-1',
+      feedbackSubmittedAt: '2026-07-29T12:00:00Z',
+      pdfPath,
+      pdfReportName: '代码审查报告.pdf',
+      pdfOpenError: '没有可用于打开 PDF 的应用'
+    })
+    expect(openPathMock).toHaveBeenCalledWith(pdfPath)
     expect(showItemInFolderMock).toHaveBeenCalledWith(pdfPath)
   })
 
@@ -2375,7 +2436,11 @@ describe('registerIpcHandlers', () => {
     )
   })
 
-  it('提交前门禁等待草稿保存完成并以服务端状态校验全部问题', async () => {
+  it('正式提交等待草稿保存完成后生成、上传并打开最终PDF', async () => {
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-final-feedback-pdf-'))
+    tempDirs.push(runtimeRoot)
+    const reportPath = join(runtimeRoot, '代码审查报告.md')
+    const pdfPath = join(runtimeRoot, '代码审查报告.pdf')
     let resolveSave: ((value: Record<string, unknown>) => void) | undefined
     const saveIssueFeedbackDraft = vi.fn(
       () =>
@@ -2384,10 +2449,20 @@ describe('registerIpcHandlers', () => {
         })
     )
     const readTaskIssues = vi.fn(async () => ({
-      data: [{ id: 'issue-1', helpful: true }],
-      count: 1,
-      evaluated_count: 1,
+      data: [],
+      count: 0,
+      evaluated_count: 0,
       feedback_submitted_at: null
+    }))
+    const uploadPdfReport = vi.fn(async () => ({
+      id: 'task-1',
+      svn_url: 'svn://repo/project',
+      old_revision: '1',
+      new_revision: '2',
+      status: 'success' as const,
+      feedback_protocol_version: 1,
+      feedback_submitted_at: '2026-07-29T12:00:00Z',
+      pdf_report_name: '代码审查报告.pdf'
     }))
     const context = {
       mode: 'issues' as const,
@@ -2402,22 +2477,39 @@ describe('registerIpcHandlers', () => {
     }
     const { registerIpcHandlers } = await import('../ipc')
     registerIpcHandlers({
-      api: { saveIssueFeedbackDraft, readTaskIssues } as never,
+      api: {
+        saveIssueFeedbackDraft,
+        readTaskIssues,
+        readTask: vi.fn(async () => ({
+          id: 'task-1', svn_url: 'svn://repo/project', old_revision: '1', new_revision: '2',
+          status: 'success', feedback_protocol_version: 1, report_name: '代码审查报告.md'
+        })),
+        readTaskReport: vi.fn(async () => '# 审查报告\n'),
+        downloadReportAsset: vi.fn(),
+        uploadPdfReport
+      } as never,
       authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
-      getReportFeedbackWindowManager: () => ({ getContext: () => context } as never)
+      getReportFeedbackWindowManager: () => ({ getContext: () => context } as never),
+      runtimePaths: {
+        reportPathForTask: () => reportPath
+      } as never,
+      generatePdfReport: vi.fn(async () => {
+        await writeFile(pdfPath, '%PDF-1.4\nfinal')
+        return { status: 'ready' as const, reportPath, pdfPath }
+      })
     })
     const saveHandler = handleMock.mock.calls.find(
       ([channel]) => channel === 'report-feedback-window:save-issue-draft'
     )?.[1]
-    const prepareHandler = handleMock.mock.calls.find(
-      ([channel]) => channel === 'report-feedback-window:prepare-issue-submit'
+    const submitHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:submit-issues'
     )?.[1]
 
     const save = saveHandler(
       { sender: { id: 22 } },
       { taskId: 'task-1', issueId: 'issue-1', helpful: true, feedbackText: '' }
     )
-    const prepare = prepareHandler({ sender: { id: 22 } }, { taskId: 'task-1' })
+    const submit = submitHandler({ sender: { id: 22 } }, { taskId: 'task-1' })
     await vi.waitFor(() => expect(saveIssueFeedbackDraft).toHaveBeenCalledTimes(1))
     expect(readTaskIssues).not.toHaveBeenCalled()
 
@@ -2425,8 +2517,17 @@ describe('registerIpcHandlers', () => {
     await expect(save).resolves.toEqual(
       expect.objectContaining({ id: 'issue-1', helpful: true })
     )
-    await expect(prepare).resolves.toEqual({ status: 'ready' })
+    await expect(submit).resolves.toEqual({
+      status: 'submitted',
+      taskId: 'task-1',
+      feedbackSubmittedAt: '2026-07-29T12:00:00Z',
+      pdfPath,
+      pdfReportName: '代码审查报告.pdf'
+    })
     expect(readTaskIssues).toHaveBeenCalledWith('token-123', 'task-1')
+    expect(uploadPdfReport).toHaveBeenCalledTimes(1)
+    expect(openPathMock).toHaveBeenCalledWith(pdfPath)
+    expect(showItemInFolderMock).not.toHaveBeenCalledWith(pdfPath)
   })
 
   it('提交前门禁拒绝进行中请求最终保存失败的草稿', async () => {
@@ -2459,7 +2560,7 @@ describe('registerIpcHandlers', () => {
       ([channel]) => channel === 'report-feedback-window:save-issue-draft'
     )?.[1]
     const prepareHandler = handleMock.mock.calls.find(
-      ([channel]) => channel === 'report-feedback-window:prepare-issue-submit'
+      ([channel]) => channel === 'report-feedback-window:submit-issues'
     )?.[1]
 
     const save = saveHandler(
@@ -2507,12 +2608,22 @@ describe('registerIpcHandlers', () => {
     }))
     const { registerIpcHandlers } = await import('../ipc')
     registerIpcHandlers({
-      api: { readTaskIssues } as never,
+      api: {
+        readTaskIssues,
+        readTask: vi.fn(async () => ({
+          id: 'task-1', svn_url: 'svn://repo/project', old_revision: '1', new_revision: '2',
+          status: 'success', feedback_protocol_version: 1
+        })),
+        readTaskReport: vi.fn(async () => '# 审查报告'),
+        downloadReportAsset: vi.fn(),
+        uploadPdfReport: vi.fn()
+      } as never,
       authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
-      getReportFeedbackWindowManager: () => ({ getContext: () => context } as never)
+      getReportFeedbackWindowManager: () => ({ getContext: () => context } as never),
+      runtimePaths: {} as never
     })
     const handler = handleMock.mock.calls.find(
-      ([channel]) => channel === 'report-feedback-window:prepare-issue-submit'
+      ([channel]) => channel === 'report-feedback-window:submit-issues'
     )?.[1]
 
     await expect(

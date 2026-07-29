@@ -472,7 +472,13 @@ describe('report uploader', () => {
     tempDirs.push(dir)
     const pdfPath = join(dir, 'r12_r14审查报告_20260610_142530.pdf')
     const api = {
-      uploadPdfReport: vi.fn(async () => ({ ok: true }))
+      uploadPdfReport: vi.fn(async () => ({
+        id: 'task-1',
+        svn_url: 'svn://repo/project',
+        old_revision: '1',
+        new_revision: '2',
+        status: 'success' as const
+      }))
     }
     await writeFile(pdfPath, '%PDF-1.4\n')
 

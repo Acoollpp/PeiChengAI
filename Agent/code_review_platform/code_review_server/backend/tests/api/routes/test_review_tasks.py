@@ -1971,6 +1971,282 @@ def test_历史任务和已正式提交任务拒绝保存逐问题反馈草稿(
     assert submitted_response.json()["detail"] == "issue_feedback_submitted"
 
 
+def test_新协议仅在全部评价且最终PDF保存成功后锁定反馈(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task, issue = _create_new_protocol_task_with_issue(
+        client,
+        normal_user_token_headers,
+    )
+    original_markdown_path = tmp_path / f"{task['id']}.md"
+    original_markdown = original_markdown_path.read_bytes()
+    pdf_url = f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf-report"
+
+    incomplete_response = client.post(
+        pdf_url,
+        headers=normal_user_token_headers,
+        files={"upload": ("最终报告.pdf", b"%PDF-1.4\nincomplete", "application/pdf")},
+    )
+    assert incomplete_response.status_code == 409
+    assert incomplete_response.json()["detail"] == "issue_feedback_incomplete"
+    assert not (tmp_path / f"{task['id']}.pdf").exists()
+
+    draft_response = client.put(
+        (
+            f"{settings.API_V1_STR}/review-tasks/{task['id']}"
+            f"/issues/{issue['id']}/feedback-draft"
+        ),
+        headers=normal_user_token_headers,
+        json={"helpful": True, "feedback_text": "已补充空值判断"},
+    )
+    assert draft_response.status_code == 200
+
+    final_pdf = b"%PDF-1.4\nfinal-feedback-pdf"
+    submitted_response = client.post(
+        pdf_url,
+        headers=normal_user_token_headers,
+        files={"upload": ("最终报告.pdf", final_pdf, "application/pdf")},
+    )
+    assert submitted_response.status_code == 200
+    submitted = submitted_response.json()
+    assert submitted["feedback_submitted_at"] is not None
+    assert submitted["pdf_report_name"] == "最终报告.pdf"
+    assert (tmp_path / f"{task['id']}.pdf").read_bytes() == final_pdf
+    assert original_markdown_path.read_bytes() == original_markdown
+
+    locked_draft_response = client.put(
+        (
+            f"{settings.API_V1_STR}/review-tasks/{task['id']}"
+            f"/issues/{issue['id']}/feedback-draft"
+        ),
+        headers=normal_user_token_headers,
+        json={"helpful": False, "feedback_text": "不得修改"},
+    )
+    assert locked_draft_response.status_code == 409
+    assert locked_draft_response.json()["detail"] == "issue_feedback_submitted"
+
+    duplicate_response = client.post(
+        pdf_url,
+        headers=normal_user_token_headers,
+        files={"upload": ("重复.pdf", b"%PDF-1.4\nduplicate", "application/pdf")},
+    )
+    assert duplicate_response.status_code == 409
+    assert duplicate_response.json()["detail"] == "issue_feedback_submitted"
+    assert (tmp_path / f"{task['id']}.pdf").read_bytes() == final_pdf
+
+    db.expire_all()
+    db_task = db.get(ReviewTask, UUID(task["id"]))
+    assert db_task is not None
+    assert db_task.feedback_submitted_at is not None
+
+
+def test_新协议并发提交最终PDF只允许一次完成锁定(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task, issue = _create_new_protocol_task_with_issue(
+        client,
+        normal_user_token_headers,
+    )
+    assert (
+        client.put(
+            (
+                f"{settings.API_V1_STR}/review-tasks/{task['id']}"
+                f"/issues/{issue['id']}/feedback-draft"
+            ),
+            headers=normal_user_token_headers,
+            json={"helpful": True, "feedback_text": None},
+        ).status_code
+        == 200
+    )
+
+    def submit(index: int) -> int:
+        return client.post(
+            f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf-report",
+            headers=normal_user_token_headers,
+            files={
+                "upload": (
+                    f"最终报告-{index}.pdf",
+                    f"%PDF-1.4\nfinal-{index}".encode(),
+                    "application/pdf",
+                )
+            },
+        ).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        statuses = list(executor.map(submit, (1, 2)))
+
+    assert sorted(statuses) == [200, 409]
+    db.expire_all()
+    db_task = db.get(ReviewTask, UUID(task["id"]))
+    assert db_task is not None
+    assert db_task.feedback_submitted_at is not None
+    assert (tmp_path / f"{task['id']}.pdf").read_bytes() in {
+        b"%PDF-1.4\nfinal-1",
+        b"%PDF-1.4\nfinal-2",
+    }
+
+
+def test_新协议PDF内容或保存失败时保持反馈草稿可编辑(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task, issue = _create_new_protocol_task_with_issue(
+        client,
+        normal_user_token_headers,
+    )
+    draft_url = (
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}"
+        f"/issues/{issue['id']}/feedback-draft"
+    )
+    assert (
+        client.put(
+            draft_url,
+            headers=normal_user_token_headers,
+            json={"helpful": False, "feedback_text": "草稿内容"},
+        ).status_code
+        == 200
+    )
+    pdf_url = f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf-report"
+
+    invalid_response = client.post(
+        pdf_url,
+        headers=normal_user_token_headers,
+        files={"upload": ("最终报告.pdf", b"not-a-pdf", "application/pdf")},
+    )
+    assert invalid_response.status_code == 400
+
+    async def fail_pdf_save(_task_id: UUID, _upload: Any) -> Path:
+        raise OSError("模拟PDF保存失败")
+
+    monkeypatch.setattr(report_service, "save_pdf_upload", fail_pdf_save)
+    with pytest.raises(OSError, match="模拟PDF保存失败"):
+        client.post(
+            pdf_url,
+            headers=normal_user_token_headers,
+            files={"upload": ("最终报告.pdf", b"%PDF-1.4\nretry", "application/pdf")},
+        )
+
+    db.expire_all()
+    db_task = db.get(ReviewTask, UUID(task["id"]))
+    assert db_task is not None
+    assert db_task.feedback_submitted_at is None
+    assert db_task.pdf_report_path is None
+    retry_draft_response = client.put(
+        draft_url,
+        headers=normal_user_token_headers,
+        json={"helpful": True, "feedback_text": "失败后仍可编辑"},
+    )
+    assert retry_draft_response.status_code == 200
+
+
+def test_只有任务提交人可以上传新协议最终PDF并锁定反馈(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task, issue = _create_new_protocol_task_with_issue(
+        client,
+        normal_user_token_headers,
+    )
+    draft_url = (
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}"
+        f"/issues/{issue['id']}/feedback-draft"
+    )
+    assert (
+        client.put(
+            draft_url,
+            headers=normal_user_token_headers,
+            json={"helpful": True, "feedback_text": None},
+        ).status_code
+        == 200
+    )
+    admin, admin_api_key = create_key_user(db)
+    admin.role = UserRole.admin
+    db.add(admin)
+    db.commit()
+    admin_headers = authentication_token_from_key(
+        client=client,
+        key=admin_api_key.key,
+        db=db,
+    )
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf-report",
+        headers=admin_headers,
+        files={"upload": ("最终报告.pdf", b"%PDF-1.4\nadmin", "application/pdf")},
+    )
+
+    assert response.status_code == 403
+    assert not (tmp_path / f"{task['id']}.pdf").exists()
+    db.expire_all()
+    db_task = db.get(ReviewTask, UUID(task["id"]))
+    assert db_task is not None
+    assert db_task.feedback_submitted_at is None
+
+
+def test_新协议最终PDF数据库提交失败时清理文件且不锁定(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task, issue = _create_new_protocol_task_with_issue(
+        client,
+        normal_user_token_headers,
+    )
+    draft_url = (
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}"
+        f"/issues/{issue['id']}/feedback-draft"
+    )
+    assert (
+        client.put(
+            draft_url,
+            headers=normal_user_token_headers,
+            json={"helpful": True, "feedback_text": None},
+        ).status_code
+        == 200
+    )
+    original_commit = Session.commit
+
+    def fail_commit(_session: Session) -> None:
+        raise RuntimeError("模拟最终反馈提交失败")
+
+    monkeypatch.setattr(Session, "commit", fail_commit)
+    with pytest.raises(RuntimeError, match="模拟最终反馈提交失败"):
+        client.post(
+            f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf-report",
+            headers=normal_user_token_headers,
+            files={"upload": ("最终报告.pdf", b"%PDF-1.4\nfinal", "application/pdf")},
+        )
+    monkeypatch.setattr(Session, "commit", original_commit)
+
+    assert not (tmp_path / f"{task['id']}.pdf").exists()
+    db.expire_all()
+    db_task = db.get(ReviewTask, UUID(task["id"]))
+    assert db_task is not None
+    assert db_task.feedback_submitted_at is None
+    assert db_task.pdf_report_path is None
+
+
 def test_restart_failed_task_status_clears_previous_error_and_finish_time(
     client: TestClient,
     normal_user_token_headers: dict[str, str],

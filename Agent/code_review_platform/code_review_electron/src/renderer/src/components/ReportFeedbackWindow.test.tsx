@@ -50,7 +50,13 @@ const setupApi = (): ReportFeedbackWindowApi => ({
     taskId: 'task-1', helpful: true, usefulIssuesText: '空指针风险'
   })),
   saveIssueDraft: vi.fn(),
-  prepareIssueSubmit: vi.fn(async () => ({ status: 'ready' as const })),
+  submitIssueFeedback: vi.fn(async () => ({
+    status: 'submitted' as const,
+    taskId: 'task-1',
+    feedbackSubmittedAt: '2026-07-29T12:00:00Z',
+    pdfPath: '/tmp/final.pdf',
+    pdfReportName: 'final.pdf'
+  })),
   close: vi.fn(async () => true as const)
 })
 
@@ -420,7 +426,7 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('请先评价所有审查问题')
     expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1)
-    expect(window.reportFeedback.prepareIssueSubmit).not.toHaveBeenCalled()
+    expect(window.reportFeedback.submitIssueFeedback).not.toHaveBeenCalled()
   })
 
   it('全部评价后等待进行中的保存完成才执行提交前门禁', async () => {
@@ -440,12 +446,76 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
 
     await user.click(await screen.findByRole('radio', { name: '有帮助' }))
     await user.click(screen.getByRole('button', { name: '提交反馈并查看PDF报告' }))
-    expect(window.reportFeedback.prepareIssueSubmit).not.toHaveBeenCalled()
+    expect(window.reportFeedback.submitIssueFeedback).not.toHaveBeenCalled()
 
     resolveSave?.()
     await waitFor(() => {
-      expect(window.reportFeedback.prepareIssueSubmit).toHaveBeenCalledWith({ taskId: 'task-1' })
+      expect(window.reportFeedback.submitIssueFeedback).toHaveBeenCalledWith({ taskId: 'task-1' })
     })
+    await waitFor(() => expect(window.reportFeedback.close).toHaveBeenCalledTimes(1))
+  })
+
+  it('最终PDF提交失败时保留窗口和可编辑反馈以便重试', async () => {
+    const user = userEvent.setup()
+    window.reportFeedback.getContext = vi.fn(async () => ({
+      ...issueContext,
+      issues: [{ ...issueContext.issues[0], helpful: true, feedbackText: '保留草稿' }]
+    }))
+    vi.mocked(window.reportFeedback.submitIssueFeedback).mockRejectedValueOnce(
+      new Error('最终PDF上传失败')
+    )
+    render(<ReportFeedbackWindow />)
+
+    const input = await screen.findByLabelText('问题 1 反馈说明')
+    await user.click(screen.getByRole('button', { name: '提交反馈并查看PDF报告' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('最终PDF上传失败')
+    expect(input).toHaveValue('保留草稿')
+    expect(input).toBeEnabled()
+    expect(window.reportFeedback.close).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '提交反馈并查看PDF报告' })).toBeEnabled()
+  })
+
+  it('服务端已提交但窗口关闭失败时立即锁定输入', async () => {
+    const user = userEvent.setup()
+    window.reportFeedback.getContext = vi.fn(async () => ({
+      ...issueContext,
+      issues: [{ ...issueContext.issues[0], helpful: true, feedbackText: '已提交内容' }]
+    }))
+    vi.mocked(window.reportFeedback.close).mockRejectedValueOnce(new Error('窗口关闭失败'))
+    render(<ReportFeedbackWindow />)
+
+    await user.click(await screen.findByRole('button', { name: '提交反馈并查看PDF报告' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('反馈已正式提交，但窗口关闭失败')
+    expect(screen.getByLabelText('问题 1 反馈说明')).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '提交反馈并查看PDF报告' })).not.toBeInTheDocument()
+  })
+
+  it('服务端已提交但 PDF 打开失败时立即锁定输入并保留提示', async () => {
+    const user = userEvent.setup()
+    window.reportFeedback.getContext = vi.fn(async () => ({
+      ...issueContext,
+      issues: [{ ...issueContext.issues[0], helpful: true, feedbackText: '已提交内容' }]
+    }))
+    vi.mocked(window.reportFeedback.submitIssueFeedback).mockResolvedValueOnce({
+      status: 'submitted',
+      taskId: 'task-1',
+      feedbackSubmittedAt: '2026-07-29T12:00:00Z',
+      pdfPath: '/tmp/final.pdf',
+      pdfReportName: 'final.pdf',
+      pdfOpenError: '没有可用于打开 PDF 的应用'
+    })
+    render(<ReportFeedbackWindow />)
+
+    await user.click(await screen.findByRole('button', { name: '提交反馈并查看PDF报告' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '反馈已正式提交，但 PDF 打开失败，已在文件夹中定位最终报告'
+    )
+    expect(screen.getByLabelText('问题 1 反馈说明')).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '提交反馈并查看PDF报告' })).not.toBeInTheDocument()
+    expect(window.reportFeedback.close).not.toHaveBeenCalled()
   })
 
   it('提交期间进行中的保存失败时保留草稿并阻止提交前门禁', async () => {
@@ -472,7 +542,7 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     rejectSave?.(new Error('网络连接中断'))
     expect(await screen.findByText('仍有反馈保存失败，请重试后再提交。')).toBeInTheDocument()
     expect(input).toHaveValue('尚未保存的最新说明')
-    expect(window.reportFeedback.prepareIssueSubmit).not.toHaveBeenCalled()
+    expect(window.reportFeedback.submitIssueFeedback).not.toHaveBeenCalled()
   })
 
   it('关闭期间进行中的保存失败时保留窗口并允许重试', async () => {

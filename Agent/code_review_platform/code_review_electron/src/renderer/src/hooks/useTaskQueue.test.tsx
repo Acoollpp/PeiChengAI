@@ -264,7 +264,7 @@ describe('useTaskQueue', () => {
     )
   })
 
-  it('新任务完成时把执行结果的 PDF 原文件名写入历史任务', async () => {
+  it('新任务完成时只记录反馈协议且不提前写入PDF信息', async () => {
     const deferred = createDeferred<ExecuteTaskResult>()
     const onTaskSuccess = vi.fn()
     const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)
@@ -283,8 +283,6 @@ describe('useTaskQueue', () => {
         status: 'success',
         reportMarkdown: '# report 7',
         reportPath: '/tmp/r7_r2审查报告_20260615_143000.md',
-        pdfPath: '/tmp/r7_r2审查报告_20260615_143000.pdf',
-        pdfReportName: 'r7_r2审查报告_20260615_143000.pdf',
         feedbackProtocolVersion: 1
       })
     })
@@ -294,8 +292,8 @@ describe('useTaskQueue', () => {
         expect.arrayContaining([
           expect.objectContaining({
             id: 'task-7',
-            pdfPath: '/tmp/r7_r2审查报告_20260615_143000.pdf',
-            pdf_report_name: 'r7_r2审查报告_20260615_143000.pdf',
+            pdfPath: undefined,
+            pdf_report_name: undefined,
             feedback_protocol_version: 1
           })
         ])
@@ -304,10 +302,10 @@ describe('useTaskQueue', () => {
     expect(onTaskSuccess).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'task-7',
-        pdf_report_name: 'r7_r2审查报告_20260615_143000.pdf'
+        feedback_protocol_version: 1
       }),
       expect.objectContaining({
-        pdfReportName: 'r7_r2审查报告_20260615_143000.pdf'
+        feedbackProtocolVersion: 1
       })
     )
   })

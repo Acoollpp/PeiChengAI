@@ -60,12 +60,17 @@ export interface SaveIssueFeedbackDraftPayload {
   feedbackText: string
 }
 
-export interface PrepareIssueFeedbackSubmissionPayload {
+export interface SubmitIssueFeedbackPayload {
   taskId: string
 }
 
-export interface PrepareIssueFeedbackSubmissionResult {
-  status: 'ready'
+export interface SubmitIssueFeedbackResult {
+  status: 'submitted'
+  taskId: string
+  feedbackSubmittedAt: string
+  pdfPath: string
+  pdfReportName: string
+  pdfOpenError?: string
 }
 
 export interface ReportFeedbackSubmittedEvent {
