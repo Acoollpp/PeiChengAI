@@ -177,6 +177,7 @@ describe('buildReviewPrompt', () => {
     expect(prompt).toContain('新版本号：130')
     expect(prompt).toContain('报告输出路径：/tmp/review/代码审查报告.md')
     expect(prompt).toContain('图片保存目录：/tmp/review/images')
+    expect(prompt).toContain('报告正文不得包含“报告输出路径”或“报告输出地址”元数据')
     expect(prompt).toContain(`${REVIEW_REPORT_IMAGES_DIR_NAME}/<文件名>`)
     expect(prompt).toContain('SVN 获取策略')
     expect(prompt).not.toContain('{svnUrl}')

@@ -1,7 +1,8 @@
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 
 import type { ApiClient } from './api-client'
+import { stripReviewReportOutputMetadata } from '../shared/review-report-metadata'
 
 export interface ReportUploadApi {
   uploadReport: ApiClient['uploadReport']
@@ -35,15 +36,28 @@ export const uploadReportFile = async (
   taskId: string,
   reportPath: string
 ): Promise<unknown> => {
-  await ensureReportReady(reportPath)
-
-  const reportContent = await readFile(reportPath, 'utf8')
+  const reportContent = await prepareReportForPublishing(reportPath)
 
   return api.uploadReport(token, taskId, {
     report_content: reportContent,
     report_path: reportPath,
     report_name: basename(reportPath)
   })
+}
+
+export const prepareReportForPublishing = async (reportPath: string): Promise<string> => {
+  await ensureReportReady(reportPath)
+
+  const originalReport = await readFile(reportPath, 'utf8')
+  const cleanedReport = stripReviewReportOutputMetadata(originalReport)
+  if (!cleanedReport.trim()) {
+    throw new Error(`审查报告为空：${reportPath}`)
+  }
+  if (cleanedReport !== originalReport) {
+    await writeFile(reportPath, cleanedReport, 'utf8')
+  }
+
+  return cleanedReport
 }
 
 export const ensurePdfReportReady = async (pdfPath: string): Promise<void> => {

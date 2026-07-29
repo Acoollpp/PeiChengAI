@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -50,6 +50,45 @@ describe('report uploader', () => {
       report_path: reportPath,
       report_name: 'r12_r14审查报告_20260610_142530.md'
     })
+  })
+
+  it('发布前只清理报告输出元数据并保留正文普通路径和代码块内容', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-metadata-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const originalReport = [
+      '# 代码审查报告',
+      '**报告输出路径：** C:\\review\\代码审查报告.md',
+      '- **报告输出地址:** /tmp/review/report.md',
+      '正文中的普通路径：`src/main.c:42`',
+      '**项目路径：** svn://repo/project',
+      '```markdown',
+      '**报告输出路径：** /docs/example.md',
+      '```',
+      ''
+    ].join('\r\n')
+    const expectedReport = [
+      '# 代码审查报告',
+      '正文中的普通路径：`src/main.c:42`',
+      '**项目路径：** svn://repo/project',
+      '```markdown',
+      '**报告输出路径：** /docs/example.md',
+      '```',
+      ''
+    ].join('\r\n')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    await writeFile(reportPath, originalReport)
+
+    await uploadReportFile(api, 'token-123', 'task-1', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith('token-123', 'task-1', {
+      report_content: expectedReport,
+      report_path: reportPath,
+      report_name: '代码审查报告.md'
+    })
+    await expect(readFile(reportPath, 'utf8')).resolves.toBe(expectedReport)
   })
 
   it('rejects missing and empty PDF report files', async () => {

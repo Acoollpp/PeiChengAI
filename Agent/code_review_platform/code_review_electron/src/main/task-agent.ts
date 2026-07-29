@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, stat } from 'node:fs/promises'
+import { copyFile, mkdir, stat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 
 import type { ApiClient, CreateTaskRequest, UpdateTaskStatusRequest } from './api-client'
@@ -10,7 +10,7 @@ import {
 import { buildReviewPrompt, CodexReviewError, runCodexReview, type CodexErrorCode } from './codex-runner'
 import { generatePdfReport, type GeneratePdfReportResult } from './report-pdf-generator'
 import {
-  ensureReportReady,
+  prepareReportForPublishing,
   uploadPdfReportFile,
   uploadReportFile,
   uploadRequirementFile
@@ -428,7 +428,7 @@ const runExistingReviewTask = async (
       status: 'uploading_report'
     })
 
-    await ensureReportReady(workspace.reportPath)
+    const reportMarkdown = await prepareReportForPublishing(workspace.reportPath)
     throwIfCancelled(input.signal)
     const pdfResult = await dependencies.generatePdfReport(workspace.reportPath)
     throwIfCancelled(input.signal)
@@ -436,7 +436,6 @@ const runExistingReviewTask = async (
     throwIfCancelled(input.signal)
     await dependencies.uploadPdfReport(input.token, task.id, pdfResult.pdfPath)
     throwIfCancelled(input.signal)
-    const reportMarkdown = await readFile(workspace.reportPath, 'utf8')
 
     emitStage(onProgress, task.id, input.clientTaskId, 'success', '审查完成')
     return {

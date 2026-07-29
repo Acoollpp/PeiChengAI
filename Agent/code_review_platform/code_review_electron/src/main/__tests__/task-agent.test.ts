@@ -252,6 +252,46 @@ describe('executeReviewTask', () => {
     )
   })
 
+  it('在生成 PDF 前清理报告输出元数据并返回稳定的原始 Markdown', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-report-metadata-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '代码审查报告.md')
+    const pdfPath = join(cwd, '代码审查报告.pdf')
+    const imagesDir = join(cwd, 'images')
+    const originalReport = [
+      '# 代码审查报告',
+      '**报告输出路径：** C:\\review\\代码审查报告.md',
+      '问题涉及普通路径：`src/main.c:42`',
+      ''
+    ].join('\n')
+    const cleanedReport = ['# 代码审查报告', '问题涉及普通路径：`src/main.c:42`', ''].join('\n')
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => makeTask()),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      runCodex: vi.fn(async () => {
+        await writeFile(reportPath, originalReport)
+      }),
+      generatePdfReport: vi.fn(async () => {
+        await expect(readFile(reportPath, 'utf8')).resolves.toBe(cleanedReport)
+        await writeFile(pdfPath, '%PDF-1.4\n')
+        return { status: 'ready' as const, reportPath, pdfPath }
+      }),
+      uploadReport: vi.fn(async () => {
+        await expect(readFile(reportPath, 'utf8')).resolves.toBe(cleanedReport)
+      }),
+      uploadPdfReport: vi.fn()
+    })
+
+    const result = await executeReviewTask({ token: 'token-123', request }, dependencies)
+
+    expect(result.reportMarkdown).toBe(cleanedReport)
+    await expect(readFile(reportPath, 'utf8')).resolves.toBe(cleanedReport)
+  })
+
   it('在工作区准备前使用环境探测到的命令执行 SVN 预检', async () => {
     const dependencies: TaskAgentDependencies = withPdfDependencies({
       api: {
