@@ -3,12 +3,16 @@ import logging
 import re
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, delete, func, select
@@ -57,6 +61,19 @@ PDF_REPORT_FILE_NAME = "代码审查报告.pdf"
 MAX_REPORT_ISSUE_COUNT = 200
 MAX_REPORT_ISSUES_JSON_BYTES = 1024 * 1024
 TASK_STATS_TIMEZONE = ZoneInfo("Asia/Shanghai")
+ISSUE_FEEDBACK_EXPORT_HEADERS = (
+    "提交人",
+    "日期",
+    "SVN路径",
+    "旧版本号",
+    "新版本号",
+    "AI报告问题原文",
+    "问题描述原文",
+    "是否有帮助",
+    "审查问题反馈",
+)
+ISSUE_FEEDBACK_EXPORT_COLUMN_WIDTHS = (18, 12, 42, 12, 12, 42, 56, 14, 56)
+EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 _REVISION_RE = re.compile(r"^r?(\d+)$")
 
@@ -104,6 +121,66 @@ def _task_read_scope_filters(
         )
         return [ReviewTask.department_id == current_user.department_id]
     return [ReviewTask.user_id == current_user.id]
+
+
+def _issue_feedback_export_date(value: datetime | None) -> date | None:
+    if value is None:
+        return None
+    aware_value = (
+        value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    )
+    return aware_value.astimezone(TASK_STATS_TIMEZONE).date()
+
+
+def _issue_feedback_export_label(helpful: bool | None) -> str:
+    if helpful is True:
+        return "有帮助"
+    if helpful is False:
+        return "没帮助"
+    return "未反馈"
+
+
+def _style_issue_feedback_sheet(sheet: Any) -> None:
+    sheet.freeze_panes = "A2"
+    sheet.sheet_view.showGridLines = False
+    sheet.auto_filter.ref = f"A1:I{max(sheet.max_row, 1)}"
+    sheet.print_area = f"A1:I{max(sheet.max_row, 1)}"
+    sheet.print_title_rows = "1:1"
+    sheet.page_setup.orientation = sheet.ORIENTATION_LANDSCAPE
+    sheet.page_setup.paperSize = sheet.PAPERSIZE_A3
+    sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.fitToHeight = 0
+    sheet.sheet_properties.pageSetUpPr.fitToPage = True
+    sheet.page_margins.left = 0.25
+    sheet.page_margins.right = 0.25
+    sheet.page_margins.top = 0.4
+    sheet.page_margins.bottom = 0.4
+    sheet.row_dimensions[1].height = 28
+    header_fill = PatternFill(fill_type="solid", fgColor="1F4E78")
+    for cell in sheet[1]:
+        cell.fill = header_fill
+        cell.font = Font(name="微软雅黑", size=10, bold=True, color="FFFFFF")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    for index, width in enumerate(ISSUE_FEEDBACK_EXPORT_COLUMN_WIDTHS, start=1):
+        sheet.column_dimensions[chr(64 + index)].width = width
+    row_border = Border(bottom=Side(style="thin", color="D9E2F3"))
+    alternate_fill = PatternFill(fill_type="solid", fgColor="F7FAFC")
+    for row in sheet.iter_rows(min_row=2):
+        sheet.row_dimensions[row[0].row].height = 42
+        for cell in row:
+            cell.font = Font(name="微软雅黑", size=10)
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            cell.border = row_border
+            if cell.row % 2 == 0:
+                cell.fill = alternate_fill
+        for column_index in (2, 4, 5, 8):
+            row[column_index - 1].alignment = Alignment(
+                horizontal="center",
+                vertical="top",
+                wrap_text=True,
+            )
+    for cell in sheet["B"][1:]:
+        cell.number_format = "yyyy-mm-dd"
 
 
 def _range_bounds(
@@ -566,6 +643,74 @@ def read_review_tasks(
             for task, user, report_feedback in rows
         ],
         count=count,
+    )
+
+
+@router.get(
+    "/issue-feedback/export",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {EXCEL_MEDIA_TYPE: {}},
+            "description": "逐问题反馈 Excel 文件",
+        }
+    },
+)
+def export_review_task_issue_feedback(
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> StreamingResponse:
+    rows = session.exec(
+        select(ReviewTask, User, ReviewTaskIssue)
+        .join(User, ReviewTask.user_id == User.id)
+        .join(ReviewTaskIssue, ReviewTaskIssue.task_id == ReviewTask.id)
+        .where(
+            *_task_read_scope_filters(session=session, current_user=current_user),
+            ReviewTask.feedback_protocol_version == 1,
+        )
+        .order_by(
+            col(ReviewTask.created_at).desc(),
+            col(ReviewTask.id),
+            col(ReviewTaskIssue.order),
+        )
+    ).all()
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "问题反馈明细"
+    sheet.append(list(ISSUE_FEEDBACK_EXPORT_HEADERS))
+    for task, user, issue in rows:
+        sheet.append(
+            [
+                user.full_name or user.svn_username or "-",
+                _issue_feedback_export_date(task.created_at),
+                task.svn_url,
+                task.old_revision,
+                task.new_revision,
+                issue.issue_text,
+                issue.description_text,
+                _issue_feedback_export_label(issue.helpful),
+                issue.feedback_text or None,
+            ]
+        )
+        # 防止问题原文或用户反馈被 Excel 解释为公式。
+        for cell in sheet[sheet.max_row]:
+            if isinstance(cell.value, str):
+                cell.data_type = "s"
+    _style_issue_feedback_sheet(sheet)
+
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    output.seek(0)
+    file_name = f"问题反馈明细_{_utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type=EXCEL_MEDIA_TYPE,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(file_name)}",
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
     )
 
 

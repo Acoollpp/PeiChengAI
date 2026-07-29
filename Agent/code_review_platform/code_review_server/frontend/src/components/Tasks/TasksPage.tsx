@@ -9,6 +9,8 @@ import {
   ExternalLink,
   Eye,
   FileDown,
+  FileSpreadsheet,
+  Loader2,
   Search,
   Trash2,
   X,
@@ -189,6 +191,44 @@ async function downloadPdfReport(task: ReviewTask) {
   link.href = URL.createObjectURL(blob)
   link.download = `review-task-${task.id}.pdf`
   link.click()
+}
+
+function issueFeedbackExportFileName(contentDisposition: string | null) {
+  const encodedFileName = contentDisposition?.match(
+    /filename\*=UTF-8''([^;]+)/i,
+  )?.[1]
+  if (encodedFileName) {
+    try {
+      return decodeURIComponent(encodedFileName)
+    } catch {
+      // 服务端文件名编码异常时使用稳定的本地兜底名称。
+    }
+  }
+  return `问题反馈明细_${new Date().toISOString().slice(0, 10)}.xlsx`
+}
+
+async function exportIssueFeedbackExcel() {
+  const token = localStorage.getItem("access_token")
+  const response = await fetch(
+    `${OpenAPI.BASE}/api/v1/review-tasks/issue-feedback/export`,
+    {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    },
+  )
+  if (!response.ok) {
+    throw new Error("Failed to export issue feedback")
+  }
+
+  const objectUrl = URL.createObjectURL(await response.blob())
+  const link = document.createElement("a")
+  link.href = objectUrl
+  link.download = issueFeedbackExportFileName(
+    response.headers.get("content-disposition"),
+  )
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(objectUrl)
 }
 
 async function deleteReviewTask(task: ReviewTask) {
@@ -529,6 +569,8 @@ export function TasksPage() {
   const [draftFilters, setDraftFilters] =
     useState<ReviewTaskFilters>(emptyFilters)
   const [filters, setFilters] = useState<ReviewTaskFilters>(emptyFilters)
+  const [isExportingIssueFeedback, setIsExportingIssueFeedback] =
+    useState(false)
 
   if (!currentUser) {
     return <div className="text-muted-foreground">加载中...</div>
@@ -549,15 +591,43 @@ export function TasksPage() {
     void queryClient.invalidateQueries({ queryKey: ["review-tasks"] })
   }
 
+  const handleExportIssueFeedback = async () => {
+    setIsExportingIssueFeedback(true)
+    try {
+      await exportIssueFeedbackExcel()
+    } catch {
+      toast.error("问题反馈 Excel 导出失败，请稍后重试")
+    } finally {
+      setIsExportingIssueFeedback(false)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">代码审查任务管理</h1>
-        <p className="text-muted-foreground">
-          {canFilterUsers
-            ? "查看代码审查任务状态和报告。"
-            : "查看自己提交的代码审查任务状态和报告。"}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">
+            代码审查任务管理
+          </h1>
+          <p className="text-muted-foreground">
+            {canFilterUsers
+              ? "查看代码审查任务状态和报告。"
+              : "查看自己提交的代码审查任务状态和报告。"}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={isExportingIssueFeedback}
+          onClick={() => void handleExportIssueFeedback()}
+        >
+          {isExportingIssueFeedback ? (
+            <Loader2 className="animate-spin" aria-hidden="true" />
+          ) : (
+            <FileSpreadsheet aria-hidden="true" />
+          )}
+          导出问题反馈 Excel
+        </Button>
       </div>
       <form
         className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end"

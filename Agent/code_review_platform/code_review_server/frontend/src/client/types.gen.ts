@@ -811,6 +811,8 @@ export type ReviewTasksReadReviewTasksData = {
 
 export type ReviewTasksReadReviewTasksResponse = (ReviewTasksPublic);
 
+export type ReviewTasksExportReviewTaskIssueFeedbackResponse = (unknown);
+
 export type ReviewTasksReadReviewTaskStatsData = {
     range?: ReviewTaskStatsRange;
 };

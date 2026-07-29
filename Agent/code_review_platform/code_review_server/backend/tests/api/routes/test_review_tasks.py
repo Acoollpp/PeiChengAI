@@ -4,6 +4,7 @@ import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, time, timedelta, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
@@ -13,6 +14,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 from pydantic import ValidationError
 from sqlmodel import Session, select
 
@@ -1793,6 +1795,221 @@ def test_问题快照读取遵循普通用户部门管理员和系统管理员�
         headers=other_user_headers,
     )
     assert forbidden_response.status_code == 403
+
+
+def test_逐问题反馈Excel固定九列并排除历史报告级反馈(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    department = _create_department(db)
+    owner_headers, owner = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+        full_name="张工",
+        svn_username="zhang.svn",
+    )
+    task, issue = _create_new_protocol_task_with_issue(client, owner_headers)
+    task_record = db.get(ReviewTask, UUID(task["id"]))
+    first_issue = db.get(ReviewTaskIssue, UUID(issue["id"]))
+    assert task_record is not None
+    assert first_issue is not None
+    task_record.created_at = datetime(2026, 7, 29, 16, 30, tzinfo=timezone.utc)
+    first_issue.issue_text = "高风险：空指针解引用"
+    first_issue.description_text = "未校验返回值即解引用。"
+    first_issue.helpful = True
+    first_issue.feedback_text = "已增加空值检查并完成回归测试。"
+    db.add(
+        ReviewTaskIssue(
+            task_id=task_record.id,
+            issue_text="中风险：边界条件误报",
+            description_text="产品约束保证输入不会达到该分支。",
+            display_snapshot="### 中风险：边界条件误报",
+            order=1,
+            source="template_1_heading",
+            location=_valid_issue_snapshot()["location"],
+            helpful=False,
+            feedback_text=None,
+        )
+    )
+    db.add(
+        ReviewTaskIssue(
+            task_id=task_record.id,
+            issue_text="=1+1",
+            description_text="异常日志没有记录请求编号。",
+            display_snapshot="### 低风险：日志信息不足",
+            order=2,
+            source="template_1_heading",
+            location=_valid_issue_snapshot()["location"],
+            helpful=None,
+            feedback_text=None,
+        )
+    )
+
+    legacy_task = _create_review_task(client, owner_headers)
+    legacy_upload = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{legacy_task['id']}/report",
+        headers=owner_headers,
+        files={"upload": ("legacy.md", b"# Legacy\n", "text/markdown")},
+    )
+    assert legacy_upload.status_code == 200
+    legacy_task_id = UUID(legacy_task["id"])
+    db.add(
+        ReviewTaskReportFeedback(
+            task_id=legacy_task_id,
+            user_id=owner.id,
+            helpful=True,
+            useful_issues_text="历史报告级反馈不得导出。",
+        )
+    )
+    db.add(
+        ReviewTaskIssue(
+            task_id=legacy_task_id,
+            issue_text="历史任务伪问题",
+            description_text="即使存在异常遗留问题记录也不得导出。",
+            display_snapshot="### 历史任务伪问题",
+            order=0,
+            source="template_1_heading",
+            location=_valid_issue_snapshot()["location"],
+            helpful=True,
+            feedback_text="不应出现",
+        )
+    )
+    db.add(task_record)
+    db.add(first_issue)
+    db.commit()
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/issue-feedback/export",
+        headers=owner_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert "问题反馈明细_" in unquote(response.headers["content-disposition"])
+    assert unquote(response.headers["content-disposition"]).endswith(".xlsx")
+    workbook = load_workbook(BytesIO(response.content))
+    assert workbook.sheetnames == ["问题反馈明细"]
+    sheet = workbook["问题反馈明细"]
+    rows = list(sheet.iter_rows(values_only=True))
+    assert rows[0] == (
+        "提交人",
+        "日期",
+        "SVN路径",
+        "旧版本号",
+        "新版本号",
+        "AI报告问题原文",
+        "问题描述原文",
+        "是否有帮助",
+        "审查问题反馈",
+    )
+    assert len(rows) == 4
+    assert rows[1] == (
+        "张工",
+        datetime(2026, 7, 30),
+        task["svn_url"],
+        task["old_revision"],
+        task["new_revision"],
+        "高风险：空指针解引用",
+        "未校验返回值即解引用。",
+        "有帮助",
+        "已增加空值检查并完成回归测试。",
+    )
+    assert rows[2][5:] == (
+        "中风险：边界条件误报",
+        "产品约束保证输入不会达到该分支。",
+        "没帮助",
+        None,
+    )
+    assert rows[3][5:] == (
+        "=1+1",
+        "异常日志没有记录请求编号。",
+        "未反馈",
+        None,
+    )
+    assert sheet["F4"].data_type == "s"
+    assert all("历史" not in str(cell) for row in rows for cell in row)
+
+
+def test_逐问题反馈Excel遵循个人部门和全平台任务读取范围(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    department_a = _create_department(db)
+    department_b = _create_department(db)
+    owner_a_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_a,
+        full_name="甲部门提交人",
+    )
+    owner_b_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_b,
+        full_name="乙部门提交人",
+    )
+    department_admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_a,
+        role=UserRole.department_admin,
+    )
+    platform_admin, platform_admin_key = create_key_user(db)
+    platform_admin.role = UserRole.admin
+    db.add(platform_admin)
+    db.commit()
+    platform_admin_headers = authentication_token_from_key(
+        client=client,
+        key=platform_admin_key.key,
+        db=db,
+    )
+
+    task_a, issue_a = _create_new_protocol_task_with_issue(client, owner_a_headers)
+    task_b, issue_b = _create_new_protocol_task_with_issue(client, owner_b_headers)
+    task_a_record = db.get(ReviewTask, UUID(task_a["id"]))
+    task_b_record = db.get(ReviewTask, UUID(task_b["id"]))
+    issue_a_record = db.get(ReviewTaskIssue, UUID(issue_a["id"]))
+    issue_b_record = db.get(ReviewTaskIssue, UUID(issue_b["id"]))
+    assert task_a_record is not None
+    assert task_b_record is not None
+    assert issue_a_record is not None
+    assert issue_b_record is not None
+    marker_a = f"https://svn.example.com/export-a-{random_lower_string()}"
+    marker_b = f"https://svn.example.com/export-b-{random_lower_string()}"
+    task_a_record.svn_url = marker_a
+    task_b_record.svn_url = marker_b
+    issue_a_record.issue_text = "甲部门问题"
+    issue_b_record.issue_text = "乙部门问题"
+    db.add(task_a_record)
+    db.add(task_b_record)
+    db.add(issue_a_record)
+    db.add(issue_b_record)
+    db.commit()
+
+    def exported_svn_paths(headers: dict[str, str]) -> set[str]:
+        response = client.get(
+            f"{settings.API_V1_STR}/review-tasks/issue-feedback/export",
+            headers=headers,
+        )
+        assert response.status_code == 200
+        workbook = load_workbook(BytesIO(response.content), read_only=True)
+        rows = workbook["问题反馈明细"].iter_rows(min_row=2, values_only=True)
+        return {str(row[2]) for row in rows}
+
+    assert exported_svn_paths(owner_a_headers) == {marker_a}
+    assert exported_svn_paths(department_admin_headers) == {marker_a}
+    platform_paths = exported_svn_paths(platform_admin_headers)
+    assert marker_a in platform_paths
+    assert marker_b in platform_paths
 
 
 def test_任务提交人可幂等保存并恢复逐问题反馈草稿(

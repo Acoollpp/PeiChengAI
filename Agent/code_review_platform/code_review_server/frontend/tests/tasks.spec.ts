@@ -497,6 +497,55 @@ test.describe("Issue feedback task details", () => {
     })
   }
 
+  test("Task management exports issue feedback Excel with authentication", async ({
+    page,
+  }) => {
+    await mockCurrentUser(page, {
+      ...currentUser,
+      full_name: "普通反馈用户",
+      role: "user",
+      is_superuser: false,
+    })
+    let exportAuthorization = ""
+    await page.route("**/api/v1/review-tasks?**", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: { data: [], count: 0 },
+      })
+    })
+    await page.route(
+      "**/api/v1/review-tasks/issue-feedback/export",
+      async (route) => {
+        exportAuthorization = route.request().headers().authorization || ""
+        await route.fulfill({
+          contentType:
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          headers: {
+            "Content-Disposition":
+              "attachment; filename*=UTF-8''%E9%97%AE%E9%A2%98%E5%8F%8D%E9%A6%88%E6%98%8E%E7%BB%86_20260730_103000.xlsx",
+            "Access-Control-Expose-Headers": "Content-Disposition",
+          },
+          body: "mock xlsx content",
+        })
+      },
+    )
+
+    await page.goto("/tasks/review")
+    const exportButton = page.getByRole("button", {
+      name: "导出问题反馈 Excel",
+    })
+    await expect(exportButton).toBeVisible()
+
+    const downloadPromise = page.waitForEvent("download")
+    await exportButton.click()
+    const download = await downloadPromise
+
+    expect(download.suggestedFilename()).toBe(
+      "问题反馈明细_20260730_103000.xlsx",
+    )
+    expect(exportAuthorization).toBe("Bearer test-token")
+  })
+
   test("List distinguishes new feedback states and preserves legacy feedback", async ({
     page,
   }) => {
