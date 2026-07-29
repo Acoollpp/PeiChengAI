@@ -52,6 +52,8 @@ router = APIRouter(prefix="/review-tasks", tags=["review-tasks"])
 logger = logging.getLogger(__name__)
 REVIEW_REPORT_FILE_NAME = "代码审查报告.md"
 PDF_REPORT_FILE_NAME = "代码审查报告.pdf"
+MAX_REPORT_ISSUE_COUNT = 200
+MAX_REPORT_ISSUES_JSON_BYTES = 1024 * 1024
 TASK_STATS_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 _REVISION_RE = re.compile(r"^r?(\d+)$")
@@ -292,9 +294,7 @@ def _normalize_useful_issues_text(
 ) -> str | None:
     normalized = useful_issues_text.strip() if useful_issues_text else ""
     if helpful and not normalized:
-        raise HTTPException(
-            status_code=400, detail="有帮助时请至少填写一条有用信息"
-        )
+        raise HTTPException(status_code=400, detail="有帮助时请至少填写一条有用信息")
     return normalized or None
 
 
@@ -343,17 +343,79 @@ def _issue_progress_by_task_ids(
 
 
 def _parse_issue_snapshots(raw_issues: str) -> list[ReviewTaskIssueSnapshotCreate]:
+    if len(raw_issues.encode("utf-8")) > MAX_REPORT_ISSUES_JSON_BYTES:
+        raise HTTPException(status_code=400, detail="问题快照总大小超过限制")
     try:
         parsed = json.loads(raw_issues)
         if not isinstance(parsed, list):
             raise ValueError
+        if len(parsed) > MAX_REPORT_ISSUE_COUNT:
+            raise HTTPException(status_code=400, detail="问题快照数量超过限制")
         issues = [ReviewTaskIssueSnapshotCreate.model_validate(item) for item in parsed]
+    except HTTPException:
+        raise
     except (json.JSONDecodeError, ValidationError, TypeError, ValueError):
         raise HTTPException(status_code=400, detail="问题快照格式无效") from None
 
     if [issue.order for issue in issues] != list(range(len(issues))):
         raise HTTPException(status_code=400, detail="问题快照顺序无效")
     return issues
+
+
+def _validate_issue_snapshot_locations(
+    issues: list[ReviewTaskIssueSnapshotCreate],
+    report_markdown: str,
+) -> None:
+    target_offsets = {
+        offset
+        for issue in issues
+        for offset in (
+            issue.location.start_offset,
+            issue.location.feedback_insertion_offset,
+            issue.location.end_offset,
+        )
+    }
+    start_offsets = {issue.location.start_offset for issue in issues}
+    valid_offsets: set[int] = set()
+    anchor_lines_by_start_offset: dict[int, int] = {}
+    utf16_offset = 0
+    line_index = 0
+    is_line_start = True
+
+    # Electron 的字符串偏移量按 UTF-16 code unit 计算。只记录请求涉及的边界，
+    # 避免为最大 5 MiB 报告构建完整偏移表。
+    for character in report_markdown:
+        if utf16_offset in target_offsets:
+            valid_offsets.add(utf16_offset)
+        if utf16_offset in start_offsets and is_line_start:
+            anchor_lines_by_start_offset[utf16_offset] = line_index
+        utf16_offset += 2 if ord(character) > 0xFFFF else 1
+        if character == "\n":
+            line_index += 1
+            is_line_start = True
+        else:
+            is_line_start = False
+
+    if utf16_offset in target_offsets:
+        valid_offsets.add(utf16_offset)
+    if utf16_offset in start_offsets and is_line_start:
+        anchor_lines_by_start_offset[utf16_offset] = line_index
+
+    for issue in issues:
+        location = issue.location
+        if (
+            not (
+                location.start_offset
+                <= location.feedback_insertion_offset
+                <= location.end_offset
+            )
+            or location.start_offset not in valid_offsets
+            or location.feedback_insertion_offset not in valid_offsets
+            or location.end_offset not in valid_offsets
+            or anchor_lines_by_start_offset.get(location.start_offset)
+            != location.anchor_line
+        ):
+            raise HTTPException(status_code=400, detail="问题快照定位范围无效")
 
 
 def _parse_asset_paths(raw_asset_paths: str | None) -> list[str]:
@@ -363,7 +425,9 @@ def _parse_asset_paths(raw_asset_paths: str | None) -> list[str]:
         parsed = json.loads(raw_asset_paths)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="图片资产路径格式无效") from None
-    if not isinstance(parsed, list) or not all(isinstance(path, str) for path in parsed):
+    if not isinstance(parsed, list) or not all(
+        isinstance(path, str) for path in parsed
+    ):
         raise HTTPException(status_code=400, detail="图片资产路径格式无效")
     return parsed
 
@@ -798,6 +862,10 @@ async def upload_review_task_report(
             upload,
             parsed_asset_paths,
             uploaded_assets,
+        )
+        _validate_issue_snapshot_locations(
+            issue_snapshots,
+            prepared_report.report_content.decode("utf-8"),
         )
         report_path = report_service.path_for_task(task_id)
     else:

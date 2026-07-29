@@ -5,8 +5,10 @@ import re
 import shutil
 import tempfile
 import uuid
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote
 from xml.etree import ElementTree
@@ -14,6 +16,7 @@ from xml.etree import ElementTree
 from fastapi import HTTPException, UploadFile
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
+from PIL import Image, UnidentifiedImageError
 
 from app.core.config import settings
 
@@ -23,6 +26,7 @@ MAX_REPORT_MARKDOWN_BYTES = 5 * 1024 * 1024
 MAX_REPORT_IMAGE_COUNT = 50
 MAX_REPORT_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_REPORT_ASSETS_TOTAL_BYTES = 50 * 1024 * 1024
+MAX_REPORT_IMAGE_PIXELS = 40_000_000
 UPLOAD_READ_CHUNK_BYTES = 64 * 1024
 DELETE_TRASH_DIR_NAME = ".delete-trash"
 DELETE_MANIFEST_NAME = "manifest.json"
@@ -33,6 +37,27 @@ REPORT_IMAGE_CONTENT_TYPES = {
     ".png": "image/png",
     ".svg": "image/svg+xml",
     ".webp": "image/webp",
+}
+RASTER_IMAGE_FORMATS = {
+    ".gif": "GIF",
+    ".jpeg": "JPEG",
+    ".jpg": "JPEG",
+    ".png": "PNG",
+    ".webp": "WEBP",
+}
+BLOCKED_SVG_ELEMENTS = {
+    "animate",
+    "animatemotion",
+    "animatetransform",
+    "audio",
+    "embed",
+    "foreignobject",
+    "iframe",
+    "object",
+    "script",
+    "set",
+    "style",
+    "video",
 }
 
 
@@ -137,8 +162,7 @@ def _safe_filename(file_name: str | None, fallback: str) -> str:
     raw_name = file_name or fallback
     safe_name = Path(raw_name.replace("\\", "/")).name
     safe_name = "".join(
-        "_" if _is_unsafe_filename_char(char) else char
-        for char in safe_name
+        "_" if _is_unsafe_filename_char(char) else char for char in safe_name
     ).strip()
     safe_name = safe_name.rstrip(". ")
     if not safe_name:
@@ -163,9 +187,7 @@ def _truncate_filename(stem: str, suffix: str) -> str:
     stem_bytes = stem.encode("utf-8")
     if len(stem_bytes) <= available_stem_bytes:
         return stem + suffix
-    truncated_stem = stem_bytes[:available_stem_bytes].decode(
-        "utf-8", errors="ignore"
-    )
+    truncated_stem = stem_bytes[:available_stem_bytes].decode("utf-8", errors="ignore")
     return truncated_stem.rstrip(". ") + suffix
 
 
@@ -214,32 +236,89 @@ async def _read_upload_limited(
     return b"".join(chunks)
 
 
+def _xml_local_name(name: str) -> str:
+    return name.rsplit("}", 1)[-1].casefold()
+
+
+def _is_safe_svg(content: bytes) -> bool:
+    if b"<!DOCTYPE" in content.upper() or b"<!ENTITY" in content.upper():
+        return False
+    try:
+        root = ElementTree.fromstring(content)
+    except (ElementTree.ParseError, UnicodeDecodeError, ValueError):
+        return False
+    if not isinstance(root.tag, str) or _xml_local_name(root.tag) != "svg":
+        return False
+
+    for element in root.iter():
+        if not isinstance(element.tag, str):
+            return False
+        if _xml_local_name(element.tag) in BLOCKED_SVG_ELEMENTS:
+            return False
+        for raw_name, raw_value in element.attrib.items():
+            attribute_name = _xml_local_name(raw_name)
+            value = raw_value.strip()
+            if attribute_name.startswith("on") or attribute_name in {
+                "base",
+                "style",
+            }:
+                return False
+            if (
+                attribute_name in {"href", "src"}
+                and value
+                and not value.startswith("#")
+            ):
+                return False
+            if re.search(
+                r"(?:url\s*\(|@import|expression\s*\()",
+                value,
+                flags=re.IGNORECASE,
+            ):
+                return False
+            if "\\" in value or "/*" in value or "*/" in value:
+                return False
+    return True
+
+
+def _is_raster_image_decodable(extension: str, content: bytes) -> bool:
+    expected_format = RASTER_IMAGE_FORMATS.get(extension)
+    if expected_format is None:
+        return False
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(BytesIO(content)) as image:
+                if (
+                    image.format != expected_format
+                    or getattr(image, "n_frames", 1) != 1
+                ):
+                    return False
+                width, height = image.size
+                if (
+                    width <= 0
+                    or height <= 0
+                    or width * height > MAX_REPORT_IMAGE_PIXELS
+                ):
+                    return False
+                image.verify()
+            with Image.open(BytesIO(content)) as image:
+                image.load()
+    except (
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+        OSError,
+        SyntaxError,
+        UnidentifiedImageError,
+        ValueError,
+    ):
+        return False
+    return True
+
+
 def _is_image_content_valid(extension: str, content: bytes) -> bool:
-    if extension == ".png":
-        return content.startswith(b"\x89PNG\r\n\x1a\n")
-    if extension in {".jpg", ".jpeg"}:
-        return (
-            len(content) >= 5
-            and content.startswith(b"\xff\xd8\xff")
-            and content.endswith(b"\xff\xd9")
-        )
-    if extension == ".gif":
-        return len(content) >= 13 and content[:6] in {b"GIF87a", b"GIF89a"}
-    if extension == ".webp":
-        return (
-            len(content) >= 12
-            and content.startswith(b"RIFF")
-            and content[8:12] == b"WEBP"
-        )
     if extension == ".svg":
-        if b"<!DOCTYPE" in content.upper() or b"<!ENTITY" in content.upper():
-            return False
-        try:
-            root = ElementTree.fromstring(content)
-        except (ElementTree.ParseError, ValueError):
-            return False
-        return root.tag.rsplit("}", 1)[-1].casefold() == "svg"
-    return False
+        return _is_safe_svg(content)
+    return _is_raster_image_decodable(extension, content)
 
 
 async def prepare_report_upload(
@@ -256,7 +335,9 @@ async def prepare_report_upload(
     try:
         report_markdown = report_content.decode("utf-8")
     except UnicodeDecodeError:
-        raise HTTPException(status_code=400, detail="审查报告必须使用 UTF-8 编码") from None
+        raise HTTPException(
+            status_code=400, detail="审查报告必须使用 UTF-8 编码"
+        ) from None
 
     if len(asset_paths) != len(uploads):
         raise HTTPException(status_code=400, detail="图片资产路径与文件数量不一致")
@@ -321,9 +402,7 @@ async def prepare_report_upload(
     )
 
 
-def install_prepared_report(
-    task_id: uuid.UUID, prepared: PreparedReportUpload
-) -> Path:
+def install_prepared_report(task_id: uuid.UUID, prepared: PreparedReportUpload) -> Path:
     storage_root = Path(settings.REPORT_STORAGE_DIR)
     storage_root.mkdir(parents=True, exist_ok=True)
     staging_root = Path(
@@ -406,9 +485,7 @@ def _write_delete_manifest(quarantine: QuarantinedTaskFiles) -> None:
 
 
 def _load_delete_manifest(root: Path) -> QuarantinedTaskFiles:
-    raw_manifest = json.loads(
-        (root / DELETE_MANIFEST_NAME).read_text(encoding="utf-8")
-    )
+    raw_manifest = json.loads((root / DELETE_MANIFEST_NAME).read_text(encoding="utf-8"))
     task_id = uuid.UUID(raw_manifest["task_id"])
     paths: list[QuarantinedTaskPath] = []
     for raw_path in raw_manifest["paths"]:
@@ -468,9 +545,7 @@ def quarantine_task_files(
         paths=tuple(
             QuarantinedTaskPath(
                 original_path=original_path,
-                quarantined_path=(
-                    quarantine_root / str(index) / original_path.name
-                ),
+                quarantined_path=(quarantine_root / str(index) / original_path.name),
             )
             for index, original_path in enumerate(existing_paths)
         ),
@@ -511,9 +586,7 @@ def restore_quarantined_task_files(quarantine: QuarantinedTaskFiles) -> None:
         if original_exists and not quarantined_exists:
             continue
         if original_exists or not quarantined_exists:
-            raise RuntimeError(
-                f"无法恢复已隔离文件: {quarantined_path.original_path}"
-            )
+            raise RuntimeError(f"无法恢复已隔离文件: {quarantined_path.original_path}")
         os.replace(
             quarantined_path.quarantined_path,
             quarantined_path.original_path,

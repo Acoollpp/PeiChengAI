@@ -1,5 +1,6 @@
 import { readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { nativeImage } from 'electron'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 
@@ -32,6 +33,12 @@ const MAX_REPORT_MARKDOWN_BYTES = 5 * 1024 * 1024
 const MAX_REPORT_IMAGE_COUNT = 50
 const MAX_REPORT_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_REPORT_ASSETS_TOTAL_BYTES = 50 * 1024 * 1024
+const MAX_REPORT_ISSUE_COUNT = 200
+const MAX_REPORT_ISSUES_JSON_BYTES = 1024 * 1024
+const MAX_REPORT_ISSUE_TEXT_LENGTH = 8 * 1024
+const MAX_REPORT_ISSUE_DESCRIPTION_LENGTH = 64 * 1024
+const MAX_REPORT_ISSUE_DISPLAY_SNAPSHOT_LENGTH = 256 * 1024
+const MAX_REPORT_IMAGE_PIXELS = 40_000_000
 
 type MarkdownAstNode = {
   type: string
@@ -79,7 +86,219 @@ const extractRelativeImagePaths = (markdown: string): string[] => {
   return paths
 }
 
-const isImageContentValid = (extension: string, content: Buffer): boolean => {
+const isSafeSvg = (content: Buffer): boolean => {
+  let source: string
+  try {
+    source = new TextDecoder('utf-8', { fatal: true }).decode(content)
+  } catch {
+    return false
+  }
+  const normalized = source.replace(/^\uFEFF/, '').trimStart()
+  if (
+    /<!DOCTYPE|<!ENTITY/i.test(normalized) ||
+    /<\s*(?:[\w-]+:)?(?:animate|animateMotion|animateTransform|audio|embed|foreignObject|iframe|object|script|set|style|video)\b/i.test(
+      normalized
+    ) ||
+    /\son[a-z]+\s*=/i.test(normalized) ||
+    /\s(?:style|xml:base)\s*=/i.test(normalized) ||
+    /\s[\w:-]+\s*=\s*(["'])[^"']*(?:url\s*\(|@import|expression\s*\()[^"']*\1/i.test(
+      normalized
+    ) ||
+    /\s[\w:-]+\s*=\s*(["'])[^"']*(?:\\|&|\/\*|\*\/)[^"']*\1/i.test(normalized) ||
+    !/^(?:<\?xml[^>]*>\s*)?(?:<!--[^]*?-->\s*)*<svg(?:\s|>)/i.test(normalized) ||
+    !/(?:<\/svg>\s*|<svg(?:\s[^>]*)?\/?>\s*)$/i.test(normalized)
+  ) {
+    return false
+  }
+  const resourceAttributePattern = /\s(?:href|xlink:href|src)\s*=\s*(["'])([^"']*)\1/gi
+  for (const match of normalized.matchAll(resourceAttributePattern)) {
+    const value = match[2].trim()
+    if (value && !value.startsWith('#')) {
+      return false
+    }
+  }
+  return true
+}
+
+const isPngStructurallyValid = (content: Buffer): boolean => {
+  let offset = 8
+  let sawImageHeader = false
+  let sawImageEnd = false
+  while (offset < content.length) {
+    if (offset + 12 > content.length) {
+      return false
+    }
+    const chunkSize = content.readUInt32BE(offset)
+    const chunkType = content.subarray(offset + 4, offset + 8).toString('ascii')
+    const nextOffset = offset + 12 + chunkSize
+    if (nextOffset > content.length) {
+      return false
+    }
+    if (chunkType === 'IHDR') {
+      if (sawImageHeader || chunkSize !== 13) {
+        return false
+      }
+      sawImageHeader = true
+    } else if (chunkType === 'acTL') {
+      if (chunkSize !== 8 || content.readUInt32BE(offset + 8) > 1) {
+        return false
+      }
+    } else if (chunkType === 'IEND') {
+      sawImageEnd = true
+      return sawImageHeader && chunkSize === 0 && nextOffset === content.length
+    }
+    offset = nextOffset
+  }
+  return sawImageHeader && sawImageEnd
+}
+
+const readGifSubBlocks = (content: Buffer, startOffset: number): number => {
+  let offset = startOffset
+  while (offset < content.length) {
+    const blockSize = content[offset]
+    offset += 1
+    if (blockSize === 0) {
+      return offset
+    }
+    if (offset + blockSize > content.length) {
+      return -1
+    }
+    offset += blockSize
+  }
+  return -1
+}
+
+const isGifStructurallyValid = (content: Buffer): boolean => {
+  if (content.length < 14) {
+    return false
+  }
+  const packedFields = content[10]
+  let offset = 13
+  if ((packedFields & 0x80) !== 0) {
+    offset += 3 * 2 ** ((packedFields & 0x07) + 1)
+  }
+  if (offset >= content.length) {
+    return false
+  }
+
+  let sawImage = false
+  while (offset < content.length) {
+    const introducer = content[offset]
+    if (introducer === 0x3b) {
+      return sawImage && offset === content.length - 1
+    }
+    if (introducer === 0x2c) {
+      if (sawImage) {
+        return false
+      }
+      if (offset + 10 > content.length) {
+        return false
+      }
+      const imagePackedFields = content[offset + 9]
+      offset += 10
+      if ((imagePackedFields & 0x80) !== 0) {
+        offset += 3 * 2 ** ((imagePackedFields & 0x07) + 1)
+      }
+      if (offset >= content.length || content[offset] < 2 || content[offset] > 8) {
+        return false
+      }
+      offset = readGifSubBlocks(content, offset + 1)
+      if (offset < 0) {
+        return false
+      }
+      sawImage = true
+      continue
+    }
+    if (introducer !== 0x21 || offset + 2 >= content.length) {
+      return false
+    }
+    const extensionLabel = content[offset + 1]
+    offset += 2
+    if (extensionLabel === 0xf9) {
+      if (
+        offset + 6 > content.length ||
+        content[offset] !== 4 ||
+        content[offset + 5] !== 0
+      ) {
+        return false
+      }
+      offset += 6
+      continue
+    }
+    if (extensionLabel === 0x01 || extensionLabel === 0xff) {
+      const expectedHeaderSize = extensionLabel === 0x01 ? 12 : 11
+      if (offset >= content.length || content[offset] !== expectedHeaderSize) {
+        return false
+      }
+      offset += expectedHeaderSize + 1
+    } else if (extensionLabel !== 0xfe) {
+      return false
+    }
+    offset = readGifSubBlocks(content, offset)
+    if (offset < 0) {
+      return false
+    }
+  }
+  return false
+}
+
+const isWebpStructurallyValid = (content: Buffer): boolean => {
+  let offset = 12
+  let sawImageData = false
+  while (offset < content.length) {
+    if (offset + 8 > content.length) {
+      return false
+    }
+    const chunkType = content.subarray(offset, offset + 4).toString('ascii')
+    const chunkSize = content.readUInt32LE(offset + 4)
+    const dataOffset = offset + 8
+    const nextOffset = dataOffset + chunkSize + (chunkSize % 2)
+    if (nextOffset > content.length) {
+      return false
+    }
+    if (chunkType === 'VP8 ') {
+      if (sawImageData) {
+        return false
+      }
+      if (
+        chunkSize < 10 ||
+        !content.subarray(dataOffset + 3, dataOffset + 6).equals(Buffer.from('9d012a', 'hex'))
+      ) {
+        return false
+      }
+      const width = content.readUInt16LE(dataOffset + 6) & 0x3fff
+      const height = content.readUInt16LE(dataOffset + 8) & 0x3fff
+      if (width === 0 || height === 0 || width * height > MAX_REPORT_IMAGE_PIXELS) {
+        return false
+      }
+      sawImageData = true
+    } else if (chunkType === 'VP8L') {
+      if (sawImageData) {
+        return false
+      }
+      if (chunkSize < 5 || content[dataOffset] !== 0x2f) {
+        return false
+      }
+      const bits = content.readUInt32LE(dataOffset + 1)
+      const width = (bits & 0x3fff) + 1
+      const height = ((bits >>> 14) & 0x3fff) + 1
+      if (width * height > MAX_REPORT_IMAGE_PIXELS) {
+        return false
+      }
+      sawImageData = true
+    } else if (chunkType === 'VP8X') {
+      if (chunkSize !== 10 || (content[dataOffset] & 0x02) !== 0) {
+        return false
+      }
+    } else if (chunkType === 'ANIM' || chunkType === 'ANMF') {
+      return false
+    }
+    offset = nextOffset
+  }
+  return sawImageData && offset === content.length
+}
+
+const hasExpectedImageSignature = (extension: string, content: Buffer): boolean => {
   switch (extension) {
     case '.png':
       return content.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
@@ -101,17 +320,80 @@ const isImageContentValid = (extension: string, content: Buffer): boolean => {
       return (
         content.length >= 12 &&
         content.subarray(0, 4).toString('ascii') === 'RIFF' &&
+        content.readUInt32LE(4) + 8 === content.length &&
         content.subarray(8, 12).toString('ascii') === 'WEBP'
       )
-    case '.svg': {
-      const source = content.toString('utf8').replace(/^\uFEFF/, '').trimStart()
-      return (
-        !/<!DOCTYPE|<!ENTITY/i.test(source) &&
-        /^(?:<\?xml[^>]*>\s*)?(?:<!--[^]*?-->\s*)*<svg(?:\s|>)/i.test(source)
-      )
-    }
+    case '.svg':
+      return isSafeSvg(content)
     default:
       return false
+  }
+}
+
+const isImageContentValid = (extension: string, content: Buffer): boolean => {
+  if (!hasExpectedImageSignature(extension, content)) {
+    return false
+  }
+  if (
+    (extension === '.png' && !isPngStructurallyValid(content)) ||
+    (extension === '.gif' && !isGifStructurallyValid(content)) ||
+    (extension === '.webp' && !isWebpStructurallyValid(content))
+  ) {
+    return false
+  }
+  // Electron nativeImage 只可靠解码 PNG/JPEG；其他格式由客户端做安全预检，
+  // 再由服务端 Pillow/XML 校验器作为最终权威。
+  if (extension === '.gif' || extension === '.webp' || extension === '.svg') {
+    return true
+  }
+  try {
+    const contentType = imageContentTypes[extension]
+    const image = nativeImage.createFromDataURL(
+      `data:${contentType};base64,${content.toString('base64')}`
+    )
+    const { width, height } = image.getSize()
+    return (
+      !image.isEmpty() &&
+      width > 0 &&
+      height > 0 &&
+      width * height <= MAX_REPORT_IMAGE_PIXELS
+    )
+  } catch {
+    return false
+  }
+}
+
+const codePointLength = (value: string): number => Array.from(value).length
+
+const validateIssueSnapshots = (
+  issues: NonNullable<Parameters<ApiClient['uploadReport']>[2]['issues']>,
+  reportContent: string
+): void => {
+  if (issues.length > MAX_REPORT_ISSUE_COUNT) {
+    throw new Error('问题快照数量超过限制')
+  }
+  if (Buffer.byteLength(JSON.stringify(issues), 'utf8') > MAX_REPORT_ISSUES_JSON_BYTES) {
+    throw new Error('问题快照总大小超过限制')
+  }
+  const reportLineCount = reportContent.split('\n').length
+  for (const issue of issues) {
+    if (
+      codePointLength(issue.issue_text) > MAX_REPORT_ISSUE_TEXT_LENGTH ||
+      codePointLength(issue.description_text) > MAX_REPORT_ISSUE_DESCRIPTION_LENGTH ||
+      codePointLength(issue.display_snapshot) > MAX_REPORT_ISSUE_DISPLAY_SNAPSHOT_LENGTH ||
+      codePointLength(issue.source) > 64
+    ) {
+      throw new Error('问题快照内容超过限制')
+    }
+    const location = issue.location
+    if (
+      location.start_offset > location.feedback_insertion_offset ||
+      location.feedback_insertion_offset > location.end_offset ||
+      location.end_offset > reportContent.length ||
+      location.anchor_line >= reportLineCount
+    ) {
+      throw new Error('问题快照定位范围无效')
+    }
   }
 }
 
@@ -280,6 +562,7 @@ export const uploadReportFile = async (
       heading_level: issue.location.headingLevel
     }
   }))
+  validateIssueSnapshots(issues, reportContent)
   const assets = await readReportAssets(reportPath, reportContent)
 
   return api.uploadReport(token, taskId, {

@@ -1,23 +1,31 @@
+import base64
 import hashlib
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
+from typing import Any
 from urllib.parse import unquote
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlmodel import Session, select
 
 from app.api.routes import review_tasks as review_tasks_route
 from app.core.config import settings
 from app.models import (
+    MAX_REVIEW_TASK_ISSUE_DESCRIPTION_LENGTH,
+    MAX_REVIEW_TASK_ISSUE_DISPLAY_SNAPSHOT_LENGTH,
+    MAX_REVIEW_TASK_ISSUE_TEXT_LENGTH,
     Department,
     ReviewTask,
     ReviewTaskIssue,
+    ReviewTaskIssueSnapshotCreate,
     ReviewTaskReportFeedback,
     ReviewTaskRequirementFile,
     ReviewTaskStatus,
@@ -33,9 +41,9 @@ from tests.utils.utils import random_lower_string
 
 TASK_STATS_TIMEZONE = ZoneInfo("Asia/Shanghai")
 VALID_PNG_BYTES = bytes.fromhex(
-    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
-    "0000000d4944415408d763f8cfc0f01f00050001ff89993d1d0000000049454e44"
-    "ae426082"
+    "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de"
+    "0000000c49444154789c63f8cfc0000003010100c9fe92ef0000000049454e44ae"
+    "426082"
 )
 
 
@@ -47,6 +55,50 @@ def _load_shared_markdown_image_corpus() -> dict[str, object]:
         / "report-image-markdown-corpus.json"
     )
     return json.loads(fixture_path.read_text(encoding="utf-8"))
+
+
+def _load_shared_image_validation_corpus() -> list[dict[str, Any]]:
+    fixture_path = (
+        Path(__file__).resolve().parents[5]
+        / "tests"
+        / "fixtures"
+        / "report-image-validation-corpus.json"
+    )
+    return json.loads(fixture_path.read_text(encoding="utf-8"))
+
+
+IMAGE_VALIDATION_CORPUS = _load_shared_image_validation_corpus()
+ANIMATED_IMAGE_CASES = [
+    image_case
+    for image_case in IMAGE_VALIDATION_CORPUS
+    if "animated_base64" in image_case
+]
+INVALID_IMAGE_CASES = [
+    {**image_case, "invalid_base64": invalid_base64}
+    for image_case in IMAGE_VALIDATION_CORPUS
+    for invalid_base64 in [
+        image_case["invalid_base64"],
+        *image_case.get("additional_invalid_base64", []),
+        *image_case.get("server_only_invalid_base64", []),
+    ]
+]
+
+
+def _valid_issue_snapshot(order: int = 0) -> dict[str, object]:
+    return {
+        "issue_text": "高风险：测试问题",
+        "description_text": "用于验证服务端限制。",
+        "display_snapshot": "### 高风险：测试问题",
+        "order": order,
+        "source": "template_1_heading",
+        "location": {
+            "start_offset": 0,
+            "end_offset": 8,
+            "feedback_insertion_offset": 8,
+            "anchor_line": 0,
+            "heading_level": 3,
+        },
+    }
 
 
 def _revision_number(value: str) -> int:
@@ -89,9 +141,7 @@ def _create_named_svn_user_task(
     db.add(user)
     db.commit()
     db.refresh(user)
-    user_headers = authentication_token_from_key(
-        client=client, key=api_key.key, db=db
-    )
+    user_headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
     task = _create_review_task(client, user_headers, old_revision=old_revision)
     return {
         "task": task,
@@ -131,11 +181,15 @@ def _create_department_user(
 
 def _shanghai_datetime(days_delta: int, hour: int = 12) -> datetime:
     today = datetime.now(TASK_STATS_TIMEZONE).date()
-    return datetime.combine(
-        today + timedelta(days=days_delta),
-        time(hour=hour),
-        tzinfo=TASK_STATS_TIMEZONE,
-    ).astimezone(timezone.utc).replace(tzinfo=None)
+    return (
+        datetime.combine(
+            today + timedelta(days=days_delta),
+            time(hour=hour),
+            tzinfo=TASK_STATS_TIMEZONE,
+        )
+        .astimezone(timezone.utc)
+        .replace(tzinfo=None)
+    )
 
 
 def _today_elapsed_datetime(minutes_ago: int) -> datetime:
@@ -146,8 +200,10 @@ def _today_elapsed_datetime(minutes_ago: int) -> datetime:
         tzinfo=TASK_STATS_TIMEZONE,
     )
     elapsed = max(1, int((current - today_start).total_seconds() // 60) - minutes_ago)
-    return (today_start + timedelta(minutes=elapsed)).astimezone(timezone.utc).replace(
-        tzinfo=None
+    return (
+        (today_start + timedelta(minutes=elapsed))
+        .astimezone(timezone.utc)
+        .replace(tzinfo=None)
     )
 
 
@@ -502,10 +558,10 @@ def test_新协议上传后返回有序问题快照和反馈进度(
             "order": 0,
             "source": "template_1_heading",
             "location": {
-                "start_offset": 12,
-                "end_offset": 48,
-                "feedback_insertion_offset": 48,
-                "anchor_line": 3,
+                "start_offset": 0,
+                "end_offset": 8,
+                "feedback_insertion_offset": 8,
+                "anchor_line": 0,
                 "heading_level": 3,
             },
         },
@@ -516,10 +572,10 @@ def test_新协议上传后返回有序问题快照和反馈进度(
             "order": 1,
             "source": "template_1_heading",
             "location": {
-                "start_offset": 49,
-                "end_offset": 82,
-                "feedback_insertion_offset": 82,
-                "anchor_line": 7,
+                "start_offset": 0,
+                "end_offset": 8,
+                "feedback_insertion_offset": 8,
+                "anchor_line": 0,
                 "heading_level": 3,
             },
         },
@@ -579,6 +635,175 @@ def test_新协议上传后返回有序问题快照和反馈进度(
     assert listed_task["feedback_protocol_version"] == 1
     assert listed_task["issue_count"] == 2
     assert listed_task["evaluated_issue_count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_detail"),
+    [
+        ("JSON总大小", "问题快照总大小超过限制"),
+        ("问题数量", "问题快照数量超过限制"),
+        ("单字段长度", "问题快照格式无效"),
+        ("定位越界", "问题快照定位范围无效"),
+        ("代理对中间", "问题快照定位范围无效"),
+        ("行锚点不一致", "问题快照定位范围无效"),
+    ],
+)
+def test_新协议上传执行问题快照资源和定位限制(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    expected_detail: str,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    issue = {
+        "issue_text": "高风险：测试问题",
+        "description_text": "用于验证服务端限制。",
+        "display_snapshot": "### 高风险：测试问题",
+        "order": 0,
+        "source": "template_1_heading",
+        "location": {
+            "start_offset": 0,
+            "end_offset": 8,
+            "feedback_insertion_offset": 8,
+            "anchor_line": 0,
+            "heading_level": 3,
+        },
+    }
+    report_content = "# Review\n"
+    if case == "JSON总大小":
+        monkeypatch.setattr(review_tasks_route, "MAX_REPORT_ISSUES_JSON_BYTES", 1)
+    elif case == "问题数量":
+        monkeypatch.setattr(review_tasks_route, "MAX_REPORT_ISSUE_COUNT", 0)
+    elif case == "单字段长度":
+        issue["issue_text"] = "x" * (8 * 1024 + 1)
+    elif case == "定位越界":
+        issue["location"] = {
+            **issue["location"],
+            "end_offset": 10,
+            "feedback_insertion_offset": 10,
+        }
+    elif case == "代理对中间":
+        report_content = "# 😀\n"
+        issue["location"] = {
+            **issue["location"],
+            "end_offset": 3,
+            "feedback_insertion_offset": 3,
+        }
+    elif case == "行锚点不一致":
+        issue["location"] = {
+            **issue["location"],
+            "anchor_line": 1,
+        }
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": json.dumps([issue], ensure_ascii=False),
+        },
+        files={"upload": ("report.md", report_content.encode(), "text/markdown")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == expected_detail
+    assert not (tmp_path / f"{task['id']}.md").exists()
+
+
+def test_问题快照解析在数量和_JSON_精确边界成功且超限失败(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    at_count_limit = [
+        _valid_issue_snapshot(order)
+        for order in range(review_tasks_route.MAX_REPORT_ISSUE_COUNT)
+    ]
+    assert (
+        len(
+            review_tasks_route._parse_issue_snapshots(
+                json.dumps(at_count_limit, ensure_ascii=False)
+            )
+        )
+        == review_tasks_route.MAX_REPORT_ISSUE_COUNT
+    )
+
+    over_count_limit = [
+        *at_count_limit,
+        _valid_issue_snapshot(review_tasks_route.MAX_REPORT_ISSUE_COUNT),
+    ]
+    with pytest.raises(HTTPException, match="问题快照数量超过限制"):
+        review_tasks_route._parse_issue_snapshots(
+            json.dumps(over_count_limit, ensure_ascii=False)
+        )
+
+    raw_issue = json.dumps([_valid_issue_snapshot()], ensure_ascii=False)
+    raw_issue_bytes = len(raw_issue.encode("utf-8"))
+    monkeypatch.setattr(
+        review_tasks_route,
+        "MAX_REPORT_ISSUES_JSON_BYTES",
+        raw_issue_bytes,
+    )
+    assert len(review_tasks_route._parse_issue_snapshots(raw_issue)) == 1
+    monkeypatch.setattr(
+        review_tasks_route,
+        "MAX_REPORT_ISSUES_JSON_BYTES",
+        raw_issue_bytes - 1,
+    )
+    with pytest.raises(HTTPException, match="问题快照总大小超过限制"):
+        review_tasks_route._parse_issue_snapshots(raw_issue)
+
+
+@pytest.mark.parametrize(
+    ("field_name", "max_length"),
+    [
+        ("issue_text", MAX_REVIEW_TASK_ISSUE_TEXT_LENGTH),
+        ("description_text", MAX_REVIEW_TASK_ISSUE_DESCRIPTION_LENGTH),
+        ("display_snapshot", MAX_REVIEW_TASK_ISSUE_DISPLAY_SNAPSHOT_LENGTH),
+    ],
+)
+def test_问题快照文本字段在精确长度边界成功且超限失败(
+    field_name: str,
+    max_length: int,
+) -> None:
+    payload = _valid_issue_snapshot()
+    payload[field_name] = "x" * max_length
+    ReviewTaskIssueSnapshotCreate.model_validate(payload)
+
+    payload[field_name] = "x" * (max_length + 1)
+    with pytest.raises(ValidationError):
+        ReviewTaskIssueSnapshotCreate.model_validate(payload)
+
+
+def test_新协议上传按_UTF16_code_unit_验证问题定位(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    issue = _valid_issue_snapshot()
+    issue["location"] = {
+        "start_offset": 0,
+        "end_offset": 5,
+        "feedback_insertion_offset": 5,
+        "anchor_line": 0,
+        "heading_level": 3,
+    }
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": json.dumps([issue], ensure_ascii=False),
+        },
+        files={"upload": ("report.md", "# 😀\n".encode(), "text/markdown")},
+    )
+
+    assert response.status_code == 200
 
 
 def test_新协议上传保持相对图片目录结构(
@@ -704,9 +929,12 @@ def test_删除新协议任务同步清理问题记录和图片资产(
     )
 
     assert delete_response.status_code == 200
-    assert db.exec(
-        select(ReviewTaskIssue).where(ReviewTaskIssue.task_id == UUID(task["id"]))
-    ).all() == []
+    assert (
+        db.exec(
+            select(ReviewTaskIssue).where(ReviewTaskIssue.task_id == UUID(task["id"]))
+        ).all()
+        == []
+    )
     assert list(tmp_path.rglob("evidence.png")) == []
 
 
@@ -959,46 +1187,21 @@ def test_新协议上传校验Markdown图片引用和格式(
 
 
 @pytest.mark.parametrize(
-    ("asset_path", "asset_content", "content_type"),
-    [
-        ("images/evidence.png", VALID_PNG_BYTES, "image/png"),
-        (
-            "images/evidence.jpg",
-            bytes.fromhex("ffd8ffe000104a46494600010100000100010000ffd9"),
-            "image/jpeg",
-        ),
-        (
-            "images/evidence.gif",
-            bytes.fromhex(
-                "47494638396101000100800000000000ffffff21f90401000000002c0000000001"
-                "0001000002024401003b"
-            ),
-            "image/gif",
-        ),
-        (
-            "images/evidence.webp",
-            b"RIFF\x0c\x00\x00\x00WEBPVP8 \x00\x00\x00\x00",
-            "image/webp",
-        ),
-        (
-            "images/evidence.svg",
-            b'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>',
-            "image/svg+xml",
-        ),
-    ],
-    ids=["PNG", "JPEG", "GIF", "WebP", "SVG"],
+    "image_case",
+    IMAGE_VALIDATION_CORPUS,
+    ids=[image_case["name"] for image_case in IMAGE_VALIDATION_CORPUS],
 )
 def test_新协议上传接受内容与扩展名一致的真实图片(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    asset_path: str,
-    asset_content: bytes,
-    content_type: str,
+    image_case: dict[str, str],
 ) -> None:
     monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
     task = _create_review_task(client, normal_user_token_headers)
+    asset_path = f"images/evidence{image_case['extension']}"
+    asset_content = base64.b64decode(image_case["valid_base64"])
 
     response = client.post(
         f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
@@ -1017,21 +1220,35 @@ def test_新协议上传接受内容与扩展名一致的真实图片(
                     "text/markdown",
                 ),
             ),
-            ("assets", (Path(asset_path).name, asset_content, content_type)),
+            (
+                "assets",
+                (Path(asset_path).name, asset_content, image_case["content_type"]),
+            ),
         ],
     )
 
     assert response.status_code == 200
 
 
-def test_新协议上传拒绝伪造图片内容(
+@pytest.mark.parametrize(
+    "image_case",
+    INVALID_IMAGE_CASES,
+    ids=[
+        f"{image_case['name']}-{index}"
+        for index, image_case in enumerate(INVALID_IMAGE_CASES)
+    ],
+)
+def test_新协议上传拒绝只有正确文件头或含主动内容的图片(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    image_case: dict[str, Any],
 ) -> None:
     monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
     task = _create_review_task(client, normal_user_token_headers)
+    asset_path = f"images/evidence{image_case['extension']}"
+    asset_content = base64.b64decode(image_case["invalid_base64"])
 
     response = client.post(
         f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
@@ -1039,18 +1256,73 @@ def test_新协议上传拒绝伪造图片内容(
         data={
             "feedback_protocol_version": "1",
             "issues": "[]",
-            "asset_paths": json.dumps(["images/evidence.png"]),
+            "asset_paths": json.dumps([asset_path]),
         },
         files=[
             (
                 "upload",
                 (
                     "report.md",
-                    b"# Review\n\n![evidence](images/evidence.png)\n",
+                    f"# Review\n\n![evidence]({asset_path})\n".encode(),
                     "text/markdown",
                 ),
             ),
-            ("assets", ("evidence.png", b"not-a-real-png", "image/png")),
+            (
+                "assets",
+                (
+                    Path(asset_path).name,
+                    asset_content,
+                    image_case["content_type"],
+                ),
+            ),
+        ],
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "报告图片内容与文件格式不一致"
+
+
+@pytest.mark.parametrize(
+    "image_case",
+    ANIMATED_IMAGE_CASES,
+    ids=[image_case["name"] for image_case in ANIMATED_IMAGE_CASES],
+)
+def test_新协议上传拒绝动画图片(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    image_case: dict[str, str],
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    asset_path = f"images/evidence{image_case['extension']}"
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": "[]",
+            "asset_paths": json.dumps([asset_path]),
+        },
+        files=[
+            (
+                "upload",
+                (
+                    "report.md",
+                    f"# Review\n\n![evidence]({asset_path})\n".encode(),
+                    "text/markdown",
+                ),
+            ),
+            (
+                "assets",
+                (
+                    Path(asset_path).name,
+                    base64.b64decode(image_case["animated_base64"]),
+                    image_case["content_type"],
+                ),
+            ),
         ],
     )
 
@@ -1147,8 +1419,8 @@ def test_新协议报告上传后不可重复覆盖或降级(
         "source": "template_1_heading",
         "location": {
             "start_offset": 0,
-            "end_offset": 12,
-            "feedback_insertion_offset": 12,
+            "end_offset": 8,
+            "feedback_insertion_offset": 8,
             "anchor_line": 0,
             "heading_level": 3,
         },
@@ -1295,8 +1567,8 @@ def test_新协议数据库提交失败时不保留报告问题或资产(
         "source": "template_1_heading",
         "location": {
             "start_offset": 0,
-            "end_offset": 12,
-            "feedback_insertion_offset": 12,
+            "end_offset": 8,
+            "feedback_insertion_offset": 8,
             "anchor_line": 0,
             "heading_level": 3,
         },
@@ -1319,9 +1591,12 @@ def test_新协议数据库提交失败时不保留报告问题或资产(
     assert not (tmp_path / f"{task['id']}.md").exists()
     assert not (tmp_path / task["id"] / "assets").exists()
     db.expire_all()
-    assert db.exec(
-        select(ReviewTaskIssue).where(ReviewTaskIssue.task_id == UUID(task["id"]))
-    ).all() == []
+    assert (
+        db.exec(
+            select(ReviewTaskIssue).where(ReviewTaskIssue.task_id == UUID(task["id"]))
+        ).all()
+        == []
+    )
 
 
 def test_零问题报告仍标记为新协议且不创建虚假问题(
@@ -1452,8 +1727,8 @@ def test_问题快照读取遵循普通用户部门管理员和系统管理员�
         "source": "template_1_heading",
         "location": {
             "start_offset": 0,
-            "end_offset": 12,
-            "feedback_insertion_offset": 12,
+            "end_offset": 8,
+            "feedback_insertion_offset": 8,
             "anchor_line": 0,
             "heading_level": 3,
         },
@@ -1469,7 +1744,11 @@ def test_问题快照读取遵循普通用户部门管理员和系统管理员�
     )
     assert upload_response.status_code == 200
 
-    for allowed_headers in (owner_headers, same_department_admin_headers, admin_headers):
+    for allowed_headers in (
+        owner_headers,
+        same_department_admin_headers,
+        admin_headers,
+    ):
         response = client.get(
             f"{settings.API_V1_STR}/review-tasks/{task['id']}/issues",
             headers=allowed_headers,
@@ -1756,8 +2035,9 @@ def test_upload_review_task_requirement_file_replaces_old_file_and_record(
     assert second_response.status_code == 200
     db.expire_all()
     requirement_files = db.exec(
-        select(ReviewTaskRequirementFile)
-        .where(ReviewTaskRequirementFile.task_id == UUID(task["id"]))
+        select(ReviewTaskRequirementFile).where(
+            ReviewTaskRequirementFile.task_id == UUID(task["id"])
+        )
     ).all()
     assert len(requirement_files) == 1
     second_file = requirement_files[0]
@@ -1770,9 +2050,10 @@ def test_upload_review_task_requirement_file_replaces_old_file_and_record(
     updated_task = db.get(ReviewTask, UUID(task["id"]))
     assert updated_task is not None
     assert updated_task.requirement_file_id == second_file.id
-    assert updated_task.requirement_file_sha256 == hashlib.sha256(
-        second_content
-    ).hexdigest()
+    assert (
+        updated_task.requirement_file_sha256
+        == hashlib.sha256(second_content).hexdigest()
+    )
     assert updated_task.requirement_file_size == len(second_content)
 
 
@@ -2083,9 +2364,7 @@ def test_delete_review_task_removes_report_without_calling_unlink(
 
     original_unlink = Path.unlink
 
-    def fail_report_unlink(
-        self: Path, missing_ok: bool = False
-    ) -> None:
+    def fail_report_unlink(self: Path, missing_ok: bool = False) -> None:
         if self == report_path:
             raise OSError("cannot delete")
         original_unlink(self, missing_ok=missing_ok)
@@ -2198,9 +2477,7 @@ def test_admin_task_list_includes_user_identity_fields(
     db.add(user)
     db.commit()
     db.refresh(user)
-    user_headers = authentication_token_from_key(
-        client=client, key=api_key.key, db=db
-    )
+    user_headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
     task = _create_review_task(client, user_headers, old_revision="9")
 
     response = client.get(
@@ -2557,8 +2834,7 @@ def test_admin_task_stats_count_all_tasks(
     assert content["failed_or_error"] - baseline["failed_or_error"] == 1
     assert content["by_status"]["success"] - baseline["by_status"]["success"] == 1
     assert (
-        content["by_status"]["running_codex"]
-        - baseline["by_status"]["running_codex"]
+        content["by_status"]["running_codex"] - baseline["by_status"]["running_codex"]
         == 1
     )
     assert (
@@ -2581,11 +2857,15 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
     last_week_start = week_start - timedelta(days=7)
 
     def task_time(days_delta: int, hour: int) -> datetime:
-        return datetime.combine(
-            today_date + timedelta(days=days_delta),
-            time(hour=hour),
-            tzinfo=TASK_STATS_TIMEZONE,
-        ).astimezone(timezone.utc).replace(tzinfo=None)
+        return (
+            datetime.combine(
+                today_date + timedelta(days=days_delta),
+                time(hour=hour),
+                tzinfo=TASK_STATS_TIMEZONE,
+            )
+            .astimezone(timezone.utc)
+            .replace(tzinfo=None)
+        )
 
     user, api_key = create_key_user(db)
     user.full_name = "任务统计用户"
@@ -2687,8 +2967,12 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
         status for task_date, status in task_statuses_by_date if task_date >= week_start
     ]
     assert this_week_content["total"] == len(this_week_statuses)
-    assert this_week_content["success"] == this_week_statuses.count(ReviewTaskStatus.success)
-    assert this_week_content["running"] == this_week_statuses.count(ReviewTaskStatus.running_codex)
+    assert this_week_content["success"] == this_week_statuses.count(
+        ReviewTaskStatus.success
+    )
+    assert this_week_content["running"] == this_week_statuses.count(
+        ReviewTaskStatus.running_codex
+    )
     assert this_week_content["failed_or_error"] == this_week_statuses.count(
         ReviewTaskStatus.failed
     )
@@ -2702,7 +2986,9 @@ def test_task_stats_support_today_yesterday_and_all_ranges(
         if last_week_start <= task_date < week_start
     ]
     assert last_week_content["total"] == len(last_week_statuses)
-    assert last_week_content["success"] == last_week_statuses.count(ReviewTaskStatus.success)
+    assert last_week_content["success"] == last_week_statuses.count(
+        ReviewTaskStatus.success
+    )
     assert last_week_content["running"] == last_week_statuses.count(
         ReviewTaskStatus.running_codex
     )
@@ -3222,9 +3508,7 @@ def test_department_admin_can_download_same_department_member_pdf_report(
 
     assert response.status_code == 200
     assert response.content == b"%PDF-1.4 same department\n"
-    assert "same-department.pdf" in unquote(
-        response.headers["content-disposition"]
-    )
+    assert "same-department.pdf" in unquote(response.headers["content-disposition"])
 
 
 def test_department_admin_cannot_download_other_department_pdf_report(
@@ -3536,11 +3820,14 @@ def test_submit_report_feedback_helpful_requires_useful_text(
 
     assert response.status_code == 400
     assert response.json()["detail"] == "有帮助时请至少填写一条有用信息"
-    assert db.exec(
-        select(ReviewTaskReportFeedback).where(
-            ReviewTaskReportFeedback.task_id == UUID(task["id"])
-        )
-    ).all() == []
+    assert (
+        db.exec(
+            select(ReviewTaskReportFeedback).where(
+                ReviewTaskReportFeedback.task_id == UUID(task["id"])
+            )
+        ).all()
+        == []
+    )
 
 
 def test_submit_report_feedback_helpful_success_and_task_public_fields(
@@ -3570,7 +3857,9 @@ def test_submit_report_feedback_helpful_success_and_task_public_fields(
     assert detail_response.status_code == 200
     detail = detail_response.json()
     assert detail["report_feedback_helpful"] is True
-    assert detail["report_feedback_useful_issues_text"] == "1. 空指针风险\n2. 越界访问风险"
+    assert (
+        detail["report_feedback_useful_issues_text"] == "1. 空指针风险\n2. 越界访问风险"
+    )
 
 
 def test_submit_report_feedback_not_helpful_allows_empty_text(
@@ -3737,7 +4026,9 @@ def test_review_task_list_includes_report_feedback_fields(
     assert response.status_code == 200
     by_id = {item["id"]: item for item in response.json()["data"]}
     assert by_id[first_task["id"]]["report_feedback_helpful"] is True
-    assert by_id[first_task["id"]]["report_feedback_useful_issues_text"] == "1. 有价值内容"
+    assert (
+        by_id[first_task["id"]]["report_feedback_useful_issues_text"] == "1. 有价值内容"
+    )
     assert by_id[second_task["id"]]["report_feedback_helpful"] is None
     assert by_id[second_task["id"]]["report_feedback_useful_issues_text"] is None
 
@@ -3751,13 +4042,17 @@ def test_weekly_insights_uses_previous_week_and_current_user_scope(
     monkeypatch.setattr(review_tasks_route, "_utcnow", lambda: fixed_now)
 
     def task_time(day: int, hour: int = 10) -> datetime:
-        return datetime(
-            2026,
-            7,
-            day,
-            hour,
-            tzinfo=TASK_STATS_TIMEZONE,
-        ).astimezone(timezone.utc).replace(tzinfo=None)
+        return (
+            datetime(
+                2026,
+                7,
+                day,
+                hour,
+                tzinfo=TASK_STATS_TIMEZONE,
+            )
+            .astimezone(timezone.utc)
+            .replace(tzinfo=None)
+        )
 
     user, api_key = create_key_user(db)
     headers = authentication_token_from_key(client=client, key=api_key.key, db=db)
@@ -3782,8 +4077,7 @@ def test_weekly_insights_uses_previous_week_and_current_user_scope(
             user_id=user.id,
             helpful=True,
             useful_issues_text=(
-                "1. 高风险：CAN 超时后未执行重发\n"
-                "2. 中风险：Flash 写入地址未校验"
+                "1. 高风险：CAN 超时后未执行重发\n2. 中风险：Flash 写入地址未校验"
             ),
         )
     )
@@ -3833,8 +4127,6 @@ def test_weekly_insights_uses_previous_week_and_current_user_scope(
     assert content["risk_counts"]["medium"] == 1
     assert len(content["daily"]) == 7
     assert sum(item["success"] for item in content["daily"]) == 3
-    by_subcategory = {
-        item["subcategory"]: item for item in content["categories"]
-    }
+    by_subcategory = {item["subcategory"]: item for item in content["categories"]}
     assert by_subcategory["超时重发审核"]["useful_count"] == 1
     assert by_subcategory["Flash操作审核"]["useful_count"] == 1

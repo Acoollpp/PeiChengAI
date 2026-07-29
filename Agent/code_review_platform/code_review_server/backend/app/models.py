@@ -7,6 +7,10 @@ from sqlalchemy import JSON, DateTime, Index, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, Relationship, SQLModel
 
+MAX_REVIEW_TASK_ISSUE_TEXT_LENGTH = 8 * 1024
+MAX_REVIEW_TASK_ISSUE_DESCRIPTION_LENGTH = 64 * 1024
+MAX_REVIEW_TASK_ISSUE_DISPLAY_SNAPSHOT_LENGTH = 256 * 1024
+
 
 def get_datetime_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -425,9 +429,18 @@ class ReviewTaskIssue(SQLModel, table=True):
         nullable=False,
         index=True,
     )
-    issue_text: str = Field(sa_type=Text)
-    description_text: str = Field(sa_type=Text)
-    display_snapshot: str = Field(sa_type=Text)
+    issue_text: str = Field(
+        max_length=MAX_REVIEW_TASK_ISSUE_TEXT_LENGTH,
+        sa_type=Text,
+    )
+    description_text: str = Field(
+        max_length=MAX_REVIEW_TASK_ISSUE_DESCRIPTION_LENGTH,
+        sa_type=Text,
+    )
+    display_snapshot: str = Field(
+        max_length=MAX_REVIEW_TASK_ISSUE_DISPLAY_SNAPSHOT_LENGTH,
+        sa_type=Text,
+    )
     order: int = Field(nullable=False)
     source: str = Field(max_length=64)
     location: dict[str, int] = Field(sa_type=JSONB)
@@ -538,9 +551,17 @@ class ReviewTaskIssueLocation(SQLModel):
 
 
 class ReviewTaskIssueSnapshotCreate(SQLModel):
-    issue_text: str = Field(min_length=1)
-    description_text: str
-    display_snapshot: str = Field(min_length=1)
+    issue_text: str = Field(
+        min_length=1,
+        max_length=MAX_REVIEW_TASK_ISSUE_TEXT_LENGTH,
+    )
+    description_text: str = Field(
+        max_length=MAX_REVIEW_TASK_ISSUE_DESCRIPTION_LENGTH,
+    )
+    display_snapshot: str = Field(
+        min_length=1,
+        max_length=MAX_REVIEW_TASK_ISSUE_DISPLAY_SNAPSHOT_LENGTH,
+    )
     order: int = Field(ge=0)
     source: str = Field(min_length=1, max_length=64)
     location: ReviewTaskIssueLocation
@@ -685,9 +706,7 @@ class ReviewTaskWeeklyInsightsPublic(SQLModel):
     risk_counts: dict[str, int]
     attention_points: list[str] = Field(default_factory=list)
     daily: list[ReviewTaskWeeklyDailyPointPublic] = Field(default_factory=list)
-    categories: list[ReviewTaskWeeklyCategoryStatsPublic] = Field(
-        default_factory=list
-    )
+    categories: list[ReviewTaskWeeklyCategoryStatsPublic] = Field(default_factory=list)
     departments: list[ReviewTaskWeeklyDepartmentStatsPublic] = Field(
         default_factory=list
     )
