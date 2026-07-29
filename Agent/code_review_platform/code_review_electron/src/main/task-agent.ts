@@ -85,6 +85,7 @@ export interface ExecuteReviewTaskResult {
   pdfPath?: string
   pdfReportName?: string
   codexLogPath?: string
+  feedbackProtocolVersion?: number
 }
 
 export interface TaskAgentApi {
@@ -458,7 +459,8 @@ const runExistingReviewTask = async (
       reportPath: workspace.reportPath,
       pdfPath: pdfResult.pdfPath,
       pdfReportName: basename(pdfResult.pdfPath),
-      codexLogPath: workspace.codexLogPath
+      ...(workspace.codexLogPath ? { codexLogPath: workspace.codexLogPath } : {}),
+      feedbackProtocolVersion: 1
     }
   } catch (error) {
     if (isCancelledError(error) || input.signal?.aborted) {

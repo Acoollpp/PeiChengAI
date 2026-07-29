@@ -98,6 +98,8 @@ describe('registerIpcHandlers', () => {
       'report-feedback-window:get-context',
       'report-feedback-window:focus-anchor',
       'report-feedback-window:submit',
+      'report-feedback-window:save-issue-draft',
+      'report-feedback-window:prepare-issue-submit',
       'report-feedback-window:close',
       'report:asset',
       'report:download-current',
@@ -2239,7 +2241,283 @@ describe('registerIpcHandlers', () => {
       options: [payload.options[0], payload.options[0]]
     })).rejects.toThrow('重复')
     await expect(handler({ sender: { id: 11 } }, payload)).resolves.toBe(true)
-    expect(open).toHaveBeenCalledWith(payload)
+    expect(open).toHaveBeenCalledWith({ mode: 'legacy', ...payload })
+  })
+
+  it('打开新协议反馈窗口时从服务端恢复逐问题草稿并合并本地定位', async () => {
+    const readTaskIssues = vi.fn(async () => ({
+      data: [
+        {
+          id: 'issue-1',
+          task_id: 'task-1',
+          issue_text: '高风险：空指针',
+          description_text: '未校验返回值。',
+          display_snapshot: '### 高风险：空指针',
+          order: 0,
+          source: 'template_1_heading',
+          location: {
+            start_offset: 0,
+            end_offset: 12,
+            feedback_insertion_offset: 12,
+            anchor_line: 0,
+            heading_level: 3
+          },
+          helpful: true,
+          feedback_text: '已完成修复'
+        }
+      ],
+      count: 1,
+      evaluated_count: 1,
+      feedback_submitted_at: null
+    }))
+    const open = vi.fn(async () => true as const)
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      api: { readTaskIssues } as never,
+      authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
+      getMainWindow: () => ({ webContents: { id: 11 } }) as never,
+      getReportFeedbackWindowManager: () => ({ open } as never)
+    })
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback:open'
+    )?.[1]
+
+    await expect(
+      handler(
+        { sender: { id: 11 } },
+        {
+          mode: 'issues',
+          taskId: 'task-1',
+          anchors: [{ order: 0, anchorId: 'anchor-1' }]
+        }
+      )
+    ).resolves.toBe(true)
+    expect(readTaskIssues).toHaveBeenCalledWith('token-123', 'task-1')
+    expect(open).toHaveBeenCalledWith({
+      mode: 'issues',
+      taskId: 'task-1',
+      feedbackSubmittedAt: null,
+      issues: [
+        {
+          id: 'issue-1',
+          issueText: '高风险：空指针',
+          descriptionText: '未校验返回值。',
+          order: 0,
+          helpful: true,
+          feedbackText: '已完成修复',
+          anchorId: 'anchor-1'
+        }
+      ]
+    })
+  })
+
+  it('同一问题草稿按调用顺序串行保存且不会让旧请求晚到覆盖新值', async () => {
+    let resolveFirst: ((value: Record<string, unknown>) => void) | undefined
+    const saveIssueFeedbackDraft = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<Record<string, unknown>>((resolve) => {
+            resolveFirst = resolve
+          })
+      )
+      .mockResolvedValueOnce({ id: 'issue-1', helpful: false, feedback_text: '最新说明' })
+    const context = {
+      mode: 'issues' as const,
+      taskId: 'task-1',
+      feedbackSubmittedAt: null,
+      issues: [
+        {
+          id: 'issue-1',
+          issueText: '高风险：空指针',
+          descriptionText: '未校验返回值。',
+          order: 0,
+          helpful: null,
+          feedbackText: ''
+        }
+      ]
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      api: { saveIssueFeedbackDraft } as never,
+      authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
+      getReportFeedbackWindowManager: () => ({ getContext: () => context } as never)
+    })
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:save-issue-draft'
+    )?.[1]
+
+    const firstSave = handler(
+      { sender: { id: 22 } },
+      { taskId: 'task-1', issueId: 'issue-1', helpful: true, feedbackText: '旧说明' }
+    )
+    const secondSave = handler(
+      { sender: { id: 22 } },
+      { taskId: 'task-1', issueId: 'issue-1', helpful: false, feedbackText: '最新说明' }
+    )
+    await vi.waitFor(() => expect(saveIssueFeedbackDraft).toHaveBeenCalledTimes(1))
+    resolveFirst?.({ id: 'issue-1', helpful: true, feedback_text: '旧说明' })
+    await Promise.all([firstSave, secondSave])
+
+    expect(saveIssueFeedbackDraft).toHaveBeenNthCalledWith(
+      1,
+      'token-123',
+      'task-1',
+      'issue-1',
+      { helpful: true, feedback_text: '旧说明' }
+    )
+    expect(saveIssueFeedbackDraft).toHaveBeenNthCalledWith(
+      2,
+      'token-123',
+      'task-1',
+      'issue-1',
+      { helpful: false, feedback_text: '最新说明' }
+    )
+  })
+
+  it('提交前门禁等待草稿保存完成并以服务端状态校验全部问题', async () => {
+    let resolveSave: ((value: Record<string, unknown>) => void) | undefined
+    const saveIssueFeedbackDraft = vi.fn(
+      () =>
+        new Promise<Record<string, unknown>>((resolve) => {
+          resolveSave = resolve
+        })
+    )
+    const readTaskIssues = vi.fn(async () => ({
+      data: [{ id: 'issue-1', helpful: true }],
+      count: 1,
+      evaluated_count: 1,
+      feedback_submitted_at: null
+    }))
+    const context = {
+      mode: 'issues' as const,
+      taskId: 'task-1',
+      feedbackSubmittedAt: null,
+      issues: [
+        {
+          id: 'issue-1', issueText: '问题', descriptionText: '描述', order: 0,
+          helpful: true, feedbackText: ''
+        }
+      ]
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      api: { saveIssueFeedbackDraft, readTaskIssues } as never,
+      authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
+      getReportFeedbackWindowManager: () => ({ getContext: () => context } as never)
+    })
+    const saveHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:save-issue-draft'
+    )?.[1]
+    const prepareHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:prepare-issue-submit'
+    )?.[1]
+
+    const save = saveHandler(
+      { sender: { id: 22 } },
+      { taskId: 'task-1', issueId: 'issue-1', helpful: true, feedbackText: '' }
+    )
+    const prepare = prepareHandler({ sender: { id: 22 } }, { taskId: 'task-1' })
+    await vi.waitFor(() => expect(saveIssueFeedbackDraft).toHaveBeenCalledTimes(1))
+    expect(readTaskIssues).not.toHaveBeenCalled()
+
+    resolveSave?.({ id: 'issue-1', helpful: true, feedback_text: null })
+    await expect(save).resolves.toEqual(
+      expect.objectContaining({ id: 'issue-1', helpful: true })
+    )
+    await expect(prepare).resolves.toEqual({ status: 'ready' })
+    expect(readTaskIssues).toHaveBeenCalledWith('token-123', 'task-1')
+  })
+
+  it('提交前门禁拒绝进行中请求最终保存失败的草稿', async () => {
+    let rejectSave: ((error: Error) => void) | undefined
+    const saveIssueFeedbackDraft = vi.fn(
+      () =>
+        new Promise<Record<string, unknown>>((_, reject) => {
+          rejectSave = reject
+        })
+    )
+    const readTaskIssues = vi.fn()
+    const context = {
+      mode: 'issues' as const,
+      taskId: 'task-1',
+      feedbackSubmittedAt: null,
+      issues: [
+        {
+          id: 'issue-1', issueText: '问题', descriptionText: '描述', order: 0,
+          helpful: true, feedbackText: '最新说明'
+        }
+      ]
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      api: { saveIssueFeedbackDraft, readTaskIssues } as never,
+      authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
+      getReportFeedbackWindowManager: () => ({ getContext: () => context } as never)
+    })
+    const saveHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:save-issue-draft'
+    )?.[1]
+    const prepareHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:prepare-issue-submit'
+    )?.[1]
+
+    const save = saveHandler(
+      { sender: { id: 22 } },
+      { taskId: 'task-1', issueId: 'issue-1', helpful: true, feedbackText: '最新说明' }
+    )
+    const prepare = prepareHandler({ sender: { id: 22 } }, { taskId: 'task-1' })
+    const saveResult = save.then(
+      () => undefined,
+      (error: unknown) => error
+    )
+    const prepareResult = prepare.then(
+      () => undefined,
+      (error: unknown) => error
+    )
+
+    await vi.waitFor(() => expect(saveIssueFeedbackDraft).toHaveBeenCalledTimes(1))
+    rejectSave?.(new Error('网络连接中断'))
+    await expect(saveResult).resolves.toEqual(
+      expect.objectContaining({ message: '网络连接中断' })
+    )
+    await expect(prepareResult).resolves.toEqual(
+      expect.objectContaining({ message: expect.stringContaining('保存失败') })
+    )
+    expect(readTaskIssues).not.toHaveBeenCalled()
+  })
+
+  it('提交前服务端仍有未评价问题时拒绝通过门禁', async () => {
+    const context = {
+      mode: 'issues' as const,
+      taskId: 'task-1',
+      feedbackSubmittedAt: null,
+      issues: [
+        {
+          id: 'issue-1', issueText: '问题', descriptionText: '描述', order: 0,
+          helpful: null, feedbackText: ''
+        }
+      ]
+    }
+    const readTaskIssues = vi.fn(async () => ({
+      data: [{ id: 'issue-1', helpful: null }],
+      count: 1,
+      evaluated_count: 0,
+      feedback_submitted_at: null
+    }))
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      api: { readTaskIssues } as never,
+      authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
+      getReportFeedbackWindowManager: () => ({ getContext: () => context } as never)
+    })
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:prepare-issue-submit'
+    )?.[1]
+
+    await expect(
+      handler({ sender: { id: 22 } }, { taskId: 'task-1' })
+    ).rejects.toThrow('评价所有')
   })
 
   it('gets context and closes only for the active feedback window sender', async () => {

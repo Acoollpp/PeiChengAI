@@ -452,10 +452,22 @@ export function TaskPage({
     }
     setError('')
     try {
-      await window.codeReview.openReportFeedbackWindow({
-        taskId,
-        options: usefulIssueOptions
-      })
+      if (selectedTask?.feedback_protocol_version === 1) {
+        await window.codeReview.openReportFeedbackWindow({
+          mode: 'issues',
+          taskId,
+          anchors: usefulIssueOptions.map((option, order) => ({
+            order,
+            anchorId: option.anchorId
+          }))
+        })
+      } else {
+        await window.codeReview.openReportFeedbackWindow({
+          mode: 'legacy',
+          taskId,
+          options: usefulIssueOptions
+        })
+      }
     } catch {
       if (isMountedRef.current && selectedTaskIdRef.current === taskId) {
         setError('反馈窗口打开失败，请重试。')
@@ -577,7 +589,17 @@ export function TaskPage({
           </div>
           {selectedTask && (
             <div className="report-toolbar-actions">
-              {selectedTask.report_feedback_helpful == null && (
+              {selectedTask.feedback_protocol_version === 1 && (
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={handleReportUseful}
+                >
+                  提交反馈并查看PDF报告
+                </button>
+              )}
+              {selectedTask.feedback_protocol_version !== 1 &&
+                selectedTask.report_feedback_helpful == null && (
                 <div className="report-feedback-actions">
                   <div className="report-feedback-copy">
                     <strong>报告反馈</strong>
@@ -601,7 +623,8 @@ export function TaskPage({
                   </button>
                 </div>
               )}
-              {selectedTask.report_feedback_helpful != null && (
+              {selectedTask.feedback_protocol_version !== 1 &&
+                selectedTask.report_feedback_helpful != null && (
                 <button className="secondary-button" type="button" onClick={() => void handleOpenPdfReport()}>
                   查看PDF报告
                 </button>

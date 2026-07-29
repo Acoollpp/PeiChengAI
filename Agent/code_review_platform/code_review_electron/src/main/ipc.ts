@@ -22,8 +22,11 @@ import { checkEnvironment } from './environment-checker'
 import type {
   FocusReportFeedbackAnchorPayload,
   OpenReportFeedbackWindowPayload,
+  PrepareIssueFeedbackSubmissionPayload,
+  PrepareIssueFeedbackSubmissionResult,
   ReportFeedbackContext,
   ReportFeedbackSubmittedEvent,
+  SaveIssueFeedbackDraftPayload,
   SubmitHelpfulReportFeedbackPayload,
   ReportFeedbackOption
 } from '../shared/report-feedback-window'
@@ -31,6 +34,7 @@ import type {
   CurrentUser,
   DepartmentsResponse,
   EnvironmentProgressEvent,
+  ReviewTaskIssue,
   TaskCompletionNotificationPayload,
   TaskCompletionNotificationResult
 } from '../shared/types'
@@ -390,8 +394,37 @@ const validateReportFeedbackOption = (option: ReportFeedbackOption): void => {
 
 const validateReportFeedbackContext = (
   payload: OpenReportFeedbackWindowPayload
-): ReportFeedbackContext => {
-  if (!payload?.taskId?.trim() || !Array.isArray(payload.options)) {
+): OpenReportFeedbackWindowPayload => {
+  if (!payload?.taskId?.trim()) {
+    throw new Error('反馈窗口上下文无效')
+  }
+
+  if (payload.mode === 'issues') {
+    if (!Array.isArray(payload.anchors)) {
+      throw new Error('反馈窗口上下文无效')
+    }
+    payload.anchors.forEach((anchor) => {
+      if (
+        !Number.isInteger(anchor?.order) ||
+        anchor.order < 0 ||
+        typeof anchor.anchorId !== 'string' ||
+        !anchor.anchorId.trim()
+      ) {
+        throw new Error('反馈问题定位信息无效')
+      }
+    })
+    const orders = payload.anchors.map((anchor) => anchor.order)
+    if (new Set(orders).size !== orders.length) {
+      throw new Error('反馈问题定位顺序重复')
+    }
+    return {
+      mode: 'issues',
+      taskId: payload.taskId,
+      anchors: payload.anchors.map((anchor) => ({ ...anchor }))
+    }
+  }
+
+  if (!Array.isArray(payload.options)) {
     throw new Error('反馈窗口上下文无效')
   }
   payload.options.forEach(validateReportFeedbackOption)
@@ -400,6 +433,7 @@ const validateReportFeedbackContext = (
     throw new Error('反馈候选项 ID 重复')
   }
   return {
+    mode: 'legacy',
     taskId: payload.taskId,
     options: payload.options.map((option) => ({ ...option }))
   }
@@ -412,6 +446,9 @@ const buildUsefulIssuesText = (
   context: ReportFeedbackContext,
   payload: SubmitHelpfulReportFeedbackPayload
 ): string => {
+  if (context.mode === 'issues') {
+    throw new Error('新协议任务不能使用历史报告反馈接口')
+  }
   if (payload.taskId !== context.taskId) {
     throw new Error('反馈任务与当前窗口不一致')
   }
@@ -441,6 +478,55 @@ const buildUsefulIssuesText = (
     throw new Error('请至少标记或填写一条有用信息')
   }
   return uniqueIssues.map((issue, index) => `${index + 1}. ${issue}`).join('\n')
+}
+
+const validateIssueFeedbackDraft = (
+  context: ReportFeedbackContext,
+  payload: SaveIssueFeedbackDraftPayload
+): SaveIssueFeedbackDraftPayload => {
+  if (
+    context.mode !== 'issues' ||
+    !payload ||
+    payload.taskId !== context.taskId ||
+    typeof payload.issueId !== 'string' ||
+    !payload.issueId.trim() ||
+    (payload.helpful !== null && typeof payload.helpful !== 'boolean') ||
+    typeof payload.feedbackText !== 'string' ||
+    payload.feedbackText.length > 4096
+  ) {
+    throw new Error('问题反馈草稿无效')
+  }
+  if (!context.issues.some((issue) => issue.id === payload.issueId)) {
+    throw new Error('包含未知审查问题 ID')
+  }
+  return { ...payload }
+}
+
+const buildIssueFeedbackContext = (
+  taskId: string,
+  response: {
+    data: ReviewTaskIssue[]
+    feedback_submitted_at?: string | null
+  },
+  anchors: Array<{ order: number; anchorId: string }>
+): ReportFeedbackContext => {
+  const anchorByOrder = new Map(anchors.map((anchor) => [anchor.order, anchor.anchorId]))
+  return {
+    mode: 'issues',
+    taskId,
+    feedbackSubmittedAt: response.feedback_submitted_at ?? null,
+    issues: response.data.map((issue) => ({
+      id: issue.id,
+      issueText: issue.issue_text,
+      descriptionText: issue.description_text,
+      order: issue.order,
+      helpful: issue.helpful ?? null,
+      feedbackText: issue.feedback_text ?? '',
+      ...(anchorByOrder.has(issue.order)
+        ? { anchorId: anchorByOrder.get(issue.order) }
+        : {})
+    }))
+  }
 }
 
 const revisionPattern = /^[rR]?\d+$/
@@ -490,6 +576,8 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     return new ApiClient(config.server_url)
   }
   const reportFeedbackQueues = new Map<string, Promise<void>>()
+  const issueFeedbackDraftQueues = new Map<string, Promise<void>>()
+  const failedIssueFeedbackDrafts = new Set<string>()
   const publishedReportFeedbackTasks = new Set<string>()
   const serializeReportFeedback = <T>(taskId: string, submit: () => Promise<T>): Promise<T> => {
     const previous = reportFeedbackQueues.get(taskId) ?? Promise.resolve()
@@ -506,6 +594,45 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       }
     })
     return result
+  }
+  const serializeIssueFeedbackDraft = <T>(
+    taskId: string,
+    issueId: string,
+    save: () => Promise<T>
+  ): Promise<T> => {
+    const key = `${taskId}:${issueId}`
+    const previous = issueFeedbackDraftQueues.get(key) ?? Promise.resolve()
+    const result = previous.catch(() => undefined).then(save)
+    const tail = result.then(
+      () => {
+        failedIssueFeedbackDrafts.delete(key)
+      },
+      () => {
+        failedIssueFeedbackDrafts.add(key)
+      }
+    )
+    issueFeedbackDraftQueues.set(key, tail)
+    void tail.then(() => {
+      if (issueFeedbackDraftQueues.get(key) === tail) {
+        issueFeedbackDraftQueues.delete(key)
+      }
+    })
+    return result
+  }
+  const waitForIssueFeedbackDrafts = async (taskId: string): Promise<void> => {
+    const prefix = `${taskId}:`
+    while (true) {
+      const pending = [...issueFeedbackDraftQueues.entries()]
+        .filter(([key]) => key.startsWith(prefix))
+        .map(([, promise]) => promise)
+      if (pending.length === 0) {
+        break
+      }
+      await Promise.all(pending)
+    }
+    if ([...failedIssueFeedbackDrafts].some((key) => key.startsWith(prefix))) {
+      throw new Error('仍有问题反馈草稿保存失败，请重试')
+    }
   }
   const submitReportFeedback = (
     taskId: string,
@@ -1091,7 +1218,20 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       payload: OpenReportFeedbackWindowPayload
     ): Promise<true> => {
       assertMainWindowSender(event, getMainWindow)
-      const context = validateReportFeedbackContext(payload)
+      const validatedPayload = validateReportFeedbackContext(payload)
+      let context: ReportFeedbackContext
+      if (validatedPayload.mode === 'issues') {
+        const token = await loadAccessToken(authStore)
+        const api = await createApiClient()
+        const response = await api.readTaskIssues(token, validatedPayload.taskId)
+        context = buildIssueFeedbackContext(
+          validatedPayload.taskId,
+          response,
+          validatedPayload.anchors
+        )
+      } else {
+        context = validatedPayload
+      }
       return requireReportFeedbackManager(getReportFeedbackWindowManager).open(context)
     }
   )
@@ -1130,11 +1270,14 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
       let anchorId: string | undefined
       if (payload.optionId !== undefined) {
-        const option = context.options.find((candidate) => candidate.id === payload.optionId)
-        if (!option) {
+        const target =
+          context.mode === 'issues'
+            ? context.issues.find((candidate) => candidate.id === payload.optionId)
+            : context.options.find((candidate) => candidate.id === payload.optionId)
+        if (!target) {
           throw new Error('包含未知反馈候选项 ID')
         }
-        anchorId = option.anchorId
+        anchorId = target.anchorId
       }
       sendToRenderer(getMainWindow()?.webContents, 'report-feedback:focus-anchor', {
         taskId: context.taskId,
@@ -1158,6 +1301,55 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
         useful_issues_text: usefulIssuesText
       })
       return submittedEvent
+    }
+  )
+
+  ipcMain.handle(
+    'report-feedback-window:save-issue-draft',
+    async (
+      event,
+      payload: SaveIssueFeedbackDraftPayload
+    ): Promise<ReviewTaskIssue> => {
+      const manager = requireReportFeedbackManager(getReportFeedbackWindowManager)
+      const context = manager.getContext(event.sender.id)
+      const draft = validateIssueFeedbackDraft(context, payload)
+      return serializeIssueFeedbackDraft(context.taskId, draft.issueId, async () => {
+        const token = await loadAccessToken(authStore)
+        const api = await createApiClient()
+        return api.saveIssueFeedbackDraft(token, context.taskId, draft.issueId, {
+          helpful: draft.helpful,
+          feedback_text: draft.feedbackText.trim() ? draft.feedbackText : null
+        })
+      })
+    }
+  )
+
+  ipcMain.handle(
+    'report-feedback-window:prepare-issue-submit',
+    async (
+      event,
+      payload: PrepareIssueFeedbackSubmissionPayload
+    ): Promise<PrepareIssueFeedbackSubmissionResult> => {
+      const manager = requireReportFeedbackManager(getReportFeedbackWindowManager)
+      const context = manager.getContext(event.sender.id)
+      if (
+        context.mode !== 'issues' ||
+        !payload ||
+        payload.taskId !== context.taskId
+      ) {
+        throw new Error('反馈任务与当前窗口不一致')
+      }
+      await waitForIssueFeedbackDrafts(context.taskId)
+      const token = await loadAccessToken(authStore)
+      const api = await createApiClient()
+      const response = await api.readTaskIssues(token, context.taskId)
+      if (response.feedback_submitted_at) {
+        throw new Error('问题反馈已正式提交，不能重复提交')
+      }
+      if (response.data.some((issue) => issue.helpful == null)) {
+        throw new Error('请先评价所有审查问题')
+      }
+      return { status: 'ready' }
     }
   )
 

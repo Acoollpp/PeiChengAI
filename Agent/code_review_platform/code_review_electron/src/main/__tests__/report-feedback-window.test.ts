@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { ReportFeedbackContext } from '../../shared/report-feedback-window'
+import type {
+  LegacyReportFeedbackContext,
+  ReportFeedbackContext
+} from '../../shared/report-feedback-window'
 import type { ReportFeedbackWindowManager } from '../report-feedback-window'
 
 interface Deferred {
@@ -61,7 +64,7 @@ vi.mock('electron', () => ({
   })
 }))
 
-const createContext = (taskId = 'task-1'): ReportFeedbackContext => ({
+const createContext = (taskId = 'task-1'): LegacyReportFeedbackContext => ({
   taskId,
   options: [
     {
@@ -269,9 +272,16 @@ describe('ReportFeedbackWindowManager', () => {
     const senderId = feedbackWindow.webContents.id
     original.options[0].text = '外部已修改'
     const returned = manager.getContext(senderId)
+    if (returned.mode === 'issues') {
+      throw new Error('应返回历史反馈上下文')
+    }
     returned.options[0].text = '返回值已修改'
 
-    expect(manager.getContext(senderId).options[0].text).toBe('定位准确')
+    const reread = manager.getContext(senderId)
+    if (reread.mode === 'issues') {
+      throw new Error('应返回历史反馈上下文')
+    }
+    expect(reread.options[0].text).toBe('定位准确')
     expect(manager.isCurrentSender(senderId)).toBe(true)
     expect(manager.isCurrentSender(senderId + 1)).toBe(false)
     expect(() => manager.getContext(senderId + 1)).toThrow('无权访问当前反馈窗口')

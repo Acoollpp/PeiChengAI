@@ -24,6 +24,8 @@ from app.models import (
     ReviewTask,
     ReviewTaskCreate,
     ReviewTaskIssue,
+    ReviewTaskIssueFeedbackDraftUpdate,
+    ReviewTaskIssuePublic,
     ReviewTaskIssueSnapshotCreate,
     ReviewTaskIssuesPublic,
     ReviewTaskPublic,
@@ -265,6 +267,26 @@ def _get_task_for_write_locked(
         raise HTTPException(status_code=404, detail="Review task not found")
     if not _can_write_task(current_user, task):
         raise HTTPException(status_code=403, detail="Not enough permissions")
+    return task
+
+
+def _get_task_for_issue_feedback_write_locked(
+    *, session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
+) -> ReviewTask:
+    task = session.exec(
+        select(ReviewTask)
+        .where(col(ReviewTask.id) == task_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Review task not found")
+    if task.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="只有任务提交人可以填写问题反馈")
+    if task.feedback_protocol_version != 1:
+        raise HTTPException(status_code=409, detail="issue_feedback_not_supported")
+    if task.feedback_submitted_at is not None:
+        raise HTTPException(status_code=409, detail="issue_feedback_submitted")
     return task
 
 
@@ -936,7 +958,52 @@ def read_review_task_issues(
         data=issues,
         count=len(issues),
         evaluated_count=sum(issue.helpful is not None for issue in issues),
+        feedback_submitted_at=task.feedback_submitted_at,
     )
+
+
+@router.put(
+    "/{task_id}/issues/{issue_id}/feedback-draft",
+    response_model=ReviewTaskIssuePublic,
+)
+def update_review_task_issue_feedback_draft(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    issue_id: uuid.UUID,
+    payload: ReviewTaskIssueFeedbackDraftUpdate,
+) -> ReviewTaskIssue:
+    task = _get_task_for_issue_feedback_write_locked(
+        session=session,
+        current_user=current_user,
+        task_id=task_id,
+    )
+    issue = session.exec(
+        select(ReviewTaskIssue)
+        .where(
+            col(ReviewTaskIssue.id) == issue_id,
+            col(ReviewTaskIssue.task_id) == task.id,
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).one_or_none()
+    if issue is None:
+        raise HTTPException(status_code=404, detail="Review task issue not found")
+
+    feedback_text = payload.feedback_text
+    if feedback_text is not None and not feedback_text.strip():
+        feedback_text = None
+    if issue.helpful == payload.helpful and issue.feedback_text == feedback_text:
+        return issue
+
+    issue.helpful = payload.helpful
+    issue.feedback_text = feedback_text
+    issue.updated_at = _utcnow()
+    session.add(issue)
+    session.commit()
+    session.refresh(issue)
+    return issue
 
 
 @router.get("/{task_id}/assets/{asset_path:path}")

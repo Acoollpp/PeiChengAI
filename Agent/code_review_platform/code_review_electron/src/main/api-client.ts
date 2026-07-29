@@ -4,6 +4,7 @@ import type {
   CurrentUser,
   DepartmentsResponse,
   ReviewTask,
+  ReviewTaskIssue,
   ReviewTaskIssuesResponse
 } from '../shared/types'
 
@@ -99,6 +100,11 @@ export interface FeedbackResult {
 export interface SubmitReportFeedbackRequest {
   helpful: boolean
   useful_issues_text?: string | null
+}
+
+export interface SaveIssueFeedbackDraftRequest {
+  helpful: boolean | null
+  feedback_text: string | null
 }
 
 export interface ReportFeedbackResult {
@@ -248,6 +254,22 @@ export class ApiClient {
       {
         method: 'GET',
         headers: this.authHeaders(token)
+      }
+    )
+  }
+
+  saveIssueFeedbackDraft(
+    token: string,
+    taskId: string,
+    issueId: string,
+    payload: SaveIssueFeedbackDraftRequest
+  ): Promise<ReviewTaskIssue> {
+    return this.request<ReviewTaskIssue>(
+      `/api/v1/review-tasks/${encodeURIComponent(taskId)}/issues/${encodeURIComponent(issueId)}/feedback-draft`,
+      {
+        method: 'PUT',
+        headers: this.authHeaders(token),
+        body: JSON.stringify(payload)
       }
     )
   }

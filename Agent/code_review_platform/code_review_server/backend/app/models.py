@@ -10,6 +10,7 @@ from sqlmodel import Field, Relationship, SQLModel
 MAX_REVIEW_TASK_ISSUE_TEXT_LENGTH = 8 * 1024
 MAX_REVIEW_TASK_ISSUE_DESCRIPTION_LENGTH = 64 * 1024
 MAX_REVIEW_TASK_ISSUE_DISPLAY_SNAPSHOT_LENGTH = 256 * 1024
+MAX_REVIEW_TASK_ISSUE_FEEDBACK_LENGTH = 4 * 1024
 
 
 def get_datetime_utc() -> datetime:
@@ -367,6 +368,10 @@ class ReviewTask(SQLModel, table=True):
     pdf_report_path: str | None = Field(default=None, max_length=2048)
     pdf_report_name: str | None = Field(default=None, max_length=255)
     feedback_protocol_version: int | None = Field(default=None)
+    feedback_submitted_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
     error_message: str | None = None
     client_hostname: str | None = Field(default=None, max_length=255)
     client_version: str | None = Field(default=None, max_length=255)
@@ -445,7 +450,11 @@ class ReviewTaskIssue(SQLModel, table=True):
     source: str = Field(max_length=64)
     location: dict[str, int] = Field(sa_type=JSONB)
     helpful: bool | None = Field(default=None, index=True)
-    feedback_text: str | None = Field(default=None, sa_type=Text)
+    feedback_text: str | None = Field(
+        default=None,
+        max_length=MAX_REVIEW_TASK_ISSUE_FEEDBACK_LENGTH,
+        sa_type=Text,
+    )
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
@@ -582,10 +591,18 @@ class ReviewTaskIssuePublic(SQLModel):
     updated_at: datetime | None = None
 
 
+class ReviewTaskIssueFeedbackDraftUpdate(SQLModel):
+    helpful: bool | None
+    feedback_text: str | None = Field(
+        max_length=MAX_REVIEW_TASK_ISSUE_FEEDBACK_LENGTH,
+    )
+
+
 class ReviewTaskIssuesPublic(SQLModel):
     data: list[ReviewTaskIssuePublic]
     count: int
     evaluated_count: int
+    feedback_submitted_at: datetime | None = None
 
 
 class ReviewTaskPublic(SQLModel):
@@ -612,6 +629,7 @@ class ReviewTaskPublic(SQLModel):
     pdf_report_path: str | None = None
     pdf_report_name: str | None = None
     feedback_protocol_version: int | None = None
+    feedback_submitted_at: datetime | None = None
     issue_count: int = 0
     evaluated_issue_count: int = 0
     report_feedback_helpful: bool | None = None

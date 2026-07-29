@@ -360,6 +360,51 @@ describe('ApiClient', () => {
     )
   })
 
+  it('按任务和问题幂等保存反馈草稿', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        id: 'issue-1',
+        task_id: 'task-1',
+        issue_text: '高风险：空指针',
+        description_text: '未校验返回值。',
+        display_snapshot: '### 高风险：空指针',
+        order: 0,
+        source: 'template_1_heading',
+        location: {
+          start_offset: 0,
+          end_offset: 12,
+          feedback_insertion_offset: 12,
+          anchor_line: 0,
+          heading_level: 3
+        },
+        helpful: true,
+        feedback_text: '已补充空指针保护。'
+      })
+    )
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    const result = await client.saveIssueFeedbackDraft('token-123', 'task/1', 'issue/1', {
+      helpful: true,
+      feedback_text: '已补充空指针保护。'
+    })
+
+    expect(result.helpful).toBe(true)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://server.example/api/v1/review-tasks/task%2F1/issues/issue%2F1/feedback-draft',
+      {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer token-123'
+        },
+        body: JSON.stringify({
+          helpful: true,
+          feedback_text: '已补充空指针保护。'
+        })
+      }
+    )
+  })
+
   it('gets svn credentials with authorization header', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ username: 'ada' }))
     const client = new ApiClient('https://server.example', fetchMock)

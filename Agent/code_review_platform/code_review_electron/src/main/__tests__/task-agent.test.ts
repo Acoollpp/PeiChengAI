@@ -209,7 +209,8 @@ describe('executeReviewTask', () => {
       reportMarkdown: '# report\n',
       reportPath,
       pdfPath,
-      pdfReportName: basename(pdfPath)
+      pdfReportName: basename(pdfPath),
+      feedbackProtocolVersion: 1
     })
     expect(dependencies.runCodex).toHaveBeenCalledWith({
       cwd,

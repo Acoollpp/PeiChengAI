@@ -284,7 +284,8 @@ describe('useTaskQueue', () => {
         reportMarkdown: '# report 7',
         reportPath: '/tmp/r7_r2审查报告_20260615_143000.md',
         pdfPath: '/tmp/r7_r2审查报告_20260615_143000.pdf',
-        pdfReportName: 'r7_r2审查报告_20260615_143000.pdf'
+        pdfReportName: 'r7_r2审查报告_20260615_143000.pdf',
+        feedbackProtocolVersion: 1
       })
     })
 
@@ -294,7 +295,8 @@ describe('useTaskQueue', () => {
           expect.objectContaining({
             id: 'task-7',
             pdfPath: '/tmp/r7_r2审查报告_20260615_143000.pdf',
-            pdf_report_name: 'r7_r2审查报告_20260615_143000.pdf'
+            pdf_report_name: 'r7_r2审查报告_20260615_143000.pdf',
+            feedback_protocol_version: 1
           })
         ])
       )

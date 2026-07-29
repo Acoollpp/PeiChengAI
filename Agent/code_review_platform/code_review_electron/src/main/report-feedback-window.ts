@@ -17,10 +17,19 @@ interface ReportFeedbackWindowManagerOptions {
   onContextCleared?: (taskId: string) => void
 }
 
-const cloneContext = (context: ReportFeedbackContext): ReportFeedbackContext => ({
-  taskId: context.taskId,
-  options: context.options.map((option) => ({ ...option }))
-})
+const cloneContext = (context: ReportFeedbackContext): ReportFeedbackContext =>
+  context.mode === 'issues'
+    ? {
+        mode: 'issues',
+        taskId: context.taskId,
+        issues: context.issues.map((issue) => ({ ...issue })),
+        feedbackSubmittedAt: context.feedbackSubmittedAt
+      }
+    : {
+        mode: 'legacy',
+        taskId: context.taskId,
+        options: context.options.map((option) => ({ ...option }))
+      }
 
 const resolvePreloadPath = (): string => {
   const mjsPath = join(__dirname, '../preload/report-feedback.mjs')
@@ -36,7 +45,7 @@ const createWindowOptions = (mainWindow: BrowserWindow): BrowserWindowConstructo
   height: 680,
   minWidth: 560,
   minHeight: 480,
-  title: '报告有用信息反馈',
+  title: '报告问题反馈',
   parent: mainWindow,
   modal: false,
   show: false,

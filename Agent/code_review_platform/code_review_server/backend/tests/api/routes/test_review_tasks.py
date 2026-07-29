@@ -7,7 +7,7 @@ from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
-from uuid import UUID
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.models import (
     MAX_REVIEW_TASK_ISSUE_DESCRIPTION_LENGTH,
     MAX_REVIEW_TASK_ISSUE_DISPLAY_SNAPSHOT_LENGTH,
+    MAX_REVIEW_TASK_ISSUE_FEEDBACK_LENGTH,
     MAX_REVIEW_TASK_ISSUE_TEXT_LENGTH,
     Department,
     ReviewTask,
@@ -125,6 +126,29 @@ def _create_review_task(
     )
     assert response.status_code == 200
     return response.json()
+
+
+def _create_new_protocol_task_with_issue(
+    client: TestClient,
+    headers: dict[str, str],
+) -> tuple[dict, dict]:
+    task = _create_review_task(client, headers)
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": json.dumps([_valid_issue_snapshot()], ensure_ascii=False),
+        },
+        files={"upload": ("report.md", b"# Review\n", "text/markdown")},
+    )
+    assert upload_response.status_code == 200
+    issues_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/issues",
+        headers=headers,
+    )
+    assert issues_response.status_code == 200
+    return task, issues_response.json()["data"][0]
 
 
 def _create_named_svn_user_task(
@@ -1623,7 +1647,12 @@ def test_零问题报告仍标记为新协议且不创建虚假问题(
         headers=normal_user_token_headers,
     )
     assert issues_response.status_code == 200
-    assert issues_response.json() == {"data": [], "count": 0, "evaluated_count": 0}
+    assert issues_response.json() == {
+        "data": [],
+        "count": 0,
+        "evaluated_count": 0,
+        "feedback_submitted_at": None,
+    }
 
 
 def test_旧客户端上传保持历史报告流程兼容(
@@ -1761,6 +1790,185 @@ def test_问题快照读取遵循普通用户部门管理员和系统管理员�
         headers=other_user_headers,
     )
     assert forbidden_response.status_code == 403
+
+
+def test_任务提交人可幂等保存并恢复逐问题反馈草稿(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task, issue = _create_new_protocol_task_with_issue(
+        client,
+        normal_user_token_headers,
+    )
+    url = (
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}"
+        f"/issues/{issue['id']}/feedback-draft"
+    )
+    payload = {"helpful": True, "feedback_text": "帮助定位了空指针并完成修复。"}
+
+    first_response = client.put(
+        url,
+        headers=normal_user_token_headers,
+        json=payload,
+    )
+    assert first_response.status_code == 200
+    assert first_response.json()["helpful"] is True
+    assert first_response.json()["feedback_text"] == payload["feedback_text"]
+    first_updated_at = first_response.json()["updated_at"]
+
+    repeated_response = client.put(
+        url,
+        headers=normal_user_token_headers,
+        json=payload,
+    )
+    assert repeated_response.status_code == 200
+    assert repeated_response.json()["id"] == issue["id"]
+    assert repeated_response.json()["updated_at"] == first_updated_at
+
+    restored_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/issues",
+        headers=normal_user_token_headers,
+    )
+    assert restored_response.status_code == 200
+    restored = restored_response.json()
+    assert restored["evaluated_count"] == 1
+    assert restored["data"][0]["helpful"] is True
+    assert restored["data"][0]["feedback_text"] == payload["feedback_text"]
+    assert (
+        len(
+            db.exec(
+                select(ReviewTaskIssue).where(
+                    ReviewTaskIssue.task_id == UUID(task["id"])
+                )
+            ).all()
+        )
+        == 1
+    )
+
+
+def test_未评价问题也可单独保存选填说明且空白说明归一为空(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task, issue = _create_new_protocol_task_with_issue(
+        client,
+        normal_user_token_headers,
+    )
+    url = (
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}"
+        f"/issues/{issue['id']}/feedback-draft"
+    )
+
+    text_response = client.put(
+        url,
+        headers=normal_user_token_headers,
+        json={"helpful": None, "feedback_text": "先记录处理上下文"},
+    )
+    assert text_response.status_code == 200
+    assert text_response.json()["helpful"] is None
+    assert text_response.json()["feedback_text"] == "先记录处理上下文"
+
+    blank_response = client.put(
+        url,
+        headers=normal_user_token_headers,
+        json={"helpful": None, "feedback_text": "  \n "},
+    )
+    assert blank_response.status_code == 200
+    assert blank_response.json()["feedback_text"] is None
+
+
+def test_逐问题反馈草稿限制长度且仅任务提交人可写(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task, issue = _create_new_protocol_task_with_issue(
+        client,
+        normal_user_token_headers,
+    )
+    url = (
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}"
+        f"/issues/{issue['id']}/feedback-draft"
+    )
+    admin, admin_api_key = create_key_user(db)
+    admin.role = UserRole.admin
+    db.add(admin)
+    db.commit()
+    admin_headers = authentication_token_from_key(
+        client=client,
+        key=admin_api_key.key,
+        db=db,
+    )
+
+    forbidden_response = client.put(
+        url,
+        headers=admin_headers,
+        json={"helpful": False, "feedback_text": "管理员不能代填"},
+    )
+    assert forbidden_response.status_code == 403
+
+    too_long_response = client.put(
+        url,
+        headers=normal_user_token_headers,
+        json={
+            "helpful": False,
+            "feedback_text": "x" * (MAX_REVIEW_TASK_ISSUE_FEEDBACK_LENGTH + 1),
+        },
+    )
+    assert too_long_response.status_code == 422
+
+
+def test_历史任务和已正式提交任务拒绝保存逐问题反馈草稿(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    legacy_task = _create_review_task(client, normal_user_token_headers)
+    legacy_url = (
+        f"{settings.API_V1_STR}/review-tasks/{legacy_task['id']}"
+        f"/issues/{uuid4()}/feedback-draft"
+    )
+    legacy_response = client.put(
+        legacy_url,
+        headers=normal_user_token_headers,
+        json={"helpful": True, "feedback_text": None},
+    )
+    assert legacy_response.status_code == 409
+    assert legacy_response.json()["detail"] == "issue_feedback_not_supported"
+
+    task, issue = _create_new_protocol_task_with_issue(
+        client,
+        normal_user_token_headers,
+    )
+    db_task = db.get(ReviewTask, UUID(task["id"]))
+    assert db_task is not None
+    db_task.feedback_submitted_at = datetime.now(timezone.utc)
+    db.add(db_task)
+    db.commit()
+
+    submitted_response = client.put(
+        (
+            f"{settings.API_V1_STR}/review-tasks/{task['id']}"
+            f"/issues/{issue['id']}/feedback-draft"
+        ),
+        headers=normal_user_token_headers,
+        json={"helpful": False, "feedback_text": "不得覆盖"},
+    )
+    assert submitted_response.status_code == 409
+    assert submitted_response.json()["detail"] == "issue_feedback_submitted"
 
 
 def test_restart_failed_task_status_clears_previous_error_and_finish_time(

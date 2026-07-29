@@ -1518,6 +1518,37 @@ export const ReviewTaskCreateSchema = {
     title: 'ReviewTaskCreate'
 } as const;
 
+export const ReviewTaskIssueFeedbackDraftUpdateSchema = {
+    properties: {
+        helpful: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Helpful'
+        },
+        feedback_text: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 4096
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Feedback Text'
+        }
+    },
+    type: 'object',
+    required: ['helpful', 'feedback_text'],
+    title: 'ReviewTaskIssueFeedbackDraftUpdate'
+} as const;
+
 export const ReviewTaskIssueLocationSchema = {
     properties: {
         start_offset: {
@@ -1655,6 +1686,18 @@ export const ReviewTaskIssuesPublicSchema = {
         evaluated_count: {
             type: 'integer',
             title: 'Evaluated Count'
+        },
+        feedback_submitted_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Feedback Submitted At'
         }
     },
     type: 'object',
@@ -1880,6 +1923,18 @@ export const ReviewTaskPublicSchema = {
                 }
             ],
             title: 'Feedback Protocol Version'
+        },
+        feedback_submitted_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Feedback Submitted At'
         },
         issue_count: {
             type: 'integer',

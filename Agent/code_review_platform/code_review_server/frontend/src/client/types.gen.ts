@@ -280,6 +280,11 @@ export type ReviewTaskCreate = {
     requirement_file_name?: (string | null);
 };
 
+export type ReviewTaskIssueFeedbackDraftUpdate = {
+    helpful: (boolean | null);
+    feedback_text: (string | null);
+};
+
 export type ReviewTaskIssueLocation = {
     start_offset: number;
     end_offset: number;
@@ -307,6 +312,7 @@ export type ReviewTaskIssuesPublic = {
     data: Array<ReviewTaskIssuePublic>;
     count: number;
     evaluated_count: number;
+    feedback_submitted_at?: (string | null);
 };
 
 export type ReviewTaskPublic = {
@@ -333,6 +339,7 @@ export type ReviewTaskPublic = {
     pdf_report_path?: (string | null);
     pdf_report_name?: (string | null);
     feedback_protocol_version?: (number | null);
+    feedback_submitted_at?: (string | null);
     issue_count?: number;
     evaluated_issue_count?: number;
     report_feedback_helpful?: (boolean | null);
@@ -857,6 +864,14 @@ export type ReviewTasksReadReviewTaskIssuesData = {
 };
 
 export type ReviewTasksReadReviewTaskIssuesResponse = (ReviewTaskIssuesPublic);
+
+export type ReviewTasksUpdateReviewTaskIssueFeedbackDraftData = {
+    issueId: string;
+    requestBody: ReviewTaskIssueFeedbackDraftUpdate;
+    taskId: string;
+};
+
+export type ReviewTasksUpdateReviewTaskIssueFeedbackDraftResponse = (ReviewTaskIssuePublic);
 
 export type ReviewTasksReadReviewTaskAssetData = {
     assetPath: string;

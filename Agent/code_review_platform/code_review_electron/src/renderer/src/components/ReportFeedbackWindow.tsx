@@ -1,28 +1,47 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-import type { ReportFeedbackContext } from '../../../shared/report-feedback-window'
+import type {
+  IssueFeedbackItem,
+  LegacyReportFeedbackContext,
+  ReportFeedbackContext
+} from '../../../shared/report-feedback-window'
 
-export function ReportFeedbackWindow(): React.JSX.Element {
-  const [context, setContext] = useState<ReportFeedbackContext | null>(null)
+type IssueSaveState = 'idle' | 'saving' | 'failed'
+
+type IssueDraft = IssueFeedbackItem & {
+  revision: number
+  saveState: IssueSaveState
+  saveError?: string
+}
+
+const feedbackPlaceholder = (helpful: boolean | null): string => {
+  if (helpful === true) {
+    return '例如：说明这个问题提供了哪些帮助，以及实际如何处理。'
+  }
+  if (helpful === false) {
+    return '例如：说明这个问题没有帮助的原因和具体情况。'
+  }
+  return '可选填反馈说明；评价后会显示对应的填写示例。'
+}
+
+const scrollToIssue = (issueId: string): void => {
+  document.getElementById(`feedback-issue-${issueId}`)?.scrollIntoView({
+    block: 'center',
+    behavior: 'smooth'
+  })
+}
+
+function LegacyReportFeedbackForm({
+  context
+}: {
+  context: LegacyReportFeedbackContext
+}): React.JSX.Element {
   const [selectedOptionIds, setSelectedOptionIds] = useState<string[]>([])
   const [manualText, setManualText] = useState('')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  useEffect(() => {
-    void window.reportFeedback
-      .getContext()
-      .then(setContext)
-      .catch((loadError: unknown) => {
-        setError(loadError instanceof Error ? loadError.message : '反馈内容加载失败')
-      })
-  }, [])
-
   const handleOptionChange = async (optionId: string, checked: boolean): Promise<void> => {
-    if (!context) {
-      return
-    }
-
     setError('')
     setSelectedOptionIds((currentIds) =>
       checked ? [...currentIds, optionId] : currentIds.filter((id) => id !== optionId)
@@ -40,7 +59,7 @@ export function ReportFeedbackWindow(): React.JSX.Element {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
-    if (!context || isSubmitting || (selectedOptionIds.length === 0 && !manualText.trim())) {
+    if (isSubmitting || (selectedOptionIds.length === 0 && !manualText.trim())) {
       return
     }
 
@@ -68,67 +87,436 @@ export function ReportFeedbackWindow(): React.JSX.Element {
     }
   }
 
-  const canSubmit = Boolean(context) && (selectedOptionIds.length > 0 || Boolean(manualText.trim()))
+  const canSubmit = selectedOptionIds.length > 0 || Boolean(manualText.trim())
+
+  return (
+    <form className="report-feedback-form" onSubmit={(event) => void handleSubmit(event)}>
+      <div className="report-feedback-scroll">
+        <fieldset className="report-feedback-options" disabled={isSubmitting}>
+          <legend>有帮助的问题</legend>
+          {context.options.map((option) => (
+            <label className="report-feedback-option" key={option.id}>
+              <input
+                type="checkbox"
+                checked={selectedOptionIds.includes(option.id)}
+                onChange={(event) => void handleOptionChange(option.id, event.target.checked)}
+              />
+              <span>{option.text}</span>
+            </label>
+          ))}
+        </fieldset>
+
+        <label className="report-feedback-manual">
+          <span>补充说明</span>
+          <textarea
+            value={manualText}
+            onChange={(event) => setManualText(event.target.value)}
+            rows={6}
+            placeholder="补充其他有帮助的问题"
+            disabled={isSubmitting}
+          />
+        </label>
+
+        {error && (
+          <p className="report-feedback-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+
+      <div className="report-feedback-actions">
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={isSubmitting}
+          onClick={() => void handleClose()}
+        >
+          取消
+        </button>
+        <button type="submit" className="primary-button" disabled={!canSubmit || isSubmitting}>
+          {isSubmitting ? '提交中...' : '提交并打开PDF'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+function IssueFeedbackForm({
+  context
+}: {
+  context: Extract<ReportFeedbackContext, { mode: 'issues' }>
+}): React.JSX.Element {
+  const initialDrafts = context.issues.map<IssueDraft>((issue) => ({
+    ...issue,
+    revision: 0,
+    saveState: 'idle'
+  }))
+  const [drafts, setDrafts] = useState(initialDrafts)
+  const [error, setError] = useState('')
+  const [isPreparing, setIsPreparing] = useState(false)
+  const draftsRef = useRef(initialDrafts)
+  const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  const queuesRef = useRef(new Map<string, Promise<void>>())
+  const lastEnqueuedRevisionRef = useRef(
+    new Map(initialDrafts.map((draft) => [draft.id, draft.revision]))
+  )
+  const mountedRef = useRef(true)
+  const isReadOnly = context.feedbackSubmittedAt !== null
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      timersRef.current.forEach((timer) => clearTimeout(timer))
+      timersRef.current.clear()
+    }
+  }, [])
+
+  const replaceDraft = (nextDraft: IssueDraft): void => {
+    const nextDrafts = draftsRef.current.map((draft) =>
+      draft.id === nextDraft.id ? nextDraft : draft
+    )
+    draftsRef.current = nextDrafts
+    setDrafts(nextDrafts)
+  }
+
+  const editDraft = (
+    issueId: string,
+    changes: Pick<IssueDraft, 'helpful'> | Pick<IssueDraft, 'feedbackText'>
+  ): IssueDraft | undefined => {
+    const current = draftsRef.current.find((draft) => draft.id === issueId)
+    if (!current) {
+      return undefined
+    }
+    const next = {
+      ...current,
+      ...changes,
+      revision: current.revision + 1,
+      saveState: 'idle' as const,
+      saveError: undefined
+    }
+    replaceDraft(next)
+    return next
+  }
+
+  const setSaveState = (
+    issueId: string,
+    revision: number,
+    saveState: IssueSaveState,
+    saveError?: string
+  ): void => {
+    if (!mountedRef.current) {
+      return
+    }
+    const current = draftsRef.current.find((draft) => draft.id === issueId)
+    if (!current || current.revision !== revision) {
+      return
+    }
+    replaceDraft({ ...current, saveState, saveError })
+  }
+
+  const enqueueSave = (issueId: string, force = false): Promise<void> => {
+    const timer = timersRef.current.get(issueId)
+    if (timer) {
+      clearTimeout(timer)
+      timersRef.current.delete(issueId)
+    }
+    const snapshot = draftsRef.current.find((draft) => draft.id === issueId)
+    if (!snapshot || isReadOnly) {
+      return Promise.resolve()
+    }
+    const previousRevision = lastEnqueuedRevisionRef.current.get(issueId) ?? 0
+    const existingQueue = queuesRef.current.get(issueId)
+    if (!force && previousRevision >= snapshot.revision) {
+      return existingQueue ?? Promise.resolve()
+    }
+
+    lastEnqueuedRevisionRef.current.set(issueId, snapshot.revision)
+    setSaveState(issueId, snapshot.revision, 'saving')
+    const previous = existingQueue ?? Promise.resolve()
+    const request = previous.catch(() => undefined).then(async () => {
+      await window.reportFeedback.saveIssueDraft({
+        taskId: context.taskId,
+        issueId,
+        helpful: snapshot.helpful,
+        feedbackText: snapshot.feedbackText
+      })
+    })
+    const tail = request.then(
+      () => {
+        setSaveState(issueId, snapshot.revision, 'idle')
+      },
+      (saveError: unknown) => {
+        setSaveState(
+          issueId,
+          snapshot.revision,
+          'failed',
+          saveError instanceof Error ? saveError.message : '保存失败'
+        )
+      }
+    )
+    queuesRef.current.set(issueId, tail)
+    void tail.then(() => {
+      if (queuesRef.current.get(issueId) === tail) {
+        queuesRef.current.delete(issueId)
+      }
+    })
+    return request
+  }
+
+  const scheduleSave = (issueId: string): void => {
+    const currentTimer = timersRef.current.get(issueId)
+    if (currentTimer) {
+      clearTimeout(currentTimer)
+    }
+    timersRef.current.set(
+      issueId,
+      setTimeout(() => {
+        timersRef.current.delete(issueId)
+        void enqueueSave(issueId).catch(() => undefined)
+      }, 1000)
+    )
+  }
+
+  const handleHelpfulChange = (issueId: string, helpful: boolean): void => {
+    setError('')
+    const next = editDraft(issueId, { helpful })
+    if (next) {
+      void enqueueSave(issueId).catch(() => undefined)
+    }
+  }
+
+  const handleTextChange = (issueId: string, feedbackText: string): void => {
+    setError('')
+    const next = editDraft(issueId, { feedbackText })
+    if (next) {
+      scheduleSave(issueId)
+    }
+  }
+
+  const handleRetry = (issueId: string): void => {
+    setError('')
+    void enqueueSave(issueId, true).catch(() => undefined)
+  }
+
+  const handlePrepareSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault()
+    if (isPreparing || isReadOnly) {
+      return
+    }
+
+    setError('')
+    setIsPreparing(true)
+    const firstUnevaluated = draftsRef.current.find((draft) => draft.helpful === null)
+    if (firstUnevaluated) {
+      scrollToIssue(firstUnevaluated.id)
+    }
+
+    const saveResults = await Promise.allSettled(
+      draftsRef.current.map((draft) => enqueueSave(draft.id, draft.saveState === 'failed'))
+    )
+    const firstFailed = draftsRef.current.find((draft) => draft.saveState === 'failed')
+    if (saveResults.some((result) => result.status === 'rejected') || firstFailed) {
+      if (firstFailed) {
+        scrollToIssue(firstFailed.id)
+      }
+      setError('仍有反馈保存失败，请重试后再提交。')
+      setIsPreparing(false)
+      return
+    }
+    if (firstUnevaluated) {
+      setError('请先评价所有审查问题。')
+      setIsPreparing(false)
+      return
+    }
+
+    try {
+      await window.reportFeedback.prepareIssueSubmit({ taskId: context.taskId })
+    } catch (prepareError) {
+      setError(prepareError instanceof Error ? prepareError.message : '提交前校验失败，请重试。')
+    } finally {
+      setIsPreparing(false)
+    }
+  }
+
+  const handleClose = async (): Promise<void> => {
+    setError('')
+    setIsPreparing(true)
+    try {
+      if (!isReadOnly) {
+        const saveResults = await Promise.allSettled(
+          draftsRef.current.map((draft) =>
+            enqueueSave(draft.id, draft.saveState === 'failed')
+          )
+        )
+        const firstFailed = draftsRef.current.find((draft) => draft.saveState === 'failed')
+        if (saveResults.some((result) => result.status === 'rejected') || firstFailed) {
+          if (firstFailed) {
+            scrollToIssue(firstFailed.id)
+          }
+          setError('仍有反馈保存失败，请重试后再关闭。')
+          return
+        }
+      }
+      await window.reportFeedback.close()
+    } catch {
+      setError('反馈窗口关闭失败，请重试')
+    } finally {
+      setIsPreparing(false)
+    }
+  }
+
+  return (
+    <form className="report-feedback-form" onSubmit={(event) => void handlePrepareSubmit(event)}>
+      <div className="report-feedback-scroll">
+        {drafts.length === 0 && (
+          <p className="report-feedback-status">报告中没有需要逐项反馈的审查问题。</p>
+        )}
+        <div className="issue-feedback-list">
+          {drafts.map((draft, index) => (
+            <section
+              className="issue-feedback-item"
+              id={`feedback-issue-${draft.id}`}
+              key={draft.id}
+            >
+              <div className="issue-feedback-heading">
+                <span className="issue-feedback-order">问题 {index + 1}</span>
+                <span className={`issue-feedback-state ${draft.helpful === null ? 'is-pending' : ''}`}>
+                  {draft.helpful === null ? '未评价' : draft.helpful ? '有帮助' : '没帮助'}
+                </span>
+              </div>
+              <h2>{draft.issueText}</h2>
+              <p className="issue-feedback-description">
+                {draft.descriptionText || '未提供问题描述。'}
+              </p>
+
+              <fieldset className="issue-feedback-choice" disabled={isReadOnly || isPreparing}>
+                <legend>是否有帮助</legend>
+                <label>
+                  <input
+                    type="radio"
+                    name={`helpful-${draft.id}`}
+                    checked={draft.helpful === true}
+                    onChange={() => handleHelpfulChange(draft.id, true)}
+                  />
+                  <span>有帮助</span>
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name={`helpful-${draft.id}`}
+                    checked={draft.helpful === false}
+                    onChange={() => handleHelpfulChange(draft.id, false)}
+                  />
+                  <span>没帮助</span>
+                </label>
+              </fieldset>
+
+              <label className="issue-feedback-text">
+                <span>反馈说明（选填）</span>
+                <textarea
+                  aria-label={`问题 ${index + 1} 反馈说明`}
+                  value={draft.feedbackText}
+                  maxLength={4096}
+                  rows={4}
+                  placeholder={feedbackPlaceholder(draft.helpful)}
+                  disabled={isReadOnly || isPreparing}
+                  onChange={(event) => handleTextChange(draft.id, event.target.value)}
+                  onBlur={() => void enqueueSave(draft.id).catch(() => undefined)}
+                />
+              </label>
+
+              {draft.saveState === 'failed' && (
+                <div className="issue-feedback-save-error" role="alert">
+                  <span>{draft.saveError || '保存失败，请重试。'}</span>
+                  <button type="button" onClick={() => handleRetry(draft.id)}>
+                    重试
+                  </button>
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
+
+        {error && (
+          <p className="report-feedback-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+
+      <div className="report-feedback-actions">
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={isPreparing}
+          onClick={() => void handleClose()}
+        >
+          关闭
+        </button>
+        {!isReadOnly && (
+          <button type="submit" className="primary-button" disabled={isPreparing}>
+            {isPreparing ? '正在检查...' : '提交反馈并查看PDF报告'}
+          </button>
+        )}
+      </div>
+    </form>
+  )
+}
+
+export function ReportFeedbackWindow(): React.JSX.Element {
+  const [context, setContext] = useState<ReportFeedbackContext | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    void window.reportFeedback
+      .getContext()
+      .then(setContext)
+      .catch((loadError: unknown) => {
+        setError(loadError instanceof Error ? loadError.message : '反馈内容加载失败')
+      })
+  }, [])
+
+  const handleClose = async (): Promise<void> => {
+    try {
+      await window.reportFeedback.close()
+    } catch {
+      setError('反馈窗口关闭失败，请重试')
+    }
+  }
 
   return (
     <main className="report-feedback-window">
       <header className="report-feedback-header">
-        <h1>报告反馈</h1>
-        <p>请选择报告中有帮助的问题，也可以补充说明。</p>
+        <h1>{context?.mode === 'issues' ? '审查问题反馈' : '报告反馈'}</h1>
+        <p>
+          {context?.mode === 'issues'
+            ? '请逐项评价审查问题；反馈说明可按需填写。'
+            : '请选择报告中有帮助的问题，也可以补充说明。'}
+        </p>
       </header>
 
-      <form className="report-feedback-form" onSubmit={(event) => void handleSubmit(event)}>
+      {!context && !error && (
         <div className="report-feedback-scroll">
-          {!context && !error && <p className="report-feedback-status">正在加载反馈内容...</p>}
-
-          {context && (
-            <fieldset className="report-feedback-options" disabled={isSubmitting}>
-              <legend>有帮助的问题</legend>
-              {context.options.map((option) => (
-                <label className="report-feedback-option" key={option.id}>
-                  <input
-                    type="checkbox"
-                    checked={selectedOptionIds.includes(option.id)}
-                    onChange={(event) => void handleOptionChange(option.id, event.target.checked)}
-                  />
-                  <span>{option.text}</span>
-                </label>
-              ))}
-            </fieldset>
-          )}
-
-          <label className="report-feedback-manual">
-            <span>补充说明</span>
-            <textarea
-              value={manualText}
-              onChange={(event) => setManualText(event.target.value)}
-              rows={6}
-              placeholder="补充其他有帮助的问题"
-              disabled={!context || isSubmitting}
-            />
-          </label>
-
-          {error && (
-            <p className="report-feedback-error" role="alert">
-              {error}
-            </p>
-          )}
+          <p className="report-feedback-status">正在加载反馈内容...</p>
         </div>
-
+      )}
+      {error && (
+        <div className="report-feedback-scroll">
+          <p className="report-feedback-error" role="alert">
+            {error}
+          </p>
+        </div>
+      )}
+      {!context && (
         <div className="report-feedback-actions">
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={isSubmitting}
-            onClick={() => void handleClose()}
-          >
-            取消
-          </button>
-          <button type="submit" className="primary-button" disabled={!canSubmit || isSubmitting}>
-            {isSubmitting ? '提交中...' : '提交并打开PDF'}
+          <button type="button" className="secondary-button" onClick={() => void handleClose()}>
+            关闭
           </button>
         </div>
-      </form>
+      )}
+      {context?.mode === 'issues' && <IssueFeedbackForm context={context} />}
+      {context && context.mode !== 'issues' && <LegacyReportFeedbackForm context={context} />}
     </main>
   )
 }

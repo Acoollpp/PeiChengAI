@@ -74,6 +74,7 @@ export interface ReviewTask {
   pdf_report_path?: string
   pdf_report_name?: string | null
   feedback_protocol_version?: number | null
+  feedback_submitted_at?: string | null
   issue_count?: number
   evaluated_issue_count?: number
   started_at?: string | null
@@ -111,6 +112,7 @@ export interface ReviewTaskIssuesResponse {
   data: ReviewTaskIssue[]
   count: number
   evaluated_count: number
+  feedback_submitted_at?: string | null
 }
 
 export type TaskProgressStage =
