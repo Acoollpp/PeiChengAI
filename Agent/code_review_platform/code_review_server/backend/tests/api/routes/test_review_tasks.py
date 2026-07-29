@@ -1,4 +1,7 @@
 import hashlib
+import json
+import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from urllib.parse import unquote
@@ -14,12 +17,14 @@ from app.core.config import settings
 from app.models import (
     Department,
     ReviewTask,
+    ReviewTaskIssue,
     ReviewTaskReportFeedback,
     ReviewTaskRequirementFile,
     ReviewTaskStatus,
     User,
     UserRole,
 )
+from app.services import report_service
 from tests.utils.user import (
     authentication_token_from_key,
     create_key_user,
@@ -27,6 +32,21 @@ from tests.utils.user import (
 from tests.utils.utils import random_lower_string
 
 TASK_STATS_TIMEZONE = ZoneInfo("Asia/Shanghai")
+VALID_PNG_BYTES = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+    "0000000d4944415408d763f8cfc0f01f00050001ff89993d1d0000000049454e44"
+    "ae426082"
+)
+
+
+def _load_shared_markdown_image_corpus() -> dict[str, object]:
+    fixture_path = (
+        Path(__file__).resolve().parents[5]
+        / "tests"
+        / "fixtures"
+        / "report-image-markdown-corpus.json"
+    )
+    return json.loads(fixture_path.read_text(encoding="utf-8"))
 
 
 def _revision_number(value: str) -> int:
@@ -464,6 +484,1004 @@ def test_upload_and_read_review_task_report(
     assert read_response.status_code == 200
     assert read_response.headers["content-type"].startswith("text/markdown")
     assert read_response.text == "# Review\n\nLooks good.\n"
+
+
+def test_新协议上传后返回有序问题快照和反馈进度(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    issues = [
+        {
+            "issue_text": "高风险：空指针解引用",
+            "description_text": "未校验返回值即解引用。",
+            "display_snapshot": "### 高风险：空指针解引用\n\n未校验返回值即解引用。",
+            "order": 0,
+            "source": "template_1_heading",
+            "location": {
+                "start_offset": 12,
+                "end_offset": 48,
+                "feedback_insertion_offset": 48,
+                "anchor_line": 3,
+                "heading_level": 3,
+            },
+        },
+        {
+            "issue_text": "中风险：数组越界",
+            "description_text": "循环上界包含数组长度。",
+            "display_snapshot": "### 中风险：数组越界\n\n循环上界包含数组长度。",
+            "order": 1,
+            "source": "template_1_heading",
+            "location": {
+                "start_offset": 49,
+                "end_offset": 82,
+                "feedback_insertion_offset": 82,
+                "anchor_line": 7,
+                "heading_level": 3,
+            },
+        },
+    ]
+
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": json.dumps(issues, ensure_ascii=False),
+        },
+        files={"upload": ("report.md", b"# Review\n", "text/markdown")},
+    )
+
+    assert upload_response.status_code == 200
+    uploaded = upload_response.json()
+    assert uploaded["feedback_protocol_version"] == 1
+    assert uploaded["issue_count"] == 2
+    assert uploaded["evaluated_issue_count"] == 0
+
+    issues_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/issues",
+        headers=normal_user_token_headers,
+    )
+
+    assert issues_response.status_code == 200
+    content = issues_response.json()
+    assert content["count"] == 2
+    assert content["evaluated_count"] == 0
+    assert [item["order"] for item in content["data"]] == [0, 1]
+    assert [item["issue_text"] for item in content["data"]] == [
+        "高风险：空指针解引用",
+        "中风险：数组越界",
+    ]
+    assert all(item["id"] for item in content["data"])
+    assert content["data"][0]["description_text"] == "未校验返回值即解引用。"
+    assert content["data"][0]["display_snapshot"].startswith("### 高风险")
+    assert content["data"][0]["location"] == issues[0]["location"]
+
+    detail_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+    assert detail_response.status_code == 200
+    assert detail_response.json()["issue_count"] == 2
+    assert detail_response.json()["evaluated_issue_count"] == 0
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+    )
+    assert list_response.status_code == 200
+    listed_task = next(
+        item for item in list_response.json()["data"] if item["id"] == task["id"]
+    )
+    assert listed_task["feedback_protocol_version"] == 1
+    assert listed_task["issue_count"] == 2
+    assert listed_task["evaluated_issue_count"] == 0
+
+
+def test_新协议上传保持相对图片目录结构(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    report_content = "# Review\n\n![证据](images/nested/evidence.png)\n".encode()
+
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": "[]",
+            "asset_paths": json.dumps(["images/nested/evidence.png"]),
+        },
+        files=[
+            ("upload", ("report.md", report_content, "text/markdown")),
+            ("assets", ("evidence.png", VALID_PNG_BYTES, "image/png")),
+        ],
+    )
+
+    assert upload_response.status_code == 200
+
+    asset_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/assets/images/nested/evidence.png",
+        headers=normal_user_token_headers,
+    )
+
+    assert asset_response.status_code == 200
+    assert asset_response.content == VALID_PNG_BYTES
+    assert asset_response.headers["content-type"].startswith("image/png")
+
+
+def test_新协议服务端按共享CommonMark语料识别图片(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    corpus = _load_shared_markdown_image_corpus()
+    report_content = str(corpus["markdown"])
+    asset_paths = list(corpus["expected_paths"])
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": "[]",
+            "asset_paths": json.dumps(asset_paths, ensure_ascii=False),
+        },
+        files=[
+            (
+                "upload",
+                ("report.md", report_content.encode(), "text/markdown"),
+            ),
+            *[
+                ("assets", (Path(asset_path).name, VALID_PNG_BYTES, "image/png"))
+                for asset_path in asset_paths
+            ],
+        ],
+    )
+
+    assert response.status_code == 200
+
+
+def test_删除新协议任务同步清理问题记录和图片资产(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    issue = {
+        "issue_text": "高风险：资源泄漏",
+        "description_text": "异常路径未释放句柄。",
+        "display_snapshot": "### 高风险：资源泄漏\n\n异常路径未释放句柄。",
+        "order": 0,
+        "source": "template_1_heading",
+        "location": {
+            "start_offset": 0,
+            "end_offset": 28,
+            "feedback_insertion_offset": 28,
+            "anchor_line": 0,
+            "heading_level": 3,
+        },
+    }
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": json.dumps([issue], ensure_ascii=False),
+            "asset_paths": json.dumps(["images/evidence.png"]),
+        },
+        files=[
+            (
+                "upload",
+                (
+                    "report.md",
+                    b"# Review\n\n![evidence](images/evidence.png)\n",
+                    "text/markdown",
+                ),
+            ),
+            ("assets", ("evidence.png", VALID_PNG_BYTES, "image/png")),
+        ],
+    )
+    assert upload_response.status_code == 200
+    assert list(tmp_path.rglob("evidence.png"))
+
+    delete_response = client.delete(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+
+    assert delete_response.status_code == 200
+    assert db.exec(
+        select(ReviewTaskIssue).where(ReviewTaskIssue.task_id == UUID(task["id"]))
+    ).all() == []
+    assert list(tmp_path.rglob("evidence.png")) == []
+
+
+def test_删除任务数据库提交失败时恢复任务和文件(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": "[]",
+            "asset_paths": json.dumps(["images/evidence.png"]),
+        },
+        files=[
+            (
+                "upload",
+                (
+                    "report.md",
+                    b"# Review\n\n![evidence](images/evidence.png)\n",
+                    "text/markdown",
+                ),
+            ),
+            ("assets", ("evidence.png", VALID_PNG_BYTES, "image/png")),
+        ],
+    )
+    assert upload_response.status_code == 200
+    original_commit = Session.commit
+
+    def fail_commit(_session: Session) -> None:
+        raise RuntimeError("模拟删除提交失败")
+
+    monkeypatch.setattr(Session, "commit", fail_commit)
+    with pytest.raises(RuntimeError, match="模拟删除提交失败"):
+        client.delete(
+            f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+            headers=normal_user_token_headers,
+        )
+    monkeypatch.setattr(Session, "commit", original_commit)
+
+    detail_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+    asset_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/assets/images/evidence.png",
+        headers=normal_user_token_headers,
+    )
+    assert detail_response.status_code == 200
+    assert asset_response.status_code == 200
+    assert asset_response.content == VALID_PNG_BYTES
+
+
+def test_删除任务清理失败会留痕并由后续删除重试(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    first_task = _create_review_task(client, normal_user_token_headers)
+    second_task = _create_review_task(client, normal_user_token_headers)
+    for task in (first_task, second_task):
+        response = client.post(
+            f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+            headers=normal_user_token_headers,
+            data={"feedback_protocol_version": "1", "issues": "[]"},
+            files={"upload": ("report.md", b"# Review\n", "text/markdown")},
+        )
+        assert response.status_code == 200
+
+    original_purge = report_service.purge_quarantined_task_files
+
+    def fail_purge(_quarantine: report_service.QuarantinedTaskFiles) -> None:
+        raise OSError("模拟隔离文件清理失败")
+
+    caplog.set_level(logging.ERROR)
+    monkeypatch.setattr(report_service, "purge_quarantined_task_files", fail_purge)
+    first_delete = client.delete(
+        f"{settings.API_V1_STR}/review-tasks/{first_task['id']}",
+        headers=normal_user_token_headers,
+    )
+    monkeypatch.setattr(
+        report_service,
+        "purge_quarantined_task_files",
+        original_purge,
+    )
+
+    assert first_delete.status_code == 200
+    assert "待重试清理目录" in caplog.text
+    assert report_service.pending_delete_trash_paths()
+
+    second_delete = client.delete(
+        f"{settings.API_V1_STR}/review-tasks/{second_task['id']}",
+        headers=normal_user_token_headers,
+    )
+
+    assert second_delete.status_code == 200
+    assert report_service.pending_delete_trash_paths() == []
+
+
+def test_删除任务进程中断后会恢复数据库仍存在任务的文件(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    interrupted_task = _create_review_task(client, normal_user_token_headers)
+    trigger_task = _create_review_task(client, normal_user_token_headers)
+    report_content = b"# interrupted deletion\n"
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{interrupted_task['id']}/report",
+        headers=normal_user_token_headers,
+        files={"upload": ("report.md", report_content, "text/markdown")},
+    )
+    assert upload_response.status_code == 200
+    report_path = Path(upload_response.json()["report_path"])
+
+    report_service.quarantine_task_files(
+        UUID(interrupted_task["id"]),
+        [report_path],
+    )
+    assert not report_path.exists()
+
+    trigger_delete = client.delete(
+        f"{settings.API_V1_STR}/review-tasks/{trigger_task['id']}",
+        headers=normal_user_token_headers,
+    )
+    recovered_report = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{interrupted_task['id']}/report",
+        headers=normal_user_token_headers,
+    )
+
+    assert trigger_delete.status_code == 200
+    assert recovered_report.status_code == 200
+    assert recovered_report.content == report_content
+    assert report_service.pending_delete_trash_paths() == []
+
+
+@pytest.mark.parametrize(
+    ("asset_path", "asset_content", "expected_detail"),
+    [
+        ("/images/evidence.png", b"png", "图片资产路径无效"),
+        ("C:/images/evidence.png", b"png", "图片资产路径无效"),
+        ("images/../evidence.png", b"png", "图片资产路径无效"),
+        ("attachments/evidence.png", b"png", "图片资产必须位于 images 目录"),
+        ("images/evidence.png", b"", "图片资产不能为空"),
+    ],
+    ids=["绝对路径", "Windows绝对路径", "目录穿越", "图片目录外", "空资产"],
+)
+def test_新协议上传拒绝不安全或空图片资产(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    asset_path: str,
+    asset_content: bytes,
+    expected_detail: str,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": "[]",
+            "asset_paths": json.dumps([asset_path]),
+        },
+        files=[
+            (
+                "upload",
+                (
+                    "report.md",
+                    f"# Review\n\n![evidence]({asset_path})\n".encode(),
+                    "text/markdown",
+                ),
+            ),
+            ("assets", ("evidence.png", asset_content, "image/png")),
+        ],
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == expected_detail
+    assert not (tmp_path / f"{task['id']}.md").exists()
+
+
+@pytest.mark.parametrize(
+    ("report_content", "asset_paths", "uploaded_files", "expected_detail"),
+    [
+        (
+            b"# Review\n\n![evidence](images/evidence.png)\n",
+            [],
+            [],
+            "Markdown 引用的图片资产未完整上传",
+        ),
+        (
+            b"# Review\n",
+            ["images/evidence.png"],
+            [("assets", ("evidence.png", b"png", "image/png"))],
+            "存在未被 Markdown 引用的图片资产",
+        ),
+        (
+            b"# Review\n\n![evidence](images/evidence.png)\n",
+            ["images/evidence.png"],
+            [("assets", ("evidence.png", b"png", "image/jpeg"))],
+            "报告图片格式与内容类型不一致",
+        ),
+    ],
+    ids=["缺失引用资产", "额外资产", "内容类型不匹配"],
+)
+def test_新协议上传校验Markdown图片引用和格式(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    report_content: bytes,
+    asset_paths: list[str],
+    uploaded_files: list[tuple[str, tuple[str, bytes, str]]],
+    expected_detail: str,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": "[]",
+            "asset_paths": json.dumps(asset_paths),
+        },
+        files=[
+            ("upload", ("report.md", report_content, "text/markdown")),
+            *uploaded_files,
+        ],
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == expected_detail
+    assert not (tmp_path / f"{task['id']}.md").exists()
+
+
+@pytest.mark.parametrize(
+    ("asset_path", "asset_content", "content_type"),
+    [
+        ("images/evidence.png", VALID_PNG_BYTES, "image/png"),
+        (
+            "images/evidence.jpg",
+            bytes.fromhex("ffd8ffe000104a46494600010100000100010000ffd9"),
+            "image/jpeg",
+        ),
+        (
+            "images/evidence.gif",
+            bytes.fromhex(
+                "47494638396101000100800000000000ffffff21f90401000000002c0000000001"
+                "0001000002024401003b"
+            ),
+            "image/gif",
+        ),
+        (
+            "images/evidence.webp",
+            b"RIFF\x0c\x00\x00\x00WEBPVP8 \x00\x00\x00\x00",
+            "image/webp",
+        ),
+        (
+            "images/evidence.svg",
+            b'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>',
+            "image/svg+xml",
+        ),
+    ],
+    ids=["PNG", "JPEG", "GIF", "WebP", "SVG"],
+)
+def test_新协议上传接受内容与扩展名一致的真实图片(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    asset_path: str,
+    asset_content: bytes,
+    content_type: str,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": "[]",
+            "asset_paths": json.dumps([asset_path]),
+        },
+        files=[
+            (
+                "upload",
+                (
+                    "report.md",
+                    f"# Review\n\n![evidence]({asset_path})\n".encode(),
+                    "text/markdown",
+                ),
+            ),
+            ("assets", (Path(asset_path).name, asset_content, content_type)),
+        ],
+    )
+
+    assert response.status_code == 200
+
+
+def test_新协议上传拒绝伪造图片内容(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": "[]",
+            "asset_paths": json.dumps(["images/evidence.png"]),
+        },
+        files=[
+            (
+                "upload",
+                (
+                    "report.md",
+                    b"# Review\n\n![evidence](images/evidence.png)\n",
+                    "text/markdown",
+                ),
+            ),
+            ("assets", ("evidence.png", b"not-a-real-png", "image/png")),
+        ],
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "报告图片内容与文件格式不一致"
+
+
+@pytest.mark.parametrize(
+    ("limit_name", "limit", "report_content", "asset_paths", "asset_files", "detail"),
+    [
+        (
+            "MAX_REPORT_MARKDOWN_BYTES",
+            8,
+            b"123456789",
+            [],
+            [],
+            "审查报告超过大小限制",
+        ),
+        (
+            "MAX_REPORT_IMAGE_COUNT",
+            0,
+            b"# Review\n\n![evidence](images/evidence.png)\n",
+            ["images/evidence.png"],
+            [("assets", ("evidence.png", VALID_PNG_BYTES, "image/png"))],
+            "报告图片数量超过限制",
+        ),
+        (
+            "MAX_REPORT_IMAGE_BYTES",
+            len(VALID_PNG_BYTES) - 1,
+            b"# Review\n\n![evidence](images/evidence.png)\n",
+            ["images/evidence.png"],
+            [("assets", ("evidence.png", VALID_PNG_BYTES, "image/png"))],
+            "单个报告图片超过大小限制",
+        ),
+        (
+            "MAX_REPORT_ASSETS_TOTAL_BYTES",
+            len(VALID_PNG_BYTES) - 1,
+            b"# Review\n\n![evidence](images/evidence.png)\n",
+            ["images/evidence.png"],
+            [("assets", ("evidence.png", VALID_PNG_BYTES, "image/png"))],
+            "报告图片总大小超过限制",
+        ),
+    ],
+    ids=["Markdown大小", "图片数量", "单图大小", "图片总大小"],
+)
+def test_新协议上传执行资源限制(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    limit_name: str,
+    limit: int,
+    report_content: bytes,
+    asset_paths: list[str],
+    asset_files: list[tuple[str, tuple[str, bytes, str]]],
+    detail: str,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    monkeypatch.setattr(report_service, limit_name, limit)
+    task = _create_review_task(client, normal_user_token_headers)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": "[]",
+            "asset_paths": json.dumps(asset_paths),
+        },
+        files=[
+            ("upload", ("report.md", report_content, "text/markdown")),
+            *asset_files,
+        ],
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == detail
+
+
+def test_新协议报告上传后不可重复覆盖或降级(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    issue = {
+        "issue_text": "高风险：稳定问题",
+        "description_text": "第一次上传的问题描述。",
+        "display_snapshot": "### 高风险：稳定问题",
+        "order": 0,
+        "source": "template_1_heading",
+        "location": {
+            "start_offset": 0,
+            "end_offset": 12,
+            "feedback_insertion_offset": 12,
+            "anchor_line": 0,
+            "heading_level": 3,
+        },
+    }
+    original_report = b"# Original\n\n![evidence](images/evidence.png)\n"
+    first_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": json.dumps([issue], ensure_ascii=False),
+            "asset_paths": json.dumps(["images/evidence.png"]),
+        },
+        files=[
+            ("upload", ("report.md", original_report, "text/markdown")),
+            ("assets", ("evidence.png", VALID_PNG_BYTES, "image/png")),
+        ],
+    )
+    assert first_response.status_code == 200
+    issue_id = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/issues",
+        headers=normal_user_token_headers,
+    ).json()["data"][0]["id"]
+
+    repeated_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={"feedback_protocol_version": "1", "issues": "[]"},
+        files={"upload": ("report.md", b"# Replaced\n", "text/markdown")},
+    )
+    downgrade_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        files={"upload": ("legacy.md", b"# Legacy\n", "text/markdown")},
+    )
+
+    assert repeated_response.status_code == 409
+    assert downgrade_response.status_code == 409
+    assert (tmp_path / f"{task['id']}.md").read_bytes() == original_report
+    assert list(tmp_path.rglob("evidence.png"))[0].read_bytes() == VALID_PNG_BYTES
+    issues = db.exec(
+        select(ReviewTaskIssue).where(ReviewTaskIssue.task_id == UUID(task["id"]))
+    ).all()
+    assert len(issues) == 1
+    assert str(issues[0].id) == issue_id
+
+
+def test_新协议上传清理上次崩溃遗留的孤儿报告包后允许重试(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    orphan_report_path = tmp_path / f"{task['id']}.md"
+    orphan_asset_path = tmp_path / task["id"] / "assets" / "images" / "old.png"
+    orphan_staging_path = tmp_path / f".{task['id']}-report-interrupted" / "report.md"
+    orphan_asset_path.parent.mkdir(parents=True)
+    orphan_staging_path.parent.mkdir(parents=True)
+    orphan_report_path.write_bytes(b"# orphan\n")
+    orphan_asset_path.write_bytes(VALID_PNG_BYTES)
+    orphan_staging_path.write_bytes(b"# interrupted staging\n")
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={"feedback_protocol_version": "1", "issues": "[]"},
+        files={"upload": ("report.md", b"# retried report\n", "text/markdown")},
+    )
+
+    assert response.status_code == 200
+    assert orphan_report_path.read_bytes() == b"# retried report\n"
+    assert not orphan_asset_path.exists()
+    assert not orphan_staging_path.exists()
+
+
+def test_新协议并发上传只允许一个请求成功(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+
+    def upload(index: int) -> int:
+        issue = {
+            "issue_text": f"并发问题 {index}",
+            "description_text": "只应保存一份。",
+            "display_snapshot": f"### 并发问题 {index}",
+            "order": 0,
+            "source": "template_1_heading",
+            "location": {
+                "start_offset": 0,
+                "end_offset": 8,
+                "feedback_insertion_offset": 8,
+                "anchor_line": 0,
+                "heading_level": 3,
+            },
+        }
+        return client.post(
+            f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+            headers=normal_user_token_headers,
+            data={
+                "feedback_protocol_version": "1",
+                "issues": json.dumps([issue], ensure_ascii=False),
+            },
+            files={
+                "upload": (
+                    "report.md",
+                    f"# concurrent {index}\n".encode(),
+                    "text/markdown",
+                )
+            },
+        ).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        statuses = list(executor.map(upload, (1, 2)))
+
+    assert sorted(statuses) == [200, 409]
+    db.expire_all()
+    issues = db.exec(
+        select(ReviewTaskIssue).where(ReviewTaskIssue.task_id == UUID(task["id"]))
+    ).all()
+    assert len(issues) == 1
+
+
+def test_新协议数据库提交失败时不保留报告问题或资产(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    issue = {
+        "issue_text": "高风险：事务失败",
+        "description_text": "用于验证回滚。",
+        "display_snapshot": "### 高风险：事务失败",
+        "order": 0,
+        "source": "template_1_heading",
+        "location": {
+            "start_offset": 0,
+            "end_offset": 12,
+            "feedback_insertion_offset": 12,
+            "anchor_line": 0,
+            "heading_level": 3,
+        },
+    }
+    original_commit = Session.commit
+
+    def fail_commit(_session: Session) -> None:
+        raise RuntimeError("模拟数据库提交失败")
+
+    monkeypatch.setattr(Session, "commit", fail_commit)
+    with pytest.raises(RuntimeError, match="模拟数据库提交失败"):
+        client.post(
+            f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+            headers=normal_user_token_headers,
+            data={"feedback_protocol_version": "1", "issues": json.dumps([issue])},
+            files={"upload": ("report.md", b"# Review\n", "text/markdown")},
+        )
+    monkeypatch.setattr(Session, "commit", original_commit)
+
+    assert not (tmp_path / f"{task['id']}.md").exists()
+    assert not (tmp_path / task["id"] / "assets").exists()
+    db.expire_all()
+    assert db.exec(
+        select(ReviewTaskIssue).where(ReviewTaskIssue.task_id == UUID(task["id"]))
+    ).all() == []
+
+
+def test_零问题报告仍标记为新协议且不创建虚假问题(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={"feedback_protocol_version": "1", "issues": "[]"},
+        files={"upload": ("report.md", b"# Review\n", "text/markdown")},
+    )
+
+    assert upload_response.status_code == 200
+    assert upload_response.json()["feedback_protocol_version"] == 1
+    assert upload_response.json()["issue_count"] == 0
+    issues_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/issues",
+        headers=normal_user_token_headers,
+    )
+    assert issues_response.status_code == 200
+    assert issues_response.json() == {"data": [], "count": 0, "evaluated_count": 0}
+
+
+def test_旧客户端上传保持历史报告流程兼容(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        files={"upload": ("legacy.md", b"# Legacy\n", "text/markdown")},
+    )
+
+    assert upload_response.status_code == 200
+    content = upload_response.json()
+    assert content["feedback_protocol_version"] is None
+    assert content["issue_count"] == 0
+    assert content["evaluated_issue_count"] == 0
+    read_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+    )
+    assert read_response.status_code == 200
+    assert read_response.text == "# Legacy\n"
+    download_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/download",
+        headers=normal_user_token_headers,
+    )
+    assert download_response.status_code == 200
+    assert download_response.content == b"# Legacy\n"
+
+
+def test_历史报告不能通过新协议重新解析或覆盖(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    legacy_report = b"# Legacy\n"
+    first_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        files={"upload": ("legacy.md", legacy_report, "text/markdown")},
+    )
+    assert first_response.status_code == 200
+
+    upgrade_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={"feedback_protocol_version": "1", "issues": "[]"},
+        files={"upload": ("new.md", b"# New protocol\n", "text/markdown")},
+    )
+
+    assert upgrade_response.status_code == 409
+    assert (tmp_path / f"{task['id']}.md").read_bytes() == legacy_report
+
+
+def test_问题快照读取遵循普通用户部门管理员和系统管理员权限(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    department = _create_department(db)
+    owner_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+    )
+    same_department_admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+        role=UserRole.department_admin,
+    )
+    other_user_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=_create_department(db),
+    )
+    admin, admin_api_key = create_key_user(db)
+    admin.role = UserRole.admin
+    db.add(admin)
+    db.commit()
+    admin_headers = authentication_token_from_key(
+        client=client, key=admin_api_key.key, db=db
+    )
+    task = _create_review_task(client, owner_headers)
+    issue = {
+        "issue_text": "中风险：权限测试",
+        "description_text": "用于验证任务数据权限。",
+        "display_snapshot": "### 中风险：权限测试",
+        "order": 0,
+        "source": "template_1_heading",
+        "location": {
+            "start_offset": 0,
+            "end_offset": 12,
+            "feedback_insertion_offset": 12,
+            "anchor_line": 0,
+            "heading_level": 3,
+        },
+    }
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=owner_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": json.dumps([issue], ensure_ascii=False),
+        },
+        files={"upload": ("report.md", b"# Review\n", "text/markdown")},
+    )
+    assert upload_response.status_code == 200
+
+    for allowed_headers in (owner_headers, same_department_admin_headers, admin_headers):
+        response = client.get(
+            f"{settings.API_V1_STR}/review-tasks/{task['id']}/issues",
+            headers=allowed_headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["count"] == 1
+
+    forbidden_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/issues",
+        headers=other_user_headers,
+    )
+    assert forbidden_response.status_code == 403
 
 
 def test_restart_failed_task_status_clears_previous_error_and_finish_time(
@@ -923,7 +1941,7 @@ def test_delete_review_task_removes_requirement_file_and_record(
     assert db.get(ReviewTask, UUID(task["id"])) is None
 
 
-def test_delete_review_task_removes_task_when_requirement_file_delete_fails(
+def test_delete_review_task_removes_requirement_file_without_calling_unlink(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
     db: Session,
@@ -964,7 +1982,7 @@ def test_delete_review_task_removes_task_when_requirement_file_delete_fails(
     db.expire_all()
     assert db.get(ReviewTask, UUID(task["id"])) is None
     assert db.get(ReviewTaskRequirementFile, requirement_file_id) is None
-    assert requirement_path.exists()
+    assert not requirement_path.exists()
 
 
 def test_delete_review_task_removes_task_row(
@@ -1046,7 +2064,7 @@ def test_delete_review_task_succeeds_when_report_file_is_missing(
     assert response.json() == {"message": "Review task deleted"}
 
 
-def test_delete_review_task_removes_task_when_report_file_delete_fails(
+def test_delete_review_task_removes_report_without_calling_unlink(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
     tmp_path: Path,
@@ -1086,7 +2104,7 @@ def test_delete_review_task_removes_task_when_report_file_delete_fails(
         headers=normal_user_token_headers,
     )
     assert read_response.status_code == 404
-    assert report_path.exists()
+    assert not report_path.exists()
 
 
 def test_normal_user_cannot_delete_other_user_task(

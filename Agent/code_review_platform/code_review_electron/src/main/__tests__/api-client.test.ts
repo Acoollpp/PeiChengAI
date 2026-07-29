@@ -314,6 +314,52 @@ describe('ApiClient', () => {
     )
   })
 
+  it('按任务读取问题快照和反馈进度', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: [
+          {
+            id: 'issue-1',
+            task_id: 'task-1',
+            issue_text: '高风险：空指针',
+            description_text: '未校验返回值。',
+            display_snapshot: '### 高风险：空指针',
+            order: 0,
+            source: 'template_1_heading',
+            location: {
+              start_offset: 0,
+              end_offset: 12,
+              feedback_insertion_offset: 12,
+              anchor_line: 0,
+              heading_level: 3
+            },
+            helpful: null,
+            feedback_text: null
+          }
+        ],
+        count: 1,
+        evaluated_count: 0
+      })
+    )
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    const result = await client.readTaskIssues('token-123', 'task/1')
+
+    expect(result.count).toBe(1)
+    expect(result.evaluated_count).toBe(0)
+    expect(result.data[0]?.issue_text).toBe('高风险：空指针')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://server.example/api/v1/review-tasks/task%2F1/issues',
+      {
+        method: 'GET',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer token-123'
+        }
+      }
+    )
+  })
+
   it('gets svn credentials with authorization header', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ username: 'ada' }))
     const client = new ApiClient('https://server.example', fetchMock)
@@ -555,6 +601,54 @@ describe('ApiClient', () => {
 
     expect(upload).toBeInstanceOf(File)
     expect((upload as File).name).toBe('自定义报告.md')
+  })
+
+  it('上传新协议报告时发送问题快照和相对图片资产', async () => {
+    vi.stubGlobal('File', File)
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'task-1' }))
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    await client.uploadReport('token-123', 'task-1', {
+      report_content: '# report\n',
+      feedback_protocol_version: 1,
+      issues: [
+        {
+          issue_text: '高风险：空指针',
+          description_text: '未校验返回值。',
+          display_snapshot: '### 高风险：空指针',
+          order: 0,
+          source: 'template_1_heading',
+          location: {
+            start_offset: 0,
+            end_offset: 12,
+            feedback_insertion_offset: 12,
+            anchor_line: 0,
+            heading_level: 3
+          }
+        }
+      ],
+      assets: [
+        {
+          relative_path: 'images/evidence.png',
+          content: Buffer.from('png-content'),
+          content_type: 'image/png'
+        }
+      ]
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+    const body = init.body as FormData
+    expect(body.get('feedback_protocol_version')).toBe('1')
+    expect(JSON.parse(String(body.get('issues')))).toEqual([
+      expect.objectContaining({ issue_text: '高风险：空指针', order: 0 })
+    ])
+    expect(JSON.parse(String(body.get('asset_paths')))).toEqual(['images/evidence.png'])
+    const assets = body.getAll('assets')
+    expect(assets).toHaveLength(1)
+    const uploadedAsset = assets[0] as unknown as File
+    expect(uploadedAsset.name).toBe('evidence.png')
+    expect(uploadedAsset.type).toBe('image/png')
+    await expect(uploadedAsset.text()).resolves.toBe('png-content')
   })
 
   it('uploads generated PDF report as multipart form data with authorization header', async () => {

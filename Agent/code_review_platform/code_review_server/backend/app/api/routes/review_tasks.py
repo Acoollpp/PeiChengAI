@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import uuid
@@ -6,8 +7,9 @@ from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
+from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, delete, func, select
 
@@ -21,6 +23,9 @@ from app.models import (
     Department,
     ReviewTask,
     ReviewTaskCreate,
+    ReviewTaskIssue,
+    ReviewTaskIssueSnapshotCreate,
+    ReviewTaskIssuesPublic,
     ReviewTaskPublic,
     ReviewTaskReportFeedback,
     ReviewTaskReportFeedbackCreate,
@@ -245,6 +250,22 @@ def _get_task_for_write(
     return task
 
 
+def _get_task_for_write_locked(
+    *, session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
+) -> ReviewTask:
+    task = session.exec(
+        select(ReviewTask)
+        .where(col(ReviewTask.id) == task_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Review task not found")
+    if not _can_write_task(current_user, task):
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    return task
+
+
 def _read_report_path(task: ReviewTask) -> Path:
     report_path = Path(task.report_path) if task.report_path else None
     if not report_path or not report_path.is_file():
@@ -281,6 +302,8 @@ def _task_public(
     task: ReviewTask,
     user: User | None = None,
     report_feedback: ReviewTaskReportFeedback | None = None,
+    issue_count: int = 0,
+    evaluated_issue_count: int = 0,
 ) -> ReviewTaskPublic:
     return ReviewTaskPublic.model_validate(
         task,
@@ -293,8 +316,56 @@ def _task_public(
             "report_feedback_useful_issues_text": (
                 report_feedback.useful_issues_text if report_feedback else None
             ),
+            "issue_count": issue_count,
+            "evaluated_issue_count": evaluated_issue_count,
         },
     )
+
+
+def _issue_progress_by_task_ids(
+    *, session: SessionDep, task_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, tuple[int, int]]:
+    if not task_ids:
+        return {}
+    rows = session.exec(
+        select(
+            ReviewTaskIssue.task_id,
+            func.count(col(ReviewTaskIssue.id)),
+            func.count(col(ReviewTaskIssue.helpful)),
+        )
+        .where(col(ReviewTaskIssue.task_id).in_(task_ids))
+        .group_by(col(ReviewTaskIssue.task_id))
+    ).all()
+    return {
+        task_id: (int(issue_count), int(evaluated_issue_count))
+        for task_id, issue_count, evaluated_issue_count in rows
+    }
+
+
+def _parse_issue_snapshots(raw_issues: str) -> list[ReviewTaskIssueSnapshotCreate]:
+    try:
+        parsed = json.loads(raw_issues)
+        if not isinstance(parsed, list):
+            raise ValueError
+        issues = [ReviewTaskIssueSnapshotCreate.model_validate(item) for item in parsed]
+    except (json.JSONDecodeError, ValidationError, TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="问题快照格式无效") from None
+
+    if [issue.order for issue in issues] != list(range(len(issues))):
+        raise HTTPException(status_code=400, detail="问题快照顺序无效")
+    return issues
+
+
+def _parse_asset_paths(raw_asset_paths: str | None) -> list[str]:
+    if raw_asset_paths is None:
+        return []
+    try:
+        parsed = json.loads(raw_asset_paths)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="图片资产路径格式无效") from None
+    if not isinstance(parsed, list) or not all(isinstance(path, str) for path in parsed):
+        raise HTTPException(status_code=400, detail="图片资产路径格式无效")
+    return parsed
 
 
 @router.post("", response_model=ReviewTaskPublic)
@@ -387,9 +458,18 @@ def read_review_tasks(
     rows = session.exec(
         statement.order_by(col(ReviewTask.created_at).desc()).offset(skip).limit(limit)
     ).all()
+    issue_progress = _issue_progress_by_task_ids(
+        session=session,
+        task_ids=[task.id for task, _, _ in rows],
+    )
     return ReviewTasksPublic(
         data=[
-            _task_public(task, user, report_feedback)
+            _task_public(
+                task,
+                user,
+                report_feedback,
+                *issue_progress.get(task.id, (0, 0)),
+            )
             for task, user, report_feedback in rows
         ],
         count=count,
@@ -575,16 +655,30 @@ def read_review_task(
             ReviewTaskReportFeedback.task_id == task.id
         )
     ).first()
-    return _task_public(task, session.get(User, task.user_id), report_feedback)
+    issue_count, evaluated_issue_count = _issue_progress_by_task_ids(
+        session=session, task_ids=[task.id]
+    ).get(task.id, (0, 0))
+    return _task_public(
+        task,
+        session.get(User, task.user_id),
+        report_feedback,
+        issue_count,
+        evaluated_issue_count,
+    )
 
 
 @router.delete("/{task_id}")
 def delete_review_task(
     session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
 ) -> dict[str, str]:
-    task = _get_task_for_write(
+    task = _get_task_for_write_locked(
         session=session, current_user=current_user, task_id=task_id
     )
+    for pending_path in report_service.retry_pending_task_file_deletions(
+        lambda pending_task_id: session.get(ReviewTask, pending_task_id) is not None
+    ):
+        logger.error("待重试清理目录仍未删除: %s", pending_path)
+
     requirement_files = session.exec(
         select(ReviewTaskRequirementFile).where(
             ReviewTaskRequirementFile.task_id == task.id
@@ -605,18 +699,34 @@ def delete_review_task(
         if file_path is not None
     ]
 
-    session.exec(
-        delete(ReviewTaskReportFeedback).where(
-            ReviewTaskReportFeedback.task_id == task.id
+    quarantine = report_service.quarantine_task_files(task.id, files_to_remove)
+    try:
+        session.exec(
+            delete(ReviewTaskReportFeedback).where(
+                col(ReviewTaskReportFeedback.task_id) == task.id
+            )
         )
-    )
-    for requirement_file in requirement_files:
-        session.delete(requirement_file)
-    session.flush()
-    session.delete(task)
-    session.commit()
-    for file_path in files_to_remove:
-        _unlink_file_after_commit(file_path)
+        session.exec(
+            delete(ReviewTaskIssue).where(col(ReviewTaskIssue.task_id) == task.id)
+        )
+        for requirement_file in requirement_files:
+            session.delete(requirement_file)
+        session.flush()
+        session.delete(task)
+        session.commit()
+    except Exception:
+        session.rollback()
+        try:
+            report_service.restore_quarantined_task_files(quarantine)
+        except Exception as restore_error:
+            logger.exception("删除任务回滚后恢复已隔离文件失败")
+            raise RuntimeError("删除任务失败，且文件恢复失败") from restore_error
+        raise
+
+    try:
+        report_service.purge_quarantined_task_files(quarantine)
+    except OSError:
+        logger.exception("任务已删除，待重试清理目录: %s", quarantine.root)
     return {"message": "Review task deleted"}
 
 
@@ -660,24 +770,119 @@ async def upload_review_task_report(
     current_user: CurrentUser,
     task_id: uuid.UUID,
     upload: UploadFile = File(...),
+    feedback_protocol_version: int | None = Form(default=None),
+    issues: str | None = Form(default=None),
+    asset_paths: str | None = Form(default=None),
+    assets: list[UploadFile] | None = File(default=None),
 ) -> Any:
-    task = _get_task_for_write(
+    task = _get_task_for_write_locked(
         session=session, current_user=current_user, task_id=task_id
     )
-    report_path = await report_service.save_upload(task_id, upload)
+    if (feedback_protocol_version is None) != (issues is None):
+        raise HTTPException(status_code=400, detail="新协议版本和问题快照必须同时提交")
+    issue_snapshots = _parse_issue_snapshots(issues) if issues is not None else []
+    if feedback_protocol_version is not None and feedback_protocol_version != 1:
+        raise HTTPException(status_code=400, detail="不支持的问题反馈协议版本")
+    if task.feedback_protocol_version is not None or (
+        feedback_protocol_version is not None and task.report_path is not None
+    ):
+        raise HTTPException(status_code=409, detail="原始报告已上传，不能覆盖")
+    parsed_asset_paths = _parse_asset_paths(asset_paths)
+    uploaded_assets = assets or []
+    if feedback_protocol_version is None and (parsed_asset_paths or uploaded_assets):
+        raise HTTPException(status_code=400, detail="历史报告不能提交图片资产")
+
+    prepared_report = None
+    if feedback_protocol_version is not None:
+        prepared_report = await report_service.prepare_report_upload(
+            upload,
+            parsed_asset_paths,
+            uploaded_assets,
+        )
+        report_path = report_service.path_for_task(task_id)
+    else:
+        report_path = await report_service.save_upload(task_id, upload)
     now = _utcnow()
     task.report_path = str(report_path)
     task.report_name = upload.filename or REVIEW_REPORT_FILE_NAME
+    task.feedback_protocol_version = feedback_protocol_version
     task.status = ReviewTaskStatus.success
     if task.started_at is None:
         task.started_at = now
     task.finished_at = now
     task.updated_at = now
 
+    if feedback_protocol_version is None:
+        session.exec(
+            delete(ReviewTaskIssue).where(col(ReviewTaskIssue.task_id) == task.id)
+        )
+    for issue_snapshot in issue_snapshots:
+        session.add(
+            ReviewTaskIssue(
+                task_id=task.id,
+                issue_text=issue_snapshot.issue_text,
+                description_text=issue_snapshot.description_text,
+                display_snapshot=issue_snapshot.display_snapshot,
+                order=issue_snapshot.order,
+                source=issue_snapshot.source,
+                location=issue_snapshot.location.model_dump(),
+            )
+        )
     session.add(task)
-    session.commit()
+    report_installed = False
+    try:
+        session.flush()
+        if prepared_report is not None:
+            report_service.remove_report_bundle(task_id)
+            report_service.install_prepared_report(task_id, prepared_report)
+            report_installed = True
+        session.commit()
+    except Exception:
+        session.rollback()
+        if report_installed:
+            report_service.remove_report_bundle(task_id)
+        raise
     session.refresh(task)
-    return task
+    return _task_public(
+        task,
+        session.get(User, task.user_id),
+        issue_count=len(issue_snapshots),
+    )
+
+
+@router.get("/{task_id}/issues", response_model=ReviewTaskIssuesPublic)
+def read_review_task_issues(
+    session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
+) -> ReviewTaskIssuesPublic:
+    task = _get_task_for_read(
+        session=session, current_user=current_user, task_id=task_id
+    )
+    issues = list(
+        session.exec(
+            select(ReviewTaskIssue)
+            .where(col(ReviewTaskIssue.task_id) == task.id)
+            .order_by(col(ReviewTaskIssue.order))
+        ).all()
+    )
+    return ReviewTaskIssuesPublic(
+        data=issues,
+        count=len(issues),
+        evaluated_count=sum(issue.helpful is not None for issue in issues),
+    )
+
+
+@router.get("/{task_id}/assets/{asset_path:path}")
+def read_review_task_asset(
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    asset_path: str,
+) -> FileResponse:
+    _get_task_for_read(session=session, current_user=current_user, task_id=task_id)
+    file_path = report_service.asset_path_for_task(task_id, asset_path)
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="图片资产不存在")
+    return FileResponse(file_path)
 
 
 @router.post("/{task_id}/pdf-report", response_model=ReviewTaskPublic)
