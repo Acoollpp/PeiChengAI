@@ -632,6 +632,7 @@ class ReviewTaskPublic(SQLModel):
     feedback_submitted_at: datetime | None = None
     issue_count: int = 0
     evaluated_issue_count: int = 0
+    has_issue_feedback_draft: bool = False
     report_feedback_helpful: bool | None = None
     report_feedback_useful_issues_text: str | None = None
     error_message: str | None = None

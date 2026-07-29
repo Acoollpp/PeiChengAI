@@ -342,6 +342,7 @@ export type ReviewTaskPublic = {
     feedback_submitted_at?: (string | null);
     issue_count?: number;
     evaluated_issue_count?: number;
+    has_issue_feedback_draft?: boolean;
     report_feedback_helpful?: (boolean | null);
     report_feedback_useful_issues_text?: (string | null);
     error_message?: (string | null);

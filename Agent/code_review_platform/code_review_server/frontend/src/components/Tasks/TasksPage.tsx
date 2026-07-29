@@ -7,6 +7,7 @@ import type { ColumnDef, PaginationState } from "@tanstack/react-table"
 import {
   Download,
   ExternalLink,
+  Eye,
   FileDown,
   Search,
   Trash2,
@@ -15,8 +16,19 @@ import {
 import { type FormEvent, Suspense, useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { OpenAPI, type ReviewTaskPublic, type ReviewTaskStatus } from "@/client"
+import {
+  OpenAPI,
+  type ReviewTaskPublic,
+  type ReviewTaskStatus,
+  ReviewTasksService,
+} from "@/client"
 import { DataTable } from "@/components/Common/DataTable"
+import {
+  getIssueFeedbackStatus,
+  IssueFeedbackStatusBadge,
+  ReportFeedbackHelpfulBadge,
+} from "@/components/Tasks/feedback-display"
+import { ReviewTaskDetailDialog } from "@/components/Tasks/ReviewTaskDetailDialog"
 import {
   type DisplayableReviewTaskStatus,
   formatReviewTaskDateTime,
@@ -88,30 +100,6 @@ const reportFeedbackOptions = [
   { value: "none", label: "未反馈" },
 ] as const
 
-function ReportFeedbackHelpfulBadge({ helpful }: { helpful?: boolean | null }) {
-  if (helpful === true) {
-    return (
-      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-        有帮助
-      </span>
-    )
-  }
-
-  if (helpful === false) {
-    return (
-      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-        没帮助
-      </span>
-    )
-  }
-
-  return (
-    <span className="rounded-full bg-slate-50 px-2 py-0.5 text-xs font-medium text-muted-foreground">
-      未反馈
-    </span>
-  )
-}
-
 function formatUsefulIssuesSummary(value?: string | null) {
   if (!value?.trim()) {
     return "-"
@@ -128,46 +116,19 @@ async function readReviewTasks(
   canFilterUsers: boolean,
   pagination: PaginationState,
 ): Promise<ReviewTasksResponse> {
-  const token = localStorage.getItem("access_token")
-  const searchParams = new URLSearchParams({
-    skip: `${pagination.pageIndex * pagination.pageSize}`,
-    limit: `${pagination.pageSize}`,
-  })
   const userName = filters.userName.trim()
   const svnUsername = filters.svnUsername.trim()
 
-  if (canFilterUsers && userName) {
-    searchParams.set("user_name", userName)
-  }
-
-  if (canFilterUsers && svnUsername) {
-    searchParams.set("svn_username", svnUsername)
-  }
-
-  if (filters.status !== "all") {
-    searchParams.set("status", filters.status)
-  }
-
-  if (filters.reportFeedback !== "all") {
-    searchParams.set("report_feedback", filters.reportFeedback)
-  }
-
-  if (filters.startedFrom) {
-    searchParams.set("started_from", filters.startedFrom)
-  }
-
-  const response = await fetch(
-    `${OpenAPI.BASE}/api/v1/review-tasks?${searchParams}`,
-    {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    },
-  )
-
-  if (!response.ok) {
-    throw new Error("Failed to load review tasks")
-  }
-
-  return response.json()
+  return ReviewTasksService.readReviewTasks({
+    skip: pagination.pageIndex * pagination.pageSize,
+    limit: pagination.pageSize,
+    userName: canFilterUsers && userName ? userName : undefined,
+    svnUsername: canFilterUsers && svnUsername ? svnUsername : undefined,
+    status: filters.status === "all" ? undefined : filters.status,
+    reportFeedback:
+      filters.reportFeedback === "all" ? undefined : filters.reportFeedback,
+    startedFrom: filters.startedFrom || undefined,
+  }) as Promise<ReviewTasksResponse>
 }
 
 function getReviewTasksQueryOptions(
@@ -231,20 +192,7 @@ async function downloadPdfReport(task: ReviewTask) {
 }
 
 async function deleteReviewTask(task: ReviewTask) {
-  const token = localStorage.getItem("access_token")
-  const response = await fetch(
-    `${OpenAPI.BASE}/api/v1/review-tasks/${task.id}`,
-    {
-      method: "DELETE",
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    },
-  )
-
-  if (!response.ok) {
-    throw new Error("Failed to delete review task")
-  }
-
-  return response.json()
+  return ReviewTasksService.deleteReviewTask({ taskId: task.id })
 }
 
 function formatReviewTaskRevisionRange(task: ReviewTask) {
@@ -257,8 +205,10 @@ function formatReviewTaskRevisionRange(task: ReviewTask) {
 
 function createReviewTaskColumns({
   onDelete,
+  onView,
 }: {
   onDelete: (task: ReviewTask) => void
+  onView: (task: ReviewTask) => void
 }): ColumnDef<ReviewTask>[] {
   return [
     {
@@ -327,29 +277,50 @@ function createReviewTaskColumns({
       },
     },
     {
-      accessorKey: "report_feedback_helpful",
-      header: "是否有帮助",
-      cell: ({ row }) => (
-        <ReportFeedbackHelpfulBadge
-          helpful={row.original.report_feedback_helpful}
-        />
-      ),
+      id: "feedback_status",
+      header: "反馈状态",
+      cell: ({ row }) => {
+        const task = row.original
+
+        if (task.feedback_protocol_version === 1) {
+          return (
+            <div className="flex min-w-32 items-center gap-2 whitespace-nowrap">
+              <IssueFeedbackStatusBadge status={getIssueFeedbackStatus(task)} />
+              <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                {task.evaluated_issue_count ?? 0} / {task.issue_count ?? 0}
+              </span>
+            </div>
+          )
+        }
+
+        return (
+          <ReportFeedbackHelpfulBadge helpful={task.report_feedback_helpful} />
+        )
+      },
     },
     {
       accessorKey: "report_feedback_useful_issues_text",
-      header: "有用信息",
-      cell: ({ row }) => (
-        <div
-          className="max-w-xs truncate text-muted-foreground"
-          title={row.original.report_feedback_useful_issues_text || undefined}
-        >
-          {row.original.report_feedback_helpful
-            ? formatUsefulIssuesSummary(
-                row.original.report_feedback_useful_issues_text,
-              )
-            : "-"}
-        </div>
-      ),
+      header: "反馈内容",
+      cell: ({ row }) => {
+        const task = row.original
+        const usefulIssuesText = task.report_feedback_useful_issues_text
+
+        return (
+          <div
+            className="max-w-xs truncate text-muted-foreground"
+            title={
+              task.feedback_protocol_version !== 1
+                ? usefulIssuesText || undefined
+                : undefined
+            }
+          >
+            {task.feedback_protocol_version !== 1 &&
+            task.report_feedback_helpful
+              ? formatUsefulIssuesSummary(usefulIssuesText)
+              : "-"}
+          </div>
+        )
+      },
     },
     {
       id: "report",
@@ -400,15 +371,26 @@ function createReviewTaskColumns({
       id: "actions",
       header: "操作",
       cell: ({ row }) => (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="删除任务"
-          onClick={() => onDelete(row.original)}
-        >
-          <Trash2 />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="查看任务详情"
+            onClick={() => onView(row.original)}
+          >
+            <Eye />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="删除任务"
+            onClick={() => onDelete(row.original)}
+          >
+            <Trash2 />
+          </Button>
+        </div>
       ),
     },
   ]
@@ -427,11 +409,16 @@ function ReviewTasksTable({
 }) {
   const queryClient = useQueryClient()
   const [taskToDelete, setTaskToDelete] = useState<ReviewTask | null>(null)
+  const [taskToView, setTaskToView] = useState<ReviewTask | null>(null)
   const { data: tasks } = useSuspenseQuery(
     getReviewTasksQueryOptions(filters, canFilterUsers, pagination),
   )
   const columns = useMemo(
-    () => createReviewTaskColumns({ onDelete: setTaskToDelete }),
+    () =>
+      createReviewTaskColumns({
+        onDelete: setTaskToDelete,
+        onView: setTaskToView,
+      }),
     [],
   )
   const deleteMutation = useMutation({
@@ -459,6 +446,15 @@ function ReviewTasksTable({
         pageCount={Math.max(1, Math.ceil(tasks.count / pagination.pageSize))}
         pagination={pagination}
         totalCount={tasks.count}
+      />
+      <ReviewTaskDetailDialog
+        task={taskToView}
+        open={taskToView !== null}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setTaskToView(null)
+          }
+        }}
       />
       <Dialog
         open={taskToDelete !== null}

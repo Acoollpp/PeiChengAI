@@ -326,6 +326,7 @@ def _task_public(
     report_feedback: ReviewTaskReportFeedback | None = None,
     issue_count: int = 0,
     evaluated_issue_count: int = 0,
+    has_issue_feedback_draft: bool = False,
 ) -> ReviewTaskPublic:
     return ReviewTaskPublic.model_validate(
         task,
@@ -340,13 +341,14 @@ def _task_public(
             ),
             "issue_count": issue_count,
             "evaluated_issue_count": evaluated_issue_count,
+            "has_issue_feedback_draft": has_issue_feedback_draft,
         },
     )
 
 
 def _issue_progress_by_task_ids(
     *, session: SessionDep, task_ids: list[uuid.UUID]
-) -> dict[uuid.UUID, tuple[int, int]]:
+) -> dict[uuid.UUID, tuple[int, int, bool]]:
     if not task_ids:
         return {}
     rows = session.exec(
@@ -354,13 +356,18 @@ def _issue_progress_by_task_ids(
             ReviewTaskIssue.task_id,
             func.count(col(ReviewTaskIssue.id)),
             func.count(col(ReviewTaskIssue.helpful)),
+            func.count(col(ReviewTaskIssue.feedback_text)),
         )
         .where(col(ReviewTaskIssue.task_id).in_(task_ids))
         .group_by(col(ReviewTaskIssue.task_id))
     ).all()
     return {
-        task_id: (int(issue_count), int(evaluated_issue_count))
-        for task_id, issue_count, evaluated_issue_count in rows
+        task_id: (
+            int(issue_count),
+            int(evaluated_issue_count),
+            int(evaluated_issue_count) > 0 or int(feedback_text_count) > 0,
+        )
+        for task_id, issue_count, evaluated_issue_count, feedback_text_count in rows
     }
 
 
@@ -554,7 +561,7 @@ def read_review_tasks(
                 task,
                 user,
                 report_feedback,
-                *issue_progress.get(task.id, (0, 0)),
+                *issue_progress.get(task.id, (0, 0, False)),
             )
             for task, user, report_feedback in rows
         ],
@@ -741,15 +748,18 @@ def read_review_task(
             ReviewTaskReportFeedback.task_id == task.id
         )
     ).first()
-    issue_count, evaluated_issue_count = _issue_progress_by_task_ids(
-        session=session, task_ids=[task.id]
-    ).get(task.id, (0, 0))
+    issue_count, evaluated_issue_count, has_issue_feedback_draft = (
+        _issue_progress_by_task_ids(session=session, task_ids=[task.id]).get(
+            task.id, (0, 0, False)
+        )
+    )
     return _task_public(
         task,
         session.get(User, task.user_id),
         report_feedback,
         issue_count,
         evaluated_issue_count,
+        has_issue_feedback_draft,
     )
 
 

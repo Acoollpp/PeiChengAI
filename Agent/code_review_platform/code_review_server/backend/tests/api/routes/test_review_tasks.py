@@ -620,6 +620,7 @@ def test_新协议上传后返回有序问题快照和反馈进度(
     assert uploaded["feedback_protocol_version"] == 1
     assert uploaded["issue_count"] == 2
     assert uploaded["evaluated_issue_count"] == 0
+    assert uploaded["has_issue_feedback_draft"] is False
 
     issues_response = client.get(
         f"{settings.API_V1_STR}/review-tasks/{task['id']}/issues",
@@ -647,6 +648,7 @@ def test_新协议上传后返回有序问题快照和反馈进度(
     assert detail_response.status_code == 200
     assert detail_response.json()["issue_count"] == 2
     assert detail_response.json()["evaluated_issue_count"] == 0
+    assert detail_response.json()["has_issue_feedback_draft"] is False
 
     list_response = client.get(
         f"{settings.API_V1_STR}/review-tasks",
@@ -659,6 +661,7 @@ def test_新协议上传后返回有序问题快照和反馈进度(
     assert listed_task["feedback_protocol_version"] == 1
     assert listed_task["issue_count"] == 2
     assert listed_task["evaluated_issue_count"] == 0
+    assert listed_task["has_issue_feedback_draft"] is False
 
 
 @pytest.mark.parametrize(
@@ -1875,6 +1878,25 @@ def test_未评价问题也可单独保存选填说明且空白说明归一为�
     assert text_response.json()["helpful"] is None
     assert text_response.json()["feedback_text"] == "先记录处理上下文"
 
+    detail_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+    assert detail_response.status_code == 200
+    assert detail_response.json()["evaluated_issue_count"] == 0
+    assert detail_response.json()["has_issue_feedback_draft"] is True
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+    )
+    assert list_response.status_code == 200
+    listed_task = next(
+        item for item in list_response.json()["data"] if item["id"] == task["id"]
+    )
+    assert listed_task["evaluated_issue_count"] == 0
+    assert listed_task["has_issue_feedback_draft"] is True
+
     blank_response = client.put(
         url,
         headers=normal_user_token_headers,
@@ -1882,6 +1904,13 @@ def test_未评价问题也可单独保存选填说明且空白说明归一为�
     )
     assert blank_response.status_code == 200
     assert blank_response.json()["feedback_text"] is None
+
+    cleared_detail_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+    assert cleared_detail_response.status_code == 200
+    assert cleared_detail_response.json()["has_issue_feedback_draft"] is False
 
 
 def test_逐问题反馈草稿限制长度且仅任务提交人可写(

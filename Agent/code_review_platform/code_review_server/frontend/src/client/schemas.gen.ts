@@ -1946,6 +1946,11 @@ export const ReviewTaskPublicSchema = {
             title: 'Evaluated Issue Count',
             default: 0
         },
+        has_issue_feedback_draft: {
+            type: 'boolean',
+            title: 'Has Issue Feedback Draft',
+            default: false
+        },
         report_feedback_helpful: {
             anyOf: [
                 {
