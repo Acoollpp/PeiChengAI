@@ -338,6 +338,7 @@ def read_review_tasks(
     current_user: CurrentUser,
     skip: int = 0,
     limit: int = 100,
+    mine: bool = False,
     user_name: str | None = None,
     svn_username: str | None = None,
     status: ReviewTaskStatus | None = None,
@@ -345,6 +346,8 @@ def read_review_tasks(
     started_from: str | None = None,
 ) -> Any:
     filters = _task_read_scope_filters(session=session, current_user=current_user)
+    if mine:
+        filters.append(ReviewTask.user_id == current_user.id)
     if user_name and user_name.strip():
         filters.append(col(User.full_name).ilike(f"%{user_name.strip()}%"))
     if svn_username and svn_username.strip():

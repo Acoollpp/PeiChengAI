@@ -366,6 +366,66 @@ export type ReviewTaskTrendPointPublic = {
     count: number;
 };
 
+export type ReviewTaskWeeklyCategoryStatsPublic = {
+    category: string;
+    subcategory: string;
+    useful_count: number;
+    high_risk_count: number;
+    medium_risk_count: number;
+    low_risk_count: number;
+};
+
+export type ReviewTaskWeeklyDailyPointPublic = {
+    date: string;
+    success: number;
+    helpful: number;
+    not_helpful: number;
+    no_feedback: number;
+};
+
+export type ReviewTaskWeeklyDepartmentStatsPublic = {
+    department_name: string;
+    success: number;
+    helpful: number;
+    not_helpful: number;
+    no_feedback: number;
+};
+
+export type ReviewTaskWeeklyInsightsPublic = {
+    period_start: string;
+    period_end: string;
+    generated_at: string;
+    scope_label: string;
+    taxonomy_version: string;
+    success_tasks: number;
+    helpful: number;
+    not_helpful: number;
+    no_feedback: number;
+    feedback_coverage_rate: number;
+    explicit_useful_rate: number;
+    valid_useful_tasks: number;
+    cleaning_tasks: number;
+    valid_issue_count: number;
+    risk_counts: {
+        [key: string]: (number);
+    };
+    attention_points?: Array<(string)>;
+    daily?: Array<ReviewTaskWeeklyDailyPointPublic>;
+    categories?: Array<ReviewTaskWeeklyCategoryStatsPublic>;
+    departments?: Array<ReviewTaskWeeklyDepartmentStatsPublic>;
+    representative_issues?: Array<ReviewTaskWeeklyRepresentativeIssuePublic>;
+};
+
+export type ReviewTaskWeeklyRepresentativeIssuePublic = {
+    task_id: string;
+    task_date: string;
+    department_name: string;
+    description: string;
+    category: string;
+    subcategory: string;
+    risk_level: string;
+};
+
 export type SkillPackagePublic = {
     id: string;
     name: string;
@@ -696,6 +756,7 @@ export type ReviewTasksCreateReviewTaskResponse = (ReviewTaskPublic);
 
 export type ReviewTasksReadReviewTasksData = {
     limit?: number;
+    mine?: boolean;
     reportFeedback?: ('helpful' | 'not_helpful' | 'none' | null);
     skip?: number;
     startedFrom?: (string | null);
@@ -711,6 +772,8 @@ export type ReviewTasksReadReviewTaskStatsData = {
 };
 
 export type ReviewTasksReadReviewTaskStatsResponse = (ReviewTaskStatsPublic);
+
+export type ReviewTasksReadReviewTaskWeeklyInsightsResponse = (ReviewTaskWeeklyInsightsPublic);
 
 export type ReviewTasksSubmitReviewTaskReportFeedbackData = {
     requestBody: ReviewTaskReportFeedbackCreate;

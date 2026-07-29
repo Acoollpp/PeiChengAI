@@ -722,16 +722,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     }
 
     const taskApi = await createApiClient()
-    const [currentUser, response] = await Promise.all([
-      taskApi.readCurrentUser(tokens.access_token),
-      taskApi.listTasks(tokens.access_token)
-    ])
-    const userTasks = response.data.filter((task) => task.user_id === currentUser.id)
-    return {
-      ...response,
-      data: userTasks,
-      count: userTasks.length
-    }
+    return taskApi.listTasks(tokens.access_token, { mine: true })
   })
 
   ipcMain.handle('task:report', async (_event, taskId: string): Promise<string> => {

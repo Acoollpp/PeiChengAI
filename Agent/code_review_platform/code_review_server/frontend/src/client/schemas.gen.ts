@@ -2043,6 +2043,242 @@ export const ReviewTaskTrendPointPublicSchema = {
     title: 'ReviewTaskTrendPointPublic'
 } as const;
 
+export const ReviewTaskWeeklyCategoryStatsPublicSchema = {
+    properties: {
+        category: {
+            type: 'string',
+            title: 'Category'
+        },
+        subcategory: {
+            type: 'string',
+            title: 'Subcategory'
+        },
+        useful_count: {
+            type: 'integer',
+            title: 'Useful Count'
+        },
+        high_risk_count: {
+            type: 'integer',
+            title: 'High Risk Count'
+        },
+        medium_risk_count: {
+            type: 'integer',
+            title: 'Medium Risk Count'
+        },
+        low_risk_count: {
+            type: 'integer',
+            title: 'Low Risk Count'
+        }
+    },
+    type: 'object',
+    required: ['category', 'subcategory', 'useful_count', 'high_risk_count', 'medium_risk_count', 'low_risk_count'],
+    title: 'ReviewTaskWeeklyCategoryStatsPublic'
+} as const;
+
+export const ReviewTaskWeeklyDailyPointPublicSchema = {
+    properties: {
+        date: {
+            type: 'string',
+            format: 'date',
+            title: 'Date'
+        },
+        success: {
+            type: 'integer',
+            title: 'Success'
+        },
+        helpful: {
+            type: 'integer',
+            title: 'Helpful'
+        },
+        not_helpful: {
+            type: 'integer',
+            title: 'Not Helpful'
+        },
+        no_feedback: {
+            type: 'integer',
+            title: 'No Feedback'
+        }
+    },
+    type: 'object',
+    required: ['date', 'success', 'helpful', 'not_helpful', 'no_feedback'],
+    title: 'ReviewTaskWeeklyDailyPointPublic'
+} as const;
+
+export const ReviewTaskWeeklyDepartmentStatsPublicSchema = {
+    properties: {
+        department_name: {
+            type: 'string',
+            title: 'Department Name'
+        },
+        success: {
+            type: 'integer',
+            title: 'Success'
+        },
+        helpful: {
+            type: 'integer',
+            title: 'Helpful'
+        },
+        not_helpful: {
+            type: 'integer',
+            title: 'Not Helpful'
+        },
+        no_feedback: {
+            type: 'integer',
+            title: 'No Feedback'
+        }
+    },
+    type: 'object',
+    required: ['department_name', 'success', 'helpful', 'not_helpful', 'no_feedback'],
+    title: 'ReviewTaskWeeklyDepartmentStatsPublic'
+} as const;
+
+export const ReviewTaskWeeklyInsightsPublicSchema = {
+    properties: {
+        period_start: {
+            type: 'string',
+            format: 'date',
+            title: 'Period Start'
+        },
+        period_end: {
+            type: 'string',
+            format: 'date',
+            title: 'Period End'
+        },
+        generated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Generated At'
+        },
+        scope_label: {
+            type: 'string',
+            title: 'Scope Label'
+        },
+        taxonomy_version: {
+            type: 'string',
+            title: 'Taxonomy Version'
+        },
+        success_tasks: {
+            type: 'integer',
+            title: 'Success Tasks'
+        },
+        helpful: {
+            type: 'integer',
+            title: 'Helpful'
+        },
+        not_helpful: {
+            type: 'integer',
+            title: 'Not Helpful'
+        },
+        no_feedback: {
+            type: 'integer',
+            title: 'No Feedback'
+        },
+        feedback_coverage_rate: {
+            type: 'number',
+            title: 'Feedback Coverage Rate'
+        },
+        explicit_useful_rate: {
+            type: 'number',
+            title: 'Explicit Useful Rate'
+        },
+        valid_useful_tasks: {
+            type: 'integer',
+            title: 'Valid Useful Tasks'
+        },
+        cleaning_tasks: {
+            type: 'integer',
+            title: 'Cleaning Tasks'
+        },
+        valid_issue_count: {
+            type: 'integer',
+            title: 'Valid Issue Count'
+        },
+        risk_counts: {
+            additionalProperties: {
+                type: 'integer'
+            },
+            type: 'object',
+            title: 'Risk Counts'
+        },
+        attention_points: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Attention Points'
+        },
+        daily: {
+            items: {
+                '$ref': '#/components/schemas/ReviewTaskWeeklyDailyPointPublic'
+            },
+            type: 'array',
+            title: 'Daily'
+        },
+        categories: {
+            items: {
+                '$ref': '#/components/schemas/ReviewTaskWeeklyCategoryStatsPublic'
+            },
+            type: 'array',
+            title: 'Categories'
+        },
+        departments: {
+            items: {
+                '$ref': '#/components/schemas/ReviewTaskWeeklyDepartmentStatsPublic'
+            },
+            type: 'array',
+            title: 'Departments'
+        },
+        representative_issues: {
+            items: {
+                '$ref': '#/components/schemas/ReviewTaskWeeklyRepresentativeIssuePublic'
+            },
+            type: 'array',
+            title: 'Representative Issues'
+        }
+    },
+    type: 'object',
+    required: ['period_start', 'period_end', 'generated_at', 'scope_label', 'taxonomy_version', 'success_tasks', 'helpful', 'not_helpful', 'no_feedback', 'feedback_coverage_rate', 'explicit_useful_rate', 'valid_useful_tasks', 'cleaning_tasks', 'valid_issue_count', 'risk_counts'],
+    title: 'ReviewTaskWeeklyInsightsPublic'
+} as const;
+
+export const ReviewTaskWeeklyRepresentativeIssuePublicSchema = {
+    properties: {
+        task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Task Id'
+        },
+        task_date: {
+            type: 'string',
+            format: 'date',
+            title: 'Task Date'
+        },
+        department_name: {
+            type: 'string',
+            title: 'Department Name'
+        },
+        description: {
+            type: 'string',
+            title: 'Description'
+        },
+        category: {
+            type: 'string',
+            title: 'Category'
+        },
+        subcategory: {
+            type: 'string',
+            title: 'Subcategory'
+        },
+        risk_level: {
+            type: 'string',
+            title: 'Risk Level'
+        }
+    },
+    type: 'object',
+    required: ['task_id', 'task_date', 'department_name', 'description', 'category', 'subcategory', 'risk_level'],
+    title: 'ReviewTaskWeeklyRepresentativeIssuePublic'
+} as const;
+
 export const ReviewTasksPublicSchema = {
     properties: {
         data: {

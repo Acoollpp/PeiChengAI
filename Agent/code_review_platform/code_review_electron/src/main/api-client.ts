@@ -85,6 +85,10 @@ export interface ReviewTasksResponse {
   count: number
 }
 
+export interface ListTasksOptions {
+  mine?: boolean
+}
+
 export interface ActiveSkill {
   id: string
   name: string
@@ -154,8 +158,9 @@ export class ApiClient {
     })
   }
 
-  listTasks(token: string): Promise<ReviewTasksResponse> {
-    return this.request<ReviewTasksResponse>('/api/v1/review-tasks', {
+  listTasks(token: string, options: ListTasksOptions = {}): Promise<ReviewTasksResponse> {
+    const query = options.mine ? '?mine=true' : ''
+    return this.request<ReviewTasksResponse>(`/api/v1/review-tasks${query}`, {
       method: 'GET',
       headers: this.authHeaders(token)
     })

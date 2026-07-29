@@ -182,6 +182,24 @@ describe('ApiClient', () => {
     })
   })
 
+  it('requests only the authenticated user review tasks', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ data: [], count: 0 }))
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    await client.listTasks('token-123', { mine: true })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://server.example/api/v1/review-tasks?mine=true',
+      {
+        method: 'GET',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer token-123'
+        }
+      }
+    )
+  })
+
   it('reads current user with authorization header', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({

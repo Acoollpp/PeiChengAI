@@ -1230,6 +1230,37 @@ def test_admin_can_filter_review_tasks_by_user_name(
     assert li["task"]["id"] not in listed_ids
 
 
+def test_admin_can_list_own_review_tasks_before_pagination(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    own_task = _create_review_task(
+        client,
+        superuser_token_headers,
+        old_revision="31",
+    )
+    other = _create_named_svn_user_task(
+        client=client,
+        db=db,
+        full_name="其他用户",
+        svn_username="other-user",
+        old_revision="32",
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=superuser_token_headers,
+        params={"mine": True, "limit": 1},
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["count"] == 1
+    assert [task["id"] for task in content["data"]] == [own_task["id"]]
+    assert other["task"]["id"] not in {task["id"] for task in content["data"]}
+
+
 def test_admin_can_filter_review_tasks_by_svn_username(
     client: TestClient,
     superuser_token_headers: dict[str, str],

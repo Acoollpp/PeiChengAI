@@ -1548,16 +1548,8 @@ describe('registerIpcHandlers', () => {
     })
   })
 
-  it('lists only tasks owned by the authenticated user', async () => {
+  it('returns the server-scoped task page without rewriting its total count', async () => {
     const api = {
-      readCurrentUser: vi.fn(async () => ({
-        id: 'user-1',
-        full_name: '张三',
-        svn_username: 'zhangsan',
-        department_id: null,
-        department_name: null,
-        role: 'department_admin'
-      })),
       listTasks: vi.fn(async () => ({
         data: [
           {
@@ -1567,24 +1559,9 @@ describe('registerIpcHandlers', () => {
             old_revision: '1',
             new_revision: '2',
             status: 'success'
-          },
-          {
-            id: 'task-2',
-            user_id: 'user-2',
-            svn_url: 'svn://repo/other',
-            old_revision: '3',
-            new_revision: '4',
-            status: 'success'
-          },
-          {
-            id: 'task-without-user',
-            svn_url: 'svn://repo/missing-user',
-            old_revision: '5',
-            new_revision: '6',
-            status: 'success'
           }
         ],
-        count: 3
+        count: 14
       }))
     }
     const authStore = {
@@ -1611,10 +1588,62 @@ describe('registerIpcHandlers', () => {
           status: 'success'
         }
       ],
+      count: 14
+    })
+    expect(api.listTasks).toHaveBeenCalledWith('token-123', { mine: true })
+  })
+
+  it('在服务端分页前只请求当前用户的历史任务', async () => {
+    const ownTask = {
+      id: 'task-owned-by-admin',
+      user_id: 'admin-1',
+      svn_url: 'svn://repo/owned',
+      old_revision: '1',
+      new_revision: '2',
+      status: 'success'
+    }
+    const otherTask = {
+      id: 'newer-task-owned-by-other-user',
+      user_id: 'user-2',
+      svn_url: 'svn://repo/other',
+      old_revision: '3',
+      new_revision: '4',
+      status: 'success'
+    }
+    const api = {
+      readCurrentUser: vi.fn(async () => ({
+        id: 'admin-1',
+        full_name: '管理员',
+        svn_username: 'admin',
+        department_id: null,
+        department_name: null,
+        role: 'admin'
+      })),
+      listTasks: vi.fn(async (_token: string, options?: { mine?: boolean }) =>
+        options?.mine
+          ? { data: [ownTask], count: 1 }
+          : { data: [otherTask], count: 100 }
+      )
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never
+    })
+
+    const listHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:list')?.[1]
+
+    await expect(listHandler()).resolves.toEqual({
+      data: [ownTask],
       count: 1
     })
-    expect(api.readCurrentUser).toHaveBeenCalledWith('token-123')
-    expect(api.listTasks).toHaveBeenCalledWith('token-123')
+    expect(api.listTasks).toHaveBeenCalledWith('token-123', { mine: true })
+    expect(api.readCurrentUser).not.toHaveBeenCalled()
   })
 
   it('rejects task listing when unauthenticated', async () => {
