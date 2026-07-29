@@ -158,6 +158,16 @@ describe('preload codeReview API', () => {
       'onReportFeedbackSubmitted',
       'report-feedback:submitted',
       { taskId: 'task-1', usefulIssuesText: '1. 空指针风险' }
+    ],
+    [
+      'onIssueFeedbackSubmitted',
+      'report-feedback:issues-submitted',
+      {
+        taskId: 'task-1',
+        feedbackSubmittedAt: '2026-07-29T12:00:00Z',
+        pdfPath: '/tmp/final.pdf',
+        pdfReportName: 'final.pdf'
+      }
     ]
   ])('subscribes and cleans up %s with the same listener', async (method, channel, payload) => {
     const onMock = vi.mocked((await import('electron')).ipcRenderer.on)

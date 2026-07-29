@@ -144,6 +144,10 @@ contextBridge.exposeInMainWorld('codeReview', {
     callback: Parameters<CodeReviewApi['onReportFeedbackSubmitted']>[0]
   ): (() => void) =>
     listen('report-feedback:submitted', callback),
+  onIssueFeedbackSubmitted: (
+    callback: Parameters<CodeReviewApi['onIssueFeedbackSubmitted']>[0]
+  ): (() => void) =>
+    listen('report-feedback:issues-submitted', callback),
   checkForAppUpdate: (): Promise<boolean> => ipcRenderer.invoke('app-update:check'),
   downloadAppUpdate: (): Promise<true> => ipcRenderer.invoke('app-update:download'),
   installAppUpdate: (): Promise<true> => ipcRenderer.invoke('app-update:install'),

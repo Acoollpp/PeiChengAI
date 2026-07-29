@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
 
 import { dialog, ipcMain, Notification, shell, type BrowserWindow } from 'electron'
@@ -21,6 +21,7 @@ import { CredentialStore, type RememberedCredentials } from './credential-store'
 import { checkEnvironment } from './environment-checker'
 import type {
   FocusReportFeedbackAnchorPayload,
+  IssueFeedbackSubmittedEvent,
   OpenReportFeedbackWindowPayload,
   SubmitIssueFeedbackPayload,
   SubmitIssueFeedbackResult,
@@ -116,6 +117,7 @@ interface OpenPdfReportRequest {
   taskId?: string
   localPdfPath?: string
   pdfReportName?: string
+  action?: 'open' | 'reveal'
 }
 
 interface OpenPdfReportResult {
@@ -305,13 +307,94 @@ const isExistingFile = async (filePath?: string): Promise<boolean> => {
   }
 }
 
+const openPdfFile = async (pdfPath: string): Promise<void> => {
+  let openError = ''
+  try {
+    openError = await shell.openPath(pdfPath)
+  } catch (error) {
+    openError = error instanceof Error ? error.message : '系统无法打开 PDF 报告'
+  }
+
+  if (!openError) {
+    return
+  }
+
+  shell.showItemInFolder(pdfPath)
+  throw new Error(`PDF报告打开失败：${openError}`)
+}
+
+const presentPdfFile = async (
+  pdfPath: string,
+  action: OpenPdfReportRequest['action']
+): Promise<void> => {
+  if (action === 'open') {
+    await openPdfFile(pdfPath)
+    return
+  }
+  shell.showItemInFolder(pdfPath)
+}
+
+const resolveTrustedTaskWorkspace = (
+  taskId: string,
+  runtimePaths: RuntimePaths
+): { taskWorkspace: string; workspacesDirectory: string } => {
+  const workspacesDirectory = resolve(runtimePaths.workspacesDir)
+  const taskWorkspace = resolve(runtimePaths.workspaceForTask(taskId))
+  if (
+    taskWorkspace === workspacesDirectory ||
+    !isInsideDirectory(taskWorkspace, workspacesDirectory)
+  ) {
+    throw new Error('任务工作区路径无效')
+  }
+  return { taskWorkspace, workspacesDirectory }
+}
+
+const resolveTrustedLocalPdfPath = async (
+  localPdfPath: string | undefined,
+  taskWorkspace: string,
+  workspacesDirectory: string
+): Promise<string | undefined> => {
+  if (!localPdfPath) {
+    return undefined
+  }
+
+  const resolvedPdfPath = resolve(localPdfPath)
+  if (
+    extname(resolvedPdfPath).toLowerCase() !== '.pdf' ||
+    !isInsideDirectory(resolvedPdfPath, taskWorkspace)
+  ) {
+    throw new Error('本地 PDF 路径无效')
+  }
+  if (!(await isExistingFile(resolvedPdfPath))) {
+    return undefined
+  }
+
+  const [realWorkspacesDirectory, realTaskWorkspace, realPdfPath] = await Promise.all([
+    realpath(workspacesDirectory),
+    realpath(taskWorkspace),
+    realpath(resolvedPdfPath)
+  ])
+  if (
+    !isInsideDirectory(realTaskWorkspace, realWorkspacesDirectory) ||
+    !isInsideDirectory(realPdfPath, realTaskWorkspace)
+  ) {
+    throw new Error('本地 PDF 路径无效')
+  }
+  return resolvedPdfPath
+}
+
 const resolveReportFileName = (
   fileName: string | undefined,
   fallback: string
 ): { fileName: string; isValidProvidedName: boolean } => {
   const trimmedFileName = fileName?.trim()
 
-  if (!trimmedFileName || trimmedFileName.includes('/') || trimmedFileName.includes('\\')) {
+  if (
+    !trimmedFileName ||
+    trimmedFileName.includes('/') ||
+    trimmedFileName.includes('\\') ||
+    extname(trimmedFileName).toLowerCase() !== '.pdf'
+  ) {
     return { fileName: fallback, isValidProvidedName: false }
   }
 
@@ -1350,6 +1433,17 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
         runtimePaths: await loadRuntimePaths(),
         generatePdf: dependencies.generatePdfReport ?? generatePdfReport
       })
+      const submittedEvent: IssueFeedbackSubmittedEvent = {
+        taskId: result.taskId,
+        feedbackSubmittedAt: result.feedbackSubmittedAt,
+        pdfPath: result.pdfPath,
+        pdfReportName: result.pdfReportName
+      }
+      sendToRenderer(
+        getMainWindow()?.webContents,
+        'report-feedback:issues-submitted',
+        submittedEvent
+      )
       let pdfOpenError = ''
       try {
         pdfOpenError = await shell.openPath(result.pdfPath)
@@ -1416,37 +1510,53 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   })
 
   ipcMain.handle('report:open-pdf', async (_event, payload: OpenPdfReportRequest): Promise<OpenPdfReportResult> => {
-    const localPdfPath = payload.localPdfPath
-    if (localPdfPath && await isExistingFile(localPdfPath)) {
-      shell.showItemInFolder(localPdfPath)
-      return { status: 'ready', pdfPath: localPdfPath }
-    }
-
     if (!payload.taskId) {
       throw new Error('请先选择一个已完成任务报告。')
     }
 
     const runtimePaths = await loadRuntimePaths()
-    const fallbackPdfPath =
-      runtimePaths.pdfReportPathForTask?.(payload.taskId) ??
-      runtimePaths.reportPathForTask(payload.taskId).replace(/\.md$/i, '.pdf')
+    const { taskWorkspace, workspacesDirectory } = resolveTrustedTaskWorkspace(
+      payload.taskId,
+      runtimePaths
+    )
+    const localPdfPath = await resolveTrustedLocalPdfPath(
+      payload.localPdfPath,
+      taskWorkspace,
+      workspacesDirectory
+    )
+    if (localPdfPath) {
+      await presentPdfFile(localPdfPath, payload.action)
+      return { status: 'ready', pdfPath: localPdfPath }
+    }
+
     const fallbackPdfFileName = '代码审查报告.pdf'
     const { fileName: pdfFileName, isValidProvidedName } = resolveReportFileName(
       payload.pdfReportName,
       fallbackPdfFileName
     )
-    const workspacePdfPath = isValidProvidedName
-      ? join(runtimePaths.workspaceForTask(payload.taskId), pdfFileName)
-      : undefined
+    const fallbackPdfPath = join(taskWorkspace, fallbackPdfFileName)
+    const workspacePdfPath = isValidProvidedName ? join(taskWorkspace, pdfFileName) : undefined
 
-    if (workspacePdfPath && (await isExistingFile(workspacePdfPath))) {
-      shell.showItemInFolder(workspacePdfPath)
-      return { status: 'ready', pdfPath: workspacePdfPath }
+    const existingWorkspacePdfPath = await resolveTrustedLocalPdfPath(
+      workspacePdfPath,
+      taskWorkspace,
+      workspacesDirectory
+    )
+    if (existingWorkspacePdfPath) {
+      await presentPdfFile(existingWorkspacePdfPath, payload.action)
+      return { status: 'ready', pdfPath: existingWorkspacePdfPath }
     }
 
-    if (!workspacePdfPath && (await isExistingFile(fallbackPdfPath))) {
-      shell.showItemInFolder(fallbackPdfPath)
-      return { status: 'ready', pdfPath: fallbackPdfPath }
+    const existingFallbackPdfPath = workspacePdfPath
+      ? undefined
+      : await resolveTrustedLocalPdfPath(
+          fallbackPdfPath,
+          taskWorkspace,
+          workspacesDirectory
+        )
+    if (existingFallbackPdfPath) {
+      await presentPdfFile(existingFallbackPdfPath, payload.action)
+      return { status: 'ready', pdfPath: existingFallbackPdfPath }
     }
 
     const tokens = await authStore.load()
@@ -1455,12 +1565,19 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       throw new Error('Not authenticated')
     }
 
+    await mkdir(taskWorkspace, { recursive: true })
+    const [realWorkspacesDirectory, realTaskWorkspace] = await Promise.all([
+      realpath(workspacesDirectory),
+      realpath(taskWorkspace)
+    ])
+    if (!isInsideDirectory(realTaskWorkspace, realWorkspacesDirectory)) {
+      throw new Error('任务工作区路径无效')
+    }
     const taskApi = await createApiClient()
     const pdfBytes = await taskApi.downloadPdfReport(tokens.access_token, payload.taskId)
     const pdfPath = workspacePdfPath ?? fallbackPdfPath
-    await mkdir(dirname(pdfPath), { recursive: true })
     await writeFile(pdfPath, Buffer.from(pdfBytes))
-    shell.showItemInFolder(pdfPath)
+    await presentPdfFile(pdfPath, payload.action)
 
     return { status: 'ready', pdfPath }
   })

@@ -76,6 +76,7 @@ const setupCodeReviewApi = (): void => {
     submitNegativeReportFeedback: vi.fn(),
     onReportFeedbackFocusAnchor: vi.fn(() => vi.fn()),
     onReportFeedbackSubmitted: vi.fn(() => vi.fn()),
+    onIssueFeedbackSubmitted: vi.fn(() => vi.fn()),
     onEnvironmentProgress: vi.fn((callback: EnvironmentProgressListener) => {
       environmentProgressListener = callback
       return vi.fn()

@@ -73,6 +73,13 @@ export interface SubmitIssueFeedbackResult {
   pdfOpenError?: string
 }
 
+export interface IssueFeedbackSubmittedEvent {
+  taskId: string
+  feedbackSubmittedAt: string
+  pdfPath: string
+  pdfReportName: string
+}
+
 export interface ReportFeedbackSubmittedEvent {
   taskId: string
   helpful: boolean

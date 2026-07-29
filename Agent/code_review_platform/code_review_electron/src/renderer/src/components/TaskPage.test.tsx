@@ -46,7 +46,8 @@ const setupCodeReviewApi = (): void => {
       usefulIssuesText: null
     })),
     onReportFeedbackFocusAnchor: vi.fn(() => vi.fn()),
-    onReportFeedbackSubmitted: vi.fn(() => vi.fn())
+    onReportFeedbackSubmitted: vi.fn(() => vi.fn()),
+    onIssueFeedbackSubmitted: vi.fn(() => vi.fn())
   } as unknown as CodeReviewApi
 }
 
@@ -1163,6 +1164,107 @@ describe('TaskPage', () => {
         { order: 0, anchorId: 'report-option-2' },
         { order: 1, anchorId: 'report-option-6' }
       ]
+    })
+  })
+
+  it('已提交的新协议报告在重启恢复后显示只读反馈和最终PDF入口', async () => {
+    const user = userEvent.setup()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-submitted-feedback',
+          svn_url: 'svn://repo/project',
+          old_revision: 'r1',
+          new_revision: 'r2',
+          status: 'success' as const,
+          report_path: '/app/reports/task-submitted-feedback.md',
+          pdf_report_name: '最终反馈报告.pdf',
+          feedback_protocol_version: 1,
+          feedback_submitted_at: '2026-07-29T12:00:00Z',
+          issue_count: 2,
+          evaluated_issue_count: 2
+        }
+      ],
+      count: 1
+    }))
+    window.codeReview.readTaskReport = vi.fn(
+      async () => '# 审查报告\n\n### 空指针风险\n\n描述\n\n### 事务边界不完整\n\n描述'
+    )
+    window.codeReview.openPdfReport = vi.fn(async () => ({
+      status: 'ready' as const,
+      pdfPath: '/local/task-submitted-feedback/最终反馈报告.pdf'
+    }))
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
+
+    expect(screen.queryByRole('button', { name: '提交反馈并查看PDF报告' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '查看已提交反馈' }))
+    expect(window.codeReview.openReportFeedbackWindow).toHaveBeenCalledWith({
+      mode: 'issues',
+      taskId: 'task-submitted-feedback',
+      anchors: [
+        { order: 0, anchorId: 'report-option-2' },
+        { order: 1, anchorId: 'report-option-6' }
+      ]
+    })
+
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+    expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
+      taskId: 'task-submitted-feedback',
+      localPdfPath: undefined,
+      pdfReportName: '最终反馈报告.pdf',
+      action: 'open'
+    })
+  })
+
+  it('逐问题反馈正式提交事件会立即切换入口并记录本地最终PDF', async () => {
+    const user = userEvent.setup()
+    window.codeReview.listTasks = vi.fn(async () => ({
+      data: [
+        {
+          id: 'task-issue-feedback',
+          svn_url: 'svn://repo/project',
+          old_revision: 'r1',
+          new_revision: 'r2',
+          status: 'success' as const,
+          report_path: '/app/reports/task-issue-feedback.md',
+          feedback_protocol_version: 1,
+          feedback_submitted_at: null,
+          issue_count: 1,
+          evaluated_issue_count: 1
+        }
+      ],
+      count: 1
+    }))
+    window.codeReview.readTaskReport = vi.fn(async () => '# 审查报告\n\n### 空指针风险\n\n描述')
+    window.codeReview.openPdfReport = vi.fn(async () => ({
+      status: 'ready' as const,
+      pdfPath: '/local/task-issue-feedback/最终反馈报告.pdf'
+    }))
+
+    renderReadyTaskPage()
+    const historyPanel = await openHistoryTasks(user)
+    await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
+    expect(screen.getByRole('button', { name: '提交反馈并查看PDF报告' })).toBeInTheDocument()
+
+    const submitted = vi.mocked(window.codeReview.onIssueFeedbackSubmitted).mock.calls[0][0]
+    submitted({
+      taskId: 'task-issue-feedback',
+      feedbackSubmittedAt: '2026-07-29T12:00:00Z',
+      pdfPath: '/local/task-issue-feedback/最终反馈报告.pdf',
+      pdfReportName: '最终反馈报告.pdf'
+    })
+
+    expect(await screen.findByRole('button', { name: '查看已提交反馈' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '提交反馈并查看PDF报告' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+    expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
+      taskId: 'task-issue-feedback',
+      localPdfPath: '/local/task-issue-feedback/最终反馈报告.pdf',
+      pdfReportName: '最终反馈报告.pdf',
+      action: 'open'
     })
   })
 

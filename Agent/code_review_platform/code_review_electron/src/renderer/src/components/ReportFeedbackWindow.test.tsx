@@ -396,6 +396,43 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     expect(window.reportFeedback.saveIssueDraft).not.toHaveBeenCalled()
   })
 
+  it('已提交反馈只读展示全部问题、评价、说明和提交时间且不渲染编辑控件', async () => {
+    window.reportFeedback.getContext = vi.fn(async () => ({
+      ...issueContext,
+      feedbackSubmittedAt: '2026-07-29T12:00:00Z',
+      issues: [
+        {
+          ...issueContext.issues[0],
+          helpful: true,
+          feedbackText: '帮助定位了空指针并完成修复。'
+        },
+        {
+          ...issueContext.issues[1],
+          helpful: false,
+          feedbackText: ''
+        }
+      ]
+    }))
+    const { container } = render(<ReportFeedbackWindow />)
+
+    expect(await screen.findByRole('heading', { name: '已提交反馈' })).toBeInTheDocument()
+    expect(screen.getByText('提交时间')).toBeInTheDocument()
+    expect(container.querySelector('time')).toHaveAttribute(
+      'datetime',
+      '2026-07-29T12:00:00Z'
+    )
+    expect(screen.getByText('高风险：空指针解引用')).toBeInTheDocument()
+    expect(screen.getByText('中风险：事务边界不完整')).toBeInTheDocument()
+    expect(screen.getByText('帮助定位了空指针并完成修复。')).toBeInTheDocument()
+    expect(screen.getByText('未填写')).toBeInTheDocument()
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重试' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '提交反馈并查看PDF报告' })).not.toBeInTheDocument()
+    expect(window.reportFeedback.saveIssueDraft).not.toHaveBeenCalled()
+    expect(window.reportFeedback.submitIssueFeedback).not.toHaveBeenCalled()
+  })
+
   it('关闭窗口前会保存尚在防抖期内的最新输入', async () => {
     const user = userEvent.setup()
     window.reportFeedback.getContext = vi.fn(async () => ({
@@ -488,7 +525,9 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     await user.click(await screen.findByRole('button', { name: '提交反馈并查看PDF报告' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('反馈已正式提交，但窗口关闭失败')
-    expect(screen.getByLabelText('问题 1 反馈说明')).toBeDisabled()
+    expect(screen.queryByLabelText('问题 1 反馈说明')).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
+    expect(screen.getByText('已提交内容')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '提交反馈并查看PDF报告' })).not.toBeInTheDocument()
   })
 
@@ -513,7 +552,9 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       '反馈已正式提交，但 PDF 打开失败，已在文件夹中定位最终报告'
     )
-    expect(screen.getByLabelText('问题 1 反馈说明')).toBeDisabled()
+    expect(screen.queryByLabelText('问题 1 反馈说明')).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
+    expect(screen.getByText('已提交内容')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '提交反馈并查看PDF报告' })).not.toBeInTheDocument()
     expect(window.reportFeedback.close).not.toHaveBeenCalled()
   })

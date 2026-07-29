@@ -24,6 +24,19 @@ const feedbackPlaceholder = (helpful: boolean | null): string => {
   return '可选填反馈说明；评价后会显示对应的填写示例。'
 }
 
+const formatFeedbackSubmittedAt = (value: string): string => {
+  const submittedAt = new Date(value)
+  if (Number.isNaN(submittedAt.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+    hour12: false
+  }).format(submittedAt)
+}
+
 const scrollToIssue = (issueId: string): void => {
   document.getElementById(`feedback-issue-${issueId}`)?.scrollIntoView({
     block: 'center',
@@ -142,9 +155,11 @@ function LegacyReportFeedbackForm({
 }
 
 function IssueFeedbackForm({
-  context
+  context,
+  onSubmitted
 }: {
   context: Extract<ReportFeedbackContext, { mode: 'issues' }>
+  onSubmitted: (feedbackSubmittedAt: string) => void
 }): React.JSX.Element {
   const initialDrafts = context.issues.map<IssueDraft>((issue) => ({
     ...issue,
@@ -336,6 +351,7 @@ function IssueFeedbackForm({
     try {
       const result = await window.reportFeedback.submitIssueFeedback({ taskId: context.taskId })
       setSubmittedAt(result.feedbackSubmittedAt)
+      onSubmitted(result.feedbackSubmittedAt)
       if (result.pdfOpenError) {
         setError('反馈已正式提交，但 PDF 打开失败，已在文件夹中定位最终报告。')
         return
@@ -377,6 +393,79 @@ function IssueFeedbackForm({
     } finally {
       setIsPreparing(false)
     }
+  }
+
+  if (isReadOnly) {
+    return (
+      <div className="report-feedback-form">
+        <div className="report-feedback-scroll">
+          <dl className="issue-feedback-submission-meta">
+            <div>
+              <dt>提交时间</dt>
+              <dd>
+                <time dateTime={submittedAt ?? undefined}>
+                  {submittedAt ? formatFeedbackSubmittedAt(submittedAt) : '未记录'}
+                </time>
+              </dd>
+            </div>
+          </dl>
+          {drafts.length === 0 && (
+            <p className="report-feedback-status">报告中没有需要逐项反馈的审查问题。</p>
+          )}
+          <div className="issue-feedback-list">
+            {drafts.map((draft, index) => (
+              <section className="issue-feedback-item" key={draft.id}>
+                <div className="issue-feedback-heading">
+                  <span className="issue-feedback-order">问题 {index + 1}</span>
+                  <span
+                    className={`issue-feedback-state ${
+                      draft.helpful === null
+                        ? 'is-pending'
+                        : draft.helpful
+                          ? ''
+                          : 'is-not-helpful'
+                    }`}
+                  >
+                    {draft.helpful === null ? '未评价' : draft.helpful ? '有帮助' : '没帮助'}
+                  </span>
+                </div>
+                <h2>{draft.issueText}</h2>
+                <p className="issue-feedback-description">
+                  {draft.descriptionText || '未提供问题描述。'}
+                </p>
+                <dl className="issue-feedback-readonly-details">
+                  <div>
+                    <dt>问题评价</dt>
+                    <dd>
+                      {draft.helpful === null ? '未评价' : draft.helpful ? '有帮助' : '没帮助'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>反馈说明</dt>
+                    <dd>{draft.feedbackText.trim() || '未填写'}</dd>
+                  </div>
+                </dl>
+              </section>
+            ))}
+          </div>
+          {error && (
+            <p className="report-feedback-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+        <div className="report-feedback-actions">
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={isPreparing}
+            onClick={() => void handleClose()}
+          >
+            关闭
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -501,12 +590,29 @@ export function ReportFeedbackWindow(): React.JSX.Element {
     }
   }
 
+  const handleIssueFeedbackSubmitted = (feedbackSubmittedAt: string): void => {
+    setContext((current) =>
+      current?.mode === 'issues' ? { ...current, feedbackSubmittedAt } : current
+    )
+  }
+
+  const isSubmittedIssueFeedback =
+    context?.mode === 'issues' && context.feedbackSubmittedAt !== null
+
   return (
     <main className="report-feedback-window">
       <header className="report-feedback-header">
-        <h1>{context?.mode === 'issues' ? '审查问题反馈' : '报告反馈'}</h1>
+        <h1>
+          {isSubmittedIssueFeedback
+            ? '已提交反馈'
+            : context?.mode === 'issues'
+              ? '审查问题反馈'
+              : '报告反馈'}
+        </h1>
         <p>
-          {context?.mode === 'issues'
+          {isSubmittedIssueFeedback
+            ? '反馈已正式提交，以下内容仅供查看。'
+            : context?.mode === 'issues'
             ? '请逐项评价审查问题；反馈说明可按需填写。'
             : '请选择报告中有帮助的问题，也可以补充说明。'}
         </p>
@@ -531,7 +637,9 @@ export function ReportFeedbackWindow(): React.JSX.Element {
           </button>
         </div>
       )}
-      {context?.mode === 'issues' && <IssueFeedbackForm context={context} />}
+      {context?.mode === 'issues' && (
+        <IssueFeedbackForm context={context} onSubmitted={handleIssueFeedbackSubmitted} />
+      )}
       {context && context.mode !== 'issues' && <LegacyReportFeedbackForm context={context} />}
     </main>
   )
