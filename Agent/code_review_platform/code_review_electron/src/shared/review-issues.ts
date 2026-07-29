@@ -67,6 +67,14 @@ const normalizeCellText = (value: string | undefined): string =>
     .replace(/\s+/g, ' ')
     .trim()
 
+const templatePlaceholderTexts = new Set([
+  '填写检查方向',
+  '填写规范编号、规范名称或通用建议项',
+  '填写自检规则、失败项摘要或检查结论。',
+  '填写问题根因和触发条件。',
+  '填写不符合规范的具体现象。'
+])
+
 const isPlaceholderText = (value: string): boolean => {
   const normalized = normalizeCellText(value)
   return (
@@ -74,10 +82,20 @@ const isPlaceholderText = (value: string): boolean => {
     normalized === '无' ||
     normalized === '待填写' ||
     normalized === '待填写。' ||
-    normalized.includes('填写') ||
-    normalized.includes('高风险/中风险/低风险/建议')
+    templatePlaceholderTexts.has(normalized) ||
+    normalized === '问题标题' ||
+    normalized === '风险级别：问题标题' ||
+    normalized === '高风险/中风险/低风险/建议'
   )
 }
+
+const isNoIssueConclusion = (value: string): boolean =>
+  /^(?:本次)?未发现明确(?:高风险项|中低风险及建议项|代码质量问题|编码规范问题|问题|缺陷)[。.]?$/.test(
+    normalizeCellText(value)
+  )
+
+const isConclusionIssueSection = (value: string): boolean =>
+  value === '高风险项总结' || value === '中低风险及建议项'
 
 const splitTableRow = (line: string): string[] => {
   const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '')
@@ -207,7 +225,9 @@ const extractTemplateOneIssues = (markdown: string, lines: MarkdownLine[]): Revi
     const children = headings.slice(index + 1, boundary ? headings.indexOf(boundary) : headings.length)
     return children.length === 0
   })
-  const issueHeadings = leafHeadings.filter((heading) => heading.level >= 3)
+  const issueHeadings = leafHeadings.filter(
+    (heading) => heading.level >= 3 && !isPlaceholderText(heading.text)
+  )
 
   return issueHeadings.map((heading, order) => {
     const headingIndex = headings.indexOf(heading)
@@ -346,7 +366,7 @@ const extractTemplateTwoConclusionIssues = (
       continue
     }
 
-    if (!inConclusion || !currentSection) {
+    if (!inConclusion || !isConclusionIssueSection(currentSection)) {
       continue
     }
     const itemMatch = /^\s*[-*+]\s+(.+?)\s*$/.exec(line.text)
@@ -355,7 +375,7 @@ const extractTemplateTwoConclusionIssues = (
     }
 
     const descriptionText = stripMarkdownInline(itemMatch[1])
-    if (isPlaceholderText(descriptionText)) {
+    if (isPlaceholderText(descriptionText) || isNoIssueConclusion(descriptionText)) {
       continue
     }
 

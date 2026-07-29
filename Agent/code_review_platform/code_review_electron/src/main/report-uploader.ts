@@ -34,9 +34,11 @@ export const uploadReportFile = async (
   api: ReportUploadApi,
   token: string,
   taskId: string,
-  reportPath: string
+  reportPath: string,
+  preparedReportContent?: string
 ): Promise<unknown> => {
-  const reportContent = await prepareReportForPublishing(reportPath)
+  const reportContent =
+    preparedReportContent ?? (await prepareReportForPublishing(reportPath))
 
   return api.uploadReport(token, taskId, {
     report_content: reportContent,

@@ -47,7 +47,12 @@ import {
   type TaskAgentDependencies
 } from './task-agent'
 import type { EnvironmentCheckResult } from './environment-checker'
-import { uploadPdfReportFile, uploadReportFile, uploadRequirementFile } from './report-uploader'
+import {
+  prepareReportForPublishing,
+  uploadPdfReportFile,
+  uploadReportFile,
+  uploadRequirementFile
+} from './report-uploader'
 import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
 import { ServerConfigStore, normalizeServerUrl } from './server-config-store'
 import { createSkillSyncService, type SkillSyncResult } from './skill-sync'
@@ -85,6 +90,7 @@ export interface IpcHandlerDependencies {
   syncSkill?: (token: string) => Promise<SkillSyncResult>
   prepareWorkspace?: typeof defaultPrepareWorkspace
   runCodex?: typeof defaultRunCodex
+  prepareReport?: TaskAgentDependencies['prepareReport']
   generatePdfReport?: TaskAgentDependencies['generatePdfReport']
   uploadRequirementFile?: TaskAgentDependencies['uploadRequirementFile']
   uploadReport?: TaskAgentDependencies['uploadReport']
@@ -900,6 +906,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
             }
           },
           runCodex: dependencies.runCodex ?? defaultRunCodex,
+          prepareReport: dependencies.prepareReport ?? prepareReportForPublishing,
           generatePdfReport: dependencies.generatePdfReport ?? generatePdfReport,
           uploadRequirementFile:
             dependencies.uploadRequirementFile ??
@@ -907,7 +914,8 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
               uploadRequirementFile(taskApi, token, taskId, filePath)),
           uploadReport:
             dependencies.uploadReport ??
-            ((token, taskId, reportPath) => uploadReportFile(taskApi, token, taskId, reportPath)),
+            ((token, taskId, reportPath, reportContent) =>
+              uploadReportFile(taskApi, token, taskId, reportPath, reportContent)),
           uploadPdfReport:
             dependencies.uploadPdfReport ??
             ((token, taskId, pdfPath) => uploadPdfReportFile(taskApi, token, taskId, pdfPath))
@@ -993,6 +1001,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
             }
           },
           runCodex: dependencies.runCodex ?? defaultRunCodex,
+          prepareReport: dependencies.prepareReport ?? prepareReportForPublishing,
           generatePdfReport: dependencies.generatePdfReport ?? generatePdfReport,
           uploadRequirementFile:
             dependencies.uploadRequirementFile ??
@@ -1000,7 +1009,8 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
               uploadRequirementFile(taskApi, token, taskId, filePath)),
           uploadReport:
             dependencies.uploadReport ??
-            ((token, taskId, reportPath) => uploadReportFile(taskApi, token, taskId, reportPath)),
+            ((token, taskId, reportPath, reportContent) =>
+              uploadReportFile(taskApi, token, taskId, reportPath, reportContent)),
           uploadPdfReport:
             dependencies.uploadPdfReport ??
             ((token, taskId, pdfPath) => uploadPdfReportFile(taskApi, token, taskId, pdfPath))

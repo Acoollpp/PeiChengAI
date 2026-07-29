@@ -282,6 +282,24 @@ describe('MarkdownPreview', () => {
     expect(row).toHaveClass('report-anchor-highlight')
   })
 
+  it('模板二结论兜底列表项使用共享识别结果定位和高亮', () => {
+    render(
+      <MarkdownPreview
+        markdown={[
+          '# 代码审查报告模板二',
+          '## 三、结论',
+          '### 1. 高风险项总结',
+          '- 未校验数组下标，可能发生越界访问。'
+        ].join('\n')}
+        activeFeedbackAnchorId="report-option-3"
+      />
+    )
+
+    const item = screen.getByRole('listitem')
+    expect(item).toHaveAttribute('data-report-anchor-id', 'report-option-3')
+    expect(item).toHaveClass('report-anchor-highlight')
+  })
+
   it('does not render report feedback checkboxes by default', () => {
     render(<MarkdownPreview markdown={'## 高风险问题\n\n### 空指针风险'} />)
 

@@ -354,6 +354,21 @@ export function MarkdownPreview({
                   </tr>
                 )
               },
+              li: ({ children, node }) => {
+                const anchorId = findAnchorForRenderedNode(feedbackAnchorMap, node)
+                return (
+                  <li
+                    data-report-anchor-id={anchorId}
+                    className={
+                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId)
+                        ? 'report-anchor-highlight'
+                        : undefined
+                    }
+                  >
+                    {children}
+                  </li>
+                )
+              },
               img: ({ alt, src }) => <ReportImage alt={alt} src={src} reportPath={reportPath} />
             }}
           >

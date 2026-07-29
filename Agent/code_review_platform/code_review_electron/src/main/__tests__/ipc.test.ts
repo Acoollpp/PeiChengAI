@@ -725,6 +725,8 @@ describe('registerIpcHandlers', () => {
     const reportPath = join(cwd, '代码审查报告.md')
     const imagesDir = join(cwd, 'images')
     const sender = { send: vi.fn() }
+    const prepareReport = vi.fn(async () => '# cleaned report\n')
+    const uploadReport = vi.fn(async () => undefined)
     const { registerIpcHandlers } = await import('../ipc')
 
     registerIpcHandlers({
@@ -734,6 +736,8 @@ describe('registerIpcHandlers', () => {
       checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
       preflightSvn: vi.fn(),
+      prepareReport,
+      uploadReport,
       runCodex: vi.fn(async () => {
         await writeFile(reportPath, '# report\n')
       })
@@ -764,6 +768,14 @@ describe('registerIpcHandlers', () => {
         taskId: 'task-1'
       })
     )
+    expect(prepareReport).toHaveBeenCalledWith(reportPath)
+    expect(prepareReport).toHaveBeenCalledTimes(1)
+    expect(uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-1',
+      reportPath,
+      '# cleaned report\n'
+    )
   })
 
   it('retries an existing failed task through IPC without creating a new task', async () => {
@@ -791,6 +803,8 @@ describe('registerIpcHandlers', () => {
     const reportPath = join(cwd, '代码审查报告.md')
     const imagesDir = join(cwd, 'images')
     const sender = { send: vi.fn() }
+    const prepareReport = vi.fn(async () => '# cleaned retry report\n')
+    const uploadReport = vi.fn(async () => undefined)
     const { registerIpcHandlers } = await import('../ipc')
 
     registerIpcHandlers({
@@ -800,6 +814,8 @@ describe('registerIpcHandlers', () => {
       checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
       preflightSvn: vi.fn(),
+      prepareReport,
+      uploadReport,
       runCodex: vi.fn(async () => {
         await writeFile(reportPath, '# retry report\n')
       })
@@ -819,7 +835,7 @@ describe('registerIpcHandlers', () => {
     ).resolves.toMatchObject({
       taskId: 'task-retry',
       status: 'success',
-      reportMarkdown: '# retry report\n'
+      reportMarkdown: '# cleaned retry report\n'
     })
     expect(api.createTask).not.toHaveBeenCalled()
     expect(api.readTask).toHaveBeenCalledWith('token-123', 'task-retry')
@@ -829,6 +845,14 @@ describe('registerIpcHandlers', () => {
         clientTaskId: 'task-retry',
         taskId: 'task-retry'
       })
+    )
+    expect(prepareReport).toHaveBeenCalledWith(reportPath)
+    expect(prepareReport).toHaveBeenCalledTimes(1)
+    expect(uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-retry',
+      reportPath,
+      '# cleaned retry report\n'
     )
   })
 

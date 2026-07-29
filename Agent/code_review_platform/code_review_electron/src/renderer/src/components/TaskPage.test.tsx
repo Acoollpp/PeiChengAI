@@ -1114,7 +1114,7 @@ describe('TaskPage', () => {
       taskId: 'task-history-1',
       options: [
         {
-          id: '2-空指针风险',
+          id: 'review-issue-2',
           level: 3,
           text: '空指针风险',
           anchorId: 'report-option-2'

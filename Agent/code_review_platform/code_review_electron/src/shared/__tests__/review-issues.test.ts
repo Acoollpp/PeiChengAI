@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { extractReviewIssues } from '../review-issues'
+import { REVIEW_TEMPLATE_PREVIEWS } from '../review-template-previews'
 import {
   templateOneReportFixture,
   templateTwoConclusionReportFixture,
@@ -67,8 +68,8 @@ describe('extractReviewIssues', () => {
     ).toEqual([
       {
         issueText: '中风险 · 部门自检项结果',
-        descriptionText: '软件版本与工程配置不一致。',
-        displayText: '部门自检项结果 · 中风险 · 软件版本与工程配置不一致。',
+        descriptionText: '配置项未填写导致软件版本与工程配置不一致。',
+        displayText: '部门自检项结果 · 中风险 · 配置项未填写导致软件版本与工程配置不一致。',
         order: 0,
         source: 'template_2_table_row',
         anchorId: 'report-option-8'
@@ -133,5 +134,37 @@ describe('extractReviewIssues', () => {
       )
     ).toEqual([])
     expect(extractReviewIssues('')).toEqual([])
+    expect(extractReviewIssues(REVIEW_TEMPLATE_PREVIEWS.template_1)).toEqual([])
+    expect(extractReviewIssues(REVIEW_TEMPLATE_PREVIEWS.template_2)).toEqual([])
+  })
+
+  it('保留以“填写”开头的真实问题', () => {
+    const templateOneIssues = extractReviewIssues(
+      [
+        '# 代码审查报告-模版一',
+        '## 五、代码质量问题',
+        '### 填写设备编号后页面崩溃',
+        '- **问题描述：** 输入超长设备编号时发生越界访问。'
+      ].join('\n')
+    )
+    const templateTwoIssues = extractReviewIssues(
+      [
+        '# 代码审查报告模板二',
+        '## 二、流程节点详细审查报告',
+        '### 1. 部门专项风险检查',
+        '| 风险级别 | 专项检查方向 | 缺陷描述 |',
+        '|---|---|---|',
+        '| 高风险 | 设备编号 | 填写设备编号后页面崩溃。 |',
+        '| 中风险 | 风险选项 | 风险级别错误显示高风险/中风险/低风险/建议，用户无法选择。 |'
+      ].join('\n')
+    )
+
+    expect(templateOneIssues.map((issue) => issue.issueText)).toEqual([
+      '填写设备编号后页面崩溃'
+    ])
+    expect(templateTwoIssues.map((issue) => issue.descriptionText)).toEqual([
+      '填写设备编号后页面崩溃。',
+      '风险级别错误显示高风险/中风险/低风险/建议，用户无法选择。'
+    ])
   })
 })

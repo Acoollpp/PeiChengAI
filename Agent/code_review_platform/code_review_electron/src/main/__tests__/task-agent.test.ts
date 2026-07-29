@@ -35,16 +35,25 @@ const makeTask = (overrides: Partial<ReviewTask> = {}): ReviewTask => ({
 const withPdfDependencies = (
   dependencies: Omit<
     TaskAgentDependencies,
-    'preflightSvn' | 'generatePdfReport' | 'uploadPdfReport' | 'uploadRequirementFile'
+    | 'preflightSvn'
+    | 'prepareReport'
+    | 'generatePdfReport'
+    | 'uploadPdfReport'
+    | 'uploadRequirementFile'
   > &
     Partial<
       Pick<
         TaskAgentDependencies,
-        'preflightSvn' | 'generatePdfReport' | 'uploadPdfReport' | 'uploadRequirementFile'
+        | 'preflightSvn'
+        | 'prepareReport'
+        | 'generatePdfReport'
+        | 'uploadPdfReport'
+        | 'uploadRequirementFile'
       >
     >
 ): TaskAgentDependencies => ({
   preflightSvn: vi.fn(),
+  prepareReport: vi.fn(async (reportPath: string) => readFile(reportPath, 'utf8')),
   generatePdfReport: vi.fn(async (reportPath: string) => ({
     status: 'ready' as const,
     reportPath,
@@ -219,7 +228,12 @@ describe('executeReviewTask', () => {
       'task-1',
       join(cwd, 'requirements', '产品开发需求表.xls')
     )
-    expect(dependencies.uploadReport).toHaveBeenCalledWith('token-123', 'task-1', reportPath)
+    expect(dependencies.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-1',
+      reportPath,
+      '# report\n'
+    )
     expect(dependencies.uploadPdfReport).toHaveBeenCalledWith('token-123', 'task-1', pdfPath)
     expect(dependencies.prepareWorkspace).toHaveBeenCalledWith({
       taskId: 'task-1',
@@ -275,6 +289,10 @@ describe('executeReviewTask', () => {
       runCodex: vi.fn(async () => {
         await writeFile(reportPath, originalReport)
       }),
+      prepareReport: vi.fn(async () => {
+        await writeFile(reportPath, cleanedReport)
+        return cleanedReport
+      }),
       generatePdfReport: vi.fn(async () => {
         await expect(readFile(reportPath, 'utf8')).resolves.toBe(cleanedReport)
         await writeFile(pdfPath, '%PDF-1.4\n')
@@ -289,6 +307,8 @@ describe('executeReviewTask', () => {
     const result = await executeReviewTask({ token: 'token-123', request }, dependencies)
 
     expect(result.reportMarkdown).toBe(cleanedReport)
+    expect(dependencies.prepareReport).toHaveBeenCalledWith(reportPath)
+    expect(dependencies.prepareReport).toHaveBeenCalledTimes(1)
     await expect(readFile(reportPath, 'utf8')).resolves.toBe(cleanedReport)
   })
 
