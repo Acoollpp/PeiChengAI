@@ -1,5 +1,6 @@
 import type { ReviewTemplateKey } from '../../shared/review-templates'
 import type {
+  IssueFeedbackSubmittedEvent,
   OpenReportFeedbackWindowPayload,
   ReportFeedbackSubmittedEvent
 } from '../../shared/report-feedback-window'
@@ -110,6 +111,7 @@ export interface ExecuteTaskResult {
   pdfPath?: string
   pdfReportName?: string
   codexLogPath?: string
+  feedbackProtocolVersion?: number
 }
 
 export interface CancelTaskRequest {
@@ -163,6 +165,7 @@ export interface OpenPdfReportRequest {
   taskId?: string
   localPdfPath?: string
   pdfReportName?: string
+  action?: 'open' | 'reveal'
 }
 
 export interface OpenPdfReportResult {
@@ -253,6 +256,9 @@ export interface CodeReviewApi {
   ): () => void
   onReportFeedbackSubmitted(
     callback: (payload: ReportFeedbackSubmittedEvent) => void
+  ): () => void
+  onIssueFeedbackSubmitted(
+    callback: (payload: IssueFeedbackSubmittedEvent) => void
   ): () => void
   bindSvnCredential(payload: SvnCredentialPayload): Promise<true>
   checkForAppUpdate(): Promise<boolean>

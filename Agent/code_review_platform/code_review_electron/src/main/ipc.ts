@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
 
 import { dialog, ipcMain, Notification, shell, type BrowserWindow } from 'electron'
@@ -21,9 +21,13 @@ import { CredentialStore, type RememberedCredentials } from './credential-store'
 import { checkEnvironment } from './environment-checker'
 import type {
   FocusReportFeedbackAnchorPayload,
+  IssueFeedbackSubmittedEvent,
   OpenReportFeedbackWindowPayload,
+  SubmitIssueFeedbackPayload,
+  SubmitIssueFeedbackResult,
   ReportFeedbackContext,
   ReportFeedbackSubmittedEvent,
+  SaveIssueFeedbackDraftPayload,
   SubmitHelpfulReportFeedbackPayload,
   ReportFeedbackOption
 } from '../shared/report-feedback-window'
@@ -31,10 +35,12 @@ import type {
   CurrentUser,
   DepartmentsResponse,
   EnvironmentProgressEvent,
+  ReviewTaskIssue,
   TaskCompletionNotificationPayload,
   TaskCompletionNotificationResult
 } from '../shared/types'
 import { generatePdfReport } from './report-pdf-generator'
+import { submitIssueFeedback as submitFinalIssueFeedback } from './issue-feedback-submitter'
 import type { ReportFeedbackWindowManager } from './report-feedback-window'
 import {
   defaultPrepareWorkspace,
@@ -47,7 +53,12 @@ import {
   type TaskAgentDependencies
 } from './task-agent'
 import type { EnvironmentCheckResult } from './environment-checker'
-import { uploadPdfReportFile, uploadReportFile, uploadRequirementFile } from './report-uploader'
+import {
+  prepareReportForPublishing,
+  uploadPdfReportFile,
+  uploadReportFile,
+  uploadRequirementFile
+} from './report-uploader'
 import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
 import { ServerConfigStore, normalizeServerUrl } from './server-config-store'
 import { createSkillSyncService, type SkillSyncResult } from './skill-sync'
@@ -85,6 +96,7 @@ export interface IpcHandlerDependencies {
   syncSkill?: (token: string) => Promise<SkillSyncResult>
   prepareWorkspace?: typeof defaultPrepareWorkspace
   runCodex?: typeof defaultRunCodex
+  prepareReport?: TaskAgentDependencies['prepareReport']
   generatePdfReport?: TaskAgentDependencies['generatePdfReport']
   uploadRequirementFile?: TaskAgentDependencies['uploadRequirementFile']
   uploadReport?: TaskAgentDependencies['uploadReport']
@@ -105,6 +117,7 @@ interface OpenPdfReportRequest {
   taskId?: string
   localPdfPath?: string
   pdfReportName?: string
+  action?: 'open' | 'reveal'
 }
 
 interface OpenPdfReportResult {
@@ -294,13 +307,94 @@ const isExistingFile = async (filePath?: string): Promise<boolean> => {
   }
 }
 
+const openPdfFile = async (pdfPath: string): Promise<void> => {
+  let openError = ''
+  try {
+    openError = await shell.openPath(pdfPath)
+  } catch (error) {
+    openError = error instanceof Error ? error.message : '系统无法打开 PDF 报告'
+  }
+
+  if (!openError) {
+    return
+  }
+
+  shell.showItemInFolder(pdfPath)
+  throw new Error(`PDF报告打开失败：${openError}`)
+}
+
+const presentPdfFile = async (
+  pdfPath: string,
+  action: OpenPdfReportRequest['action']
+): Promise<void> => {
+  if (action === 'open') {
+    await openPdfFile(pdfPath)
+    return
+  }
+  shell.showItemInFolder(pdfPath)
+}
+
+const resolveTrustedTaskWorkspace = (
+  taskId: string,
+  runtimePaths: RuntimePaths
+): { taskWorkspace: string; workspacesDirectory: string } => {
+  const workspacesDirectory = resolve(runtimePaths.workspacesDir)
+  const taskWorkspace = resolve(runtimePaths.workspaceForTask(taskId))
+  if (
+    taskWorkspace === workspacesDirectory ||
+    !isInsideDirectory(taskWorkspace, workspacesDirectory)
+  ) {
+    throw new Error('任务工作区路径无效')
+  }
+  return { taskWorkspace, workspacesDirectory }
+}
+
+const resolveTrustedLocalPdfPath = async (
+  localPdfPath: string | undefined,
+  taskWorkspace: string,
+  workspacesDirectory: string
+): Promise<string | undefined> => {
+  if (!localPdfPath) {
+    return undefined
+  }
+
+  const resolvedPdfPath = resolve(localPdfPath)
+  if (
+    extname(resolvedPdfPath).toLowerCase() !== '.pdf' ||
+    !isInsideDirectory(resolvedPdfPath, taskWorkspace)
+  ) {
+    throw new Error('本地 PDF 路径无效')
+  }
+  if (!(await isExistingFile(resolvedPdfPath))) {
+    return undefined
+  }
+
+  const [realWorkspacesDirectory, realTaskWorkspace, realPdfPath] = await Promise.all([
+    realpath(workspacesDirectory),
+    realpath(taskWorkspace),
+    realpath(resolvedPdfPath)
+  ])
+  if (
+    !isInsideDirectory(realTaskWorkspace, realWorkspacesDirectory) ||
+    !isInsideDirectory(realPdfPath, realTaskWorkspace)
+  ) {
+    throw new Error('本地 PDF 路径无效')
+  }
+  return resolvedPdfPath
+}
+
 const resolveReportFileName = (
   fileName: string | undefined,
   fallback: string
 ): { fileName: string; isValidProvidedName: boolean } => {
   const trimmedFileName = fileName?.trim()
 
-  if (!trimmedFileName || trimmedFileName.includes('/') || trimmedFileName.includes('\\')) {
+  if (
+    !trimmedFileName ||
+    trimmedFileName.includes('/') ||
+    trimmedFileName.includes('\\') ||
+    extname(trimmedFileName).toLowerCase() !== '.pdf'
+  ) {
     return { fileName: fallback, isValidProvidedName: false }
   }
 
@@ -384,8 +478,37 @@ const validateReportFeedbackOption = (option: ReportFeedbackOption): void => {
 
 const validateReportFeedbackContext = (
   payload: OpenReportFeedbackWindowPayload
-): ReportFeedbackContext => {
-  if (!payload?.taskId?.trim() || !Array.isArray(payload.options)) {
+): OpenReportFeedbackWindowPayload => {
+  if (!payload?.taskId?.trim()) {
+    throw new Error('反馈窗口上下文无效')
+  }
+
+  if (payload.mode === 'issues') {
+    if (!Array.isArray(payload.anchors)) {
+      throw new Error('反馈窗口上下文无效')
+    }
+    payload.anchors.forEach((anchor) => {
+      if (
+        !Number.isInteger(anchor?.order) ||
+        anchor.order < 0 ||
+        typeof anchor.anchorId !== 'string' ||
+        !anchor.anchorId.trim()
+      ) {
+        throw new Error('反馈问题定位信息无效')
+      }
+    })
+    const orders = payload.anchors.map((anchor) => anchor.order)
+    if (new Set(orders).size !== orders.length) {
+      throw new Error('反馈问题定位顺序重复')
+    }
+    return {
+      mode: 'issues',
+      taskId: payload.taskId,
+      anchors: payload.anchors.map((anchor) => ({ ...anchor }))
+    }
+  }
+
+  if (!Array.isArray(payload.options)) {
     throw new Error('反馈窗口上下文无效')
   }
   payload.options.forEach(validateReportFeedbackOption)
@@ -394,6 +517,7 @@ const validateReportFeedbackContext = (
     throw new Error('反馈候选项 ID 重复')
   }
   return {
+    mode: 'legacy',
     taskId: payload.taskId,
     options: payload.options.map((option) => ({ ...option }))
   }
@@ -406,6 +530,9 @@ const buildUsefulIssuesText = (
   context: ReportFeedbackContext,
   payload: SubmitHelpfulReportFeedbackPayload
 ): string => {
+  if (context.mode === 'issues') {
+    throw new Error('新协议任务不能使用历史报告反馈接口')
+  }
   if (payload.taskId !== context.taskId) {
     throw new Error('反馈任务与当前窗口不一致')
   }
@@ -435,6 +562,55 @@ const buildUsefulIssuesText = (
     throw new Error('请至少标记或填写一条有用信息')
   }
   return uniqueIssues.map((issue, index) => `${index + 1}. ${issue}`).join('\n')
+}
+
+const validateIssueFeedbackDraft = (
+  context: ReportFeedbackContext,
+  payload: SaveIssueFeedbackDraftPayload
+): SaveIssueFeedbackDraftPayload => {
+  if (
+    context.mode !== 'issues' ||
+    !payload ||
+    payload.taskId !== context.taskId ||
+    typeof payload.issueId !== 'string' ||
+    !payload.issueId.trim() ||
+    (payload.helpful !== null && typeof payload.helpful !== 'boolean') ||
+    typeof payload.feedbackText !== 'string' ||
+    payload.feedbackText.length > 4096
+  ) {
+    throw new Error('问题反馈草稿无效')
+  }
+  if (!context.issues.some((issue) => issue.id === payload.issueId)) {
+    throw new Error('包含未知审查问题 ID')
+  }
+  return { ...payload }
+}
+
+const buildIssueFeedbackContext = (
+  taskId: string,
+  response: {
+    data: ReviewTaskIssue[]
+    feedback_submitted_at?: string | null
+  },
+  anchors: Array<{ order: number; anchorId: string }>
+): ReportFeedbackContext => {
+  const anchorByOrder = new Map(anchors.map((anchor) => [anchor.order, anchor.anchorId]))
+  return {
+    mode: 'issues',
+    taskId,
+    feedbackSubmittedAt: response.feedback_submitted_at ?? null,
+    issues: response.data.map((issue) => ({
+      id: issue.id,
+      issueText: issue.issue_text,
+      descriptionText: issue.description_text,
+      order: issue.order,
+      helpful: issue.helpful ?? null,
+      feedbackText: issue.feedback_text ?? '',
+      ...(anchorByOrder.has(issue.order)
+        ? { anchorId: anchorByOrder.get(issue.order) }
+        : {})
+    }))
+  }
 }
 
 const revisionPattern = /^[rR]?\d+$/
@@ -484,6 +660,8 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     return new ApiClient(config.server_url)
   }
   const reportFeedbackQueues = new Map<string, Promise<void>>()
+  const issueFeedbackDraftQueues = new Map<string, Promise<void>>()
+  const failedIssueFeedbackDrafts = new Set<string>()
   const publishedReportFeedbackTasks = new Set<string>()
   const serializeReportFeedback = <T>(taskId: string, submit: () => Promise<T>): Promise<T> => {
     const previous = reportFeedbackQueues.get(taskId) ?? Promise.resolve()
@@ -500,6 +678,45 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       }
     })
     return result
+  }
+  const serializeIssueFeedbackDraft = <T>(
+    taskId: string,
+    issueId: string,
+    save: () => Promise<T>
+  ): Promise<T> => {
+    const key = `${taskId}:${issueId}`
+    const previous = issueFeedbackDraftQueues.get(key) ?? Promise.resolve()
+    const result = previous.catch(() => undefined).then(save)
+    const tail = result.then(
+      () => {
+        failedIssueFeedbackDrafts.delete(key)
+      },
+      () => {
+        failedIssueFeedbackDrafts.add(key)
+      }
+    )
+    issueFeedbackDraftQueues.set(key, tail)
+    void tail.then(() => {
+      if (issueFeedbackDraftQueues.get(key) === tail) {
+        issueFeedbackDraftQueues.delete(key)
+      }
+    })
+    return result
+  }
+  const waitForIssueFeedbackDrafts = async (taskId: string): Promise<void> => {
+    const prefix = `${taskId}:`
+    while (true) {
+      const pending = [...issueFeedbackDraftQueues.entries()]
+        .filter(([key]) => key.startsWith(prefix))
+        .map(([, promise]) => promise)
+      if (pending.length === 0) {
+        break
+      }
+      await Promise.all(pending)
+    }
+    if ([...failedIssueFeedbackDrafts].some((key) => key.startsWith(prefix))) {
+      throw new Error('仍有问题反馈草稿保存失败，请重试')
+    }
   }
   const submitReportFeedback = (
     taskId: string,
@@ -900,6 +1117,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
             }
           },
           runCodex: dependencies.runCodex ?? defaultRunCodex,
+          prepareReport: dependencies.prepareReport ?? prepareReportForPublishing,
           generatePdfReport: dependencies.generatePdfReport ?? generatePdfReport,
           uploadRequirementFile:
             dependencies.uploadRequirementFile ??
@@ -907,7 +1125,8 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
               uploadRequirementFile(taskApi, token, taskId, filePath)),
           uploadReport:
             dependencies.uploadReport ??
-            ((token, taskId, reportPath) => uploadReportFile(taskApi, token, taskId, reportPath)),
+            ((token, taskId, reportPath, reportContent) =>
+              uploadReportFile(taskApi, token, taskId, reportPath, reportContent)),
           uploadPdfReport:
             dependencies.uploadPdfReport ??
             ((token, taskId, pdfPath) => uploadPdfReportFile(taskApi, token, taskId, pdfPath))
@@ -993,6 +1212,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
             }
           },
           runCodex: dependencies.runCodex ?? defaultRunCodex,
+          prepareReport: dependencies.prepareReport ?? prepareReportForPublishing,
           generatePdfReport: dependencies.generatePdfReport ?? generatePdfReport,
           uploadRequirementFile:
             dependencies.uploadRequirementFile ??
@@ -1000,7 +1220,8 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
               uploadRequirementFile(taskApi, token, taskId, filePath)),
           uploadReport:
             dependencies.uploadReport ??
-            ((token, taskId, reportPath) => uploadReportFile(taskApi, token, taskId, reportPath)),
+            ((token, taskId, reportPath, reportContent) =>
+              uploadReportFile(taskApi, token, taskId, reportPath, reportContent)),
           uploadPdfReport:
             dependencies.uploadPdfReport ??
             ((token, taskId, pdfPath) => uploadPdfReportFile(taskApi, token, taskId, pdfPath))
@@ -1081,7 +1302,20 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       payload: OpenReportFeedbackWindowPayload
     ): Promise<true> => {
       assertMainWindowSender(event, getMainWindow)
-      const context = validateReportFeedbackContext(payload)
+      const validatedPayload = validateReportFeedbackContext(payload)
+      let context: ReportFeedbackContext
+      if (validatedPayload.mode === 'issues') {
+        const token = await loadAccessToken(authStore)
+        const api = await createApiClient()
+        const response = await api.readTaskIssues(token, validatedPayload.taskId)
+        context = buildIssueFeedbackContext(
+          validatedPayload.taskId,
+          response,
+          validatedPayload.anchors
+        )
+      } else {
+        context = validatedPayload
+      }
       return requireReportFeedbackManager(getReportFeedbackWindowManager).open(context)
     }
   )
@@ -1120,11 +1354,14 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
       let anchorId: string | undefined
       if (payload.optionId !== undefined) {
-        const option = context.options.find((candidate) => candidate.id === payload.optionId)
-        if (!option) {
+        const target =
+          context.mode === 'issues'
+            ? context.issues.find((candidate) => candidate.id === payload.optionId)
+            : context.options.find((candidate) => candidate.id === payload.optionId)
+        if (!target) {
           throw new Error('包含未知反馈候选项 ID')
         }
-        anchorId = option.anchorId
+        anchorId = target.anchorId
       }
       sendToRenderer(getMainWindow()?.webContents, 'report-feedback:focus-anchor', {
         taskId: context.taskId,
@@ -1148,6 +1385,76 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
         useful_issues_text: usefulIssuesText
       })
       return submittedEvent
+    }
+  )
+
+  ipcMain.handle(
+    'report-feedback-window:save-issue-draft',
+    async (
+      event,
+      payload: SaveIssueFeedbackDraftPayload
+    ): Promise<ReviewTaskIssue> => {
+      const manager = requireReportFeedbackManager(getReportFeedbackWindowManager)
+      const context = manager.getContext(event.sender.id)
+      const draft = validateIssueFeedbackDraft(context, payload)
+      return serializeIssueFeedbackDraft(context.taskId, draft.issueId, async () => {
+        const token = await loadAccessToken(authStore)
+        const api = await createApiClient()
+        return api.saveIssueFeedbackDraft(token, context.taskId, draft.issueId, {
+          helpful: draft.helpful,
+          feedback_text: draft.feedbackText.trim() ? draft.feedbackText : null
+        })
+      })
+    }
+  )
+
+  ipcMain.handle(
+    'report-feedback-window:submit-issues',
+    async (
+      event,
+      payload: SubmitIssueFeedbackPayload
+    ): Promise<SubmitIssueFeedbackResult> => {
+      const manager = requireReportFeedbackManager(getReportFeedbackWindowManager)
+      const context = manager.getContext(event.sender.id)
+      if (
+        context.mode !== 'issues' ||
+        !payload ||
+        payload.taskId !== context.taskId
+      ) {
+        throw new Error('反馈任务与当前窗口不一致')
+      }
+      await waitForIssueFeedbackDrafts(context.taskId)
+      const token = await loadAccessToken(authStore)
+      const api = await createApiClient()
+      const result = await submitFinalIssueFeedback({
+        api,
+        token,
+        taskId: context.taskId,
+        runtimePaths: await loadRuntimePaths(),
+        generatePdf: dependencies.generatePdfReport ?? generatePdfReport
+      })
+      const submittedEvent: IssueFeedbackSubmittedEvent = {
+        taskId: result.taskId,
+        feedbackSubmittedAt: result.feedbackSubmittedAt,
+        pdfPath: result.pdfPath,
+        pdfReportName: result.pdfReportName
+      }
+      sendToRenderer(
+        getMainWindow()?.webContents,
+        'report-feedback:issues-submitted',
+        submittedEvent
+      )
+      let pdfOpenError = ''
+      try {
+        pdfOpenError = await shell.openPath(result.pdfPath)
+      } catch (openError) {
+        pdfOpenError = openError instanceof Error ? openError.message : '系统无法打开最终 PDF'
+      }
+      if (pdfOpenError) {
+        shell.showItemInFolder(result.pdfPath)
+        return { ...result, pdfOpenError }
+      }
+      return result
     }
   )
 
@@ -1203,37 +1510,53 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   })
 
   ipcMain.handle('report:open-pdf', async (_event, payload: OpenPdfReportRequest): Promise<OpenPdfReportResult> => {
-    const localPdfPath = payload.localPdfPath
-    if (localPdfPath && await isExistingFile(localPdfPath)) {
-      shell.showItemInFolder(localPdfPath)
-      return { status: 'ready', pdfPath: localPdfPath }
-    }
-
     if (!payload.taskId) {
       throw new Error('请先选择一个已完成任务报告。')
     }
 
     const runtimePaths = await loadRuntimePaths()
-    const fallbackPdfPath =
-      runtimePaths.pdfReportPathForTask?.(payload.taskId) ??
-      runtimePaths.reportPathForTask(payload.taskId).replace(/\.md$/i, '.pdf')
+    const { taskWorkspace, workspacesDirectory } = resolveTrustedTaskWorkspace(
+      payload.taskId,
+      runtimePaths
+    )
+    const localPdfPath = await resolveTrustedLocalPdfPath(
+      payload.localPdfPath,
+      taskWorkspace,
+      workspacesDirectory
+    )
+    if (localPdfPath) {
+      await presentPdfFile(localPdfPath, payload.action)
+      return { status: 'ready', pdfPath: localPdfPath }
+    }
+
     const fallbackPdfFileName = '代码审查报告.pdf'
     const { fileName: pdfFileName, isValidProvidedName } = resolveReportFileName(
       payload.pdfReportName,
       fallbackPdfFileName
     )
-    const workspacePdfPath = isValidProvidedName
-      ? join(runtimePaths.workspaceForTask(payload.taskId), pdfFileName)
-      : undefined
+    const fallbackPdfPath = join(taskWorkspace, fallbackPdfFileName)
+    const workspacePdfPath = isValidProvidedName ? join(taskWorkspace, pdfFileName) : undefined
 
-    if (workspacePdfPath && (await isExistingFile(workspacePdfPath))) {
-      shell.showItemInFolder(workspacePdfPath)
-      return { status: 'ready', pdfPath: workspacePdfPath }
+    const existingWorkspacePdfPath = await resolveTrustedLocalPdfPath(
+      workspacePdfPath,
+      taskWorkspace,
+      workspacesDirectory
+    )
+    if (existingWorkspacePdfPath) {
+      await presentPdfFile(existingWorkspacePdfPath, payload.action)
+      return { status: 'ready', pdfPath: existingWorkspacePdfPath }
     }
 
-    if (!workspacePdfPath && (await isExistingFile(fallbackPdfPath))) {
-      shell.showItemInFolder(fallbackPdfPath)
-      return { status: 'ready', pdfPath: fallbackPdfPath }
+    const existingFallbackPdfPath = workspacePdfPath
+      ? undefined
+      : await resolveTrustedLocalPdfPath(
+          fallbackPdfPath,
+          taskWorkspace,
+          workspacesDirectory
+        )
+    if (existingFallbackPdfPath) {
+      await presentPdfFile(existingFallbackPdfPath, payload.action)
+      return { status: 'ready', pdfPath: existingFallbackPdfPath }
     }
 
     const tokens = await authStore.load()
@@ -1242,12 +1565,19 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       throw new Error('Not authenticated')
     }
 
+    await mkdir(taskWorkspace, { recursive: true })
+    const [realWorkspacesDirectory, realTaskWorkspace] = await Promise.all([
+      realpath(workspacesDirectory),
+      realpath(taskWorkspace)
+    ])
+    if (!isInsideDirectory(realTaskWorkspace, realWorkspacesDirectory)) {
+      throw new Error('任务工作区路径无效')
+    }
     const taskApi = await createApiClient()
     const pdfBytes = await taskApi.downloadPdfReport(tokens.access_token, payload.taskId)
     const pdfPath = workspacePdfPath ?? fallbackPdfPath
-    await mkdir(dirname(pdfPath), { recursive: true })
     await writeFile(pdfPath, Buffer.from(pdfBytes))
-    shell.showItemInFolder(pdfPath)
+    await presentPdfFile(pdfPath, payload.action)
 
     return { status: 'ready', pdfPath }
   })

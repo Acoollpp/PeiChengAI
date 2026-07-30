@@ -34,7 +34,7 @@ function Layout() {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset>
+      <SidebarInset className="min-w-0">
         <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1 text-muted-foreground" />
         </header>
@@ -45,7 +45,9 @@ function Layout() {
                 ? "mx-auto w-full max-w-[1600px]"
                 : "mx-auto max-w-7xl"
             }
-            data-testid={isReviewTasksRoute ? "review-tasks-content" : undefined}
+            data-testid={
+              isReviewTasksRoute ? "review-tasks-content" : undefined
+            }
           >
             <Outlet />
           </div>

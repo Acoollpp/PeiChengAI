@@ -241,6 +241,8 @@ export function useTaskQueue({
             codex_log_path: result.codexLogPath ?? latestTask.codex_log_path,
             reportMarkdown: result.reportMarkdown,
             pdfPath: result.pdfPath,
+            feedback_protocol_version:
+              result.feedbackProtocolVersion ?? latestTask.feedback_protocol_version,
             progress_message:
               result.status === 'success' ? '审查完成' : latestTask.progress_message,
             started_at: latestTask.started_at ?? nowIso(),

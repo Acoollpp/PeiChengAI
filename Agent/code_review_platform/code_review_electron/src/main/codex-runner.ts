@@ -219,6 +219,7 @@ export const buildReviewPrompt = ({
 最终生成 Markdown 审查报告到报告输出路径：${reportPath}
 如需生成或保存审查相关图片，必须保存到图片保存目录：${imagesDir}
 Markdown 报告中引用图片时必须使用相对路径：${REVIEW_REPORT_IMAGES_DIR_NAME}/<文件名>
+报告正文不得包含“报告输出路径”或“报告输出地址”元数据；这些路径只用于本次内部写入。
 
 ---
 

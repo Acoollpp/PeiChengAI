@@ -9,6 +9,8 @@ import {
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+import { extractReviewIssues } from '../../../shared/review-issues'
+
 export type ReportHeadingOption = {
   id: string
   level: number
@@ -22,235 +24,13 @@ type MarkdownPreviewProps = {
   activeFeedbackAnchorId?: string
 }
 
-const headingLinePattern = /^(#{1,6})\s+(.+?)\s*$/
-
-const anchorIdForLine = (lineIndex: number): string => `report-option-${lineIndex}`
-
-const stripMarkerListPrefix = (value: string): string =>
-  value.replace(/^\s*\d+[\.)、]\s*/, '').trim()
-
-const stripMarkdownInline = (value: string): string =>
-  value
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/\*([^*]+)\*/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .trim()
-
-const normalizeCellText = (value?: string): string =>
-  stripMarkdownInline(value ?? '')
-    .replace(/<br\s*\/?>/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-const isPlaceholderText = (value: string): boolean =>
-  !value ||
-  value === '无' ||
-  value === '待填写' ||
-  value === '待填写。' ||
-  value.includes('填写') ||
-  value.includes('高风险/中风险/低风险/建议')
-
-const isTableSeparator = (line: string): boolean =>
-  /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)
-
-const splitTableRow = (line: string): string[] =>
-  line
-    .trim()
-    .replace(/^\|/, '')
-    .replace(/\|$/, '')
-    .split('|')
-    .map(normalizeCellText)
-
-const makeUniqueOptions = (options: ReportHeadingOption[]): ReportHeadingOption[] => {
-  const seen = new Set<string>()
-  return options.filter((option) => {
-    if (seen.has(option.text)) {
-      return false
-    }
-    seen.add(option.text)
-    return true
-  })
-}
-
-const getHeaderIndex = (headers: string[], names: string[]): number =>
-  headers.findIndex((header) => names.some((name) => header.includes(name)))
-
-const buildTemplateTwoTableOption = (
-  sectionTitle: string,
-  headers: string[],
-  cells: string[]
-): string | null => {
-  const risk = cells[getHeaderIndex(headers, ['风险级别'])] ?? ''
-  const direction = cells[getHeaderIndex(headers, ['专项检查方向', '规范违反条目'])] ?? ''
-  const description =
-    cells[
-      getHeaderIndex(headers, [
-        '触发规则/缺陷描述',
-        '缺陷描述',
-        '不合规现象描述',
-        '修改建议',
-        '整改建议'
-      ])
-    ] ?? ''
-  const parts = [sectionTitle, risk, direction, description].filter((part) => !isPlaceholderText(part))
-
-  if (parts.length < 2) {
-    return null
-  }
-
-  return parts.join(' · ')
-}
-
-const extractTemplateTwoTableOptions = (markdown: string): ReportHeadingOption[] => {
-  const options: ReportHeadingOption[] = []
-  const lines = markdown.split(/\r?\n/)
-  let inCodeBlock = false
-  let currentSection = ''
-  let currentHeaders: string[] | null = null
-
-  lines.forEach((line, index) => {
-    if (/^\s*```/.test(line)) {
-      inCodeBlock = !inCodeBlock
-      return
-    }
-    if (inCodeBlock) {
-      return
-    }
-
-    const headingMatch = headingLinePattern.exec(line)
-    if (headingMatch) {
-      currentSection = stripMarkerListPrefix(stripMarkdownInline(headingMatch[2]))
-      currentHeaders = null
-      return
-    }
-
-    if (!line.trim().startsWith('|')) {
-      currentHeaders = null
-      return
-    }
-    if (isTableSeparator(line)) {
-      return
-    }
-
-    const cells = splitTableRow(line)
-    if (currentHeaders === null) {
-      currentHeaders = cells
-      return
-    }
-
-    const text = buildTemplateTwoTableOption(currentSection, currentHeaders, cells)
-    if (text) {
-      options.push({ id: `${index}-${text}`, level: 4, text, anchorId: anchorIdForLine(index) })
-    }
-  })
-
-  return makeUniqueOptions(options)
-}
-
-const extractTemplateTwoConclusionOptions = (markdown: string): ReportHeadingOption[] => {
-  const options: ReportHeadingOption[] = []
-  let inCodeBlock = false
-  let inConclusion = false
-  let currentSection = ''
-
-  markdown.split(/\r?\n/).forEach((line, index) => {
-    if (/^\s*```/.test(line)) {
-      inCodeBlock = !inCodeBlock
-      return
-    }
-    if (inCodeBlock) {
-      return
-    }
-
-    const headingMatch = headingLinePattern.exec(line)
-    if (headingMatch) {
-      const headingText = stripMarkerListPrefix(stripMarkdownInline(headingMatch[2]))
-      const level = headingMatch[1].length
-      if (level === 2) {
-        inConclusion = headingText === '结论'
-      }
-      if (inConclusion && level >= 3) {
-        currentSection = headingText
-      }
-      return
-    }
-
-    if (!inConclusion || !currentSection) {
-      return
-    }
-
-    const itemMatch = /^\s*[-*]\s+(.+?)\s*$/.exec(line)
-    if (!itemMatch) {
-      return
-    }
-
-    const item = stripMarkdownInline(itemMatch[1])
-    if (isPlaceholderText(item)) {
-      return
-    }
-
-    const text = `${currentSection} · ${item}`
-    options.push({ id: `${index}-${text}`, level: 4, text, anchorId: anchorIdForLine(index) })
-  })
-
-  return makeUniqueOptions(options)
-}
-
-const isTemplateTwoReport = (markdown: string): boolean =>
-  /代码审查报告模?板二/.test(markdown)
-
 export const extractDetailedHeadingOptions = (markdown: string): ReportHeadingOption[] => {
-  if (isTemplateTwoReport(markdown)) {
-    const tableOptions = extractTemplateTwoTableOptions(markdown)
-    if (tableOptions.length > 0) {
-      return tableOptions
-    }
-    return extractTemplateTwoConclusionOptions(markdown)
-  }
-
-  const headings: ReportHeadingOption[] = []
-  let inCodeBlock = false
-
-  markdown.split(/\r?\n/).forEach((line, index) => {
-    if (/^\s*```/.test(line)) {
-      inCodeBlock = !inCodeBlock
-      return
-    }
-    if (inCodeBlock) {
-      return
-    }
-    const match = headingLinePattern.exec(line)
-    if (!match) {
-      return
-    }
-    const text = stripMarkerListPrefix(stripMarkdownInline(match[2]))
-    if (!text) {
-      return
-    }
-    headings.push({
-      id: `${index}-${text}`,
-      level: match[1].length,
-      text,
-      anchorId: anchorIdForLine(index)
-    })
-  })
-
-  const leafHeadings = headings.filter((heading, index) => {
-    const nextSameOrHigher = headings.findIndex(
-      (candidate, candidateIndex) =>
-        candidateIndex > index && candidate.level <= heading.level
-    )
-    const children = headings.slice(
-      index + 1,
-      nextSameOrHigher === -1 ? headings.length : nextSameOrHigher
-    )
-    return children.length === 0
-  })
-  const detailed = leafHeadings.filter((heading) => heading.level >= 3)
-  const fallback = leafHeadings.filter((heading) => heading.level >= 2)
-
-  return makeUniqueOptions(detailed.length > 0 ? detailed : fallback)
+  return extractReviewIssues(markdown).map((issue) => ({
+    id: issue.id,
+    level: issue.location.headingLevel,
+    text: issue.displayText,
+    anchorId: issue.anchorId
+  }))
 }
 
 const safeUrl = (href?: string): string | undefined => {
@@ -290,12 +70,12 @@ const getCodeLanguage = (children: ReactNode): string | undefined => {
   return /language-(\w+)/.exec(child.props.className ?? '')?.[1]
 }
 
-const buildFeedbackAnchorMap = (markdown: string): Map<string, string> => {
-  const anchors = new Map<string, string>()
+const buildFeedbackAnchorMap = (markdown: string): Map<number, string> => {
+  const anchors = new Map<number, string>()
 
   try {
-    extractDetailedHeadingOptions(markdown).forEach((option) => {
-      anchors.set(option.text, option.anchorId)
+    extractReviewIssues(markdown).forEach((issue) => {
+      anchors.set(issue.location.anchorLine, issue.anchorId)
     })
   } catch {
     return anchors
@@ -304,86 +84,26 @@ const buildFeedbackAnchorMap = (markdown: string): Map<string, string> => {
   return anchors
 }
 
-const getPlainText = (children: ReactNode): string => {
-  if (typeof children === 'string' || typeof children === 'number') {
-    return String(children)
+type PositionedMarkdownNode = {
+  position?: {
+    start?: {
+      line?: number
+    }
   }
-
-  if (Array.isArray(children)) {
-    return children.map(getPlainText).join('')
-  }
-
-  if (isValidElement<{ children?: ReactNode }>(children)) {
-    return getPlainText(children.props.children)
-  }
-
-  return ''
 }
 
-const stripRenderedMarkerPrefix = (value: string): string =>
-  value.replace(/^\s*\d+[\.)、]\s*/, '').trim()
-
-const normalizeRenderedAnchorText = (value: string): string =>
-  stripRenderedMarkerPrefix(value)
-    .replace(/<br\s*\/?>/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-const compactAnchorText = (value: string): string =>
-  normalizeRenderedAnchorText(value).replace(/\s+/g, '')
+const findAnchorForRenderedNode = (
+  anchorMap: Map<number, string>,
+  node: PositionedMarkdownNode | undefined
+): string | undefined => {
+  const oneBasedLine = node?.position?.start?.line
+  return oneBasedLine === undefined ? undefined : anchorMap.get(oneBasedLine - 1)
+}
 
 const isActiveReportAnchor = (
   anchorId: string | undefined,
   activeFeedbackAnchorId: string | undefined
 ): boolean => Boolean(anchorId) && anchorId === activeFeedbackAnchorId
-
-const findAnchorForRenderedText = (
-  anchorMap: Map<string, string>,
-  renderedText: string
-): string | undefined => {
-  const normalized = normalizeRenderedAnchorText(renderedText)
-
-  if (!normalized) {
-    return undefined
-  }
-
-  return anchorMap.get(normalized)
-}
-
-const findAnchorForRenderedTableRow = (
-  anchorMap: Map<string, string>,
-  renderedText: string
-): string | undefined => {
-  const normalized = normalizeRenderedAnchorText(renderedText)
-  if (!normalized) {
-    return undefined
-  }
-  const compactRenderedText = compactAnchorText(normalized)
-
-  return (
-    anchorMap.get(normalized) ??
-    [...anchorMap.entries()].find(([text]) => {
-      const parts = text
-        .split('·')
-        .map(normalizeRenderedAnchorText)
-        .filter((part) => part.length >= 2)
-      const rowParts = parts.slice(1)
-      const directMatches = rowParts.filter((part) => compactRenderedText.includes(compactAnchorText(part)))
-      if (directMatches.length >= 2) {
-        return true
-      }
-
-      const hasRiskLevel = rowParts.some((part) => /风险|建议/.test(part) && compactRenderedText.includes(compactAnchorText(part)))
-      const hasDescriptionFragment = rowParts
-        .flatMap((part) => part.split(/[，。；、,.;:：]/))
-        .map(normalizeRenderedAnchorText)
-        .filter((part) => part.length >= 8)
-        .some((part) => compactRenderedText.includes(compactAnchorText(part)))
-
-      return hasRiskLevel && hasDescriptionFragment
-    })?.[1]
-  )
-}
 
 type MarkdownErrorBoundaryProps = {
   children: ReactNode
@@ -498,8 +218,8 @@ export function MarkdownPreview({
               key === 'src' && isRelativeImagePath(url) ? url : safeUrl(url)
             }
             components={{
-              h1: ({ children }) => {
-                const anchorId = findAnchorForRenderedText(feedbackAnchorMap, getPlainText(children))
+              h1: ({ children, node }) => {
+                const anchorId = findAnchorForRenderedNode(feedbackAnchorMap, node)
                 return (
                   <h1
                     data-report-anchor-id={anchorId}
@@ -513,8 +233,8 @@ export function MarkdownPreview({
                   </h1>
                 )
               },
-              h2: ({ children }) => {
-                const anchorId = findAnchorForRenderedText(feedbackAnchorMap, getPlainText(children))
+              h2: ({ children, node }) => {
+                const anchorId = findAnchorForRenderedNode(feedbackAnchorMap, node)
                 return (
                   <h2
                     data-report-anchor-id={anchorId}
@@ -528,8 +248,8 @@ export function MarkdownPreview({
                   </h2>
                 )
               },
-              h3: ({ children }) => {
-                const anchorId = findAnchorForRenderedText(feedbackAnchorMap, getPlainText(children))
+              h3: ({ children, node }) => {
+                const anchorId = findAnchorForRenderedNode(feedbackAnchorMap, node)
                 return (
                   <h3
                     data-report-anchor-id={anchorId}
@@ -543,8 +263,8 @@ export function MarkdownPreview({
                   </h3>
                 )
               },
-              h4: ({ children }) => {
-                const anchorId = findAnchorForRenderedText(feedbackAnchorMap, getPlainText(children))
+              h4: ({ children, node }) => {
+                const anchorId = findAnchorForRenderedNode(feedbackAnchorMap, node)
                 return (
                   <h4
                     data-report-anchor-id={anchorId}
@@ -558,8 +278,8 @@ export function MarkdownPreview({
                   </h4>
                 )
               },
-              h5: ({ children }) => {
-                const anchorId = findAnchorForRenderedText(feedbackAnchorMap, getPlainText(children))
+              h5: ({ children, node }) => {
+                const anchorId = findAnchorForRenderedNode(feedbackAnchorMap, node)
                 return (
                   <h5
                     data-report-anchor-id={anchorId}
@@ -573,8 +293,8 @@ export function MarkdownPreview({
                   </h5>
                 )
               },
-              h6: ({ children }) => {
-                const anchorId = findAnchorForRenderedText(feedbackAnchorMap, getPlainText(children))
+              h6: ({ children, node }) => {
+                const anchorId = findAnchorForRenderedNode(feedbackAnchorMap, node)
                 return (
                   <h6
                     data-report-anchor-id={anchorId}
@@ -619,8 +339,8 @@ export function MarkdownPreview({
                   <table>{children}</table>
                 </div>
               ),
-              tr: ({ children }) => {
-                const anchorId = findAnchorForRenderedTableRow(feedbackAnchorMap, getPlainText(children))
+              tr: ({ children, node }) => {
+                const anchorId = findAnchorForRenderedNode(feedbackAnchorMap, node)
                 return (
                   <tr
                     data-report-anchor-id={anchorId}
@@ -632,6 +352,21 @@ export function MarkdownPreview({
                   >
                     {children}
                   </tr>
+                )
+              },
+              li: ({ children, node }) => {
+                const anchorId = findAnchorForRenderedNode(feedbackAnchorMap, node)
+                return (
+                  <li
+                    data-report-anchor-id={anchorId}
+                    className={
+                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId)
+                        ? 'report-anchor-highlight'
+                        : undefined
+                    }
+                  >
+                    {children}
+                  </li>
                 )
               },
               img: ({ alt, src }) => <ReportImage alt={alt} src={src} reportPath={reportPath} />

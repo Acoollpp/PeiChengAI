@@ -3,8 +3,14 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Index
+from sqlalchemy import JSON, DateTime, Index, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, Relationship, SQLModel
+
+MAX_REVIEW_TASK_ISSUE_TEXT_LENGTH = 8 * 1024
+MAX_REVIEW_TASK_ISSUE_DESCRIPTION_LENGTH = 64 * 1024
+MAX_REVIEW_TASK_ISSUE_DISPLAY_SNAPSHOT_LENGTH = 256 * 1024
+MAX_REVIEW_TASK_ISSUE_FEEDBACK_LENGTH = 4 * 1024
 
 
 def get_datetime_utc() -> datetime:
@@ -361,6 +367,11 @@ class ReviewTask(SQLModel, table=True):
     report_name: str | None = Field(default=None, max_length=255)
     pdf_report_path: str | None = Field(default=None, max_length=2048)
     pdf_report_name: str | None = Field(default=None, max_length=255)
+    feedback_protocol_version: int | None = Field(default=None)
+    feedback_submitted_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
     error_message: str | None = None
     client_hostname: str | None = Field(default=None, max_length=255)
     client_version: str | None = Field(default=None, max_length=255)
@@ -402,6 +413,50 @@ class ReviewTaskReportFeedback(SQLModel, table=True):
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         index=True,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class ReviewTaskIssue(SQLModel, table=True):
+    __tablename__ = "review_task_issue"
+    __table_args__ = (
+        UniqueConstraint("task_id", "order", name="uq_review_task_issue_task_order"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    task_id: uuid.UUID = Field(
+        foreign_key="review_task.id",
+        ondelete="CASCADE",
+        nullable=False,
+        index=True,
+    )
+    issue_text: str = Field(
+        max_length=MAX_REVIEW_TASK_ISSUE_TEXT_LENGTH,
+        sa_type=Text,
+    )
+    description_text: str = Field(
+        max_length=MAX_REVIEW_TASK_ISSUE_DESCRIPTION_LENGTH,
+        sa_type=Text,
+    )
+    display_snapshot: str = Field(
+        max_length=MAX_REVIEW_TASK_ISSUE_DISPLAY_SNAPSHOT_LENGTH,
+        sa_type=Text,
+    )
+    order: int = Field(nullable=False)
+    source: str = Field(max_length=64)
+    location: dict[str, int] = Field(sa_type=JSONB)
+    helpful: bool | None = Field(default=None, index=True)
+    feedback_text: str | None = Field(
+        default=None,
+        max_length=MAX_REVIEW_TASK_ISSUE_FEEDBACK_LENGTH,
+        sa_type=Text,
+    )
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
     )
     updated_at: datetime | None = Field(
@@ -496,6 +551,60 @@ class ReviewTaskReportFeedbackPublic(SQLModel):
     updated_at: datetime | None = None
 
 
+class ReviewTaskIssueLocation(SQLModel):
+    start_offset: int = Field(ge=0)
+    end_offset: int = Field(ge=0)
+    feedback_insertion_offset: int = Field(ge=0)
+    anchor_line: int = Field(ge=0)
+    heading_level: int = Field(ge=0, le=6)
+
+
+class ReviewTaskIssueSnapshotCreate(SQLModel):
+    issue_text: str = Field(
+        min_length=1,
+        max_length=MAX_REVIEW_TASK_ISSUE_TEXT_LENGTH,
+    )
+    description_text: str = Field(
+        max_length=MAX_REVIEW_TASK_ISSUE_DESCRIPTION_LENGTH,
+    )
+    display_snapshot: str = Field(
+        min_length=1,
+        max_length=MAX_REVIEW_TASK_ISSUE_DISPLAY_SNAPSHOT_LENGTH,
+    )
+    order: int = Field(ge=0)
+    source: str = Field(min_length=1, max_length=64)
+    location: ReviewTaskIssueLocation
+
+
+class ReviewTaskIssuePublic(SQLModel):
+    id: uuid.UUID
+    task_id: uuid.UUID
+    issue_text: str
+    description_text: str
+    display_snapshot: str
+    order: int
+    source: str
+    location: ReviewTaskIssueLocation
+    helpful: bool | None = None
+    feedback_text: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ReviewTaskIssueFeedbackDraftUpdate(SQLModel):
+    helpful: bool | None
+    feedback_text: str | None = Field(
+        max_length=MAX_REVIEW_TASK_ISSUE_FEEDBACK_LENGTH,
+    )
+
+
+class ReviewTaskIssuesPublic(SQLModel):
+    data: list[ReviewTaskIssuePublic]
+    count: int
+    evaluated_count: int
+    feedback_submitted_at: datetime | None = None
+
+
 class ReviewTaskPublic(SQLModel):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -519,6 +628,11 @@ class ReviewTaskPublic(SQLModel):
     report_name: str | None = None
     pdf_report_path: str | None = None
     pdf_report_name: str | None = None
+    feedback_protocol_version: int | None = None
+    feedback_submitted_at: datetime | None = None
+    issue_count: int = 0
+    evaluated_issue_count: int = 0
+    has_issue_feedback_draft: bool = False
     report_feedback_helpful: bool | None = None
     report_feedback_useful_issues_text: str | None = None
     error_message: str | None = None
@@ -611,9 +725,7 @@ class ReviewTaskWeeklyInsightsPublic(SQLModel):
     risk_counts: dict[str, int]
     attention_points: list[str] = Field(default_factory=list)
     daily: list[ReviewTaskWeeklyDailyPointPublic] = Field(default_factory=list)
-    categories: list[ReviewTaskWeeklyCategoryStatsPublic] = Field(
-        default_factory=list
-    )
+    categories: list[ReviewTaskWeeklyCategoryStatsPublic] = Field(default_factory=list)
     departments: list[ReviewTaskWeeklyDepartmentStatsPublic] = Field(
         default_factory=list
     )

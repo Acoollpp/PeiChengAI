@@ -47,6 +47,7 @@ type PdfReportSnapshot = {
   taskId: string
   localPdfPath?: string
   pdfReportName?: string
+  action?: 'open' | 'reveal'
 }
 
 const formatReportFeedbackError = (error: unknown): string => {
@@ -377,7 +378,8 @@ export function TaskPage({
   const openSelectedPdfReport = useCallback(async ({
     taskId,
     localPdfPath,
-    pdfReportName
+    pdfReportName,
+    action
   }: PdfReportSnapshot): Promise<void> => {
     if (!isMountedRef.current || selectedTaskIdRef.current !== taskId) {
       return
@@ -388,7 +390,8 @@ export function TaskPage({
       const result = await window.codeReview.openPdfReport({
         taskId,
         localPdfPath,
-        pdfReportName
+        pdfReportName,
+        action
       })
       if (!isMountedRef.current || selectedTaskIdRef.current !== taskId) {
         return
@@ -422,9 +425,10 @@ export function TaskPage({
     await openSelectedPdfReport({
       taskId,
       localPdfPath: currentPdfPathRef.current,
-      pdfReportName: currentPdfReportNameRef.current
+      pdfReportName: currentPdfReportNameRef.current,
+      ...(selectedTask?.feedback_protocol_version === 1 ? { action: 'open' as const } : {})
     })
-  }, [openSelectedPdfReport])
+  }, [openSelectedPdfReport, selectedTask?.feedback_protocol_version])
 
   const handleReportNotUseful = async (): Promise<void> => {
     const taskId = selectedTaskIdRef.current
@@ -452,10 +456,22 @@ export function TaskPage({
     }
     setError('')
     try {
-      await window.codeReview.openReportFeedbackWindow({
-        taskId,
-        options: usefulIssueOptions
-      })
+      if (selectedTask?.feedback_protocol_version === 1) {
+        await window.codeReview.openReportFeedbackWindow({
+          mode: 'issues',
+          taskId,
+          anchors: usefulIssueOptions.map((option, order) => ({
+            order,
+            anchorId: option.anchorId
+          }))
+        })
+      } else {
+        await window.codeReview.openReportFeedbackWindow({
+          mode: 'legacy',
+          taskId,
+          options: usefulIssueOptions
+        })
+      }
     } catch {
       if (isMountedRef.current && selectedTaskIdRef.current === taskId) {
         setError('反馈窗口打开失败，请重试。')
@@ -502,6 +518,29 @@ export function TaskPage({
         pdfReportName: currentPdfReportNameRef.current
       })
     }), [markTaskFeedbackSubmitted, openSelectedPdfReport])
+
+  useEffect(() =>
+    window.codeReview.onIssueFeedbackSubmitted(({
+      taskId,
+      feedbackSubmittedAt,
+      pdfPath,
+      pdfReportName
+    }) => {
+      updateTask(taskId, (task) => ({
+        ...task,
+        feedback_submitted_at: feedbackSubmittedAt,
+        evaluated_issue_count: task.issue_count ?? task.evaluated_issue_count,
+        pdf_report_name: pdfReportName,
+        pdfPath
+      }))
+      if (selectedTaskIdRef.current !== taskId) {
+        return
+      }
+      setReportFeedbackStatus('idle')
+      setActiveFeedbackAnchorId(undefined)
+      setActivePdfPath(pdfPath)
+      setActivePdfReportName(pdfReportName)
+    }), [setActivePdfPath, setActivePdfReportName, updateTask])
 
   return (
     <section className="review-workspace">
@@ -577,7 +616,37 @@ export function TaskPage({
           </div>
           {selectedTask && (
             <div className="report-toolbar-actions">
-              {selectedTask.report_feedback_helpful == null && (
+              {selectedTask.feedback_protocol_version === 1 &&
+                !selectedTask.feedback_submitted_at && (
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={handleReportUseful}
+                >
+                  提交反馈并查看PDF报告
+                </button>
+              )}
+              {selectedTask.feedback_protocol_version === 1 &&
+                selectedTask.feedback_submitted_at && (
+                <>
+                  <button
+                    className="primary-button"
+                    type="button"
+                    onClick={handleReportUseful}
+                  >
+                    查看已提交反馈
+                  </button>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void handleOpenPdfReport()}
+                  >
+                    查看PDF报告
+                  </button>
+                </>
+              )}
+              {selectedTask.feedback_protocol_version !== 1 &&
+                selectedTask.report_feedback_helpful == null && (
                 <div className="report-feedback-actions">
                   <div className="report-feedback-copy">
                     <strong>报告反馈</strong>
@@ -601,7 +670,8 @@ export function TaskPage({
                   </button>
                 </div>
               )}
-              {selectedTask.report_feedback_helpful != null && (
+              {selectedTask.feedback_protocol_version !== 1 &&
+                selectedTask.report_feedback_helpful != null && (
                 <button className="secondary-button" type="button" onClick={() => void handleOpenPdfReport()}>
                   查看PDF报告
                 </button>

@@ -52,6 +52,36 @@ describe('report pdf generator', () => {
     )
   })
 
+  it('使用内存Markdown生成PDF且不改写本地原始报告', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-pdf-memory-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const originalMarkdown = '# 原始报告\n\n### 问题一\n'
+    const renderingMarkdown = [
+      originalMarkdown,
+      '> 是否有帮助：有帮助',
+      '>',
+      '> 用户反馈：`已完成修复`'
+    ].join('\n')
+    await writeFile(reportPath, originalMarkdown)
+    let loadedHtml = ''
+    const createWindow = vi.fn(() => ({
+      loadFile: vi.fn(async (path: string) => {
+        loadedHtml = await readFile(path, 'utf8')
+      }),
+      webContents: {
+        printToPDF: vi.fn(async () => Buffer.from('%PDF-1.4\nmemory'))
+      },
+      close: vi.fn()
+    }))
+
+    await generatePdfReport(reportPath, { createWindow, markdown: renderingMarkdown })
+
+    await expect(readFile(reportPath, 'utf8')).resolves.toBe(originalMarkdown)
+    expect(loadedHtml).toContain('是否有帮助：有帮助')
+    expect(loadedHtml).toContain('<code>已完成修复</code>')
+  })
+
   it('allows existing relative image references', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'report-pdf-image-'))
     tempDirs.push(dir)

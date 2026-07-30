@@ -73,6 +73,10 @@ export interface ReviewTask {
   report_name?: string | null
   pdf_report_path?: string
   pdf_report_name?: string | null
+  feedback_protocol_version?: number | null
+  feedback_submitted_at?: string | null
+  issue_count?: number
+  evaluated_issue_count?: number
   started_at?: string | null
   finished_at?: string | null
   error_message?: string
@@ -81,6 +85,34 @@ export interface ReviewTask {
   codex_log_path?: string
   report_feedback_helpful?: boolean | null
   report_feedback_useful_issues_text?: string | null
+}
+
+export interface ReviewTaskIssue {
+  id: string
+  task_id: string
+  issue_text: string
+  description_text: string
+  display_snapshot: string
+  order: number
+  source: string
+  location: {
+    start_offset: number
+    end_offset: number
+    feedback_insertion_offset: number
+    anchor_line: number
+    heading_level: number
+  }
+  helpful?: boolean | null
+  feedback_text?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface ReviewTaskIssuesResponse {
+  data: ReviewTaskIssue[]
+  count: number
+  evaluated_count: number
+  feedback_submitted_at?: string | null
 }
 
 export type TaskProgressStage =

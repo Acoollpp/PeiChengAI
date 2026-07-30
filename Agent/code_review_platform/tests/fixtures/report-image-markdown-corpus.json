@@ -1,0 +1,10 @@
+{
+  "markdown": "# 图片语料\n\n\\![转义图片](images/escaped.png)\n\n![跨行目标](\n  <images/multiline path.png>\n)\n\n![编码后的重复目标](images/multiline%20path.png)\n\n![HTML 实体](images/entity&amp;name.png)\n\n![括号路径](images/call(chain).png)\n\n![引用式图片][evidence]\n\n[evidence]: images/reference.png \"证据\"\n\n![重复定义采用首项][duplicate]\n\n[duplicate]: images/first-definition.png\n[duplicate]: images/ignored-definition.png\n\n`跨行代码开始\n![代码伪图片](images/inline-code.png)`\n\n    ![缩进代码](images/indented-code.png)\n\n```markdown\n![围栏代码](images/fenced-code.png)\n```\n",
+  "expected_paths": [
+    "images/multiline path.png",
+    "images/entity&name.png",
+    "images/call(chain).png",
+    "images/reference.png",
+    "images/first-definition.png"
+  ]
+}

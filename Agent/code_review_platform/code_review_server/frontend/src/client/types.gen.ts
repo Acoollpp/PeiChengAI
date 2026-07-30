@@ -29,6 +29,10 @@ export type Body_review_tasks_upload_review_task_pdf_report = {
 
 export type Body_review_tasks_upload_review_task_report = {
     upload: (Blob | File);
+    feedback_protocol_version?: (number | null);
+    issues?: (string | null);
+    asset_paths?: (string | null);
+    assets?: (Array<((Blob | File))> | null);
 };
 
 export type Body_review_tasks_upload_review_task_requirement_file = {
@@ -276,6 +280,41 @@ export type ReviewTaskCreate = {
     requirement_file_name?: (string | null);
 };
 
+export type ReviewTaskIssueFeedbackDraftUpdate = {
+    helpful: (boolean | null);
+    feedback_text: (string | null);
+};
+
+export type ReviewTaskIssueLocation = {
+    start_offset: number;
+    end_offset: number;
+    feedback_insertion_offset: number;
+    anchor_line: number;
+    heading_level: number;
+};
+
+export type ReviewTaskIssuePublic = {
+    id: string;
+    task_id: string;
+    issue_text: string;
+    description_text: string;
+    display_snapshot: string;
+    order: number;
+    source: string;
+    location: ReviewTaskIssueLocation;
+    helpful?: (boolean | null);
+    feedback_text?: (string | null);
+    created_at?: (string | null);
+    updated_at?: (string | null);
+};
+
+export type ReviewTaskIssuesPublic = {
+    data: Array<ReviewTaskIssuePublic>;
+    count: number;
+    evaluated_count: number;
+    feedback_submitted_at?: (string | null);
+};
+
 export type ReviewTaskPublic = {
     id: string;
     user_id: string;
@@ -299,6 +338,11 @@ export type ReviewTaskPublic = {
     report_name?: (string | null);
     pdf_report_path?: (string | null);
     pdf_report_name?: (string | null);
+    feedback_protocol_version?: (number | null);
+    feedback_submitted_at?: (string | null);
+    issue_count?: number;
+    evaluated_issue_count?: number;
+    has_issue_feedback_draft?: boolean;
     report_feedback_helpful?: (boolean | null);
     report_feedback_useful_issues_text?: (string | null);
     error_message?: (string | null);
@@ -767,6 +811,8 @@ export type ReviewTasksReadReviewTasksData = {
 
 export type ReviewTasksReadReviewTasksResponse = (ReviewTasksPublic);
 
+export type ReviewTasksExportReviewTaskIssueFeedbackResponse = (unknown);
+
 export type ReviewTasksReadReviewTaskStatsData = {
     range?: ReviewTaskStatsRange;
 };
@@ -815,6 +861,27 @@ export type ReviewTasksReadReviewTaskReportData = {
 };
 
 export type ReviewTasksReadReviewTaskReportResponse = (string);
+
+export type ReviewTasksReadReviewTaskIssuesData = {
+    taskId: string;
+};
+
+export type ReviewTasksReadReviewTaskIssuesResponse = (ReviewTaskIssuesPublic);
+
+export type ReviewTasksUpdateReviewTaskIssueFeedbackDraftData = {
+    issueId: string;
+    requestBody: ReviewTaskIssueFeedbackDraftUpdate;
+    taskId: string;
+};
+
+export type ReviewTasksUpdateReviewTaskIssueFeedbackDraftResponse = (ReviewTaskIssuePublic);
+
+export type ReviewTasksReadReviewTaskAssetData = {
+    assetPath: string;
+    taskId: string;
+};
+
+export type ReviewTasksReadReviewTaskAssetResponse = (unknown);
 
 export type ReviewTasksUploadReviewTaskPdfReportData = {
     formData: Body_review_tasks_upload_review_task_pdf_report;

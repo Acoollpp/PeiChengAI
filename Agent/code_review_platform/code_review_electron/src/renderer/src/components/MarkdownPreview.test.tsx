@@ -213,6 +213,29 @@ describe('MarkdownPreview', () => {
     )
   })
 
+  it('重复问题标题使用共享识别结果获得独立锚点', () => {
+    render(
+      <MarkdownPreview
+        markdown={[
+          '# 审查报告',
+          '## 高风险问题',
+          '### 1. 重复问题标题',
+          '- **问题描述：** 模块 A 的问题。',
+          '### 2. 重复问题标题',
+          '- **问题描述：** 模块 B 的问题。'
+        ].join('\n')}
+        activeFeedbackAnchorId="report-option-4"
+      />
+    )
+
+    const headings = screen.getAllByRole('heading', { name: /重复问题标题/ })
+    expect(headings).toHaveLength(2)
+    expect(headings[0]).toHaveAttribute('data-report-anchor-id', 'report-option-2')
+    expect(headings[1]).toHaveAttribute('data-report-anchor-id', 'report-option-4')
+    expect(headings[0]).not.toHaveClass('report-anchor-highlight')
+    expect(headings[1]).toHaveClass('report-anchor-highlight')
+  })
+
   it('renders report anchors for template two table row option targets', () => {
     render(
       <MarkdownPreview
@@ -257,6 +280,24 @@ describe('MarkdownPreview', () => {
     })
     expect(row).toHaveAttribute('data-report-anchor-id', 'report-option-5')
     expect(row).toHaveClass('report-anchor-highlight')
+  })
+
+  it('模板二结论兜底列表项使用共享识别结果定位和高亮', () => {
+    render(
+      <MarkdownPreview
+        markdown={[
+          '# 代码审查报告模板二',
+          '## 三、结论',
+          '### 1. 高风险项总结',
+          '- 未校验数组下标，可能发生越界访问。'
+        ].join('\n')}
+        activeFeedbackAnchorId="report-option-3"
+      />
+    )
+
+    const item = screen.getByRole('listitem')
+    expect(item).toHaveAttribute('data-report-anchor-id', 'report-option-3')
+    expect(item).toHaveClass('report-anchor-highlight')
   })
 
   it('does not render report feedback checkboxes by default', () => {

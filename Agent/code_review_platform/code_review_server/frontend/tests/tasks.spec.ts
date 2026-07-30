@@ -412,10 +412,10 @@ test.describe("Admin task navigation", () => {
     await page.goto("/tasks/review")
 
     await expect(
-      page.getByRole("columnheader", { name: "是否有帮助" }),
+      page.getByRole("columnheader", { name: "反馈状态" }),
     ).toBeVisible()
     await expect(
-      page.getByRole("columnheader", { name: "有用信息" }),
+      page.getByRole("columnheader", { name: "反馈内容" }),
     ).toBeVisible()
     await expect(page.getByText("有帮助")).toBeVisible()
     await expect(page.getByText("未反馈")).toBeVisible()
@@ -432,5 +432,679 @@ test.describe("Admin task navigation", () => {
         document.documentElement.clientWidth,
     )
     expect(hasPageHorizontalOverflow).toBe(false)
+  })
+})
+
+test.describe("Issue feedback task details", () => {
+  test.use({
+    storageState: { cookies: [], origins: [] },
+    viewport: { width: 1440, height: 900 },
+  })
+
+  const currentUser = {
+    id: "22222222-2222-2222-2222-222222222222",
+    full_name: "反馈管理员",
+    svn_username: "feedback_admin",
+    role: "admin",
+    is_active: true,
+    is_superuser: true,
+  }
+
+  const issueFeedbackTask = (
+    id: string,
+    userName: string,
+    overrides: Record<string, unknown> = {},
+  ) => ({
+    id,
+    user_id: "33333333-3333-3333-3333-333333333333",
+    user_name: userName,
+    svn_username: "review_owner",
+    svn_url: "https://example.test/svn/feedback-project",
+    old_revision: "r101",
+    new_revision: "r108",
+    department_name: "研发一部",
+    status: "success",
+    report_path: "/reports/task.md",
+    report_name: "代码审查报告.md",
+    pdf_report_path: null,
+    pdf_report_name: null,
+    feedback_protocol_version: 1,
+    feedback_submitted_at: null,
+    issue_count: 3,
+    evaluated_issue_count: 0,
+    has_issue_feedback_draft: false,
+    report_feedback_helpful: null,
+    report_feedback_useful_issues_text: null,
+    error_message: null,
+    created_at: "2026-07-29T09:50:00+08:00",
+    started_at: "2026-07-29T10:00:00+08:00",
+    finished_at: "2026-07-29T10:08:00+08:00",
+    ...overrides,
+  })
+
+  async function mockCurrentUser(
+    page: import("@playwright/test").Page,
+    user: typeof currentUser = currentUser,
+  ) {
+    await page.addInitScript(() => {
+      localStorage.setItem("access_token", "test-token")
+    })
+    await page.route("**/api/v1/users/me", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: user,
+      })
+    })
+  }
+
+  test("Task management exports issue feedback Excel with authentication", async ({
+    page,
+  }) => {
+    await mockCurrentUser(page, {
+      ...currentUser,
+      full_name: "普通反馈用户",
+      role: "user",
+      is_superuser: false,
+    })
+    let exportAuthorization = ""
+    await page.route("**/api/v1/review-tasks?**", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: { data: [], count: 0 },
+      })
+    })
+    await page.route(
+      "**/api/v1/review-tasks/issue-feedback/export",
+      async (route) => {
+        exportAuthorization = route.request().headers().authorization || ""
+        await route.fulfill({
+          contentType:
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          headers: {
+            "Content-Disposition":
+              "attachment; filename*=UTF-8''%E9%97%AE%E9%A2%98%E5%8F%8D%E9%A6%88%E6%98%8E%E7%BB%86_20260730_103000.xlsx",
+            "Access-Control-Expose-Headers": "Content-Disposition",
+          },
+          body: "mock xlsx content",
+        })
+      },
+    )
+
+    await page.goto("/tasks/review")
+    const exportButton = page.getByRole("button", {
+      name: "导出问题反馈 Excel",
+    })
+    await expect(exportButton).toBeVisible()
+
+    const downloadPromise = page.waitForEvent("download")
+    await exportButton.click()
+    const download = await downloadPromise
+
+    expect(download.suggestedFilename()).toBe(
+      "问题反馈明细_20260730_103000.xlsx",
+    )
+    expect(exportAuthorization).toBe("Bearer test-token")
+  })
+
+  test("List distinguishes new feedback states and preserves legacy feedback", async ({
+    page,
+  }) => {
+    await mockCurrentUser(page)
+    await page.route("**/api/v1/review-tasks*", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: {
+          data: [
+            issueFeedbackTask(
+              "10000000-0000-0000-0000-000000000001",
+              "未开始用户",
+            ),
+            issueFeedbackTask(
+              "10000000-0000-0000-0000-000000000002",
+              "草稿用户",
+              { evaluated_issue_count: 2 },
+            ),
+            issueFeedbackTask(
+              "10000000-0000-0000-0000-000000000005",
+              "说明草稿用户",
+              { has_issue_feedback_draft: true },
+            ),
+            issueFeedbackTask(
+              "10000000-0000-0000-0000-000000000003",
+              "已提交用户",
+              {
+                evaluated_issue_count: 3,
+                feedback_submitted_at: "2026-07-29T11:30:00+08:00",
+                pdf_report_path: "/reports/task.pdf",
+              },
+            ),
+            {
+              ...issueFeedbackTask(
+                "10000000-0000-0000-0000-000000000004",
+                "历史用户",
+              ),
+              feedback_protocol_version: null,
+              issue_count: 0,
+              evaluated_issue_count: 0,
+              report_feedback_helpful: true,
+              report_feedback_useful_issues_text: "空指针问题帮助定位",
+            },
+          ],
+          count: 5,
+        },
+      })
+    })
+
+    await page.goto("/tasks/review")
+
+    const notStartedRow = page
+      .getByRole("row")
+      .filter({ hasText: "未开始用户" })
+    await expect(notStartedRow).toContainText("未开始")
+    await expect(notStartedRow).toContainText("0 / 3")
+
+    const draftRow = page.getByRole("row").filter({
+      has: page.getByText("草稿用户", { exact: true }),
+    })
+    await expect(draftRow).toContainText("草稿")
+    await expect(draftRow).toContainText("2 / 3")
+
+    const textOnlyDraftRow = page
+      .getByRole("row")
+      .filter({ hasText: "说明草稿用户" })
+    await expect(textOnlyDraftRow).toContainText("草稿")
+    await expect(textOnlyDraftRow).toContainText("0 / 3")
+
+    const submittedRow = page.getByRole("row").filter({ hasText: "已提交用户" })
+    await expect(submittedRow).toContainText("已提交")
+    await expect(submittedRow).toContainText("3 / 3")
+
+    const legacyRow = page.getByRole("row").filter({ hasText: "历史用户" })
+    await expect(legacyRow).toContainText("有帮助")
+    await expect(legacyRow).toContainText("空指针问题帮助定位")
+    await expect(legacyRow).not.toContainText("0 / 0")
+
+    const hasPageHorizontalOverflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth >
+        document.documentElement.clientWidth,
+    )
+    expect(hasPageHorizontalOverflow).toBe(false)
+  })
+
+  test("Detail shows ordered read-only feedback, original report and final PDF", async ({
+    page,
+  }) => {
+    await mockCurrentUser(page)
+    const taskId = "20000000-0000-0000-0000-000000000001"
+    const task = issueFeedbackTask(taskId, "详情用户", {
+      issue_count: 2,
+      evaluated_issue_count: 2,
+      feedback_submitted_at: "2026-07-29T11:30:00+08:00",
+      pdf_report_path: "/reports/final.pdf",
+      pdf_report_name: "反馈版代码审查报告.pdf",
+    })
+    let detailAuthorization = ""
+    let issuesAuthorization = ""
+    let pdfDownloadCount = 0
+
+    await page.route("**/api/v1/review-tasks*", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: { data: [task], count: 1 },
+      })
+    })
+    await page.route(`**/api/v1/review-tasks/${taskId}`, async (route) => {
+      detailAuthorization = route.request().headers().authorization || ""
+      await route.fulfill({ contentType: "application/json", json: task })
+    })
+    await page.route(
+      `**/api/v1/review-tasks/${taskId}/issues`,
+      async (route) => {
+        issuesAuthorization = route.request().headers().authorization || ""
+        await route.fulfill({
+          contentType: "application/json",
+          json: {
+            data: [
+              {
+                id: "30000000-0000-0000-0000-000000000002",
+                task_id: taskId,
+                issue_text: "第二个问题：边界判断不完整",
+                description_text:
+                  "输入达到上限时会进入错误分支。这里附带足够长的描述，用来验证桌面详情中的文本会正常换行而不会横向撑开页面。",
+                display_snapshot: "snapshot-2",
+                order: 1,
+                source: "template_one_heading",
+                location: {
+                  start_offset: 100,
+                  end_offset: 200,
+                  feedback_insertion_offset: 190,
+                  anchor_line: 20,
+                  heading_level: 4,
+                },
+                helpful: false,
+                feedback_text:
+                  "该分支在当前产品约束下不会出现，但已经补充注释说明边界，后续需求变化时需要重新确认。",
+              },
+              {
+                id: "30000000-0000-0000-0000-000000000001",
+                task_id: taskId,
+                issue_text: "第一个问题：空指针风险",
+                description_text: "对象释放后仍可能被回调函数访问。",
+                display_snapshot: "snapshot-1",
+                order: 0,
+                source: "template_one_heading",
+                location: {
+                  start_offset: 0,
+                  end_offset: 99,
+                  feedback_insertion_offset: 90,
+                  anchor_line: 10,
+                  heading_level: 4,
+                },
+                helpful: true,
+                feedback_text: "已增加空值检查并完成回归测试。",
+              },
+            ],
+            count: 2,
+            evaluated_count: 2,
+            feedback_submitted_at: "2026-07-29T11:30:00+08:00",
+          },
+        })
+      },
+    )
+    await page.route(
+      `**/api/v1/review-tasks/${taskId}/report`,
+      async (route) => {
+        await route.fulfill({
+          contentType: "text/markdown; charset=utf-8",
+          body: "# 原始代码审查报告\n\n## 审查结论\n保留原始 Markdown 内容。",
+        })
+      },
+    )
+    await page.route(
+      `**/api/v1/review-tasks/${taskId}/pdf/download`,
+      async (route) => {
+        pdfDownloadCount += 1
+        await route.fulfill({
+          contentType: "application/pdf",
+          headers: {
+            "Content-Disposition":
+              'attachment; filename="feedback-review-report.pdf"',
+          },
+          body: "%PDF-1.4 mocked report",
+        })
+      },
+    )
+
+    await page.goto("/tasks/review")
+    const taskRow = page.getByRole("row").filter({ hasText: "详情用户" })
+    await taskRow.getByRole("button", { name: "查看任务详情" }).click()
+
+    const dialog = page.getByRole("dialog", { name: "任务详情" })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByText("研发一部")).toBeVisible()
+    await expect(dialog.getByText("r101 → r108")).toBeVisible()
+    await expect(dialog.getByText("已提交", { exact: true })).toBeVisible()
+    await expect(dialog.getByText("2 / 2")).toBeVisible()
+    await expect(dialog.getByText("2026-07-29 11:30:00")).toBeVisible()
+
+    const feedbackItems = dialog.locator(
+      '[data-testid="issue-feedback-list"] > li',
+    )
+    await expect(feedbackItems).toHaveCount(2)
+    await expect(feedbackItems.nth(0)).toContainText("第一个问题：空指针风险")
+    await expect(feedbackItems.nth(0)).toContainText("有帮助")
+    await expect(feedbackItems.nth(0)).toContainText(
+      "已增加空值检查并完成回归测试。",
+    )
+    await expect(feedbackItems.nth(1)).toContainText(
+      "第二个问题：边界判断不完整",
+    )
+    await expect(feedbackItems.nth(1)).toContainText("没帮助")
+    await expect(dialog.locator("textarea")).toHaveCount(0)
+    await expect(dialog.getByRole("radio")).toHaveCount(0)
+    await expect(
+      dialog.getByRole("button", { name: /保存|提交|修改/ }),
+    ).toHaveCount(0)
+
+    const feedbackListBox = await feedbackItems.first().boundingBox()
+    const tabListBox = await dialog
+      .getByRole("tablist", { name: "任务详情视图" })
+      .boundingBox()
+    expect(feedbackListBox).not.toBeNull()
+    expect(tabListBox).not.toBeNull()
+    expect(
+      (tabListBox?.y ?? 0) + (tabListBox?.height ?? 0),
+    ).toBeLessThanOrEqual(feedbackListBox?.y ?? 0)
+
+    await dialog.getByRole("tab", { name: "原始报告" }).click()
+    await expect(dialog.getByText("# 原始代码审查报告")).toBeVisible()
+    await expect(dialog.getByText("保留原始 Markdown 内容。")).toBeVisible()
+
+    const downloadPromise = page.waitForEvent("download")
+    await dialog.getByRole("button", { name: "下载最终 PDF" }).click()
+    const download = await downloadPromise
+    expect(download.suggestedFilename()).toBe("反馈版代码审查报告.pdf")
+    expect(pdfDownloadCount).toBe(1)
+    expect(detailAuthorization).toBe("Bearer test-token")
+    expect(issuesAuthorization).toBe("Bearer test-token")
+
+    const detailLayout = await dialog.evaluate((element) => {
+      const bounds = element.getBoundingClientRect()
+      const scrollBody = element.querySelector(".overflow-y-auto")
+      return {
+        left: bounds.left,
+        right: bounds.right,
+        top: bounds.top,
+        bottom: bounds.bottom,
+        contentScrollWidth: scrollBody?.scrollWidth ?? 0,
+        contentClientWidth: scrollBody?.clientWidth ?? 0,
+      }
+    })
+    expect(detailLayout.left).toBeGreaterThanOrEqual(0)
+    expect(detailLayout.right).toBeLessThanOrEqual(1440)
+    expect(detailLayout.top).toBeGreaterThanOrEqual(0)
+    expect(detailLayout.bottom).toBeLessThanOrEqual(900)
+    expect(detailLayout.contentScrollWidth).toBeLessThanOrEqual(
+      detailLayout.contentClientWidth,
+    )
+  })
+
+  test("Detail presents empty states and a task-load error", async ({
+    page,
+  }) => {
+    await mockCurrentUser(page)
+    const emptyTaskId = "40000000-0000-0000-0000-000000000001"
+    const errorTaskId = "40000000-0000-0000-0000-000000000002"
+    const unevaluatedTaskId = "40000000-0000-0000-0000-000000000003"
+    const emptyTask = issueFeedbackTask(emptyTaskId, "空报告用户", {
+      report_path: null,
+      issue_count: 0,
+      evaluated_issue_count: 0,
+    })
+    const errorTask = issueFeedbackTask(errorTaskId, "错误任务用户")
+    const unevaluatedTask = issueFeedbackTask(
+      unevaluatedTaskId,
+      "未评价问题用户",
+      { issue_count: 1, evaluated_issue_count: 0 },
+    )
+
+    await page.route("**/api/v1/review-tasks*", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: {
+          data: [emptyTask, unevaluatedTask, errorTask],
+          count: 3,
+        },
+      })
+    })
+    await page.route(`**/api/v1/review-tasks/${emptyTaskId}`, async (route) => {
+      await route.fulfill({ contentType: "application/json", json: emptyTask })
+    })
+    await page.route(
+      `**/api/v1/review-tasks/${emptyTaskId}/issues`,
+      async (route) => {
+        await route.fulfill({
+          contentType: "application/json",
+          json: {
+            data: [],
+            count: 0,
+            evaluated_count: 0,
+            feedback_submitted_at: null,
+          },
+        })
+      },
+    )
+    await page.route(`**/api/v1/review-tasks/${errorTaskId}`, async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        json: { detail: "mock failure" },
+      })
+    })
+    await page.route(
+      `**/api/v1/review-tasks/${unevaluatedTaskId}`,
+      async (route) => {
+        await route.fulfill({
+          contentType: "application/json",
+          json: unevaluatedTask,
+        })
+      },
+    )
+    await page.route(
+      `**/api/v1/review-tasks/${unevaluatedTaskId}/issues`,
+      async (route) => {
+        await route.fulfill({
+          contentType: "application/json",
+          json: {
+            data: [
+              {
+                id: "50000000-0000-0000-0000-000000000001",
+                task_id: unevaluatedTaskId,
+                issue_text: "尚未评价的问题",
+                description_text: "该问题还没有评价和反馈说明。",
+                display_snapshot: "snapshot",
+                order: 0,
+                source: "template_one_heading",
+                location: {
+                  start_offset: 0,
+                  end_offset: 20,
+                  feedback_insertion_offset: 20,
+                  anchor_line: 1,
+                  heading_level: 4,
+                },
+                helpful: null,
+                feedback_text: null,
+              },
+            ],
+            count: 1,
+            evaluated_count: 0,
+            feedback_submitted_at: null,
+          },
+        })
+      },
+    )
+
+    await page.goto("/tasks/review")
+    await page
+      .getByRole("row")
+      .filter({ hasText: "空报告用户" })
+      .getByRole("button", { name: "查看任务详情" })
+      .click()
+
+    const dialog = page.getByRole("dialog", { name: "任务详情" })
+    await expect(
+      dialog.getByText("报告未识别到需要反馈的审查问题。"),
+    ).toBeVisible()
+    await dialog.getByRole("tab", { name: "原始报告" }).click()
+    await expect(
+      dialog.getByText("当前任务没有可查看的原始报告。"),
+    ).toBeVisible()
+    await dialog.getByRole("button", { name: "Close" }).click()
+
+    await page
+      .getByRole("row")
+      .filter({ hasText: "未评价问题用户" })
+      .getByRole("button", { name: "查看任务详情" })
+      .click()
+    await expect(dialog.getByText("尚未评价的问题")).toBeVisible()
+    await expect(dialog.getByText("未评价", { exact: true })).toBeVisible()
+    await expect(dialog.getByText("未填写", { exact: true })).toBeVisible()
+    await dialog.getByRole("button", { name: "Close" }).click()
+
+    await page
+      .getByRole("row")
+      .filter({ hasText: "错误任务用户" })
+      .getByRole("button", { name: "查看任务详情" })
+      .click()
+    await expect(
+      page.getByText("任务详情加载失败，任务可能已删除或当前账号无权查看。"),
+    ).toBeVisible({ timeout: 15_000 })
+  })
+
+  test("Legacy detail preserves report feedback and PDF download", async ({
+    page,
+  }) => {
+    await mockCurrentUser(page)
+    const taskId = "60000000-0000-0000-0000-000000000001"
+    const task = issueFeedbackTask(taskId, "历史详情用户", {
+      feedback_protocol_version: null,
+      issue_count: 0,
+      evaluated_issue_count: 0,
+      has_issue_feedback_draft: false,
+      report_feedback_helpful: true,
+      report_feedback_useful_issues_text: "帮助确认了历史空指针问题",
+      pdf_report_path: "/reports/legacy.pdf",
+      pdf_report_name: "历史代码审查报告.pdf",
+    })
+    let issuesRequestCount = 0
+
+    await page.route("**/api/v1/review-tasks*", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: { data: [task], count: 1 },
+      })
+    })
+    await page.route(`**/api/v1/review-tasks/${taskId}`, async (route) => {
+      await route.fulfill({ contentType: "application/json", json: task })
+    })
+    await page.route(
+      `**/api/v1/review-tasks/${taskId}/issues`,
+      async (route) => {
+        issuesRequestCount += 1
+        await route.fulfill({
+          contentType: "application/json",
+          json: {
+            data: [],
+            count: 0,
+            evaluated_count: 0,
+            feedback_submitted_at: null,
+          },
+        })
+      },
+    )
+    await page.route(
+      `**/api/v1/review-tasks/${taskId}/pdf/download`,
+      async (route) => {
+        await route.fulfill({
+          contentType: "application/pdf",
+          body: "%PDF-1.4 mocked legacy report",
+        })
+      },
+    )
+
+    await page.goto("/tasks/review")
+    await page
+      .getByRole("row")
+      .filter({ hasText: "历史详情用户" })
+      .getByRole("button", { name: "查看任务详情" })
+      .click()
+
+    const dialog = page.getByRole("dialog", { name: "任务详情" })
+    await expect(dialog.getByText("历史报告反馈")).toBeVisible()
+    await expect(
+      dialog
+        .getByRole("tabpanel", { name: "问题反馈" })
+        .getByText("有帮助", { exact: true }),
+    ).toBeVisible()
+    await expect(dialog.getByText("帮助确认了历史空指针问题")).toBeVisible()
+    await expect(
+      dialog.getByText("此任务使用历史报告级反馈，不包含逐问题反馈记录。"),
+    ).toBeVisible()
+
+    const downloadPromise = page.waitForEvent("download")
+    await dialog.getByRole("button", { name: "下载 PDF 报告" }).click()
+    const download = await downloadPromise
+    expect(download.suggestedFilename()).toBe("历史代码审查报告.pdf")
+    expect(issuesRequestCount).toBe(0)
+  })
+
+  test("In-scope users across all three roles can open read-only details", async ({
+    browser,
+  }) => {
+    const roleScenarios = [
+      {
+        label: "普通用户",
+        user: {
+          ...currentUser,
+          id: "70000000-0000-0000-0000-000000000001",
+          full_name: "普通用户",
+          role: "user",
+          is_superuser: false,
+        },
+      },
+      {
+        label: "部门管理员",
+        user: {
+          ...currentUser,
+          id: "70000000-0000-0000-0000-000000000002",
+          full_name: "部门管理员",
+          role: "department_admin",
+          is_superuser: false,
+        },
+      },
+      {
+        label: "系统管理员",
+        user: {
+          ...currentUser,
+          id: "70000000-0000-0000-0000-000000000003",
+          full_name: "系统管理员",
+        },
+      },
+    ]
+
+    for (const [index, scenario] of roleScenarios.entries()) {
+      const context = await browser.newContext({
+        viewport: { width: 1440, height: 900 },
+      })
+      const page = await context.newPage()
+      const taskId = `80000000-0000-0000-0000-${String(index + 1).padStart(12, "0")}`
+      const task = issueFeedbackTask(taskId, `${scenario.label}范围内任务`, {
+        user_id: scenario.user.id,
+        issue_count: 0,
+      })
+
+      try {
+        await mockCurrentUser(page, scenario.user)
+        await page.route("**/api/v1/review-tasks*", async (route) => {
+          await route.fulfill({
+            contentType: "application/json",
+            json: { data: [task], count: 1 },
+          })
+        })
+        await page.route(`**/api/v1/review-tasks/${taskId}`, async (route) => {
+          await route.fulfill({ contentType: "application/json", json: task })
+        })
+        await page.route(
+          `**/api/v1/review-tasks/${taskId}/issues`,
+          async (route) => {
+            await route.fulfill({
+              contentType: "application/json",
+              json: {
+                data: [],
+                count: 0,
+                evaluated_count: 0,
+                feedback_submitted_at: null,
+              },
+            })
+          },
+        )
+
+        await page.goto("/tasks/review")
+        await page
+          .getByRole("row")
+          .filter({ hasText: `${scenario.label}范围内任务` })
+          .getByRole("button", { name: "查看任务详情" })
+          .click()
+
+        const dialog = page.getByRole("dialog", { name: "任务详情" })
+        await expect(dialog).toBeVisible()
+        await expect(dialog.getByText(`任务编号 ${taskId}`)).toBeVisible()
+        await expect(dialog.locator("textarea")).toHaveCount(0)
+        await expect(dialog.getByRole("radio")).toHaveCount(0)
+      } finally {
+        await context.close()
+      }
+    }
   })
 })

@@ -19,12 +19,19 @@ describe('preload reportFeedback API', () => {
     invokeMock.mockResolvedValue(true)
   })
 
-  it('只暴露四个一次性反馈窗口命令', async () => {
+  it('只暴露反馈窗口所需命令', async () => {
     await import('./report-feedback')
     const api = exposeInMainWorldMock.mock.calls[0][1]
 
     expect(exposeInMainWorldMock).toHaveBeenCalledWith('reportFeedback', api)
-    expect(Object.keys(api).sort()).toEqual(['close', 'focusAnchor', 'getContext', 'submit'])
+    expect(Object.keys(api).sort()).toEqual([
+      'close',
+      'focusAnchor',
+      'getContext',
+      'saveIssueDraft',
+      'submit',
+      'submitIssueFeedback'
+    ])
 
     await api.getContext()
     expect(invokeMock).toHaveBeenCalledWith('report-feedback-window:get-context')
@@ -40,6 +47,25 @@ describe('preload reportFeedback API', () => {
     }
     await api.submit(submitPayload)
     expect(invokeMock).toHaveBeenCalledWith('report-feedback-window:submit', submitPayload)
+
+    const draftPayload = {
+      taskId: 'task-1',
+      issueId: 'issue-1',
+      helpful: true,
+      feedbackText: '已完成修复'
+    }
+    await api.saveIssueDraft(draftPayload)
+    expect(invokeMock).toHaveBeenCalledWith(
+      'report-feedback-window:save-issue-draft',
+      draftPayload
+    )
+
+    const preparePayload = { taskId: 'task-1' }
+    await api.submitIssueFeedback(preparePayload)
+    expect(invokeMock).toHaveBeenCalledWith(
+      'report-feedback-window:submit-issues',
+      preparePayload
+    )
 
     await api.close()
     expect(invokeMock).toHaveBeenCalledWith('report-feedback-window:close')

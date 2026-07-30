@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, stat } from 'node:fs/promises'
+import { copyFile, mkdir, stat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 
 import type { ApiClient, CreateTaskRequest, UpdateTaskStatusRequest } from './api-client'
@@ -10,7 +10,7 @@ import {
 import { buildReviewPrompt, CodexReviewError, runCodexReview, type CodexErrorCode } from './codex-runner'
 import { generatePdfReport, type GeneratePdfReportResult } from './report-pdf-generator'
 import {
-  ensureReportReady,
+  prepareReportForPublishing,
   uploadPdfReportFile,
   uploadReportFile,
   uploadRequirementFile
@@ -85,6 +85,7 @@ export interface ExecuteReviewTaskResult {
   pdfPath?: string
   pdfReportName?: string
   codexLogPath?: string
+  feedbackProtocolVersion?: number
 }
 
 export interface TaskAgentApi {
@@ -105,9 +106,15 @@ export interface TaskAgentDependencies {
   preflightSvn: (input: SvnPreflightInput) => Promise<void>
   prepareWorkspace: (input: PrepareWorkspaceInput) => Promise<PreparedWorkspace>
   runCodex: (input: RunCodexInput) => Promise<unknown>
+  prepareReport: (reportPath: string) => Promise<string>
   generatePdfReport: (reportPath: string) => Promise<GeneratePdfReportResult>
   uploadRequirementFile: (token: string, taskId: string, filePath: string) => Promise<unknown>
-  uploadReport: (token: string, taskId: string, reportPath: string) => Promise<unknown>
+  uploadReport: (
+    token: string,
+    taskId: string,
+    reportPath: string,
+    reportContent?: string
+  ) => Promise<unknown>
   uploadPdfReport: (token: string, taskId: string, pdfPath: string) => Promise<unknown>
 }
 
@@ -271,10 +278,12 @@ export const createTaskAgentDependencies = (api: ApiClient): TaskAgentDependenci
   preflightSvn: runSvnPreflight,
   prepareWorkspace: defaultPrepareWorkspace,
   runCodex: defaultRunCodex,
+  prepareReport: prepareReportForPublishing,
   generatePdfReport,
   uploadRequirementFile: (token, taskId, filePath) =>
     uploadRequirementFile(api, token, taskId, filePath),
-  uploadReport: (token, taskId, reportPath) => uploadReportFile(api, token, taskId, reportPath),
+  uploadReport: (token, taskId, reportPath, reportContent) =>
+    uploadReportFile(api, token, taskId, reportPath, reportContent),
   uploadPdfReport: (token, taskId, pdfPath) => uploadPdfReportFile(api, token, taskId, pdfPath)
 })
 
@@ -428,25 +437,23 @@ const runExistingReviewTask = async (
       status: 'uploading_report'
     })
 
-    await ensureReportReady(workspace.reportPath)
+    const reportMarkdown = await dependencies.prepareReport(workspace.reportPath)
     throwIfCancelled(input.signal)
-    const pdfResult = await dependencies.generatePdfReport(workspace.reportPath)
+    await dependencies.uploadReport(
+      input.token,
+      task.id,
+      workspace.reportPath,
+      reportMarkdown
+    )
     throwIfCancelled(input.signal)
-    await dependencies.uploadReport(input.token, task.id, workspace.reportPath)
-    throwIfCancelled(input.signal)
-    await dependencies.uploadPdfReport(input.token, task.id, pdfResult.pdfPath)
-    throwIfCancelled(input.signal)
-    const reportMarkdown = await readFile(workspace.reportPath, 'utf8')
-
     emitStage(onProgress, task.id, input.clientTaskId, 'success', '审查完成')
     return {
       taskId: task.id,
       status: 'success',
       reportMarkdown,
       reportPath: workspace.reportPath,
-      pdfPath: pdfResult.pdfPath,
-      pdfReportName: basename(pdfResult.pdfPath),
-      codexLogPath: workspace.codexLogPath
+      ...(workspace.codexLogPath ? { codexLogPath: workspace.codexLogPath } : {}),
+      feedbackProtocolVersion: 1
     }
   } catch (error) {
     if (isCancelledError(error) || input.signal?.aborted) {

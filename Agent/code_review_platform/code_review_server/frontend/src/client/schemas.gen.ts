@@ -138,6 +138,54 @@ export const Body_review_tasks_upload_review_task_reportSchema = {
             type: 'string',
             format: 'binary',
             title: 'Upload'
+        },
+        feedback_protocol_version: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Feedback Protocol Version'
+        },
+        issues: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Issues'
+        },
+        asset_paths: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Asset Paths'
+        },
+        assets: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string',
+                        format: 'binary'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Assets'
         }
     },
     type: 'object',
@@ -1470,6 +1518,193 @@ export const ReviewTaskCreateSchema = {
     title: 'ReviewTaskCreate'
 } as const;
 
+export const ReviewTaskIssueFeedbackDraftUpdateSchema = {
+    properties: {
+        helpful: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Helpful'
+        },
+        feedback_text: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 4096
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Feedback Text'
+        }
+    },
+    type: 'object',
+    required: ['helpful', 'feedback_text'],
+    title: 'ReviewTaskIssueFeedbackDraftUpdate'
+} as const;
+
+export const ReviewTaskIssueLocationSchema = {
+    properties: {
+        start_offset: {
+            type: 'integer',
+            minimum: 0,
+            title: 'Start Offset'
+        },
+        end_offset: {
+            type: 'integer',
+            minimum: 0,
+            title: 'End Offset'
+        },
+        feedback_insertion_offset: {
+            type: 'integer',
+            minimum: 0,
+            title: 'Feedback Insertion Offset'
+        },
+        anchor_line: {
+            type: 'integer',
+            minimum: 0,
+            title: 'Anchor Line'
+        },
+        heading_level: {
+            type: 'integer',
+            maximum: 6,
+            minimum: 0,
+            title: 'Heading Level'
+        }
+    },
+    type: 'object',
+    required: ['start_offset', 'end_offset', 'feedback_insertion_offset', 'anchor_line', 'heading_level'],
+    title: 'ReviewTaskIssueLocation'
+} as const;
+
+export const ReviewTaskIssuePublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Task Id'
+        },
+        issue_text: {
+            type: 'string',
+            title: 'Issue Text'
+        },
+        description_text: {
+            type: 'string',
+            title: 'Description Text'
+        },
+        display_snapshot: {
+            type: 'string',
+            title: 'Display Snapshot'
+        },
+        order: {
+            type: 'integer',
+            title: 'Order'
+        },
+        source: {
+            type: 'string',
+            title: 'Source'
+        },
+        location: {
+            '$ref': '#/components/schemas/ReviewTaskIssueLocation'
+        },
+        helpful: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Helpful'
+        },
+        feedback_text: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Feedback Text'
+        },
+        created_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created At'
+        },
+        updated_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'task_id', 'issue_text', 'description_text', 'display_snapshot', 'order', 'source', 'location'],
+    title: 'ReviewTaskIssuePublic'
+} as const;
+
+export const ReviewTaskIssuesPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/ReviewTaskIssuePublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        },
+        evaluated_count: {
+            type: 'integer',
+            title: 'Evaluated Count'
+        },
+        feedback_submitted_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Feedback Submitted At'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count', 'evaluated_count'],
+    title: 'ReviewTaskIssuesPublic'
+} as const;
+
 export const ReviewTaskPublicSchema = {
     properties: {
         id: {
@@ -1677,6 +1912,44 @@ export const ReviewTaskPublicSchema = {
                 }
             ],
             title: 'Pdf Report Name'
+        },
+        feedback_protocol_version: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Feedback Protocol Version'
+        },
+        feedback_submitted_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Feedback Submitted At'
+        },
+        issue_count: {
+            type: 'integer',
+            title: 'Issue Count',
+            default: 0
+        },
+        evaluated_issue_count: {
+            type: 'integer',
+            title: 'Evaluated Issue Count',
+            default: 0
+        },
+        has_issue_feedback_draft: {
+            type: 'boolean',
+            title: 'Has Issue Feedback Draft',
+            default: false
         },
         report_feedback_helpful: {
             anyOf: [

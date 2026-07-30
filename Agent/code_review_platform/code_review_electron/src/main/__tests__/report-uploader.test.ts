@@ -1,8 +1,37 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('electron', () => ({
+  nativeImage: {
+    createFromDataURL: (dataUrl: string) => {
+      const [metadata, encoded = ''] = dataUrl.split(',', 2)
+      const content = Buffer.from(encoded, 'base64')
+      const contentType = /^data:([^;]+)/.exec(metadata)?.[1]
+      const isDecodable =
+        (contentType === 'image/png' &&
+          content.length > 40 &&
+          content.subarray(-8).equals(Buffer.from('49454e44ae426082', 'hex'))) ||
+          (contentType === 'image/jpeg' &&
+            content.length > 100 &&
+            content.subarray(-2).equals(Buffer.from('ffd9', 'hex'))) ||
+          (contentType === 'image/gif' && content.length > 20 && content.at(-1) === 0x3b) ||
+          (contentType === 'image/webp' &&
+            content.length > 20 &&
+            content.readUInt32LE(4) + 8 === content.length) ||
+          (contentType === 'image/svg+xml' &&
+            /<svg\b/i.test(content.toString('utf8')) &&
+            /<\/svg>/i.test(content.toString('utf8')) &&
+            !/<script\b/i.test(content.toString('utf8')))
+      return {
+        getSize: () => (isDecodable ? { width: 1, height: 1 } : { width: 0, height: 0 }),
+        isEmpty: () => !isDecodable
+      }
+    }
+  }
+}))
 
 import {
   ensurePdfReportReady,
@@ -12,6 +41,42 @@ import {
   uploadRequirementFile,
   uploadReportFile
 } from '../report-uploader'
+import { templateOneReportFixture } from '../../shared/__tests__/fixtures/review-report-fixtures'
+
+const VALID_PNG_BYTES = Buffer.from(
+  '89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63f8cfc0000003010100c9fe92ef0000000049454e44ae426082',
+  'hex'
+)
+
+const loadSharedMarkdownImageCorpus = async (): Promise<{
+  markdown: string
+  expected_paths: string[]
+}> =>
+  JSON.parse(
+    await readFile(
+      resolve(process.cwd(), '..', 'tests', 'fixtures', 'report-image-markdown-corpus.json'),
+      'utf8'
+    )
+  )
+
+type ImageValidationCorpusEntry = {
+  name: string
+  extension: string
+  content_type: string
+  valid_base64: string
+  invalid_base64: string
+  additional_invalid_base64?: string[]
+  server_only_invalid_base64?: string[]
+  animated_base64?: string
+}
+
+const loadSharedImageValidationCorpus = async (): Promise<ImageValidationCorpusEntry[]> =>
+  JSON.parse(
+    await readFile(
+      resolve(process.cwd(), '..', 'tests', 'fixtures', 'report-image-validation-corpus.json'),
+      'utf8'
+    )
+  )
 
 describe('report uploader', () => {
   let tempDirs: string[] = []
@@ -34,7 +99,7 @@ describe('report uploader', () => {
     await expect(ensureReportReady(emptyReportPath)).rejects.toThrow('审查报告为空')
   })
 
-  it('uploads report content and file name from disk path', async () => {
+  it('从磁盘路径上传报告内容、文件名和零问题新协议', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'report-uploader-'))
     tempDirs.push(dir)
     const reportPath = join(dir, 'r12_r14审查报告_20260610_142530.md')
@@ -48,8 +113,347 @@ describe('report uploader', () => {
     expect(api.uploadReport).toHaveBeenCalledWith('token-123', 'task-1', {
       report_content: '# report\n',
       report_path: reportPath,
-      report_name: 'r12_r14审查报告_20260610_142530.md'
+      report_name: 'r12_r14审查报告_20260610_142530.md',
+      feedback_protocol_version: 1,
+      issues: [],
+      assets: []
     })
+  })
+
+  it('上传新报告时提交有序问题快照和 Markdown 引用的相对图片资产', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-new-protocol-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const imagePath = join(dir, 'images', 'null-pointer.png')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, templateOneReportFixture)
+    await writeFile(imagePath, VALID_PNG_BYTES)
+
+    await uploadReportFile(api, 'token-123', 'task-1', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-1',
+      expect.objectContaining({
+        feedback_protocol_version: 1,
+        issues: [
+          expect.objectContaining({
+            issue_text: '高风险：空指针解引用',
+            description_text: '未校验返回值即解引用，错误分支会触发崩溃。',
+            order: 0,
+            source: 'template_1_heading'
+          }),
+          expect.objectContaining({ order: 1 }),
+          expect.objectContaining({ order: 2 })
+        ],
+        assets: [
+          {
+            relative_path: 'images/null-pointer.png',
+            content: VALID_PNG_BYTES,
+            content_type: 'image/png'
+          }
+        ]
+      })
+    )
+  })
+
+  it('按共享 CommonMark 语料识别图片并忽略转义与代码中的伪引用', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-markdown-images-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    const corpus = await loadSharedMarkdownImageCorpus()
+    await Promise.all(
+      corpus.expected_paths.map(async (relativePath) => {
+        const imagePath = join(dir, ...relativePath.split('/'))
+        await mkdir(resolve(imagePath, '..'), { recursive: true })
+        await writeFile(imagePath, VALID_PNG_BYTES)
+      })
+    )
+    await writeFile(reportPath, corpus.markdown)
+
+    await uploadReportFile(api, 'token-123', 'task-1', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-1',
+      expect.objectContaining({
+        assets: corpus.expected_paths.map((relativePath) => ({
+          relative_path: relativePath,
+          content: VALID_PNG_BYTES,
+          content_type: 'image/png'
+        }))
+      })
+    )
+  })
+
+  it('拒绝 images 目录符号链接到报告目录外', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-symlink-root-'))
+    tempDirs.push(dir)
+    const reportDirectory = join(dir, 'report')
+    const outsideDirectory = join(dir, 'outside-images')
+    const reportPath = join(reportDirectory, '代码审查报告.md')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    await mkdir(reportDirectory, { recursive: true })
+    await mkdir(outsideDirectory, { recursive: true })
+    await writeFile(join(outsideDirectory, 'evidence.png'), VALID_PNG_BYTES)
+    await symlink(outsideDirectory, join(reportDirectory, 'images'), 'dir')
+    await writeFile(reportPath, '# 报告\n\n![证据](images/evidence.png)\n')
+
+    await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(
+      '报告图片目录不能指向报告目录外'
+    )
+    expect(api.uploadReport).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    {
+      name: '绝对路径',
+      imageReference: '/tmp/evidence.png',
+      prepare: async (_dir: string) => undefined,
+      message: '报告图片必须使用相对路径'
+    },
+    {
+      name: '图片目录外路径',
+      imageReference: 'evidence.png',
+      prepare: async (dir: string) => writeFile(join(dir, 'evidence.png'), 'png-content'),
+      message: '报告图片必须位于 images 目录'
+    },
+    {
+      name: '空图片',
+      imageReference: 'images/evidence.png',
+      prepare: async (dir: string) => {
+        await mkdir(join(dir, 'images'), { recursive: true })
+        await writeFile(join(dir, 'images', 'evidence.png'), '')
+      },
+      message: '报告图片为空'
+    }
+  ])('上传前拒绝$name', async ({ imageReference, prepare, message }) => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-invalid-asset-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    await prepare(dir)
+    await writeFile(reportPath, `# 代码审查报告\n\n![证据](${imageReference})\n`)
+
+    await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(message)
+    expect(api.uploadReport).not.toHaveBeenCalled()
+  })
+
+  it('上传前拒绝伪造的图片内容', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-invalid-content-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, '# Review\n\n![证据](images/evidence.png)\n')
+    await writeFile(join(dir, 'images', 'evidence.png'), 'not-a-real-png')
+
+    await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(
+      '报告图片内容与文件格式不一致'
+    )
+    expect(api.uploadReport).not.toHaveBeenCalled()
+  })
+
+  it('按共享语料接受可解码图片并拒绝只有正确文件头的损坏图片', async () => {
+    const corpus = await loadSharedImageValidationCorpus()
+    for (const entry of corpus) {
+      const dir = await mkdtemp(join(tmpdir(), `report-uploader-${entry.name}-`))
+      tempDirs.push(dir)
+      const reportPath = join(dir, '代码审查报告.md')
+      const relativePath = `images/evidence${entry.extension}`
+      const imagePath = join(dir, relativePath)
+      const api = {
+        uploadReport: vi.fn(async () => ({ ok: true }))
+      }
+      await mkdir(join(dir, 'images'), { recursive: true })
+      await writeFile(reportPath, `# Review\n\n![证据](${relativePath})\n`)
+      await writeFile(imagePath, Buffer.from(entry.valid_base64, 'base64'))
+
+      await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).resolves.toEqual({
+        ok: true
+      })
+
+      for (const invalidBase64 of [
+        entry.invalid_base64,
+        ...(entry.additional_invalid_base64 ?? [])
+      ]) {
+        await writeFile(imagePath, Buffer.from(invalidBase64, 'base64'))
+        await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(
+          '报告图片内容与文件格式不一致'
+        )
+      }
+      if (entry.animated_base64) {
+        await writeFile(imagePath, Buffer.from(entry.animated_base64, 'base64'))
+        await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(
+          '报告图片内容与文件格式不一致'
+        )
+      }
+    }
+  })
+
+  it('问题快照数量达到上限时允许上传并在超限时拒绝', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-too-many-issues-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    const buildReport = (count: number): string =>
+      Array.from(
+        { length: count },
+        (_, index) => `### ${index + 1}. 问题 ${index + 1}\n\n- **问题描述：** 用于验证数量限制。\n`
+      ).join('\n')
+    await writeFile(reportPath, buildReport(200))
+
+    await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).resolves.toEqual({
+      ok: true
+    })
+
+    await writeFile(reportPath, buildReport(201))
+    await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(
+      '问题快照数量超过限制'
+    )
+    expect(api.uploadReport).toHaveBeenCalledTimes(1)
+  })
+
+  it('上传前拒绝超过字段和 JSON 大小限制的问题快照', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-large-issues-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    await writeFile(reportPath, `### ${'x'.repeat(8 * 1024 + 1)}\n`)
+
+    await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(
+      '问题快照内容超过限制'
+    )
+
+    const report = Array.from(
+      { length: 5 },
+      (_, index) => `### ${index + 1}. 问题 ${index + 1}\n\n- **问题描述：** 用于验证数量限制。\n`
+    )
+      .map((heading) => `${heading}\n${'x'.repeat(220 * 1024)}\n`)
+      .join('\n')
+    await writeFile(reportPath, report)
+
+    await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(
+      '问题快照总大小超过限制'
+    )
+    expect(api.uploadReport).not.toHaveBeenCalled()
+  })
+
+  it('使用 UTF-16 偏移的表情符号报告可正常上传', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-utf16-offsets-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    await writeFile(reportPath, '### 😀问题\n\n- **问题描述：** 表情符号偏移测试。\n')
+
+    await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).resolves.toEqual({
+      ok: true
+    })
+  })
+
+  it('上传前拒绝超过大小限制的 Markdown', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-large-markdown-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    await writeFile(reportPath, Buffer.alloc(5 * 1024 * 1024 + 1, 0x61))
+
+    await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(
+      '审查报告超过大小限制'
+    )
+    expect(api.uploadReport).not.toHaveBeenCalled()
+  })
+
+  it('上传前拒绝超过数量限制的图片', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-too-many-images-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    const imagePaths = Array.from({ length: 51 }, (_, index) => `images/${index}.png`)
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await Promise.all(
+      imagePaths.map((imagePath) => writeFile(join(dir, imagePath), VALID_PNG_BYTES))
+    )
+    await writeFile(
+      reportPath,
+      imagePaths.map((imagePath) => `![证据](${imagePath})`).join('\n')
+    )
+
+    await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(
+      '报告图片数量超过限制'
+    )
+    expect(api.uploadReport).not.toHaveBeenCalled()
+  })
+
+  it('发布前只清理报告输出元数据并保留正文普通路径和代码块内容', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-metadata-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const originalReport = [
+      '# 代码审查报告',
+      '**报告输出路径：** C:\\review\\代码审查报告.md',
+      '- **报告输出地址:** /tmp/review/report.md',
+      '正文中的普通路径：`src/main.c:42`',
+      '**项目路径：** svn://repo/project',
+      '    报告输出路径：/docs/indented-example.md',
+      '```markdown',
+      '**报告输出路径：** /docs/example.md',
+      '```',
+      '## 风险问题',
+      '**报告输出路径：** 用户输入未经过滤，可能覆盖其他文件。',
+      ''
+    ].join('\r\n')
+    const expectedReport = [
+      '# 代码审查报告',
+      '正文中的普通路径：`src/main.c:42`',
+      '**项目路径：** svn://repo/project',
+      '    报告输出路径：/docs/indented-example.md',
+      '```markdown',
+      '**报告输出路径：** /docs/example.md',
+      '```',
+      '## 风险问题',
+      '**报告输出路径：** 用户输入未经过滤，可能覆盖其他文件。',
+      ''
+    ].join('\r\n')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    await writeFile(reportPath, originalReport)
+
+    await uploadReportFile(api, 'token-123', 'task-1', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith('token-123', 'task-1', {
+      report_content: expectedReport,
+      report_path: reportPath,
+      report_name: '代码审查报告.md',
+      feedback_protocol_version: 1,
+      issues: [],
+      assets: []
+    })
+    await expect(readFile(reportPath, 'utf8')).resolves.toBe(expectedReport)
   })
 
   it('rejects missing and empty PDF report files', async () => {
@@ -68,7 +472,13 @@ describe('report uploader', () => {
     tempDirs.push(dir)
     const pdfPath = join(dir, 'r12_r14审查报告_20260610_142530.pdf')
     const api = {
-      uploadPdfReport: vi.fn(async () => ({ ok: true }))
+      uploadPdfReport: vi.fn(async () => ({
+        id: 'task-1',
+        svn_url: 'svn://repo/project',
+        old_revision: '1',
+        new_revision: '2',
+        status: 'success' as const
+      }))
     }
     await writeFile(pdfPath, '%PDF-1.4\n')
 

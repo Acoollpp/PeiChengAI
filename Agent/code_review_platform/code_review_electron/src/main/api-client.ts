@@ -1,6 +1,12 @@
 import type { ReviewTemplateKey } from '../shared/review-templates'
 import { REVIEW_REPORT_FILE_NAME } from '../shared/report-artifacts'
-import type { CurrentUser, DepartmentsResponse, ReviewTask } from '../shared/types'
+import type {
+  CurrentUser,
+  DepartmentsResponse,
+  ReviewTask,
+  ReviewTaskIssue,
+  ReviewTaskIssuesResponse
+} from '../shared/types'
 
 export interface TokenPair {
   access_token: string
@@ -44,6 +50,30 @@ export interface UploadReportRequest {
   report_content: string
   report_path?: string
   report_name?: string
+  feedback_protocol_version?: number
+  issues?: UploadReportIssueSnapshot[]
+  assets?: UploadReportAsset[]
+}
+
+export interface UploadReportIssueSnapshot {
+  issue_text: string
+  description_text: string
+  display_snapshot: string
+  order: number
+  source: string
+  location: {
+    start_offset: number
+    end_offset: number
+    feedback_insertion_offset: number
+    anchor_line: number
+    heading_level: number
+  }
+}
+
+export interface UploadReportAsset {
+  relative_path: string
+  content: Uint8Array | ArrayBuffer | Blob
+  content_type: string
 }
 
 export interface UploadPdfReportRequest {
@@ -70,6 +100,11 @@ export interface FeedbackResult {
 export interface SubmitReportFeedbackRequest {
   helpful: boolean
   useful_issues_text?: string | null
+}
+
+export interface SaveIssueFeedbackDraftRequest {
+  helpful: boolean | null
+  feedback_text: string | null
 }
 
 export interface ReportFeedbackResult {
@@ -213,6 +248,32 @@ export class ApiClient {
     return response.text()
   }
 
+  readTaskIssues(token: string, taskId: string): Promise<ReviewTaskIssuesResponse> {
+    return this.request<ReviewTaskIssuesResponse>(
+      `/api/v1/review-tasks/${encodeURIComponent(taskId)}/issues`,
+      {
+        method: 'GET',
+        headers: this.authHeaders(token)
+      }
+    )
+  }
+
+  saveIssueFeedbackDraft(
+    token: string,
+    taskId: string,
+    issueId: string,
+    payload: SaveIssueFeedbackDraftRequest
+  ): Promise<ReviewTaskIssue> {
+    return this.request<ReviewTaskIssue>(
+      `/api/v1/review-tasks/${encodeURIComponent(taskId)}/issues/${encodeURIComponent(issueId)}/feedback-draft`,
+      {
+        method: 'PUT',
+        headers: this.authHeaders(token),
+        body: JSON.stringify(payload)
+      }
+    )
+  }
+
   getSvnCredential(token: string): Promise<unknown> {
     return this.request('/api/v1/me/svn-credential', {
       method: 'GET',
@@ -301,6 +362,24 @@ export class ApiClient {
         type: 'text/markdown'
       })
     )
+    if (payload.feedback_protocol_version !== undefined) {
+      body.set('feedback_protocol_version', String(payload.feedback_protocol_version))
+      body.set('issues', JSON.stringify(payload.issues ?? []))
+      const assets = payload.assets ?? []
+      body.set('asset_paths', JSON.stringify(assets.map((asset) => asset.relative_path)))
+      for (const asset of assets) {
+        const assetBlob =
+          asset.content instanceof Blob
+            ? asset.content
+            : new Blob([toArrayBuffer(asset.content)], { type: asset.content_type })
+        body.append(
+          'assets',
+          new File([assetBlob], asset.relative_path.split('/').at(-1) ?? 'image', {
+            type: asset.content_type
+          })
+        )
+      }
+    }
 
     return this.request(
       `/api/v1/review-tasks/${encodeURIComponent(taskId)}/report`,
@@ -313,7 +392,11 @@ export class ApiClient {
     )
   }
 
-  uploadPdfReport(token: string, taskId: string, payload: UploadPdfReportRequest): Promise<unknown> {
+  uploadPdfReport(
+    token: string,
+    taskId: string,
+    payload: UploadPdfReportRequest
+  ): Promise<ReviewTask> {
     const body = new FormData()
     const pdfBlob =
       payload.pdf_content instanceof Blob
@@ -335,6 +418,30 @@ export class ApiClient {
       },
       { json: false }
     )
+  }
+
+  async downloadReportAsset(
+    token: string,
+    taskId: string,
+    assetPath: string
+  ): Promise<ArrayBuffer> {
+    const encodedAssetPath = assetPath
+      .split('/')
+      .map((part) => encodeURIComponent(part))
+      .join('/')
+    const response = await this.fetchImpl(
+      `${this.baseUrl}/api/v1/review-tasks/${encodeURIComponent(taskId)}/assets/${encodedAssetPath}`,
+      {
+        method: 'GET',
+        headers: this.authHeaders(token)
+      }
+    )
+
+    if (!response.ok) {
+      throw new ApiError(response.status, await this.readErrorMessage(response))
+    }
+
+    return response.arrayBuffer()
   }
 
   uploadRequirementFile(
