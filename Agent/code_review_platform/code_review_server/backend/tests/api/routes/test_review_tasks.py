@@ -568,6 +568,49 @@ def test_upload_and_read_review_task_report(
     assert read_response.text == "# Review\n\nLooks good.\n"
 
 
+def test_新协议读取报告保留_CRLF_换行以维持问题快照定位(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    report_content = (
+        "### 高风险：测试问题\r\n\r\n问题描述：用于验证 CRLF 报告的问题快照定位。\r\n"
+    ).encode()
+    report_markdown = report_content.decode()
+    issue = _valid_issue_snapshot()
+    issue["location"] = {
+        "start_offset": 0,
+        "end_offset": len(report_markdown),
+        "feedback_insertion_offset": len(report_markdown),
+        "anchor_line": 0,
+        "heading_level": 3,
+    }
+
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": json.dumps([issue], ensure_ascii=False),
+        },
+        files={"upload": ("report.md", report_content, "text/markdown")},
+    )
+
+    assert upload_response.status_code == 200
+    assert (tmp_path / f"{task['id']}.md").read_bytes() == report_content
+
+    read_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+    )
+
+    assert read_response.status_code == 200
+    assert read_response.content == report_content
+
+
 def test_新协议上传后返回有序问题快照和反馈进度(
     client: TestClient,
     normal_user_token_headers: dict[str, str],

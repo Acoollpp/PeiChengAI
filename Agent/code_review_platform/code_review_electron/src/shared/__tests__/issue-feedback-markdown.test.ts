@@ -54,6 +54,20 @@ const countTableDelimiters = (row: string): number => {
 }
 
 describe('composeIssueFeedbackMarkdown', () => {
+  it('CRLF 报告保持问题快照定位并生成反馈 Markdown', () => {
+    const original = templateOneReportFixture.replaceAll('\n', '\r\n')
+    const issue = toServerIssue(original, 0, true, '已确认并修复')
+
+    const composed = composeIssueFeedbackMarkdown(original, [issue])
+
+    expect(composed).toContain('> 是否有帮助：有帮助')
+    expect(composed).toContain('> 用户反馈：`已确认并修复`')
+    expect(composed.indexOf('> 是否有帮助：有帮助')).toBeLessThan(
+      composed.indexOf('### 2. 中风险：重复问题标题')
+    )
+    expect(original).toContain('\r\n')
+  })
+
   it('模板一把多问题反馈插入各自内容末尾且不改变原始内容', () => {
     const original = templateOneReportFixture
     const issues = [

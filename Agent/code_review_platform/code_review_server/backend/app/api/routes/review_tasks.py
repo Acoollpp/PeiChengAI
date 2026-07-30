@@ -1294,9 +1294,7 @@ def read_review_task_report(
         session=session, current_user=current_user, task_id=task_id
     )
     report_path = _read_report_path(task)
-    return PlainTextResponse(
-        report_path.read_text(encoding="utf-8"), media_type="text/markdown"
-    )
+    return PlainTextResponse(report_path.read_bytes(), media_type="text/markdown")
 
 
 @router.get("/{task_id}/download")
