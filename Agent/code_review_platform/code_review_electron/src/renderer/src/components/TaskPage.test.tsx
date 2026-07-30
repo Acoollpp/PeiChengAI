@@ -1375,8 +1375,6 @@ describe('TaskPage', () => {
 
   it('反馈窗口定位事件仅处理当前任务并可清除高亮', async () => {
     const user = userEvent.setup()
-    const scrollIntoView = vi.fn()
-    window.HTMLElement.prototype.scrollIntoView = scrollIntoView
     window.codeReview.listTasks = vi.fn(async () => ({
       data: [
         {
@@ -1399,21 +1397,47 @@ describe('TaskPage', () => {
     renderReadyTaskPage()
     const historyPanel = await openHistoryTasks(user)
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
+    const previewScroll = document.querySelector<HTMLElement>('.preview-scroll')
+    const scrollTo = vi.fn()
+    expect(previewScroll).not.toBeNull()
+    Object.defineProperty(previewScroll, 'scrollTop', { configurable: true, value: 120 })
+    previewScroll!.scrollTo = scrollTo
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      if (this.classList.contains('preview-scroll')) {
+        return { top: 100 } as DOMRect
+      }
+      if (this.dataset.reportAnchorId === 'report-option-2') {
+        return { top: 260 } as DOMRect
+      }
+      return { top: 0 } as DOMRect
+    })
+
     const focusAnchor = vi.mocked(window.codeReview.onReportFeedbackFocusAnchor).mock.calls[0][0]
     focusAnchor({ taskId: 'other-task', anchorId: 'report-option-2' })
-    expect(scrollIntoView).not.toHaveBeenCalled()
+    expect(scrollTo).not.toHaveBeenCalled()
     focusAnchor({ taskId: 'task-history-1', anchorId: 'report-option-2' })
 
-    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' }))
-    expect(screen.getByRole('heading', { name: '空指针风险' })).toHaveClass(
-      'report-anchor-highlight'
+    await waitFor(() =>
+      expect(scrollTo).toHaveBeenCalledWith({ top: 266, behavior: 'smooth' })
     )
+    expect(
+      screen
+        .getByRole('heading', { name: '空指针风险' })
+        .closest('[data-report-issue-anchor-id="report-option-2"]')
+    ).toHaveClass('report-issue-block-active')
+
+    focusAnchor({ taskId: 'task-history-1', anchorId: 'report-option-2' })
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledTimes(2))
 
     focusAnchor({ taskId: 'task-history-1' })
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: '空指针风险' })).not.toHaveClass(
-        'report-anchor-highlight'
-      )
+      expect(
+        screen
+          .getByRole('heading', { name: '空指针风险' })
+          .closest('[data-report-issue-anchor-id="report-option-2"]')
+      ).not.toHaveClass('report-issue-block-active')
     )
   })
 

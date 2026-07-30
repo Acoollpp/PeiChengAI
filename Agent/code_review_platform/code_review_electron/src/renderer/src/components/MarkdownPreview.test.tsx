@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -9,6 +9,7 @@ import { extractDetailedHeadingOptions, MarkdownPreview } from './MarkdownPrevie
 
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
 })
 
 describe('MarkdownPreview', () => {
@@ -94,6 +95,66 @@ describe('MarkdownPreview', () => {
       assetPath: 'images/diagram.png'
     })
     expect(image).toHaveAttribute('src', 'data:image/png;base64,aW1hZ2U=')
+  })
+
+  it('相对图片加载完成后重新校准当前问题的顶部位置', async () => {
+    const markdown = [
+      '# 审查报告',
+      '![前置截图](images/before.png)',
+      '## 高风险问题',
+      '### 空指针风险',
+      '- **问题描述：** 指针使用前未校验。'
+    ].join('\n')
+    const { container, rerender } = render(
+      <MarkdownPreview
+        markdown={markdown}
+        reportPath="/reports/review.md"
+        activeFeedbackAnchorId="report-option-3"
+      />
+    )
+    const previewScroll = container.querySelector<HTMLElement>('.preview-scroll')
+    const scrollTo = vi.fn()
+    expect(previewScroll).not.toBeNull()
+    Object.defineProperty(previewScroll, 'scrollTop', { configurable: true, value: 120 })
+    previewScroll!.scrollTo = scrollTo
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      if (this.classList.contains('preview-scroll')) {
+        return { top: 100 } as DOMRect
+      }
+      if (this.dataset.reportAnchorId === 'report-option-3') {
+        return { top: 260 } as DOMRect
+      }
+      return { top: 0 } as DOMRect
+    })
+
+    rerender(
+      <MarkdownPreview
+        markdown={markdown}
+        reportPath="/reports/review.md"
+        activeFeedbackAnchorId="report-option-3"
+        feedbackAnchorScrollRequest={{ anchorId: 'report-option-3', requestId: 1 }}
+      />
+    )
+    await waitFor(() =>
+      expect(scrollTo).toHaveBeenCalledWith({ top: 266, behavior: 'smooth' })
+    )
+
+    fireEvent.load(await screen.findByRole('img', { name: '前置截图' }))
+
+    expect(scrollTo).toHaveBeenCalledTimes(2)
+
+    rerender(
+      <MarkdownPreview
+        markdown={markdown}
+        reportPath="/reports/review.md"
+        activeFeedbackAnchorId="report-option-3"
+        feedbackAnchorScrollRequest={{ anchorId: 'report-option-3', requestId: 2 }}
+      />
+    )
+
+    expect(scrollTo).toHaveBeenCalledTimes(3)
   })
 
   it('表格被横向滚动容器包裹', () => {
@@ -200,17 +261,58 @@ describe('MarkdownPreview', () => {
       />
     )
 
-    expect(screen.getByRole('heading', { name: '空指针风险' })).toHaveAttribute(
+    const activeHeading = screen.getByRole('heading', { name: '空指针风险' })
+    expect(activeHeading).toHaveAttribute(
       'data-report-anchor-id',
       'report-option-2'
     )
-    expect(screen.getByRole('heading', { name: '空指针风险' })).toHaveClass(
-      'report-anchor-highlight'
+    expect(activeHeading.closest('[data-report-issue-anchor-id="report-option-2"]')).toHaveClass(
+      'report-issue-block-active'
     )
     expect(screen.getByRole('heading', { name: '越界访问风险' })).toHaveAttribute(
       'data-report-anchor-id',
       'report-option-4'
     )
+  })
+
+  it('模板一激活问题时连续高亮标题到问题边界内的全部内容', async () => {
+    const { container } = render(
+      <MarkdownPreview
+        markdown={[
+          '# 审查报告',
+          '## 高风险问题',
+          '### 1. 空指针风险',
+          '- **涉及文件及行号：** `src/App.tsx:12`',
+          '- **问题描述：** 指针使用前未校验。',
+          '',
+          '```ts',
+          'usePointer(value)',
+          '```',
+          '',
+          '![问题截图](images/issue.png)',
+          '',
+          '---',
+          '',
+          '### 2. 越界访问风险',
+          '- **问题描述：** 下标缺少边界判断。'
+        ].join('\n')}
+        reportPath="/reports/review.md"
+        activeFeedbackAnchorId="report-option-2"
+      />
+    )
+
+    const issueBlock = container.querySelector(
+      '[data-report-issue-anchor-id="report-option-2"]'
+    )
+    expect(issueBlock).toHaveClass('report-issue-block-active')
+    expect(issueBlock).toContainElement(screen.getByRole('heading', { name: '1. 空指针风险' }))
+    expect(issueBlock).toContainElement(screen.getByText('指针使用前未校验。'))
+    expect(issueBlock).toContainElement(screen.getByText('usePointer(value)'))
+    expect(issueBlock).toContainElement(await screen.findByRole('img', { name: '问题截图' }))
+    expect(issueBlock).not.toContainElement(
+      screen.getByRole('heading', { name: '2. 越界访问风险' })
+    )
+    expect(issueBlock?.nextElementSibling).toBe(screen.getByRole('separator'))
   })
 
   it('重复问题标题使用共享识别结果获得独立锚点', () => {
@@ -232,8 +334,12 @@ describe('MarkdownPreview', () => {
     expect(headings).toHaveLength(2)
     expect(headings[0]).toHaveAttribute('data-report-anchor-id', 'report-option-2')
     expect(headings[1]).toHaveAttribute('data-report-anchor-id', 'report-option-4')
-    expect(headings[0]).not.toHaveClass('report-anchor-highlight')
-    expect(headings[1]).toHaveClass('report-anchor-highlight')
+    expect(headings[0].closest('[data-report-issue-anchor-id="report-option-2"]')).not.toHaveClass(
+      'report-issue-block-active'
+    )
+    expect(headings[1].closest('[data-report-issue-anchor-id="report-option-4"]')).toHaveClass(
+      'report-issue-block-active'
+    )
   })
 
   it('renders report anchors for template two table row option targets', () => {
