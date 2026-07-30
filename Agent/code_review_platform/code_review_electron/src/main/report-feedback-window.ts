@@ -1,8 +1,11 @@
 import { BrowserWindow, type BrowserWindowConstructorOptions } from 'electron'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import type { ReportFeedbackContext } from '../shared/report-feedback-window'
+
+const MAIN_PROCESS_DIR = dirname(fileURLToPath(import.meta.url))
 
 export interface ReportFeedbackWindowManager {
   open(context: ReportFeedbackContext): Promise<true>
@@ -32,12 +35,12 @@ const cloneContext = (context: ReportFeedbackContext): ReportFeedbackContext =>
       }
 
 const resolvePreloadPath = (): string => {
-  const mjsPath = join(__dirname, '../preload/report-feedback.mjs')
+  const mjsPath = join(MAIN_PROCESS_DIR, '../preload/report-feedback.mjs')
   if (existsSync(mjsPath)) {
     return mjsPath
   }
 
-  return join(__dirname, '../preload/report-feedback.js')
+  return join(MAIN_PROCESS_DIR, '../preload/report-feedback.js')
 }
 
 const createWindowOptions = (mainWindow: BrowserWindow): BrowserWindowConstructorOptions => ({
@@ -167,7 +170,9 @@ export const createReportFeedbackWindowManager = (
           const rendererUrl = process.env.ELECTRON_RENDERER_URL.replace(/\/$/, '')
           windowLoadPromise = window.loadURL(`${rendererUrl}/feedback.html`)
         } else {
-          windowLoadPromise = window.loadFile(join(__dirname, '../renderer/feedback.html'))
+          windowLoadPromise = window.loadFile(
+            join(MAIN_PROCESS_DIR, '../renderer/feedback.html')
+          )
         }
       } catch (error) {
         clearCurrent(window)

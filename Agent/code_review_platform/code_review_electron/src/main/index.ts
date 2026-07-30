@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu } from 'electron'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { cancelAllActiveReviewTasks, registerIpcHandlers } from './ipc'
 import {
@@ -10,16 +11,17 @@ import {
 import { configureExternalLinkHandling } from './window-security'
 
 const APP_USER_MODEL_ID = 'com.peicheng.code-review'
+const MAIN_PROCESS_DIR = dirname(fileURLToPath(import.meta.url))
 let mainWindow: BrowserWindow | undefined
 let reportFeedbackWindowManager: ReportFeedbackWindowManager | undefined
 
 const resolvePreloadPath = (): string => {
-  const mjsPath = join(__dirname, '../preload/index.mjs')
+  const mjsPath = join(MAIN_PROCESS_DIR, '../preload/index.mjs')
   if (existsSync(mjsPath)) {
     return mjsPath
   }
 
-  return join(__dirname, '../preload/index.js')
+  return join(MAIN_PROCESS_DIR, '../preload/index.js')
 }
 
 const createWindow = (): void => {
@@ -49,7 +51,7 @@ const createWindow = (): void => {
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
-    void window.loadFile(join(__dirname, '../renderer/index.html'))
+    void window.loadFile(join(MAIN_PROCESS_DIR, '../renderer/index.html'))
   }
 }
 

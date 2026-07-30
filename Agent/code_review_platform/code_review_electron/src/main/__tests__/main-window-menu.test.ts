@@ -21,6 +21,7 @@ describe('main window menu', () => {
     const createdWindows: Array<{
       loadFile: typeof loadFile
       loadURL: typeof loadURL
+      options: Electron.BrowserWindowConstructorOptions
       webContents: {
         setWindowOpenHandler: typeof setWindowOpenHandler
         send: typeof send
@@ -28,9 +29,10 @@ describe('main window menu', () => {
       }
     }> = []
 
-    function BrowserWindowMock(): {
+    function BrowserWindowMock(options: Electron.BrowserWindowConstructorOptions): {
       loadFile: typeof loadFile
       loadURL: typeof loadURL
+      options: Electron.BrowserWindowConstructorOptions
       webContents: {
         setWindowOpenHandler: typeof setWindowOpenHandler
         send: typeof send
@@ -40,6 +42,7 @@ describe('main window menu', () => {
       const createdWindow = {
         loadFile,
         loadURL,
+        options,
         webContents: {
           setWindowOpenHandler,
           send,
@@ -85,6 +88,12 @@ describe('main window menu', () => {
     expect(createReportFeedbackWindowManager).toHaveBeenCalledWith(createdWindows[0], {
       onContextCleared: expect.any(Function)
     })
+    expect(createdWindows[0].options.webPreferences?.preload).toMatch(
+      /preload[\\/]index\.(?:mjs|js)$/
+    )
+    expect(loadFile).toHaveBeenCalledWith(
+      expect.stringMatching(/renderer[\\/]index\.html$/)
+    )
     expect(createReportFeedbackWindowManager.mock.invocationCallOrder[0]).toBeLessThan(
       registerIpcHandlers.mock.invocationCallOrder[0]
     )

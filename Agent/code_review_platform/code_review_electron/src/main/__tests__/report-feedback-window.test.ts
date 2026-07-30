@@ -129,7 +129,7 @@ describe('ReportFeedbackWindowManager', () => {
     expect(feedbackWindow.options.alwaysOnTop).toBeUndefined()
     expect(
       (feedbackWindow.options.webPreferences as { preload: string }).preload
-    ).toMatch(/preload\/report-feedback\.(?:mjs|js)$/)
+    ).toMatch(/preload[\\/]report-feedback\.(?:mjs|js)$/)
     expect(feedbackWindow.loadURL).toHaveBeenCalledWith('http://localhost:5173/feedback.html')
     expect(feedbackWindow.show).not.toHaveBeenCalled()
 
@@ -147,7 +147,7 @@ describe('ReportFeedbackWindowManager', () => {
     const feedbackWindow = await openLoadedWindow(manager, createContext())
 
     expect(feedbackWindow.loadFile).toHaveBeenCalledWith(
-      expect.stringMatching(/renderer\/feedback\.html$/)
+      expect.stringMatching(/renderer[\\/]feedback\.html$/)
     )
   })
 
