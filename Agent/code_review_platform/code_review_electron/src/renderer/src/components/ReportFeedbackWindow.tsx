@@ -168,6 +168,7 @@ function IssueFeedbackForm({
   }))
   const [drafts, setDrafts] = useState(initialDrafts)
   const [error, setError] = useState('')
+  const [focusError, setFocusError] = useState('')
   const [isPreparing, setIsPreparing] = useState(false)
   const [submittedAt, setSubmittedAt] = useState(context.feedbackSubmittedAt)
   const draftsRef = useRef(initialDrafts)
@@ -299,6 +300,15 @@ function IssueFeedbackForm({
     const next = editDraft(issueId, { helpful })
     if (next) {
       void enqueueSave(issueId).catch(() => undefined)
+    }
+  }
+
+  const handleIssueFocus = async (issueId: string): Promise<void> => {
+    setFocusError('')
+    try {
+      await window.reportFeedback.focusAnchor({ taskId: context.taskId, optionId: issueId })
+    } catch (focusError) {
+      setFocusError(focusError instanceof Error ? focusError.message : '报告定位失败')
     }
   }
 
@@ -448,9 +458,9 @@ function IssueFeedbackForm({
               </section>
             ))}
           </div>
-          {error && (
+          {(error || focusError) && (
             <p className="report-feedback-error" role="alert">
-              {error}
+              {error || focusError}
             </p>
           )}
         </div>
@@ -502,6 +512,7 @@ function IssueFeedbackForm({
                     type="radio"
                     name={`helpful-${draft.id}`}
                     checked={draft.helpful === true}
+                    onFocus={() => void handleIssueFocus(draft.id)}
                     onChange={() => handleHelpfulChange(draft.id, true)}
                   />
                   <span>有帮助</span>
@@ -511,6 +522,7 @@ function IssueFeedbackForm({
                     type="radio"
                     name={`helpful-${draft.id}`}
                     checked={draft.helpful === false}
+                    onFocus={() => void handleIssueFocus(draft.id)}
                     onChange={() => handleHelpfulChange(draft.id, false)}
                   />
                   <span>没帮助</span>
@@ -526,6 +538,7 @@ function IssueFeedbackForm({
                   rows={4}
                   placeholder={feedbackPlaceholder(draft.helpful)}
                   disabled={isReadOnly || isPreparing}
+                  onFocus={() => void handleIssueFocus(draft.id)}
                   onChange={(event) => handleTextChange(draft.id, event.target.value)}
                   onBlur={() => void enqueueSave(draft.id).catch(() => undefined)}
                 />
@@ -543,9 +556,9 @@ function IssueFeedbackForm({
           ))}
         </div>
 
-        {error && (
+        {(error || focusError) && (
           <p className="report-feedback-error" role="alert">
-            {error}
+            {error || focusError}
           </p>
         )}
       </div>

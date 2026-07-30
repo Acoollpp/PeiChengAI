@@ -291,6 +291,54 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     )
   })
 
+  it('操作某个问题的评价控件时请求主窗口定位该问题', async () => {
+    const user = userEvent.setup()
+    render(<ReportFeedbackWindow />)
+
+    const secondNotHelpful = (await screen.findAllByRole('radio', { name: '没帮助' }))[1]
+    await user.click(secondNotHelpful)
+
+    expect(window.reportFeedback.focusAnchor).toHaveBeenCalledWith({
+      taskId: 'task-1',
+      optionId: 'issue-2'
+    })
+  })
+
+  it('进入反馈说明时只定位一次，不随输入内容重复请求', async () => {
+    const user = userEvent.setup()
+    render(<ReportFeedbackWindow />)
+
+    const secondFeedbackText = await screen.findByLabelText('问题 2 反馈说明')
+    await user.click(secondFeedbackText)
+    await user.type(secondFeedbackText, '补充定位依据')
+
+    expect(window.reportFeedback.focusAnchor).toHaveBeenCalledTimes(1)
+    expect(window.reportFeedback.focusAnchor).toHaveBeenCalledWith({
+      taskId: 'task-1',
+      optionId: 'issue-2'
+    })
+  })
+
+  it('报告定位失败时仍保留评价并继续保存草稿', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.reportFeedback.focusAnchor).mockRejectedValueOnce(new Error('主窗口不可用'))
+    render(<ReportFeedbackWindow />)
+
+    const helpful = (await screen.findAllByRole('radio', { name: '有帮助' }))[0]
+    await user.click(helpful)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('主窗口不可用')
+    expect(helpful).toBeChecked()
+    await waitFor(() => {
+      expect(window.reportFeedback.saveIssueDraft).toHaveBeenCalledWith({
+        taskId: 'task-1',
+        issueId: 'issue-1',
+        helpful: true,
+        feedbackText: ''
+      })
+    })
+  })
+
   it('停止输入一秒保存说明，失焦会提前保存且不会重复同一版本', async () => {
     render(<ReportFeedbackWindow />)
     const input = await screen.findByLabelText('问题 1 反馈说明')

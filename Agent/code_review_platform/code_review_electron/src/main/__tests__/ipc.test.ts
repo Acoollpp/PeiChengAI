@@ -2779,6 +2779,45 @@ describe('registerIpcHandlers', () => {
     ])
   })
 
+  it('将新协议问题 ID 映射到报告预览锚点', async () => {
+    const send = vi.fn()
+    const context = {
+      mode: 'issues' as const,
+      taskId: 'task-1',
+      issues: [
+        {
+          id: 'issue-1',
+          issueText: '空指针风险',
+          descriptionText: '返回值未校验',
+          order: 0,
+          helpful: null,
+          feedbackText: '',
+          anchorId: 'anchor-1'
+        }
+      ],
+      feedbackSubmittedAt: null
+    }
+    const manager = {
+      getContext: vi.fn(() => context)
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      getMainWindow: () => ({ webContents: { send, isDestroyed: () => false } }) as never,
+      getReportFeedbackWindowManager: () => manager as never
+    })
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:focus-anchor'
+    )?.[1]
+
+    await expect(
+      handler({ sender: { id: 22 } }, { taskId: 'task-1', optionId: 'issue-1' })
+    ).resolves.toBe(true)
+    expect(send).toHaveBeenCalledWith('report-feedback:focus-anchor', {
+      taskId: 'task-1',
+      anchorId: 'anchor-1'
+    })
+  })
+
   it('validates and submits helpful feedback in context order with deduplicated manual lines', async () => {
     const submitReportFeedback = vi.fn(async () => ({
       id: 'feedback-1',
