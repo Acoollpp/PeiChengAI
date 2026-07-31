@@ -549,6 +549,28 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     expect(window.reportFeedback.submitIssueFeedback).not.toHaveBeenCalled()
   })
 
+  it('正式提交时空反馈说明会定位并聚焦首个缺失问题', async () => {
+    const user = userEvent.setup()
+    window.reportFeedback.getContext = vi.fn(async () => ({
+      ...issueContext,
+      issues: [
+        { ...issueContext.issues[0], helpful: true, feedbackText: '' },
+        { ...issueContext.issues[1], helpful: false, feedbackText: '已说明无效原因' }
+      ]
+    }))
+    render(<ReportFeedbackWindow />)
+
+    const firstFeedbackText = await screen.findByLabelText('问题 1 反馈说明')
+    await user.click(screen.getByRole('button', { name: '提交反馈并查看PDF报告' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '请填写第 1 个审查问题的反馈说明'
+    )
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(firstFeedbackText).toHaveFocus()
+    expect(window.reportFeedback.submitIssueFeedback).not.toHaveBeenCalled()
+  })
+
   it('全部评价后等待进行中的保存完成才执行提交前门禁', async () => {
     const user = userEvent.setup()
     let resolveSave: (() => void) | undefined
