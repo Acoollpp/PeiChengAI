@@ -429,7 +429,7 @@ export function TaskPage({
       taskId,
       localPdfPath: currentPdfPathRef.current,
       pdfReportName: currentPdfReportNameRef.current,
-      ...(selectedTask?.feedback_protocol_version === 1 ? { action: 'open' as const } : {})
+      ...(selectedTask?.feedback_protocol_version === 1 ? { action: 'reveal' as const } : {})
     })
   }, [openSelectedPdfReport, selectedTask?.feedback_protocol_version])
 

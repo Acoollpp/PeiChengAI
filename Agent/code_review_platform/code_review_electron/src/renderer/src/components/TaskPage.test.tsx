@@ -1224,7 +1224,7 @@ describe('TaskPage', () => {
       taskId: 'task-submitted-feedback',
       localPdfPath: undefined,
       pdfReportName: '最终反馈报告.pdf',
-      action: 'open'
+      action: 'reveal'
     })
   })
 
@@ -1276,7 +1276,7 @@ describe('TaskPage', () => {
       taskId: 'task-issue-feedback',
       localPdfPath: '/local/task-issue-feedback/最终反馈报告.pdf',
       pdfReportName: '最终反馈报告.pdf',
-      action: 'open'
+      action: 'reveal'
     })
   })
 
