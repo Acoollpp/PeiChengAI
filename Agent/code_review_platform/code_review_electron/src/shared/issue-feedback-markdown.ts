@@ -35,7 +35,7 @@ const buildFeedbackBlock = (issue: ReviewTaskIssue): string => {
   const feedbackLines = feedbackTextForBlock(issue.feedback_text)
   return [
     '',
-    `> 是否有帮助：${issue.helpful ? '有帮助' : '没帮助'}`,
+    `> 是否有效：${issue.helpful ? '有效' : '无效'}`,
     '>',
     `> 用户反馈：${feedbackLines[0]}`,
     ...feedbackLines.slice(1).map((line) => `> ${line}`),
@@ -53,7 +53,7 @@ const findTableCellInsertionOffset = (markdown: string, requestedOffset: number)
 }
 
 const buildTableFeedback = (issue: ReviewTaskIssue): string =>
-  ` <br />是否有帮助：${issue.helpful ? '有帮助' : '没帮助'}` +
+  ` <br />是否有效：${issue.helpful ? '有效' : '无效'}` +
   `<br />用户反馈：${feedbackTextForTable(issue.feedback_text)} `
 
 const validateIssueLocation = (markdown: string, issue: ReviewTaskIssue): void => {

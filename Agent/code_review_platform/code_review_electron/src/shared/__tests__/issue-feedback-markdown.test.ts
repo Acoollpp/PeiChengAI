@@ -60,9 +60,9 @@ describe('composeIssueFeedbackMarkdown', () => {
 
     const composed = composeIssueFeedbackMarkdown(original, [issue])
 
-    expect(composed).toContain('> 是否有帮助：有帮助')
+    expect(composed).toContain('> 是否有效：有效')
     expect(composed).toContain('> 用户反馈：`已确认并修复`')
-    expect(composed.indexOf('> 是否有帮助：有帮助')).toBeLessThan(
+    expect(composed.indexOf('> 是否有效：有效')).toBeLessThan(
       composed.indexOf('### 2. 中风险：重复问题标题')
     )
     expect(original).toContain('\r\n')
@@ -80,16 +80,16 @@ describe('composeIssueFeedbackMarkdown', () => {
 
     expect(original).toBe(templateOneReportFixture)
     expect(composed).toContain(
-      '> 是否有帮助：有帮助\n>\n> 用户反馈：`定位很准确`\n> `已补充空值判断`'
+      '> 是否有效：有效\n>\n> 用户反馈：`定位很准确`\n> `已补充空值判断`'
     )
-    expect(composed).toContain('> 是否有帮助：没帮助\n>\n> 用户反馈：未填写')
+    expect(composed).toContain('> 是否有效：无效\n>\n> 用户反馈：未填写')
     expect(composed).toContain(
       '> 用户反馈：``修复时参考了 `size` 与 ![示例](missing.png)``'
     )
-    expect(composed.indexOf('> 是否有帮助：有帮助')).toBeLessThan(
+    expect(composed.indexOf('> 是否有效：有效')).toBeLessThan(
       composed.indexOf('### 2. 中风险：重复问题标题')
     )
-    expect(composed.lastIndexOf('> 是否有帮助：有帮助')).toBeLessThan(
+    expect(composed.lastIndexOf('> 是否有效：有效')).toBeLessThan(
       composed.indexOf('---')
     )
   })
@@ -104,14 +104,14 @@ describe('composeIssueFeedbackMarkdown', () => {
     const composed = composeIssueFeedbackMarkdown(original, issues)
     const feedbackRows = composed
       .split('\n')
-      .filter((line) => line.includes('是否有帮助：'))
+      .filter((line) => line.includes('是否有效：'))
 
     expect(feedbackRows).toHaveLength(2)
     expect(feedbackRows[0]).toContain(
-      '<br />是否有帮助：有帮助<br />用户反馈：`已修复 | 并验证` |'
+      '<br />是否有效：有效<br />用户反馈：`已修复 | 并验证` |'
     )
     expect(feedbackRows[1]).toContain(
-      '<br />是否有帮助：没帮助<br />用户反馈：未填写 |'
+      '<br />是否有效：无效<br />用户反馈：未填写 |'
     )
     const originalIssueRows = original
       .split('\n')
@@ -129,7 +129,7 @@ describe('composeIssueFeedbackMarkdown', () => {
     const composed = composeIssueFeedbackMarkdown(original, [issue])
 
     expect(composed).toContain(
-      '- 未校验数组下标，可能发生越界访问。\n\n> 是否有帮助：有帮助'
+      '- 未校验数组下标，可能发生越界访问。\n\n> 是否有效：有效'
     )
     expect(composed).toContain('> 用户反馈：`补充了数组边界校验`')
   })

@@ -97,6 +97,9 @@ function formatTaskDateTime(value?: string | null): string {
 }
 
 function getReportFeedbackLabel(task: TaskViewItem): string {
+  if (task.feedback_protocol_version === 1) {
+    return task.feedback_submitted_at ? '已提交' : '未提交'
+  }
   if (task.report_feedback_helpful === true) {
     return '有帮助'
   }
@@ -104,6 +107,19 @@ function getReportFeedbackLabel(task: TaskViewItem): string {
     return '没帮助'
   }
   return '未提交'
+}
+
+function getReportFeedbackClassName(task: TaskViewItem): string {
+  if (task.feedback_protocol_version === 1) {
+    return task.feedback_submitted_at ? 'submitted' : 'pending'
+  }
+  if (task.report_feedback_helpful === true) {
+    return 'helpful'
+  }
+  if (task.report_feedback_helpful === false) {
+    return 'not-helpful'
+  }
+  return 'pending'
 }
 
 function getTaskStatusLabel(task: TaskViewItem): string {
@@ -148,13 +164,7 @@ function TaskCard({
         <span
           className={`task-status task-status-${task.status}${
             task.status === 'success'
-              ? ` task-feedback-status-${
-                  task.report_feedback_helpful === true
-                    ? 'helpful'
-                    : task.report_feedback_helpful === false
-                      ? 'not-helpful'
-                      : 'pending'
-                }`
+              ? ` task-feedback-status-${getReportFeedbackClassName(task)}`
               : ''
           }`}
         >

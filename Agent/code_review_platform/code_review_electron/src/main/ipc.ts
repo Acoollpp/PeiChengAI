@@ -1446,12 +1446,12 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       )
       let pdfOpenError = ''
       try {
-        pdfOpenError = await shell.openPath(result.pdfPath)
-      } catch (openError) {
-        pdfOpenError = openError instanceof Error ? openError.message : '系统无法打开最终 PDF'
+        shell.showItemInFolder(result.pdfPath)
+      } catch (revealError) {
+        pdfOpenError =
+          revealError instanceof Error ? revealError.message : '系统无法定位最终 PDF'
       }
       if (pdfOpenError) {
-        shell.showItemInFolder(result.pdfPath)
         return { ...result, pdfOpenError }
       }
       return result

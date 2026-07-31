@@ -59,7 +59,7 @@ describe('report pdf generator', () => {
     const originalMarkdown = '# 原始报告\n\n### 问题一\n'
     const renderingMarkdown = [
       originalMarkdown,
-      '> 是否有帮助：有帮助',
+      '> 是否有效：有效',
       '>',
       '> 用户反馈：`已完成修复`'
     ].join('\n')
@@ -78,7 +78,7 @@ describe('report pdf generator', () => {
     await generatePdfReport(reportPath, { createWindow, markdown: renderingMarkdown })
 
     await expect(readFile(reportPath, 'utf8')).resolves.toBe(originalMarkdown)
-    expect(loadedHtml).toContain('是否有帮助：有帮助')
+    expect(loadedHtml).toContain('是否有效：有效')
     expect(loadedHtml).toContain('<code>已完成修复</code>')
   })
 

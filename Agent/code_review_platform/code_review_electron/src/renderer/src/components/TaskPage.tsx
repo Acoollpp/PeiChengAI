@@ -429,7 +429,7 @@ export function TaskPage({
       taskId,
       localPdfPath: currentPdfPathRef.current,
       pdfReportName: currentPdfReportNameRef.current,
-      ...(selectedTask?.feedback_protocol_version === 1 ? { action: 'open' as const } : {})
+      ...(selectedTask?.feedback_protocol_version === 1 ? { action: 'reveal' as const } : {})
     })
   }, [openSelectedPdfReport, selectedTask?.feedback_protocol_version])
 
@@ -619,7 +619,7 @@ export function TaskPage({
                   type="button"
                   onClick={handleReportUseful}
                 >
-                  提交反馈并查看PDF报告
+                  查看PDF报告
                 </button>
               )}
               {selectedTask.feedback_protocol_version === 1 &&

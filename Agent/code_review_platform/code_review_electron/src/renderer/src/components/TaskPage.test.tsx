@@ -1163,7 +1163,7 @@ describe('TaskPage', () => {
 
     expect(screen.queryByRole('button', { name: '有帮助' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '没帮助' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '提交反馈并查看PDF报告' }))
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
 
     expect(window.codeReview.openReportFeedbackWindow).toHaveBeenCalledWith({
       mode: 'issues',
@@ -1173,6 +1173,7 @@ describe('TaskPage', () => {
         { order: 1, anchorId: 'report-option-6' }
       ]
     })
+    expect(window.codeReview.openPdfReport).not.toHaveBeenCalled()
   })
 
   it('已提交的新协议报告在重启恢复后显示只读反馈和最终PDF入口', async () => {
@@ -1223,7 +1224,7 @@ describe('TaskPage', () => {
       taskId: 'task-submitted-feedback',
       localPdfPath: undefined,
       pdfReportName: '最终反馈报告.pdf',
-      action: 'open'
+      action: 'reveal'
     })
   })
 
@@ -1255,7 +1256,9 @@ describe('TaskPage', () => {
     renderReadyTaskPage()
     const historyPanel = await openHistoryTasks(user)
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
-    expect(screen.getByRole('button', { name: '提交反馈并查看PDF报告' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '查看PDF报告' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '提交反馈并查看PDF报告' })).not.toBeInTheDocument()
+    expect(within(historyPanel).getByText('已完成 · 未提交')).toBeInTheDocument()
 
     const submitted = vi.mocked(window.codeReview.onIssueFeedbackSubmitted).mock.calls[0][0]
     submitted({
@@ -1267,12 +1270,13 @@ describe('TaskPage', () => {
 
     expect(await screen.findByRole('button', { name: '查看已提交反馈' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '提交反馈并查看PDF报告' })).not.toBeInTheDocument()
+    expect(within(historyPanel).getByText('已完成 · 已提交')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
     expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
       taskId: 'task-issue-feedback',
       localPdfPath: '/local/task-issue-feedback/最终反馈报告.pdf',
       pdfReportName: '最终反馈报告.pdf',
-      action: 'open'
+      action: 'reveal'
     })
   })
 
