@@ -1287,12 +1287,14 @@ describe('registerIpcHandlers', () => {
     expect(showItemInFolderMock).not.toHaveBeenCalled()
   })
 
-  it('最终反馈已锁定但打开 PDF 抛出异常时返回只读提示并定位文件', async () => {
+  it('最终反馈已锁定但定位 PDF 抛出异常时返回只读提示且不尝试打开', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'code-review-ipc-open-final-pdf-'))
     tempDirs.push(tempDir)
     const reportPath = join(tempDir, '代码审查报告.md')
     const pdfPath = join(tempDir, '代码审查报告.pdf')
-    openPathMock.mockRejectedValueOnce(new Error('没有可用于打开 PDF 的应用'))
+    showItemInFolderMock.mockImplementationOnce(() => {
+      throw new Error('文件管理器不可用')
+    })
     const context = {
       mode: 'issues' as const,
       taskId: 'task-1',
@@ -1340,10 +1342,10 @@ describe('registerIpcHandlers', () => {
       feedbackSubmittedAt: '2026-07-29T12:00:00Z',
       pdfPath,
       pdfReportName: '代码审查报告.pdf',
-      pdfOpenError: '没有可用于打开 PDF 的应用'
+      pdfOpenError: '文件管理器不可用'
     })
-    expect(openPathMock).toHaveBeenCalledWith(pdfPath)
     expect(showItemInFolderMock).toHaveBeenCalledWith(pdfPath)
+    expect(openPathMock).not.toHaveBeenCalled()
   })
 
   it('rejects opening a PDF report without taskId before authentication', async () => {
@@ -2600,8 +2602,8 @@ describe('registerIpcHandlers', () => {
     })
     expect(readTaskIssues).toHaveBeenCalledWith('token-123', 'task-1')
     expect(uploadPdfReport).toHaveBeenCalledTimes(1)
-    expect(openPathMock).toHaveBeenCalledWith(pdfPath)
-    expect(showItemInFolderMock).not.toHaveBeenCalledWith(pdfPath)
+    expect(showItemInFolderMock).toHaveBeenCalledWith(pdfPath)
+    expect(openPathMock).not.toHaveBeenCalled()
     expect(send).toHaveBeenCalledWith('report-feedback:issues-submitted', {
       taskId: 'task-1',
       feedbackSubmittedAt: '2026-07-29T12:00:00Z',

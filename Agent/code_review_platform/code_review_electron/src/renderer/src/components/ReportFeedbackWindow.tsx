@@ -16,10 +16,10 @@ type IssueDraft = IssueFeedbackItem & {
 
 const feedbackPlaceholder = (helpful: boolean | null): string => {
   if (helpful === true) {
-    return '例如：说明这个问题提供了哪些帮助，以及实际如何处理。'
+    return '例如：说明这个问题的有效之处，以及实际如何处理。'
   }
   if (helpful === false) {
-    return '例如：说明这个问题没有帮助的原因和具体情况。'
+    return '例如：说明这个问题无效的原因和具体情况。'
   }
   return '可选填反馈说明；评价后会显示对应的填写示例。'
 }
@@ -363,7 +363,7 @@ function IssueFeedbackForm({
       setSubmittedAt(result.feedbackSubmittedAt)
       onSubmitted(result.feedbackSubmittedAt)
       if (result.pdfOpenError) {
-        setError('反馈已正式提交，但 PDF 打开失败，已在文件夹中定位最终报告。')
+        setError('反馈已正式提交，但无法在文件夹中定位最终报告。')
         return
       }
       try {
@@ -436,7 +436,7 @@ function IssueFeedbackForm({
                           : 'is-not-helpful'
                     }`}
                   >
-                    {draft.helpful === null ? '未评价' : draft.helpful ? '有帮助' : '没帮助'}
+                    {draft.helpful === null ? '未评价' : draft.helpful ? '有效' : '无效'}
                   </span>
                 </div>
                 <h2>{draft.issueText}</h2>
@@ -445,9 +445,9 @@ function IssueFeedbackForm({
                 </p>
                 <dl className="issue-feedback-readonly-details">
                   <div>
-                    <dt>问题评价</dt>
+                    <dt>是否有效</dt>
                     <dd>
-                      {draft.helpful === null ? '未评价' : draft.helpful ? '有帮助' : '没帮助'}
+                      {draft.helpful === null ? '未评价' : draft.helpful ? '有效' : '无效'}
                     </dd>
                   </div>
                   <div>
@@ -497,7 +497,7 @@ function IssueFeedbackForm({
               <div className="issue-feedback-heading">
                 <span className="issue-feedback-order">问题 {index + 1}</span>
                 <span className={`issue-feedback-state ${draft.helpful === null ? 'is-pending' : ''}`}>
-                  {draft.helpful === null ? '未评价' : draft.helpful ? '有帮助' : '没帮助'}
+                  {draft.helpful === null ? '未评价' : draft.helpful ? '有效' : '无效'}
                 </span>
               </div>
               <h2>{draft.issueText}</h2>
@@ -506,7 +506,7 @@ function IssueFeedbackForm({
               </p>
 
               <fieldset className="issue-feedback-choice" disabled={isReadOnly || isPreparing}>
-                <legend>是否有帮助</legend>
+                <legend>是否有效</legend>
                 <label>
                   <input
                     type="radio"
@@ -515,7 +515,7 @@ function IssueFeedbackForm({
                     onFocus={() => void handleIssueFocus(draft.id)}
                     onChange={() => handleHelpfulChange(draft.id, true)}
                   />
-                  <span>有帮助</span>
+                  <span>有效</span>
                 </label>
                 <label>
                   <input
@@ -525,7 +525,7 @@ function IssueFeedbackForm({
                     onFocus={() => void handleIssueFocus(draft.id)}
                     onChange={() => handleHelpfulChange(draft.id, false)}
                   />
-                  <span>没帮助</span>
+                  <span>无效</span>
                 </label>
               </fieldset>
 
@@ -626,7 +626,7 @@ export function ReportFeedbackWindow(): React.JSX.Element {
           {isSubmittedIssueFeedback
             ? '反馈已正式提交，以下内容仅供查看。'
             : context?.mode === 'issues'
-            ? '请逐项评价审查问题；反馈说明可按需填写。'
+            ? '请逐项评价审查问题；反馈说明可按需填写。软件质量提升需要你的真实反馈，谢谢！'
             : '请选择报告中有帮助的问题，也可以补充说明。'}
         </p>
       </header>

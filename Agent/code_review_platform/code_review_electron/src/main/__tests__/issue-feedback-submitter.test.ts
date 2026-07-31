@@ -114,7 +114,7 @@ describe('submitIssueFeedback', () => {
       generatePdf
     })
 
-    expect(renderingMarkdown).toContain('> 是否有帮助：有帮助')
+    expect(renderingMarkdown).toContain('> 是否有效：有效')
     expect(renderingMarkdown).toContain('> 用户反馈：`已完成修复`')
     await expect(readFile(localReportPath, 'utf8')).resolves.toBe('本地原始Markdown字节不得改变')
     expect(downloadReportAsset).toHaveBeenCalledWith(

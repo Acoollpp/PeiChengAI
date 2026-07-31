@@ -262,16 +262,22 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
 
     expect(await screen.findByText('高风险：空指针解引用')).toBeInTheDocument()
     expect(screen.getByText('返回值未经校验就被解引用。')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        '请逐项评价审查问题；反馈说明可按需填写。软件质量提升需要你的真实反馈，谢谢！'
+      )
+    ).toBeInTheDocument()
     expect(screen.getAllByText('未评价')).toHaveLength(2)
+    expect(screen.getAllByText('是否有效')).toHaveLength(2)
 
-    const helpful = screen.getAllByRole('radio', { name: '有帮助' })[0]
-    const notHelpful = screen.getAllByRole('radio', { name: '没帮助' })[0]
+    const helpful = screen.getAllByRole('radio', { name: '有效' })[0]
+    const notHelpful = screen.getAllByRole('radio', { name: '无效' })[0]
     await user.click(helpful)
     expect(helpful).toBeChecked()
     expect(notHelpful).not.toBeChecked()
     expect(screen.getByLabelText('问题 1 反馈说明')).toHaveAttribute(
       'placeholder',
-      '例如：说明这个问题提供了哪些帮助，以及实际如何处理。'
+      '例如：说明这个问题的有效之处，以及实际如何处理。'
     )
     await waitFor(() => {
       expect(window.reportFeedback.saveIssueDraft).toHaveBeenCalledWith({
@@ -287,7 +293,7 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     expect(notHelpful).toBeChecked()
     expect(screen.getByLabelText('问题 1 反馈说明')).toHaveAttribute(
       'placeholder',
-      '例如：说明这个问题没有帮助的原因和具体情况。'
+      '例如：说明这个问题无效的原因和具体情况。'
     )
   })
 
@@ -295,7 +301,7 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     const user = userEvent.setup()
     render(<ReportFeedbackWindow />)
 
-    const secondNotHelpful = (await screen.findAllByRole('radio', { name: '没帮助' }))[1]
+    const secondNotHelpful = (await screen.findAllByRole('radio', { name: '无效' }))[1]
     await user.click(secondNotHelpful)
 
     expect(window.reportFeedback.focusAnchor).toHaveBeenCalledWith({
@@ -324,7 +330,7 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     vi.mocked(window.reportFeedback.focusAnchor).mockRejectedValueOnce(new Error('主窗口不可用'))
     render(<ReportFeedbackWindow />)
 
-    const helpful = (await screen.findAllByRole('radio', { name: '有帮助' }))[0]
+    const helpful = (await screen.findAllByRole('radio', { name: '有效' }))[0]
     await user.click(helpful)
 
     expect(await screen.findByRole('alert')).toHaveTextContent('主窗口不可用')
@@ -385,9 +391,9 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
       </StrictMode>
     )
 
-    await user.click(await screen.findByRole('radio', { name: '有帮助' }))
+    await user.click(await screen.findByRole('radio', { name: '有效' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('网络连接中断')
-    expect(screen.getByRole('radio', { name: '有帮助' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: '有效' })).toBeChecked()
     expect(screen.getByLabelText('问题 1 反馈说明')).toHaveValue('必须保留的输入')
 
     await user.click(screen.getByRole('button', { name: '重试' }))
@@ -413,8 +419,8 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
       .mockResolvedValueOnce({} as never)
     render(<ReportFeedbackWindow />)
 
-    const helpful = (await screen.findAllByRole('radio', { name: '有帮助' }))[0]
-    const notHelpful = screen.getAllByRole('radio', { name: '没帮助' })[0]
+    const helpful = (await screen.findAllByRole('radio', { name: '有效' }))[0]
+    const notHelpful = screen.getAllByRole('radio', { name: '无效' })[0]
     await user.click(helpful)
     await user.click(notHelpful)
     expect(notHelpful).toBeChecked()
@@ -439,7 +445,7 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     }))
     render(<ReportFeedbackWindow />)
 
-    expect(await screen.findByRole('radio', { name: '没帮助' })).toBeChecked()
+    expect(await screen.findByRole('radio', { name: '无效' })).toBeChecked()
     expect(screen.getByLabelText('问题 1 反馈说明')).toHaveValue('与当前规则不适用')
     expect(window.reportFeedback.saveIssueDraft).not.toHaveBeenCalled()
   })
@@ -473,6 +479,9 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     expect(screen.getByText('中风险：事务边界不完整')).toBeInTheDocument()
     expect(screen.getByText('帮助定位了空指针并完成修复。')).toBeInTheDocument()
     expect(screen.getByText('未填写')).toBeInTheDocument()
+    expect(screen.getAllByText('有效')).toHaveLength(2)
+    expect(screen.getAllByText('无效')).toHaveLength(2)
+    expect(screen.getAllByText('是否有效')).toHaveLength(2)
     expect(screen.queryByRole('radio')).not.toBeInTheDocument()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '重试' })).not.toBeInTheDocument()
@@ -529,7 +538,7 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     )
     render(<ReportFeedbackWindow />)
 
-    await user.click(await screen.findByRole('radio', { name: '有帮助' }))
+    await user.click(await screen.findByRole('radio', { name: '有效' }))
     await user.click(screen.getByRole('button', { name: '提交反馈并查看PDF报告' }))
     expect(window.reportFeedback.submitIssueFeedback).not.toHaveBeenCalled()
 
@@ -579,7 +588,7 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     expect(screen.queryByRole('button', { name: '提交反馈并查看PDF报告' })).not.toBeInTheDocument()
   })
 
-  it('服务端已提交但 PDF 打开失败时立即锁定输入并保留提示', async () => {
+  it('服务端已提交但 PDF 定位失败时立即锁定输入并保留提示', async () => {
     const user = userEvent.setup()
     window.reportFeedback.getContext = vi.fn(async () => ({
       ...issueContext,
@@ -598,7 +607,7 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     await user.click(await screen.findByRole('button', { name: '提交反馈并查看PDF报告' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      '反馈已正式提交，但 PDF 打开失败，已在文件夹中定位最终报告'
+      '反馈已正式提交，但无法在文件夹中定位最终报告'
     )
     expect(screen.queryByLabelText('问题 1 反馈说明')).not.toBeInTheDocument()
     expect(screen.queryByRole('radio')).not.toBeInTheDocument()

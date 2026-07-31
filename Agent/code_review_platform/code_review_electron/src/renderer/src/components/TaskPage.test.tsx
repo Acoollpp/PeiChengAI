@@ -1163,7 +1163,7 @@ describe('TaskPage', () => {
 
     expect(screen.queryByRole('button', { name: '有帮助' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '没帮助' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '提交反馈并查看PDF报告' }))
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
 
     expect(window.codeReview.openReportFeedbackWindow).toHaveBeenCalledWith({
       mode: 'issues',
@@ -1173,6 +1173,7 @@ describe('TaskPage', () => {
         { order: 1, anchorId: 'report-option-6' }
       ]
     })
+    expect(window.codeReview.openPdfReport).not.toHaveBeenCalled()
   })
 
   it('已提交的新协议报告在重启恢复后显示只读反馈和最终PDF入口', async () => {
@@ -1255,7 +1256,8 @@ describe('TaskPage', () => {
     renderReadyTaskPage()
     const historyPanel = await openHistoryTasks(user)
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
-    expect(screen.getByRole('button', { name: '提交反馈并查看PDF报告' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '查看PDF报告' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '提交反馈并查看PDF报告' })).not.toBeInTheDocument()
 
     const submitted = vi.mocked(window.codeReview.onIssueFeedbackSubmitted).mock.calls[0][0]
     submitted({

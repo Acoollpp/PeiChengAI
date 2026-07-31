@@ -619,7 +619,7 @@ export function TaskPage({
                   type="button"
                   onClick={handleReportUseful}
                 >
-                  提交反馈并查看PDF报告
+                  查看PDF报告
                 </button>
               )}
               {selectedTask.feedback_protocol_version === 1 &&
