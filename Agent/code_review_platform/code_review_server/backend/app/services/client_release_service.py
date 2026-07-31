@@ -1,5 +1,7 @@
 import base64
 import hashlib
+import logging
+import re
 import shutil
 import uuid
 from dataclasses import dataclass
@@ -11,11 +13,18 @@ from fastapi import HTTPException, UploadFile
 from sqlmodel import Session, col, select
 
 from app.core.config import settings
-from app.models import ClientRelease, get_datetime_utc
+from app.models import ClientRelease, ClientUpdatePolicy, get_datetime_utc
 
 SUPPORTED_PLATFORM = "win32"
 SUPPORTED_ARCH = "x64"
 LATEST_YML_NAME = "latest.yml"
+SEMANTIC_VERSION_PATTERN = re.compile(
+    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+    r"(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)"
+    r"(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -35,6 +44,14 @@ class SavedReleaseUpload:
     blockmap_path: Path | None = None
 
 
+@dataclass(frozen=True)
+class SemanticVersion:
+    major: int
+    minor: int
+    patch: int
+    prerelease: tuple[str, ...]
+
+
 def path_for_release(release_id: uuid.UUID) -> Path:
     return Path(settings.CLIENT_RELEASE_STORAGE_DIR) / str(release_id)
 
@@ -48,7 +65,9 @@ def parse_latest_yml(
     try:
         payload = yaml.safe_load(content.decode("utf-8"))
     except (UnicodeDecodeError, yaml.YAMLError) as exc:
-        raise HTTPException(status_code=400, detail="latest.yml must be valid YAML") from exc
+        raise HTTPException(
+            status_code=400, detail="latest.yml must be valid YAML"
+        ) from exc
 
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="latest.yml must be a YAML object")
@@ -118,7 +137,9 @@ async def save_upload(
         blockmap_name = _safe_filename(blockmap.filename, required_suffix=".blockmap")
         blockmap_content = await blockmap.read()
         if not blockmap_content:
-            raise HTTPException(status_code=400, detail="Blockmap file must not be empty")
+            raise HTTPException(
+                status_code=400, detail="Blockmap file must not be empty"
+            )
 
     release_path = path_for_release(release_id)
     if release_path.exists():
@@ -141,6 +162,7 @@ async def save_upload(
 
 
 def activate_release(session: Session, release: ClientRelease) -> ClientRelease:
+    validate_release_activation(session, release)
     active_releases = session.exec(
         select(ClientRelease).where(
             ClientRelease.platform == release.platform,
@@ -162,6 +184,130 @@ def activate_release(session: Session, release: ClientRelease) -> ClientRelease:
     session.commit()
     session.refresh(release)
     return release
+
+
+def validate_release_activation(session: Session, release: ClientRelease) -> None:
+    policy = get_update_policy(session, release.platform, release.arch)
+    if policy is None or policy.minimum_supported_release_id is None:
+        parse_semantic_version(release.version)
+        return
+
+    minimum_release = session.get(ClientRelease, policy.minimum_supported_release_id)
+    if minimum_release is None:
+        raise HTTPException(status_code=409, detail="最低支持版本对应的发布记录不存在")
+    if compare_versions(release.version, minimum_release.version) < 0:
+        raise HTTPException(
+            status_code=409,
+            detail="启用版本不能低于当前最低支持版本，请先降低最低支持版本",
+        )
+
+
+def get_update_policy(
+    session: Session,
+    platform: str = SUPPORTED_PLATFORM,
+    arch: str = SUPPORTED_ARCH,
+) -> ClientUpdatePolicy | None:
+    return session.exec(
+        select(ClientUpdatePolicy).where(
+            ClientUpdatePolicy.platform == platform,
+            ClientUpdatePolicy.arch == arch,
+        )
+    ).first()
+
+
+def set_minimum_supported_release(
+    *,
+    session: Session,
+    platform: str,
+    arch: str,
+    release_id: uuid.UUID | None,
+    updated_by_user_id: uuid.UUID,
+) -> ClientUpdatePolicy:
+    active_release = get_active_release(session, platform, arch)
+    if active_release is None:
+        raise HTTPException(
+            status_code=409, detail="当前平台和架构没有可下载的启用版本"
+        )
+
+    minimum_release: ClientRelease | None = None
+    if release_id is not None:
+        minimum_release = session.get(ClientRelease, release_id)
+        if minimum_release is None:
+            raise HTTPException(status_code=404, detail="最低支持版本不存在")
+        if minimum_release.platform != platform or minimum_release.arch != arch:
+            raise HTTPException(
+                status_code=400, detail="最低支持版本的平台或架构不匹配"
+            )
+        if compare_versions(minimum_release.version, active_release.version) > 0:
+            raise HTTPException(
+                status_code=409, detail="最低支持版本不能高于当前启用版本"
+            )
+
+    policy = get_update_policy(session, platform, arch)
+    now = get_datetime_utc()
+    if policy is None:
+        policy = ClientUpdatePolicy(platform=platform, arch=arch, created_at=now)
+    policy.minimum_supported_release_id = (
+        minimum_release.id if minimum_release else None
+    )
+    policy.updated_by_user_id = updated_by_user_id
+    policy.updated_at = now
+    session.add(policy)
+    session.commit()
+    session.refresh(policy)
+    logger.info(
+        "客户端最低支持版本已更新 platform=%s arch=%s version=%s operator=%s",
+        platform,
+        arch,
+        minimum_release.version if minimum_release else None,
+        updated_by_user_id,
+    )
+    return policy
+
+
+def compare_versions(left: str, right: str) -> int:
+    left_version = parse_semantic_version(left)
+    right_version = parse_semantic_version(right)
+    left_core = (left_version.major, left_version.minor, left_version.patch)
+    right_core = (right_version.major, right_version.minor, right_version.patch)
+    if left_core != right_core:
+        return 1 if left_core > right_core else -1
+    return _compare_prerelease(left_version.prerelease, right_version.prerelease)
+
+
+def parse_semantic_version(value: str) -> SemanticVersion:
+    match = SEMANTIC_VERSION_PATTERN.fullmatch(value)
+    if match is None:
+        raise HTTPException(status_code=400, detail="版本号必须是严格的语义化版本")
+    prerelease = tuple(match.group(4).split(".")) if match.group(4) else ()
+    return SemanticVersion(
+        major=int(match.group(1)),
+        minor=int(match.group(2)),
+        patch=int(match.group(3)),
+        prerelease=prerelease,
+    )
+
+
+def _compare_prerelease(left: tuple[str, ...], right: tuple[str, ...]) -> int:
+    if not left and not right:
+        return 0
+    if not left:
+        return 1
+    if not right:
+        return -1
+    for left_identifier, right_identifier in zip(left, right, strict=False):
+        if left_identifier == right_identifier:
+            continue
+        left_numeric = left_identifier.isdigit()
+        right_numeric = right_identifier.isdigit()
+        if left_numeric and right_numeric:
+            return 1 if int(left_identifier) > int(right_identifier) else -1
+        if left_numeric != right_numeric:
+            return -1 if left_numeric else 1
+        return 1 if left_identifier > right_identifier else -1
+    if len(left) == len(right):
+        return 0
+    return 1 if len(left) > len(right) else -1
 
 
 def get_active_release(
@@ -209,7 +355,9 @@ def _installer_name_from_payload(payload: dict[str, Any]) -> str:
     installer_names: list[str] = []
     path_value = payload.get("path")
     if isinstance(path_value, str) and path_value.strip():
-        installer_names.append(_safe_filename(path_value.strip(), required_suffix=".exe"))
+        installer_names.append(
+            _safe_filename(path_value.strip(), required_suffix=".exe")
+        )
 
     first_file = _first_file(payload)
     if first_file is not None:

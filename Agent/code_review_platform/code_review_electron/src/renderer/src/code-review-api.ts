@@ -212,7 +212,25 @@ export interface AppUpdateProgress {
 export interface AppUpdateError {
   message: string
   stack?: string
+  phase?: 'check' | 'download' | 'install'
 }
+
+export interface ClientUpdatePolicy {
+  platform: string
+  arch: string
+  current_version: string
+  active_version: string | null
+  minimum_supported_version: string | null
+  update_available: boolean
+  update_required: boolean
+  release_notes?: string | null
+}
+
+export type AppUpdateCheckResult =
+  | { status: 'check_failed' }
+  | { status: 'current'; policy: ClientUpdatePolicy }
+  | { status: 'optional'; policy: ClientUpdatePolicy }
+  | { status: 'required'; policy: ClientUpdatePolicy }
 
 export interface CodeReviewApi {
   keyLogin(payload: KeyLoginRequest): Promise<KeyLoginResult>
@@ -261,13 +279,15 @@ export interface CodeReviewApi {
     callback: (payload: IssueFeedbackSubmittedEvent) => void
   ): () => void
   bindSvnCredential(payload: SvnCredentialPayload): Promise<true>
-  checkForAppUpdate(): Promise<boolean>
+  checkForAppUpdate(): Promise<AppUpdateCheckResult>
   downloadAppUpdate(): Promise<true>
   installAppUpdate(): Promise<true>
+  quitApp(): Promise<true>
   onAppUpdateAvailable(callback: (info: AppUpdateInfo) => void): () => void
   onAppUpdateNotAvailable(callback: (info: AppUpdateInfo) => void): () => void
   onAppUpdateDownloadProgress(callback: (progress: AppUpdateProgress) => void): () => void
   onAppUpdateProgress(callback: (progress: AppUpdateProgress) => void): () => void
   onAppUpdateDownloaded(callback: (info: AppUpdateInfo) => void): () => void
   onAppUpdateError(callback: (error: AppUpdateError) => void): () => void
+  onAppUpdateRequired(callback: (policy: ClientUpdatePolicy) => void): () => void
 }

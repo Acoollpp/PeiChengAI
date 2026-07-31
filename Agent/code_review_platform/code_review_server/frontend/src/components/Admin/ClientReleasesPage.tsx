@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CheckCircle2, CircleOff, Upload } from "lucide-react"
-import { type FormEvent, useRef, useState } from "react"
+import { CheckCircle2, CircleOff, ShieldAlert, Upload } from "lucide-react"
+import { type FormEvent, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { OpenAPI } from "@/client"
@@ -13,6 +13,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -60,6 +68,19 @@ type ClientReleaseUploadInput = {
   latestYml: File
   blockmap: File | null
 }
+
+type ClientUpdatePolicy = {
+  platform: string
+  arch: string
+  active_release_id: string | null
+  active_version: string | null
+  minimum_supported_release_id: string | null
+  minimum_supported_version: string | null
+  updated_by_user_id: string | null
+  updated_at: string | null
+}
+
+const DISABLED_POLICY_VALUE = "__disabled__"
 
 function authHeaders(): HeadersInit {
   const token = localStorage.getItem("access_token")
@@ -150,6 +171,36 @@ async function activateClientRelease(releaseId: string) {
   return response.json()
 }
 
+async function readClientUpdatePolicy(): Promise<ClientUpdatePolicy> {
+  const response = await fetch(
+    `${OpenAPI.BASE}/api/v1/client-update-policy/win32/x64`,
+    { headers: authHeaders() },
+  )
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "加载最低支持版本失败"))
+  }
+  return response.json()
+}
+
+async function updateClientUpdatePolicy(releaseId: string | null) {
+  const response = await fetch(
+    `${OpenAPI.BASE}/api/v1/client-update-policy/win32/x64`,
+    {
+      method: "PUT",
+      headers: (() => {
+        const headers = new Headers(authHeaders())
+        headers.set("Content-Type", "application/json")
+        return headers
+      })(),
+      body: JSON.stringify({ minimum_supported_release_id: releaseId }),
+    },
+  )
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "调整最低支持版本失败"))
+  }
+  return response.json()
+}
+
 function isClientReleaseActive(release: ClientRelease) {
   return Boolean(release.is_active ?? release.active)
 }
@@ -212,6 +263,9 @@ function ClientReleaseUploadForm() {
       clearFileInput(blockmapInputRef.current)
       await queryClient.invalidateQueries({
         queryKey: ["admin", "client-releases"],
+      })
+      await queryClient.invalidateQueries({
+        queryKey: ["admin", "client-update-policy"],
       })
     },
     onError: (error) => {
@@ -321,9 +375,7 @@ function ClientReleaseUploadForm() {
               ref={blockmapInputRef}
               type="file"
               accept=".blockmap,application/octet-stream"
-              onChange={(event) =>
-                setBlockmap(event.target.files?.[0] ?? null)
-              }
+              onChange={(event) => setBlockmap(event.target.files?.[0] ?? null)}
             />
           </div>
           <div className="flex items-end md:col-span-2">
@@ -334,6 +386,168 @@ function ClientReleaseUploadForm() {
           </div>
         </form>
       </CardContent>
+    </Card>
+  )
+}
+
+function ClientUpdatePolicyCard() {
+  const queryClient = useQueryClient()
+  const [selectedReleaseId, setSelectedReleaseId] = useState(
+    DISABLED_POLICY_VALUE,
+  )
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false)
+  const policyQuery = useQuery({
+    queryFn: readClientUpdatePolicy,
+    queryKey: ["admin", "client-update-policy", "win32", "x64"],
+  })
+  const releasesQuery = useQuery({
+    queryFn: readClientReleases,
+    queryKey: ["admin", "client-releases"],
+  })
+
+  useEffect(() => {
+    if (policyQuery.data) {
+      setSelectedReleaseId(
+        policyQuery.data.minimum_supported_release_id ?? DISABLED_POLICY_VALUE,
+      )
+    }
+  }, [policyQuery.data])
+
+  const updateMutation = useMutation({
+    mutationFn: updateClientUpdatePolicy,
+    onSuccess: async () => {
+      toast.success("最低支持版本已更新")
+      setIsConfirmOpen(false)
+      await queryClient.invalidateQueries({
+        queryKey: ["admin", "client-update-policy"],
+      })
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error ? error.message : "调整最低支持版本失败",
+      )
+    },
+  })
+
+  const policy = policyQuery.data
+  const matchingReleases = (releasesQuery.data ?? []).filter(
+    (release) =>
+      (release.platform ?? "win32") === "win32" &&
+      (release.arch ?? "x64") === "x64",
+  )
+  const selectedRelease = matchingReleases.find(
+    (release) => release.id === selectedReleaseId,
+  )
+  const selectedVersion = selectedRelease?.version ?? "未启用"
+  const currentValue =
+    policy?.minimum_supported_release_id ?? DISABLED_POLICY_VALUE
+  const isLoading = policyQuery.isLoading || releasesQuery.isLoading
+  const error = policyQuery.error ?? releasesQuery.error
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ShieldAlert className="size-5" />
+          最低支持版本
+        </CardTitle>
+        <CardDescription>
+          独立控制登录后的强制更新门槛，不会随上传或启用版本自动变化。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+        {error ? (
+          <div className="text-destructive md:col-span-3">
+            {error instanceof Error ? error.message : "加载最低支持版本失败"}
+          </div>
+        ) : (
+          <>
+            <div className="space-y-1">
+              <Label>当前启用版本</Label>
+              <div className="font-medium text-sm">
+                {isLoading ? "加载中..." : policy?.active_version || "未配置"}
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="minimum-supported-release">最低支持版本</Label>
+              <Select
+                value={selectedReleaseId}
+                disabled={isLoading || updateMutation.isPending}
+                onValueChange={setSelectedReleaseId}
+              >
+                <SelectTrigger
+                  id="minimum-supported-release"
+                  className="w-full"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={DISABLED_POLICY_VALUE}>未启用</SelectItem>
+                  {matchingReleases.map((release) => (
+                    <SelectItem key={release.id} value={release.id}>
+                      {release.version}
+                      {isClientReleaseActive(release) ? "（当前启用）" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-muted-foreground text-xs">
+                最近调整：{formatDateTime(policy?.updated_at)}
+              </span>
+            </div>
+            <Button
+              type="button"
+              disabled={
+                isLoading ||
+                !policy?.active_release_id ||
+                selectedReleaseId === currentValue ||
+                updateMutation.isPending
+              }
+              onClick={() => setIsConfirmOpen(true)}
+            >
+              调整门槛
+            </Button>
+          </>
+        )}
+      </CardContent>
+      <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+        <DialogContent showCloseButton={!updateMutation.isPending}>
+          <DialogHeader>
+            <DialogTitle>确认调整最低支持版本</DialogTitle>
+            <DialogDescription>
+              当前门槛：{policy?.minimum_supported_version || "未启用"}
+              ；目标门槛：
+              {selectedVersion}。
+              {selectedReleaseId === DISABLED_POLICY_VALUE
+                ? " 调整后客户端不会因最低版本策略被强制更新。"
+                : ` 低于 ${selectedVersion} 的客户端在下次登录成功后将无法进入业务页面。`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={updateMutation.isPending}
+              onClick={() => setIsConfirmOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              disabled={updateMutation.isPending}
+              onClick={() =>
+                updateMutation.mutate(
+                  selectedReleaseId === DISABLED_POLICY_VALUE
+                    ? null
+                    : selectedReleaseId,
+                )
+              }
+            >
+              {updateMutation.isPending ? "保存中..." : "确认调整"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }
@@ -356,6 +570,9 @@ function ClientReleasesTable() {
       toast.success("客户端版本已启用")
       await queryClient.invalidateQueries({
         queryKey: ["admin", "client-releases"],
+      })
+      await queryClient.invalidateQueries({
+        queryKey: ["admin", "client-update-policy"],
       })
     },
     onError: (error) => {
@@ -413,8 +630,9 @@ function ClientReleasesTable() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  {[release.platform, release.arch].filter(Boolean).join(" / ") ||
-                    "-"}
+                  {[release.platform, release.arch]
+                    .filter(Boolean)
+                    .join(" / ") || "-"}
                 </TableCell>
                 <TableCell>
                   <div className="max-w-64 truncate">
@@ -462,6 +680,7 @@ export function AdminClientReleasesPage() {
           管理客户端安装包、更新元数据和当前启用版本。
         </p>
       </div>
+      <ClientUpdatePolicyCard />
       <ClientReleaseUploadForm />
       <ClientReleasesTable />
     </div>

@@ -14,6 +14,7 @@ from app.models import (
     AuditLog,
     AuthSource,
     ClientRelease,
+    ClientUpdatePolicy,
     Department,
     Feedback,
     FeedbackScreenshot,
@@ -1213,6 +1214,36 @@ def test_delete_user_nulls_review_focus_direction_usage_state_user(
     saved_usage_state = db.get(ReviewFocusDirectionUsageState, usage_state_id)
     assert saved_usage_state
     assert saved_usage_state.updated_by_user_id is None
+
+
+def test_delete_user_nulls_client_update_policy_user(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    user = create_random_user(db)
+    user_id = user.id
+    policy = db.exec(
+        select(ClientUpdatePolicy).where(
+            ClientUpdatePolicy.platform == "win32",
+            ClientUpdatePolicy.arch == "x64",
+        )
+    ).first()
+    if policy is None:
+        policy = ClientUpdatePolicy(platform="win32", arch="x64")
+    policy.updated_by_user_id = user_id
+    db.add(policy)
+    db.commit()
+    policy_id = policy.id
+
+    response = client.delete(
+        f"{settings.API_V1_STR}/users/{user_id}",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    db.expire_all()
+    saved_policy = db.get(ClientUpdatePolicy, policy_id)
+    assert saved_policy
+    assert saved_policy.updated_by_user_id is None
 
 
 def test_delete_user_removes_review_task_requirement_files(

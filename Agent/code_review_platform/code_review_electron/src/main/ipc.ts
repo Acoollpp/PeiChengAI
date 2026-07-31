@@ -860,11 +860,13 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     serverConfigStore.load()
   )
 
-  ipcMain.handle('app-update:check', (): Promise<boolean> => appUpdateService.check())
+  ipcMain.handle('app-update:check', () => appUpdateService.check())
 
   ipcMain.handle('app-update:download', (): Promise<true> => appUpdateService.download())
 
   ipcMain.handle('app-update:install', (): true => appUpdateService.install())
+
+  ipcMain.handle('app-update:quit', (): true => appUpdateService.quit())
 
   ipcMain.handle(
     'notification:show-task-completed',

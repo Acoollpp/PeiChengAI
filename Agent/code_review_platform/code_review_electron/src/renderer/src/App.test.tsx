@@ -8,23 +8,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { App } from './App'
 import type {
+  AppUpdateError,
   AppUpdateInfo,
   AppUpdateProgress,
+  ClientUpdatePolicy,
   CodeReviewApi,
   EnvironmentProgressEvent
 } from './code-review-api'
 
 type ProgressListener = (progress: AppUpdateProgress) => void
 type AvailableListener = (info: AppUpdateInfo) => void
+type DownloadedListener = (info: AppUpdateInfo) => void
+type ErrorListener = (error: AppUpdateError) => void
+type RequiredListener = (policy: ClientUpdatePolicy) => void
 type EnvironmentProgressListener = (progress: EnvironmentProgressEvent) => void
 
 let progressListener: ProgressListener | null = null
 let availableListener: AvailableListener | null = null
+let downloadedListener: DownloadedListener | null = null
+let errorListener: ErrorListener | null = null
+let requiredListener: RequiredListener | null = null
 let environmentProgressListener: EnvironmentProgressListener | null = null
 
 const setupCodeReviewApi = (): void => {
   progressListener = null
   availableListener = null
+  downloadedListener = null
+  errorListener = null
+  requiredListener = null
   environmentProgressListener = null
   window.codeReview = {
     loadServerConfig: vi.fn(async () => ({ server_url: 'http://127.0.0.1:8000' })),
@@ -82,9 +93,21 @@ const setupCodeReviewApi = (): void => {
       return vi.fn()
     }),
     bindSvnCredential: vi.fn(),
-    checkForAppUpdate: vi.fn(async () => true),
+    checkForAppUpdate: vi.fn(async () => ({
+      status: 'current' as const,
+      policy: {
+        platform: 'win32',
+        arch: 'x64',
+        current_version: '1.0.0',
+        active_version: '1.0.0',
+        minimum_supported_version: null,
+        update_available: false,
+        update_required: false
+      }
+    })),
     downloadAppUpdate: vi.fn(async () => true),
     installAppUpdate: vi.fn(async () => true),
+    quitApp: vi.fn(async () => true),
     onAppUpdateAvailable: vi.fn((callback: AvailableListener) => {
       availableListener = callback
       return vi.fn()
@@ -95,8 +118,18 @@ const setupCodeReviewApi = (): void => {
       progressListener = callback
       return vi.fn()
     }),
-    onAppUpdateDownloaded: vi.fn(() => vi.fn()),
-    onAppUpdateError: vi.fn(() => vi.fn())
+    onAppUpdateDownloaded: vi.fn((callback: DownloadedListener) => {
+      downloadedListener = callback
+      return vi.fn()
+    }),
+    onAppUpdateError: vi.fn((callback: ErrorListener) => {
+      errorListener = callback
+      return vi.fn()
+    }),
+    onAppUpdateRequired: vi.fn((callback: RequiredListener) => {
+      requiredListener = callback
+      return vi.fn()
+    })
   } as unknown as CodeReviewApi
 }
 
@@ -136,6 +169,39 @@ describe('App update flow', () => {
       })
     })
     expect(await screen.findByRole('heading', { name: '任务工作台' })).toBeInTheDocument()
+  })
+
+  it('blocks a required update before showing department selection', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.getCurrentUser).mockResolvedValueOnce({
+      id: 'user-1',
+      full_name: 'Key 用户',
+      svn_username: null,
+      department_id: null,
+      department_name: null,
+      role: 'user'
+    })
+    vi.mocked(window.codeReview.checkForAppUpdate).mockResolvedValueOnce({
+      status: 'required',
+      policy: {
+        platform: 'win32',
+        arch: 'x64',
+        current_version: '1.4.0',
+        active_version: '1.6.0',
+        minimum_supported_version: '1.5.0',
+        update_available: true,
+        update_required: true,
+        release_notes: '升级更新策略'
+      }
+    })
+    render(<App />)
+
+    await user.type(await screen.findByLabelText('Key'), 'sk-cch-test')
+    await user.click(screen.getByRole('button', { name: 'Key 登录' }))
+
+    expect(await screen.findByText('正在下载新版本')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '选择部门' })).not.toBeInTheDocument()
+    expect(window.codeReview.listAvailableDepartments).not.toHaveBeenCalled()
   })
 
   it('shows login error instead of department selection when department admin has no department', async () => {
@@ -201,4 +267,56 @@ describe('App update flow', () => {
     })
     expect(screen.queryByText('正在下载新版本')).not.toBeInTheDocument()
   })
+
+  it.each(['user', 'department_admin', 'admin'] as const)(
+    'locks the business page for a required update for the %s role',
+    async (role) => {
+      const user = userEvent.setup()
+      vi.mocked(window.codeReview.getCurrentUser).mockResolvedValueOnce({
+        id: 'user-1',
+        full_name: 'Key 用户',
+        svn_username: null,
+        department_id: 'dept-bound',
+        department_name: '已绑定部门',
+        role
+      })
+      vi.mocked(window.codeReview.checkForAppUpdate).mockResolvedValueOnce({
+        status: 'required',
+        policy: {
+          platform: 'win32',
+          arch: 'x64',
+          current_version: '1.4.0',
+          active_version: '1.6.0',
+          minimum_supported_version: '1.5.0',
+          update_available: true,
+          update_required: true,
+          release_notes: '升级更新策略'
+        }
+      })
+      render(<App />)
+
+      await user.type(await screen.findByLabelText('Key'), 'sk-cch-test')
+      await user.click(screen.getByRole('button', { name: 'Key 登录' }))
+
+      expect(await screen.findByText('正在下载新版本')).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: '任务工作台' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '后台下载' })).not.toBeInTheDocument()
+      await user.keyboard('{Escape}')
+      expect(screen.getByText('正在下载新版本')).toBeInTheDocument()
+
+      act(() => {
+        downloadedListener?.({ version: '1.6.0' })
+      })
+      await user.click(await screen.findByRole('button', { name: '重启并安装' }))
+      expect(window.codeReview.installAppUpdate).toHaveBeenCalledTimes(1)
+
+      act(() => {
+        errorListener?.({ message: '更新安装启动失败，请稍后重试。', phase: 'install' })
+      })
+      expect(await screen.findByText('更新安装启动失败，请稍后重试。')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: '重试更新' }))
+      expect(window.codeReview.installAppUpdate).toHaveBeenCalledTimes(2)
+      expect(requiredListener).not.toBeNull()
+    }
+  )
 })

@@ -1,3 +1,4 @@
+import logging
 import uuid
 from pathlib import Path
 from typing import Any
@@ -7,10 +8,18 @@ from fastapi.responses import FileResponse
 from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep, get_current_active_admin
-from app.models import ClientRelease, ClientReleasePublic, ClientReleasesPublic
+from app.models import (
+    ClientRelease,
+    ClientReleasePublic,
+    ClientReleasesPublic,
+    ClientUpdateCheckPublic,
+    ClientUpdatePolicyPublic,
+    ClientUpdatePolicyUpdate,
+)
 from app.services import client_release_service
 
 router = APIRouter(tags=["client-releases"])
+logger = logging.getLogger(__name__)
 
 
 def _get_client_release_or_404(
@@ -34,14 +43,34 @@ def _get_active_release_or_404(
     return release
 
 
+def _policy_public(
+    session: SessionDep, platform: str, arch: str
+) -> ClientUpdatePolicyPublic:
+    active_release = client_release_service.get_active_release(session, platform, arch)
+    policy = client_release_service.get_update_policy(session, platform, arch)
+    minimum_release = (
+        session.get(ClientRelease, policy.minimum_supported_release_id)
+        if policy and policy.minimum_supported_release_id
+        else None
+    )
+    return ClientUpdatePolicyPublic(
+        platform=platform,
+        arch=arch,
+        active_release_id=active_release.id if active_release else None,
+        active_version=active_release.version if active_release else None,
+        minimum_supported_release_id=minimum_release.id if minimum_release else None,
+        minimum_supported_version=minimum_release.version if minimum_release else None,
+        updated_by_user_id=policy.updated_by_user_id if policy else None,
+        updated_at=policy.updated_at if policy else None,
+    )
+
+
 @router.get(
     "/client-releases",
     dependencies=[Depends(get_current_active_admin)],
     response_model=ClientReleasesPublic,
 )
-def read_client_releases(
-    session: SessionDep, skip: int = 0, limit: int = 100
-) -> Any:
+def read_client_releases(session: SessionDep, skip: int = 0, limit: int = 100) -> Any:
     count_statement = select(func.count()).select_from(ClientRelease)
     count = session.exec(count_statement).one()
     statement = (
@@ -73,6 +102,19 @@ async def upload_client_release(
     latest_yml: UploadFile = File(...),
     blockmap: UploadFile | None = File(default=None),
 ) -> Any:
+    client_release_service.parse_semantic_version(version)
+    if activate:
+        pending_release = ClientRelease(
+            version=version,
+            platform=client_release_service.SUPPORTED_PLATFORM,
+            arch=client_release_service.SUPPORTED_ARCH,
+            artifact_name="",
+            artifact_path="",
+            artifact_sha512="",
+            latest_yml_name=client_release_service.LATEST_YML_NAME,
+            latest_yml_path="",
+        )
+        client_release_service.validate_release_activation(session, pending_release)
     release = ClientRelease(
         version=version,
         release_notes=release_notes,
@@ -119,6 +161,90 @@ async def upload_client_release(
 def activate_client_release(session: SessionDep, release_id: uuid.UUID) -> Any:
     release = _get_client_release_or_404(session, release_id)
     return client_release_service.activate_release(session, release)
+
+
+@router.get(
+    "/client-update-policy/{platform}/{arch}",
+    dependencies=[Depends(get_current_active_admin)],
+    response_model=ClientUpdatePolicyPublic,
+)
+def read_client_update_policy(
+    session: SessionDep, platform: str, arch: str
+) -> ClientUpdatePolicyPublic:
+    return _policy_public(session, platform, arch)
+
+
+@router.put(
+    "/client-update-policy/{platform}/{arch}",
+    dependencies=[Depends(get_current_active_admin)],
+    response_model=ClientUpdatePolicyPublic,
+)
+def update_client_update_policy(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    platform: str,
+    arch: str,
+    policy_in: ClientUpdatePolicyUpdate,
+) -> ClientUpdatePolicyPublic:
+    try:
+        client_release_service.set_minimum_supported_release(
+            session=session,
+            platform=platform,
+            arch=arch,
+            release_id=policy_in.minimum_supported_release_id,
+            updated_by_user_id=current_user.id,
+        )
+    except HTTPException as error:
+        logger.warning(
+            "客户端最低支持版本更新失败 platform=%s arch=%s release_id=%s operator=%s status=%s detail=%s",
+            platform,
+            arch,
+            policy_in.minimum_supported_release_id,
+            current_user.id,
+            error.status_code,
+            error.detail,
+        )
+        raise
+    return _policy_public(session, platform, arch)
+
+
+@router.get(
+    "/client-update-policy/{platform}/{arch}/check",
+    response_model=ClientUpdateCheckPublic,
+)
+def check_client_update_policy(
+    *,
+    session: SessionDep,
+    _current_user: CurrentUser,
+    platform: str,
+    arch: str,
+    current_version: str,
+) -> ClientUpdateCheckPublic:
+    client_release_service.parse_semantic_version(current_version)
+    policy = _policy_public(session, platform, arch)
+    active_release = client_release_service.get_active_release(session, platform, arch)
+    update_available = bool(
+        active_release
+        and client_release_service.compare_versions(
+            current_version, active_release.version
+        )
+        < 0
+    )
+    update_required = bool(
+        policy.minimum_supported_version
+        and client_release_service.compare_versions(
+            current_version, policy.minimum_supported_version
+        )
+        < 0
+    )
+    return ClientUpdateCheckPublic(
+        **policy.model_dump(),
+        current_version=current_version,
+        update_available=update_available,
+        update_required=update_required,
+        release_notes=active_release.release_notes if active_release else None,
+    )
 
 
 @router.get("/client-updates/{platform}/{arch}/latest.yml")

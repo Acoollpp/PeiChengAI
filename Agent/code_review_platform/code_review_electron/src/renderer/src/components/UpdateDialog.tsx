@@ -9,9 +9,12 @@ interface UpdateDialogProps {
   error: string
   isDownloading?: boolean
   isInstalling?: boolean
+  isForced?: boolean
   onDownload: () => void
   onInstall: () => void
   onDismiss: () => void
+  onRetry?: () => void
+  onExit?: () => void
 }
 
 export function UpdateDialog({
@@ -21,9 +24,12 @@ export function UpdateDialog({
   error,
   isDownloading = false,
   isInstalling = false,
+  isForced = false,
   onDownload,
   onInstall,
-  onDismiss
+  onDismiss,
+  onRetry = onDownload,
+  onExit = onDismiss
 }: UpdateDialogProps): React.JSX.Element {
   const dialogRef = useRef<HTMLElement>(null)
   const version = info?.version ?? ''
@@ -44,7 +50,10 @@ export function UpdateDialog({
 
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
-        onDismiss()
+        event.preventDefault()
+        if (!isForced) {
+          onDismiss()
+        }
         return
       }
 
@@ -75,7 +84,7 @@ export function UpdateDialog({
     return () => {
       dialog.removeEventListener('keydown', handleKeyDown)
     }
-  }, [onDismiss])
+  }, [isForced, onDismiss])
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -91,13 +100,23 @@ export function UpdateDialog({
           <>
             <header>
               <h2 id="update-title">发现新版本 {version}</h2>
-              <p>当前版本仍可继续使用，你可以现在更新或稍后处理。</p>
+              <p>
+                {isForced
+                  ? '当前版本已停止支持，必须完成更新后才能继续使用。'
+                  : '当前版本仍可继续使用，你可以现在更新或稍后处理。'}
+              </p>
             </header>
             <div className="update-notes">{notes}</div>
             <footer className="dialog-actions">
-              <button className="secondary-button" type="button" onClick={onDismiss}>
-                稍后
-              </button>
+              {isForced ? (
+                <button className="secondary-button" type="button" onClick={onExit}>
+                  退出客户端
+                </button>
+              ) : (
+                <button className="secondary-button" type="button" onClick={onDismiss}>
+                  稍后
+                </button>
+              )}
               <button
                 className="primary-button"
                 type="button"
@@ -114,8 +133,13 @@ export function UpdateDialog({
           <>
             <header>
               <h2 id="update-title">正在下载新版本</h2>
-              <p>下载期间可以继续使用客户端。</p>
+              <p>
+                {isForced
+                  ? `当前版本已低于最低支持版本，正在下载 ${version || '最新版本'}。`
+                  : '下载期间可以继续使用客户端。'}
+              </p>
             </header>
+            {isForced && <div className="update-notes">{notes}</div>}
             <div className="update-progress">
               <strong>{percent}%</strong>
               <div
@@ -129,8 +153,12 @@ export function UpdateDialog({
               </div>
             </div>
             <footer className="dialog-actions">
-              <button className="secondary-button" type="button" onClick={onDismiss}>
-                后台下载
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={isForced ? onExit : onDismiss}
+              >
+                {isForced ? '退出客户端' : '后台下载'}
               </button>
             </footer>
           </>
@@ -140,11 +168,19 @@ export function UpdateDialog({
           <>
             <header>
               <h2 id="update-title">新版本已准备好</h2>
-              <p>重启客户端后将完成安装。</p>
+              <p>
+                {isForced
+                  ? '必须重启并安装新版本后才能继续使用客户端。'
+                  : '重启客户端后将完成安装。'}
+              </p>
             </header>
             <footer className="dialog-actions">
-              <button className="secondary-button" type="button" onClick={onDismiss}>
-                稍后重启
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={isForced ? onExit : onDismiss}
+              >
+                {isForced ? '退出客户端' : '稍后重启'}
               </button>
               <button
                 className="primary-button"
@@ -152,7 +188,7 @@ export function UpdateDialog({
                 disabled={isInstalling}
                 onClick={onInstall}
               >
-                {isInstalling ? '正在重启...' : '立即重启'}
+                {isInstalling ? '正在重启...' : isForced ? '重启并安装' : '立即重启'}
               </button>
             </footer>
           </>
@@ -162,12 +198,26 @@ export function UpdateDialog({
           <>
             <header>
               <h2 id="update-title">更新失败</h2>
-              <p>{error || '当前版本仍可继续使用。'}</p>
+              <p>
+                {error ||
+                  (isForced ? '更新失败，请重试或退出客户端。' : '当前版本仍可继续使用。')}
+              </p>
             </header>
             <footer className="dialog-actions">
-              <button className="primary-button" type="button" onClick={onDismiss}>
-                知道了
-              </button>
+              {isForced ? (
+                <>
+                  <button className="secondary-button" type="button" onClick={onExit}>
+                    退出客户端
+                  </button>
+                  <button className="primary-button" type="button" onClick={onRetry}>
+                    重试更新
+                  </button>
+                </>
+              ) : (
+                <button className="primary-button" type="button" onClick={onDismiss}>
+                  知道了
+                </button>
+              )}
             </footer>
           </>
         )}

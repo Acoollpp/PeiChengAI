@@ -17,6 +17,7 @@ from app.api.deps import (
 from app.models import (
     AuditLog,
     ClientRelease,
+    ClientUpdatePolicy,
     Department,
     Feedback,
     Item,
@@ -162,6 +163,12 @@ def _delete_user_with_related_data(*, session: SessionDep, user: User) -> None:
         .values(created_by_user_id=None)
     )
     session.exec(client_release_statement)
+    client_update_policy_statement = (
+        update(ClientUpdatePolicy)
+        .where(col(ClientUpdatePolicy.updated_by_user_id) == user.id)
+        .values(updated_by_user_id=None)
+    )
+    session.exec(client_update_policy_statement)
     focus_direction_statement = (
         update(ReviewFocusDirection)
         .where(col(ReviewFocusDirection.created_by_user_id) == user.id)

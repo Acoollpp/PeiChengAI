@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
   AppUpdateInfo,
@@ -54,6 +54,9 @@ export function App(): React.JSX.Element {
   const [isUpdateDialogVisible, setIsUpdateDialogVisible] = useState(false)
   const [isStartingDownload, setIsStartingDownload] = useState(false)
   const [isInstallingUpdate, setIsInstallingUpdate] = useState(false)
+  const [isForcedUpdate, setIsForcedUpdate] = useState(false)
+  const isForcedUpdateRef = useRef(false)
+  const [forcedRetryAction, setForcedRetryAction] = useState<'download' | 'install'>('download')
 
   const checkEnvironment = useCallback(async (): Promise<void> => {
     setIsCheckingEnvironment(true)
@@ -110,20 +113,33 @@ export function App(): React.JSX.Element {
     }
   }, [])
 
-  const checkForUpdate = useCallback(async (): Promise<void> => {
-    try {
-      const didStartChecking = await window.codeReview.checkForAppUpdate()
+  const markForcedUpdate = useCallback((version: string | null, releaseNotes?: string | null) => {
+    isForcedUpdateRef.current = true
+    setIsForcedUpdate(true)
+    setUpdateInfo({ version: version ?? '', releaseNotes: releaseNotes ?? undefined })
+    setUpdateError('')
+    setUpdateState('downloading')
+    setIsUpdateDialogVisible(true)
+  }, [])
 
-      if (!didStartChecking) {
+  const checkForUpdate = useCallback(async (): Promise<boolean> => {
+    try {
+      const result = await window.codeReview.checkForAppUpdate()
+
+      if (result.status === 'required') {
+        markForcedUpdate(result.policy.active_version, result.policy.release_notes)
+        return true
+      }
+
+      if (result.status === 'current' || result.status === 'check_failed') {
         setUpdateState('idle')
         setIsUpdateDialogVisible(false)
       }
+      return false
     } catch {
-      setUpdateError('更新检查失败，当前版本仍可继续使用。')
-      setUpdateState('error')
-      setIsUpdateDialogVisible(true)
+      return false
     }
-  }, [])
+  }, [markForcedUpdate])
 
   const downloadUpdate = useCallback(async (): Promise<void> => {
     setUpdateError('')
@@ -133,7 +149,12 @@ export function App(): React.JSX.Element {
     try {
       await window.codeReview.downloadAppUpdate()
     } catch {
-      setUpdateError('更新下载失败，当前版本仍可继续使用。')
+      setForcedRetryAction('download')
+      setUpdateError(
+        isForcedUpdateRef.current
+          ? '更新下载失败，请重试或退出客户端。'
+          : '更新下载失败，当前版本仍可继续使用。'
+      )
       setUpdateState('error')
       setIsUpdateDialogVisible(true)
     } finally {
@@ -146,6 +167,7 @@ export function App(): React.JSX.Element {
     try {
       await window.codeReview.installAppUpdate()
     } catch {
+      setForcedRetryAction('install')
       setUpdateError('更新安装启动失败，请稍后重试。')
       setUpdateState('error')
       setIsUpdateDialogVisible(true)
@@ -180,6 +202,11 @@ export function App(): React.JSX.Element {
       needSvnBinding: boolean
       currentUser: CurrentUser
     }): Promise<void> => {
+      const updateRequired = await checkForUpdate()
+      if (updateRequired) {
+        return
+      }
+
       if (!currentUser.department_id) {
         if (currentUser.role === 'department_admin') {
           setPendingDepartmentSession(null)
@@ -210,7 +237,6 @@ export function App(): React.JSX.Element {
         setNeedSvnBinding(true)
       }
       await checkEnvironment()
-      void checkForUpdate()
     },
     [checkEnvironment, checkForUpdate]
   )
@@ -233,14 +259,13 @@ export function App(): React.JSX.Element {
           setNeedSvnBinding(true)
         }
         await checkEnvironment()
-        void checkForUpdate()
       } catch (error) {
         setDepartmentError(error instanceof Error ? error.message : '部门保存失败，请重试。')
       } finally {
         setIsSavingDepartment(false)
       }
     },
-    [checkEnvironment, checkForUpdate, pendingDepartmentSession]
+    [checkEnvironment, pendingDepartmentSession]
   )
 
   const authActions = useMemo(
@@ -273,10 +298,13 @@ export function App(): React.JSX.Element {
         setUpdateInfo(info)
         setUpdateProgress(null)
         setUpdateError('')
-        setUpdateState('available')
+        setUpdateState(isForcedUpdateRef.current ? 'downloading' : 'available')
         setIsUpdateDialogVisible(true)
       }),
       window.codeReview.onAppUpdateNotAvailable(() => {
+        if (isForcedUpdateRef.current) {
+          return
+        }
         setUpdateState('idle')
         setIsUpdateDialogVisible(false)
       }),
@@ -291,9 +319,18 @@ export function App(): React.JSX.Element {
         setIsUpdateDialogVisible(true)
       }),
       window.codeReview.onAppUpdateError((error) => {
-        setUpdateError(error.message || '更新失败，当前版本仍可继续使用。')
+        setForcedRetryAction(error.phase === 'install' ? 'install' : 'download')
+        setUpdateError(
+          error.message ||
+            (isForcedUpdateRef.current
+              ? '更新失败，请重试或退出客户端。'
+              : '更新失败，当前版本仍可继续使用。')
+        )
         setUpdateState('error')
         setIsUpdateDialogVisible(true)
+      }),
+      window.codeReview.onAppUpdateRequired((policy) => {
+        markForcedUpdate(policy.active_version, policy.release_notes)
       }),
       window.codeReview.onEnvironmentProgress((progress) => {
         setEnvironmentProgress(progress)
@@ -303,7 +340,28 @@ export function App(): React.JSX.Element {
     return () => {
       disposers.forEach((dispose) => dispose())
     }
-  }, [])
+  }, [markForcedUpdate])
+
+  if (isForcedUpdate && updateState !== 'idle') {
+    return (
+      <main className="app-shell auth-shell">
+        <UpdateDialog
+          state={updateState}
+          info={updateInfo}
+          progress={updateProgress}
+          error={updateError}
+          isDownloading={isStartingDownload}
+          isInstalling={isInstallingUpdate}
+          isForced
+          onDownload={downloadUpdate}
+          onInstall={installUpdate}
+          onDismiss={() => undefined}
+          onRetry={forcedRetryAction === 'install' ? installUpdate : downloadUpdate}
+          onExit={() => void window.codeReview.quitApp()}
+        />
+      </main>
+    )
+  }
 
   if (!session) {
     return (
@@ -355,6 +413,8 @@ export function App(): React.JSX.Element {
           onDownload={downloadUpdate}
           onInstall={installUpdate}
           onDismiss={() => setIsUpdateDialogVisible(false)}
+          onRetry={downloadUpdate}
+          onExit={() => void window.codeReview.quitApp()}
         />
       )}
     </main>

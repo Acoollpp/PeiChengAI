@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, delete
 
 from app.core.config import settings
-from app.models import ClientRelease
+from app.models import ClientRelease, ClientUpdatePolicy
 from app.services import client_release_service
 
 
@@ -36,6 +36,32 @@ def _upload_file(filename: str, content: bytes) -> UploadFile:
     return UploadFile(filename=filename, file=BytesIO(content))
 
 
+def _release(
+    db: Session,
+    version: str,
+    *,
+    is_active: bool = False,
+    platform: str = "win32",
+    arch: str = "x64",
+) -> ClientRelease:
+    release = ClientRelease(
+        version=version,
+        platform=platform,
+        arch=arch,
+        artifact_name=f"代码审查-v{version}.exe",
+        artifact_path=f"/tmp/{version}/代码审查-v{version}.exe",
+        artifact_size=12,
+        artifact_sha512="a" * 128,
+        latest_yml_name="latest.yml",
+        latest_yml_path=f"/tmp/{version}/latest.yml",
+        is_active=is_active,
+    )
+    db.add(release)
+    db.commit()
+    db.refresh(release)
+    return release
+
+
 def test_client_release_model_is_available() -> None:
     release = ClientRelease(
         version="1.0.1",
@@ -54,6 +80,30 @@ def test_client_release_model_is_available() -> None:
     assert release.version == "1.0.1"
     assert release.platform == "win32"
     assert release.arch == "x64"
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "expected"),
+    [
+        ("1.0.0", "1.0.0", 0),
+        ("1.0.1", "1.0.0", 1),
+        ("1.0.0-alpha.1", "1.0.0-alpha.2", -1),
+        ("1.0.0-alpha", "1.0.0", -1),
+        ("1.0.0+build.2", "1.0.0+build.1", 0),
+    ],
+)
+def test_compare_versions_uses_semantic_version_rules(
+    left: str, right: str, expected: int
+) -> None:
+    assert client_release_service.compare_versions(left, right) == expected
+
+
+@pytest.mark.parametrize("version", ["1.0", " 1.0.0", "1.0.0 "])
+def test_compare_versions_rejects_invalid_semantic_version(version: str) -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        client_release_service.compare_versions(version, "1.0.0")
+
+    assert exc_info.value.status_code == 400
 
 
 def test_parse_latest_yml_requires_matching_version_and_installer() -> None:
@@ -94,7 +144,9 @@ def test_parse_latest_yml_rejects_mismatched_version() -> None:
         )
 
     assert exc_info.value.status_code == 400
-    assert exc_info.value.detail == "latest.yml version does not match submitted version"
+    assert (
+        exc_info.value.detail == "latest.yml version does not match submitted version"
+    )
 
 
 def test_parse_latest_yml_rejects_mismatched_files_url() -> None:
@@ -295,7 +347,9 @@ def test_admin_can_upload_activate_and_user_can_download_client_release(
     )
 
     assert latest_response.status_code == 200
-    assert latest_response.headers["content-type"].startswith("application/octet-stream")
+    assert latest_response.headers["content-type"].startswith(
+        "application/octet-stream"
+    )
     assert latest_response.content == latest_yml
 
     installer_response = client.get(
@@ -390,3 +444,127 @@ def test_client_release_download_rejects_path_traversal(
     )
 
     assert response.status_code in {400, 404}
+
+
+def test_admin_can_set_and_lower_minimum_supported_release(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    older_release = _release(db, "1.4.0")
+    minimum_release = _release(db, "1.5.0")
+    active_release = _release(db, "1.6.0", is_active=True)
+
+    update_response = client.put(
+        f"{settings.API_V1_STR}/client-update-policy/win32/x64",
+        headers=superuser_token_headers,
+        json={"minimum_supported_release_id": str(minimum_release.id)},
+    )
+
+    assert update_response.status_code == 200
+    updated_policy = update_response.json()
+    assert updated_policy["active_release_id"] == str(active_release.id)
+    assert updated_policy["active_version"] == "1.6.0"
+    assert updated_policy["minimum_supported_release_id"] == str(minimum_release.id)
+    assert updated_policy["minimum_supported_version"] == "1.5.0"
+    assert updated_policy["updated_by_user_id"] is not None
+    assert updated_policy["updated_at"] is not None
+
+    required_response = client.get(
+        f"{settings.API_V1_STR}/client-update-policy/win32/x64/check",
+        headers=normal_user_token_headers,
+        params={"current_version": "1.4.9"},
+    )
+    assert required_response.status_code == 200
+    assert required_response.json()["update_required"] is True
+    assert required_response.json()["update_available"] is True
+
+    equal_response = client.get(
+        f"{settings.API_V1_STR}/client-update-policy/win32/x64/check",
+        headers=normal_user_token_headers,
+        params={"current_version": "1.5.0"},
+    )
+    assert equal_response.status_code == 200
+    assert equal_response.json()["update_required"] is False
+    assert equal_response.json()["update_available"] is True
+
+    lower_response = client.put(
+        f"{settings.API_V1_STR}/client-update-policy/win32/x64",
+        headers=superuser_token_headers,
+        json={"minimum_supported_release_id": str(older_release.id)},
+    )
+    assert lower_response.status_code == 200
+    assert lower_response.json()["minimum_supported_version"] == "1.4.0"
+
+
+def test_policy_rejects_missing_mismatched_and_higher_releases(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    _release(db, "1.5.0", is_active=True)
+    higher_release = _release(db, "1.6.0")
+    other_arch_release = _release(db, "1.4.0", arch="arm64")
+
+    missing_response = client.put(
+        f"{settings.API_V1_STR}/client-update-policy/win32/x64",
+        headers=superuser_token_headers,
+        json={"minimum_supported_release_id": str(uuid.uuid4())},
+    )
+    assert missing_response.status_code == 404
+
+    mismatched_response = client.put(
+        f"{settings.API_V1_STR}/client-update-policy/win32/x64",
+        headers=superuser_token_headers,
+        json={"minimum_supported_release_id": str(other_arch_release.id)},
+    )
+    assert mismatched_response.status_code == 400
+
+    higher_response = client.put(
+        f"{settings.API_V1_STR}/client-update-policy/win32/x64",
+        headers=superuser_token_headers,
+        json={"minimum_supported_release_id": str(higher_release.id)},
+    )
+    assert higher_response.status_code == 409
+
+
+def test_non_admin_cannot_change_minimum_supported_release(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    active_release = _release(db, "1.5.0", is_active=True)
+
+    response = client.put(
+        f"{settings.API_V1_STR}/client-update-policy/win32/x64",
+        headers=normal_user_token_headers,
+        json={"minimum_supported_release_id": str(active_release.id)},
+    )
+
+    assert response.status_code == 403
+
+
+def test_activation_below_minimum_supported_release_is_rejected(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    older_release = _release(db, "1.4.0")
+    minimum_release = _release(db, "1.5.0")
+    active_release = _release(db, "1.6.0", is_active=True)
+    policy = client_release_service.get_update_policy(db, "win32", "x64")
+    if policy is None:
+        policy = ClientUpdatePolicy(platform="win32", arch="x64")
+    policy.minimum_supported_release_id = minimum_release.id
+    db.add(policy)
+    db.commit()
+
+    response = client.post(
+        f"{settings.API_V1_STR}/client-releases/{older_release.id}/activate",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 409
+    db.refresh(active_release)
+    assert active_release.is_active is True

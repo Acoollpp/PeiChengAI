@@ -52,6 +52,18 @@ test("Admin tasks page redirects to shared task management", async ({ page }) =>
   ).toBeVisible()
 })
 
+test("Client release page separates activation and minimum supported version", async ({
+  page,
+}) => {
+  await page.goto("/admin/client-releases")
+
+  await expect(page.getByRole("heading", { name: "客户端版本" })).toBeVisible()
+  await expect(page.getByText("最低支持版本", { exact: true })).toBeVisible()
+  await expect(page.getByText("上传客户端版本", { exact: true })).toBeVisible()
+  await expect(page.getByLabel("最低支持版本")).toBeVisible()
+  await expect(page.getByRole("button", { name: "调整门槛" })).toBeDisabled()
+})
+
 test("Admin review tasks page has user filters", async ({ page }) => {
   await page.goto("/admin/tasks/review")
   await expect(page.getByPlaceholder("用户姓名")).toBeVisible()
