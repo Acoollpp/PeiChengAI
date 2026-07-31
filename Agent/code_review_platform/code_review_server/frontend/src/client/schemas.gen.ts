@@ -437,6 +437,220 @@ export const ClientReleasesPublicSchema = {
     title: 'ClientReleasesPublic'
 } as const;
 
+export const ClientUpdateCheckPublicSchema = {
+    properties: {
+        platform: {
+            type: 'string',
+            title: 'Platform'
+        },
+        arch: {
+            type: 'string',
+            title: 'Arch'
+        },
+        active_release_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Active Release Id'
+        },
+        active_version: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Active Version'
+        },
+        minimum_supported_release_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Minimum Supported Release Id'
+        },
+        minimum_supported_version: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Minimum Supported Version'
+        },
+        updated_by_user_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Updated By User Id'
+        },
+        updated_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Updated At'
+        },
+        current_version: {
+            type: 'string',
+            title: 'Current Version'
+        },
+        update_available: {
+            type: 'boolean',
+            title: 'Update Available'
+        },
+        update_required: {
+            type: 'boolean',
+            title: 'Update Required'
+        },
+        release_notes: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Release Notes'
+        }
+    },
+    type: 'object',
+    required: ['platform', 'arch', 'current_version', 'update_available', 'update_required'],
+    title: 'ClientUpdateCheckPublic'
+} as const;
+
+export const ClientUpdatePolicyPublicSchema = {
+    properties: {
+        platform: {
+            type: 'string',
+            title: 'Platform'
+        },
+        arch: {
+            type: 'string',
+            title: 'Arch'
+        },
+        active_release_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Active Release Id'
+        },
+        active_version: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Active Version'
+        },
+        minimum_supported_release_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Minimum Supported Release Id'
+        },
+        minimum_supported_version: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Minimum Supported Version'
+        },
+        updated_by_user_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Updated By User Id'
+        },
+        updated_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['platform', 'arch'],
+    title: 'ClientUpdatePolicyPublic'
+} as const;
+
+export const ClientUpdatePolicyUpdateSchema = {
+    properties: {
+        minimum_supported_release_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Minimum Supported Release Id'
+        }
+    },
+    type: 'object',
+    title: 'ClientUpdatePolicyUpdate'
+} as const;
+
 export const DepartmentCreateSchema = {
     properties: {
         name: {

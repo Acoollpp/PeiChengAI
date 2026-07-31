@@ -5,6 +5,7 @@ import type {
   ReportFeedbackSubmittedEvent
 } from '../../shared/report-feedback-window'
 import type {
+  ClientUpdatePolicy,
   EnvironmentProgressEvent,
   EnvironmentStatus,
   CurrentUser,
@@ -18,7 +19,7 @@ import type {
 } from '../../shared/types'
 import type { TaskPreflightErrorField, TaskPreflightResult } from '../../shared/task-preflight'
 
-export type { EnvironmentProgressEvent, TaskProgressEvent }
+export type { ClientUpdatePolicy, EnvironmentProgressEvent, TaskProgressEvent }
 export type { CurrentUser, DepartmentsResponse }
 export type {
   TaskCompletionNotificationPayload,
@@ -212,7 +213,14 @@ export interface AppUpdateProgress {
 export interface AppUpdateError {
   message: string
   stack?: string
+  phase?: 'check' | 'download' | 'install'
 }
+
+export type AppUpdateCheckResult =
+  | { status: 'check_failed' }
+  | { status: 'current'; policy: ClientUpdatePolicy }
+  | { status: 'optional'; policy: ClientUpdatePolicy }
+  | { status: 'required'; policy: ClientUpdatePolicy }
 
 export interface CodeReviewApi {
   keyLogin(payload: KeyLoginRequest): Promise<KeyLoginResult>
@@ -261,13 +269,15 @@ export interface CodeReviewApi {
     callback: (payload: IssueFeedbackSubmittedEvent) => void
   ): () => void
   bindSvnCredential(payload: SvnCredentialPayload): Promise<true>
-  checkForAppUpdate(): Promise<boolean>
+  checkForAppUpdate(): Promise<AppUpdateCheckResult>
   downloadAppUpdate(): Promise<true>
   installAppUpdate(): Promise<true>
+  quitApp(): Promise<true>
   onAppUpdateAvailable(callback: (info: AppUpdateInfo) => void): () => void
   onAppUpdateNotAvailable(callback: (info: AppUpdateInfo) => void): () => void
   onAppUpdateDownloadProgress(callback: (progress: AppUpdateProgress) => void): () => void
   onAppUpdateProgress(callback: (progress: AppUpdateProgress) => void): () => void
   onAppUpdateDownloaded(callback: (info: AppUpdateInfo) => void): () => void
   onAppUpdateError(callback: (error: AppUpdateError) => void): () => void
+  onAppUpdateRequired(callback: (policy: ClientUpdatePolicy) => void): () => void
 }

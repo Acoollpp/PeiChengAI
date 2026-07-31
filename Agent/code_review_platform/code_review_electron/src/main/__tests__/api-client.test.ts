@@ -228,6 +228,32 @@ describe('ApiClient', () => {
     })
   })
 
+  it('checks the authenticated client update policy with the current version', async () => {
+    const policy = {
+      platform: 'win32',
+      arch: 'x64',
+      current_version: '1.4.0',
+      active_version: '1.6.0',
+      minimum_supported_version: '1.5.0',
+      update_available: true,
+      update_required: true
+    }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(policy))
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    await expect(client.checkClientUpdatePolicy('token-123', '1.4.0')).resolves.toEqual(policy)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://server.example/api/v1/client-update-policy/win32/x64/check?current_version=1.4.0',
+      {
+        method: 'GET',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer token-123'
+        }
+      }
+    )
+  })
+
   it('lists available departments with authorization header', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({

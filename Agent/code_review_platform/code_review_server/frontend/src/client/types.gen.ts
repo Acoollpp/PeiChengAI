@@ -82,6 +82,36 @@ export type ClientReleasesPublic = {
     count: number;
 };
 
+export type ClientUpdateCheckPublic = {
+    platform: string;
+    arch: string;
+    active_release_id?: (string | null);
+    active_version?: (string | null);
+    minimum_supported_release_id?: (string | null);
+    minimum_supported_version?: (string | null);
+    updated_by_user_id?: (string | null);
+    updated_at?: (string | null);
+    current_version: string;
+    update_available: boolean;
+    update_required: boolean;
+    release_notes?: (string | null);
+};
+
+export type ClientUpdatePolicyPublic = {
+    platform: string;
+    arch: string;
+    active_release_id?: (string | null);
+    active_version?: (string | null);
+    minimum_supported_release_id?: (string | null);
+    minimum_supported_version?: (string | null);
+    updated_by_user_id?: (string | null);
+    updated_at?: (string | null);
+};
+
+export type ClientUpdatePolicyUpdate = {
+    minimum_supported_release_id?: (string | null);
+};
+
 export type DepartmentCreate = {
     name: string;
     description?: (string | null);
@@ -580,6 +610,29 @@ export type ClientReleasesActivateClientReleaseData = {
 };
 
 export type ClientReleasesActivateClientReleaseResponse = (ClientReleasePublic);
+
+export type ClientReleasesReadClientUpdatePolicyData = {
+    arch: string;
+    platform: string;
+};
+
+export type ClientReleasesReadClientUpdatePolicyResponse = (ClientUpdatePolicyPublic);
+
+export type ClientReleasesUpdateClientUpdatePolicyData = {
+    arch: string;
+    platform: string;
+    requestBody: ClientUpdatePolicyUpdate;
+};
+
+export type ClientReleasesUpdateClientUpdatePolicyResponse = (ClientUpdatePolicyPublic);
+
+export type ClientReleasesCheckClientUpdatePolicyData = {
+    arch: string;
+    currentVersion: string;
+    platform: string;
+};
+
+export type ClientReleasesCheckClientUpdatePolicyResponse = (ClientUpdateCheckPublic);
 
 export type ClientReleasesDownloadLatestYmlData = {
     arch: string;

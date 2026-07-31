@@ -887,6 +887,55 @@ class ClientReleasesPublic(SQLModel):
     count: int
 
 
+class ClientUpdatePolicy(SQLModel, table=True):
+    __tablename__ = "client_update_policy"
+    __table_args__ = (
+        UniqueConstraint(
+            "platform", "arch", name="uq_client_update_policy_platform_arch"
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    platform: str = Field(default="win32", max_length=32, index=True)
+    arch: str = Field(default="x64", max_length=32, index=True)
+    minimum_supported_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="client_release.id"
+    )
+    updated_by_user_id: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class ClientUpdatePolicyUpdate(SQLModel):
+    minimum_supported_release_id: uuid.UUID | None = None
+
+
+class ClientUpdatePolicyPublic(SQLModel):
+    platform: str
+    arch: str
+    active_release_id: uuid.UUID | None = None
+    active_version: str | None = None
+    minimum_supported_release_id: uuid.UUID | None = None
+    minimum_supported_version: str | None = None
+    updated_by_user_id: uuid.UUID | None = None
+    updated_at: datetime | None = None
+
+
+class ClientUpdateCheckPublic(ClientUpdatePolicyPublic):
+    current_version: str
+    update_available: bool
+    update_required: bool
+    release_notes: str | None = None
+
+
 class AuditLog(SQLModel, table=True):
     __tablename__ = "audit_log"
 

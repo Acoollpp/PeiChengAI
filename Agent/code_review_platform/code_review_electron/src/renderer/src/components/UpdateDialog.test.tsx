@@ -128,4 +128,51 @@ describe('UpdateDialog', () => {
     expect(screen.getByText('更新失败')).toBeInTheDocument()
     expect(screen.getByText('更新下载失败')).toBeInTheDocument()
   })
+
+  it('does not allow a forced update to be dismissed', async () => {
+    const onDismiss = vi.fn()
+    const onExit = vi.fn()
+
+    render(
+      <UpdateDialog
+        state="downloading"
+        info={{ version: '1.6.0', releaseNotes: '强制更新能力' }}
+        progress={{ percent: 20 }}
+        error=""
+        isForced
+        onDownload={vi.fn()}
+        onInstall={vi.fn()}
+        onDismiss={onDismiss}
+        onExit={onExit}
+      />
+    )
+
+    expect(screen.queryByRole('button', { name: '后台下载' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '退出客户端' })).toBeInTheDocument()
+    expect(screen.getByText('强制更新能力')).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+
+  it('only offers retry or exit after a forced update failure', async () => {
+    const onRetry = vi.fn()
+    render(
+      <UpdateDialog
+        state="error"
+        info={{ version: '1.6.0' }}
+        progress={null}
+        error="更新下载失败"
+        isForced
+        onDownload={vi.fn()}
+        onInstall={vi.fn()}
+        onDismiss={vi.fn()}
+        onRetry={onRetry}
+        onExit={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByRole('button', { name: '知道了' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '重试更新' }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
 })

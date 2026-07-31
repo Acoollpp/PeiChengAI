@@ -148,9 +148,11 @@ contextBridge.exposeInMainWorld('codeReview', {
     callback: Parameters<CodeReviewApi['onIssueFeedbackSubmitted']>[0]
   ): (() => void) =>
     listen('report-feedback:issues-submitted', callback),
-  checkForAppUpdate: (): Promise<boolean> => ipcRenderer.invoke('app-update:check'),
+  checkForAppUpdate: (): ReturnType<CodeReviewApi['checkForAppUpdate']> =>
+    ipcRenderer.invoke('app-update:check'),
   downloadAppUpdate: (): Promise<true> => ipcRenderer.invoke('app-update:download'),
   installAppUpdate: (): Promise<true> => ipcRenderer.invoke('app-update:install'),
+  quitApp: (): Promise<true> => ipcRenderer.invoke('app-update:quit'),
   onAppUpdateAvailable: (callback: (info: AppUpdateInfo) => void): (() => void) =>
     listen('app-update:available', callback),
   onAppUpdateNotAvailable: (callback: (info: AppUpdateInfo) => void): (() => void) =>
@@ -162,5 +164,8 @@ contextBridge.exposeInMainWorld('codeReview', {
   onAppUpdateDownloaded: (callback: (info: AppUpdateInfo) => void): (() => void) =>
     listen('app-update:downloaded', callback),
   onAppUpdateError: (callback: (error: AppUpdateError) => void): (() => void) =>
-    listen('app-update:error', callback)
+    listen('app-update:error', callback),
+  onAppUpdateRequired: (
+    callback: Parameters<CodeReviewApi['onAppUpdateRequired']>[0]
+  ): (() => void) => listen('app-update:required', callback)
 })

@@ -1,6 +1,7 @@
 import type { ReviewTemplateKey } from '../shared/review-templates'
 import { REVIEW_REPORT_FILE_NAME } from '../shared/report-artifacts'
 import type {
+  ClientUpdatePolicy,
   CurrentUser,
   DepartmentsResponse,
   ReviewTask,
@@ -213,6 +214,17 @@ export class ApiClient {
       method: 'GET',
       headers: this.authHeaders(token)
     })
+  }
+
+  checkClientUpdatePolicy(token: string, currentVersion: string): Promise<ClientUpdatePolicy> {
+    const query = new URLSearchParams({ current_version: currentVersion })
+    return this.request<ClientUpdatePolicy>(
+      `/api/v1/client-update-policy/win32/x64/check?${query}`,
+      {
+        method: 'GET',
+        headers: this.authHeaders(token)
+      }
+    )
   }
 
   listAvailableDepartments(token: string): Promise<DepartmentsResponse> {

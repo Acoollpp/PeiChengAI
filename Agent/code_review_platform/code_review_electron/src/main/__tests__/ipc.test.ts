@@ -81,6 +81,7 @@ describe('registerIpcHandlers', () => {
       'app-update:check',
       'app-update:download',
       'app-update:install',
+      'app-update:quit',
       'notification:show-task-completed',
       'task:list',
       'task:report',
@@ -198,7 +199,8 @@ describe('registerIpcHandlers', () => {
     const appUpdateService = {
       check: vi.fn(async () => false),
       download: vi.fn(async () => true),
-      install: vi.fn(() => true)
+      install: vi.fn(() => true),
+      quit: vi.fn(() => true)
     }
     const { registerIpcHandlers } = await import('../ipc')
 
@@ -213,13 +215,16 @@ describe('registerIpcHandlers', () => {
     const installHandler = handleMock.mock.calls.find(
       ([channel]) => channel === 'app-update:install'
     )?.[1]
+    const quitHandler = handleMock.mock.calls.find(([channel]) => channel === 'app-update:quit')?.[1]
 
     await expect(checkHandler()).resolves.toBe(false)
     await expect(downloadHandler()).resolves.toBe(true)
     expect(installHandler()).toBe(true)
+    expect(quitHandler()).toBe(true)
     expect(appUpdateService.check).toHaveBeenCalledTimes(1)
     expect(appUpdateService.download).toHaveBeenCalledTimes(1)
     expect(appUpdateService.install).toHaveBeenCalledTimes(1)
+    expect(appUpdateService.quit).toHaveBeenCalledTimes(1)
   })
 
   it('shows task completion notification and sends click event to renderer', async () => {

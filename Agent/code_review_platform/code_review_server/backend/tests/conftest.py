@@ -55,6 +55,7 @@ from app.main import app
 from app.models import (
     AuditLog,
     ClientRelease,
+    ClientUpdatePolicy,
     Department,
     Feedback,
     FeedbackScreenshot,
@@ -122,6 +123,9 @@ def db() -> Generator[Session, None, None]:
         session.execute(statement)
         statement = delete(AuditLog)
         session.execute(statement)
+        if inspector.has_table("client_update_policy"):
+            statement = delete(ClientUpdatePolicy)
+            session.execute(statement)
         if inspector.has_table("client_release"):
             statement = delete(ClientRelease)
             session.execute(statement)
