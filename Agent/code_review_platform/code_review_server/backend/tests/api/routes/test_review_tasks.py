@@ -2113,7 +2113,7 @@ def test_任务提交人可幂等保存并恢复逐问题反馈草稿(
     )
 
 
-def test_未评价问题也可单独保存选填说明且空白说明归一为空(
+def test_未评价问题也可单独保存说明且空白草稿归一为空(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
     tmp_path: Path,
@@ -2334,6 +2334,52 @@ def test_新协议仅在全部评价且最终PDF保存成功后锁定反馈(
     assert db_task.feedback_submitted_at is not None
 
 
+def test_新协议反馈说明为空白时拒绝上传最终PDF并保持草稿可编辑(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task, issue = _create_new_protocol_task_with_issue(
+        client,
+        normal_user_token_headers,
+    )
+    db_issue = db.get(ReviewTaskIssue, UUID(issue["id"]))
+    assert db_issue is not None
+    db_issue.helpful = True
+    db_issue.feedback_text = "  \n "
+    db.add(db_issue)
+    db.commit()
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf-report",
+        headers=normal_user_token_headers,
+        files={"upload": ("最终报告.pdf", b"%PDF-1.4\nfinal", "application/pdf")},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "issue_feedback_text_required"
+    assert not (tmp_path / f"{task['id']}.pdf").exists()
+
+    draft_response = client.put(
+        (
+            f"{settings.API_V1_STR}/review-tasks/{task['id']}"
+            f"/issues/{issue['id']}/feedback-draft"
+        ),
+        headers=normal_user_token_headers,
+        json={"helpful": True, "feedback_text": "已补充处理结果"},
+    )
+    assert draft_response.status_code == 200
+    assert draft_response.json()["feedback_text"] == "已补充处理结果"
+
+    db.expire_all()
+    db_task = db.get(ReviewTask, UUID(task["id"]))
+    assert db_task is not None
+    assert db_task.feedback_submitted_at is None
+
+
 def test_新协议并发提交最终PDF只允许一次完成锁定(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
@@ -2353,7 +2399,7 @@ def test_新协议并发提交最终PDF只允许一次完成锁定(
                 f"/issues/{issue['id']}/feedback-draft"
             ),
             headers=normal_user_token_headers,
-            json={"helpful": True, "feedback_text": None},
+            json={"helpful": True, "feedback_text": "并发提交验证"},
         ).status_code
         == 200
     )
@@ -2462,7 +2508,7 @@ def test_只有任务提交人可以上传新协议最终PDF并锁定反馈(
         client.put(
             draft_url,
             headers=normal_user_token_headers,
-            json={"helpful": True, "feedback_text": None},
+            json={"helpful": True, "feedback_text": "权限校验草稿"},
         ).status_code
         == 200
     )
@@ -2510,7 +2556,7 @@ def test_新协议最终PDF数据库提交失败时清理文件且不锁定(
         client.put(
             draft_url,
             headers=normal_user_token_headers,
-            json={"helpful": True, "feedback_text": None},
+            json={"helpful": True, "feedback_text": "数据库失败验证"},
         ).status_code
         == 200
     )
