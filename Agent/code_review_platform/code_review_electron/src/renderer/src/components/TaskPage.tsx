@@ -193,6 +193,7 @@ export function TaskPage({
       setLoadingReportTaskId(undefined)
       setReportFeedbackStatus('idle')
       setActiveFeedbackAnchorId(undefined)
+      setFeedbackAnchorScrollRequest(undefined)
       setError('')
     },
     [setActivePdfPath, setActivePdfReportName]
@@ -269,6 +270,7 @@ export function TaskPage({
     setLoadingReportTaskId(undefined)
     setReportFeedbackStatus('idle')
     setActiveFeedbackAnchorId(undefined)
+    setFeedbackAnchorScrollRequest(undefined)
     await retryTask(task)
   }
 
@@ -282,6 +284,7 @@ export function TaskPage({
     updateSelectedTaskId(task.id)
     setReportFeedbackStatus('idle')
     setActiveFeedbackAnchorId(undefined)
+    setFeedbackAnchorScrollRequest(undefined)
 
     if (task.reportMarkdown && task.report_path) {
       setMarkdown(task.reportMarkdown)
@@ -479,17 +482,6 @@ export function TaskPage({
     }
   }
 
-  useEffect(() => {
-    if (!feedbackAnchorScrollRequest) {
-      return
-    }
-
-    const target = document.querySelector<HTMLElement>(
-      `[data-report-anchor-id="${feedbackAnchorScrollRequest.anchorId}"]`
-    )
-    target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [feedbackAnchorScrollRequest])
-
   useEffect(() =>
     window.codeReview.onReportFeedbackFocusAnchor(({ taskId, anchorId }) => {
       if (selectedTaskIdRef.current !== taskId) {
@@ -501,6 +493,8 @@ export function TaskPage({
           anchorId,
           requestId: (current?.requestId ?? 0) + 1
         }))
+      } else {
+        setFeedbackAnchorScrollRequest(undefined)
       }
     }), [])
 
@@ -512,6 +506,7 @@ export function TaskPage({
       }
       setReportFeedbackStatus('idle')
       setActiveFeedbackAnchorId(undefined)
+      setFeedbackAnchorScrollRequest(undefined)
       void openSelectedPdfReport({
         taskId,
         localPdfPath: currentPdfPathRef.current,
@@ -538,6 +533,7 @@ export function TaskPage({
       }
       setReportFeedbackStatus('idle')
       setActiveFeedbackAnchorId(undefined)
+      setFeedbackAnchorScrollRequest(undefined)
       setActivePdfPath(pdfPath)
       setActivePdfReportName(pdfReportName)
     }), [setActivePdfPath, setActivePdfReportName, updateTask])
@@ -683,6 +679,7 @@ export function TaskPage({
           markdown={markdown}
           reportPath={currentReportPath}
           activeFeedbackAnchorId={activeFeedbackAnchorId}
+          feedbackAnchorScrollRequest={feedbackAnchorScrollRequest}
         />
       </section>
       {completionNotice && (

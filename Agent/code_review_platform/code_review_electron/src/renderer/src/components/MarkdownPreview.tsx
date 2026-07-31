@@ -2,14 +2,22 @@ import {
   Component,
   isValidElement,
   type ReactNode,
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState
 } from 'react'
+import type { Element, ElementContent, Root, RootContent } from 'hast'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import type { Plugin } from 'unified'
 
-import { extractReviewIssues } from '../../../shared/review-issues'
+import {
+  extractReviewIssues,
+  type ReviewIssueSnapshot
+} from '../../../shared/review-issues'
 
 export type ReportHeadingOption = {
   id: string
@@ -22,7 +30,13 @@ type MarkdownPreviewProps = {
   markdown: string
   reportPath?: string
   activeFeedbackAnchorId?: string
+  feedbackAnchorScrollRequest?: {
+    anchorId: string
+    requestId: number
+  }
 }
+
+const FEEDBACK_ANCHOR_TOP_GAP = 14
 
 export const extractDetailedHeadingOptions = (markdown: string): ReportHeadingOption[] => {
   return extractReviewIssues(markdown).map((issue) => ({
@@ -70,18 +84,63 @@ const getCodeLanguage = (children: ReactNode): string | undefined => {
   return /language-(\w+)/.exec(child.props.className ?? '')?.[1]
 }
 
-const buildFeedbackAnchorMap = (markdown: string): Map<number, string> => {
-  const anchors = new Map<number, string>()
+const createTemplateOneIssueBlockPlugin = (
+  issues: ReviewIssueSnapshot[],
+  activeFeedbackAnchorId: string | undefined
+): Plugin<[], Root> => {
+  const templateOneIssues = issues.filter((issue) => issue.source === 'template_1_heading')
 
-  try {
-    extractReviewIssues(markdown).forEach((issue) => {
-      anchors.set(issue.location.anchorLine, issue.anchorId)
-    })
-  } catch {
-    return anchors
+  return () => (tree) => {
+    if (templateOneIssues.length === 0) {
+      return
+    }
+
+    const children: RootContent[] = []
+    let childIndex = 0
+
+    for (const issue of templateOneIssues) {
+      const issueStartIndex = tree.children.findIndex(
+        (child, index) =>
+          index >= childIndex && child.position?.start.offset === issue.location.startOffset
+      )
+      if (issueStartIndex === -1) {
+        continue
+      }
+
+      children.push(...tree.children.slice(childIndex, issueStartIndex))
+      let issueEndIndex = issueStartIndex + 1
+      while (issueEndIndex < tree.children.length) {
+        const child = tree.children[issueEndIndex]
+        const startOffset = child.position?.start.offset
+        if (startOffset !== undefined && startOffset >= issue.location.endOffset) {
+          break
+        }
+        issueEndIndex += 1
+      }
+
+      const issueChildren = tree.children
+        .slice(issueStartIndex, issueEndIndex)
+        .filter((child): child is ElementContent => child.type !== 'doctype')
+
+      const issueBlock: Element = {
+        type: 'element',
+        tagName: 'section',
+        properties: {
+          className: [
+            'report-issue-block',
+            ...(issue.anchorId === activeFeedbackAnchorId ? ['report-issue-block-active'] : [])
+          ],
+          'data-report-issue-anchor-id': issue.anchorId
+        },
+        children: issueChildren
+      }
+      children.push(issueBlock)
+      childIndex = issueEndIndex
+    }
+
+    children.push(...tree.children.slice(childIndex))
+    tree.children = children
   }
-
-  return anchors
 }
 
 type PositionedMarkdownNode = {
@@ -147,10 +206,12 @@ class MarkdownErrorBoundary extends Component<
 
 function ReportImage({
   alt,
+  onLoad,
   reportPath,
   src
 }: {
   alt?: string
+  onLoad?: () => void
   reportPath?: string
   src?: string
 }): React.JSX.Element {
@@ -190,15 +251,70 @@ function ReportImage({
     }
   }, [reportPath, src])
 
-  return <img src={resolvedSrc} alt={alt ?? ''} />
+  return <img src={resolvedSrc} alt={alt ?? ''} onLoad={onLoad} />
 }
 
 export function MarkdownPreview({
   markdown,
   reportPath,
-  activeFeedbackAnchorId
+  activeFeedbackAnchorId,
+  feedbackAnchorScrollRequest
 }: MarkdownPreviewProps): React.JSX.Element {
-  const feedbackAnchorMap = useMemo(() => buildFeedbackAnchorMap(markdown), [markdown])
+  const previewScrollRef = useRef<HTMLDivElement>(null)
+  const reviewIssues = useMemo(() => {
+    try {
+      return extractReviewIssues(markdown)
+    } catch {
+      return []
+    }
+  }, [markdown])
+  const feedbackAnchorMap = useMemo(() => {
+    const anchors = new Map<number, string>()
+    reviewIssues.forEach((issue) => anchors.set(issue.location.anchorLine, issue.anchorId))
+    return anchors
+  }, [reviewIssues])
+  const templateOneAnchorIds = useMemo(
+    () =>
+      new Set(
+        reviewIssues
+          .filter((issue) => issue.source === 'template_1_heading')
+          .map((issue) => issue.anchorId)
+      ),
+    [reviewIssues]
+  )
+  const issueBlockPlugin = useMemo(
+    () => createTemplateOneIssueBlockPlugin(reviewIssues, activeFeedbackAnchorId),
+    [activeFeedbackAnchorId, reviewIssues]
+  )
+  const scrollToFeedbackAnchor = useCallback(() => {
+    const previewScroll = previewScrollRef.current
+    if (!previewScroll || !feedbackAnchorScrollRequest) {
+      return
+    }
+
+    const target = Array.from(
+      previewScroll.querySelectorAll<HTMLElement>('[data-report-anchor-id]')
+    ).find(
+      (candidate) =>
+        candidate.dataset.reportAnchorId === feedbackAnchorScrollRequest.anchorId
+    )
+    if (!target) {
+      return
+    }
+
+    const top = Math.max(
+      0,
+      previewScroll.scrollTop +
+        target.getBoundingClientRect().top -
+        previewScroll.getBoundingClientRect().top -
+        FEEDBACK_ANCHOR_TOP_GAP
+    )
+    previewScroll.scrollTo({ top, behavior: 'smooth' })
+  }, [feedbackAnchorScrollRequest])
+
+  useLayoutEffect(() => {
+    scrollToFeedbackAnchor()
+  }, [scrollToFeedbackAnchor])
 
   if (!markdown.trim()) {
     return (
@@ -209,11 +325,12 @@ export function MarkdownPreview({
   }
 
   return (
-    <div className="preview-scroll">
+    <div className="preview-scroll" ref={previewScrollRef}>
       <MarkdownErrorBoundary resetKey={markdown}>
         <article className="markdown-preview">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
+            rehypePlugins={[issueBlockPlugin]}
             urlTransform={(url, key) =>
               key === 'src' && isRelativeImagePath(url) ? url : safeUrl(url)
             }
@@ -224,7 +341,8 @@ export function MarkdownPreview({
                   <h1
                     data-report-anchor-id={anchorId}
                     className={
-                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId)
+                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId) &&
+                      !templateOneAnchorIds.has(anchorId ?? '')
                         ? 'report-anchor-highlight'
                         : undefined
                     }
@@ -239,7 +357,8 @@ export function MarkdownPreview({
                   <h2
                     data-report-anchor-id={anchorId}
                     className={
-                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId)
+                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId) &&
+                      !templateOneAnchorIds.has(anchorId ?? '')
                         ? 'report-anchor-highlight'
                         : undefined
                     }
@@ -254,7 +373,8 @@ export function MarkdownPreview({
                   <h3
                     data-report-anchor-id={anchorId}
                     className={
-                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId)
+                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId) &&
+                      !templateOneAnchorIds.has(anchorId ?? '')
                         ? 'report-anchor-highlight'
                         : undefined
                     }
@@ -269,7 +389,8 @@ export function MarkdownPreview({
                   <h4
                     data-report-anchor-id={anchorId}
                     className={
-                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId)
+                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId) &&
+                      !templateOneAnchorIds.has(anchorId ?? '')
                         ? 'report-anchor-highlight'
                         : undefined
                     }
@@ -284,7 +405,8 @@ export function MarkdownPreview({
                   <h5
                     data-report-anchor-id={anchorId}
                     className={
-                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId)
+                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId) &&
+                      !templateOneAnchorIds.has(anchorId ?? '')
                         ? 'report-anchor-highlight'
                         : undefined
                     }
@@ -299,7 +421,8 @@ export function MarkdownPreview({
                   <h6
                     data-report-anchor-id={anchorId}
                     className={
-                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId)
+                      isActiveReportAnchor(anchorId, activeFeedbackAnchorId) &&
+                      !templateOneAnchorIds.has(anchorId ?? '')
                         ? 'report-anchor-highlight'
                         : undefined
                     }
@@ -369,7 +492,14 @@ export function MarkdownPreview({
                   </li>
                 )
               },
-              img: ({ alt, src }) => <ReportImage alt={alt} src={src} reportPath={reportPath} />
+              img: ({ alt, src }) => (
+                <ReportImage
+                  alt={alt}
+                  src={src}
+                  reportPath={reportPath}
+                  onLoad={scrollToFeedbackAnchor}
+                />
+              )
             }}
           >
             {markdown}

@@ -1503,6 +1503,24 @@ h2 {
   transition: outline-color 160ms ease, background 160ms ease;
 }
 
+.report-issue-block {
+  display: flow-root;
+  margin: 8px -10px;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.report-issue-block > :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
+}
+
+.report-issue-block-active {
+  outline: 2px solid rgb(18 185 120 / 55%);
+  outline-offset: 2px;
+  background: rgb(18 185 120 / 10%);
+  transition: outline-color 160ms ease, background 160ms ease;
+}
+
 .submit-feedback-dialog {
   display: flex;
   flex-direction: column;
