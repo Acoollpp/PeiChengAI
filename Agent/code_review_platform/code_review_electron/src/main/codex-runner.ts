@@ -126,6 +126,13 @@ export const buildCodexCommand = (
 
 export const buildCodexExecArgs = (prompt: string): string[] => [
   'exec',
+  '--skip-git-repo-check',
+  '--model',
+  'gpt-5.5',
+  '-c',
+  'model_reasoning_effort=medium',
+  '--enable',
+  'multi_agent',
   '--dangerously-bypass-approvals-and-sandbox',
   prompt
 ]

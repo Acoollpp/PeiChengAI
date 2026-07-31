@@ -61,10 +61,25 @@ describe('runCodexReview', () => {
     ])
     expect(spawnMock).toHaveBeenCalledWith(
       'codex',
-      ['exec', '--dangerously-bypass-approvals-and-sandbox', 'prompt text'],
+      [
+        'exec',
+        '--skip-git-repo-check',
+        '--model',
+        'gpt-5.5',
+        '-c',
+        'model_reasoning_effort=medium',
+        '--enable',
+        'multi_agent',
+        '--dangerously-bypass-approvals-and-sandbox',
+        'prompt text'
+      ],
       expect.objectContaining({
         cwd: '/tmp/workspace',
-        shell: false
+        shell: false,
+        env: {
+          PATH: 'test-path',
+          CODEX_UNSAFE_ALLOW_NO_SANDBOX: '1'
+        }
       })
     )
     expect(child.stdin.end).toHaveBeenCalledWith()
@@ -274,9 +289,16 @@ describe('buildReviewPrompt', () => {
 })
 
 describe('buildCodexExecArgs', () => {
-  it('runs Codex in exec mode with full access and rendered prompt input', () => {
+  it('runs Codex with the fixed review runtime and rendered prompt as a separate argument', () => {
     expect(buildCodexExecArgs('rendered prompt')).toEqual([
       'exec',
+      '--skip-git-repo-check',
+      '--model',
+      'gpt-5.5',
+      '-c',
+      'model_reasoning_effort=medium',
+      '--enable',
+      'multi_agent',
       '--dangerously-bypass-approvals-and-sandbox',
       'rendered prompt'
     ])
