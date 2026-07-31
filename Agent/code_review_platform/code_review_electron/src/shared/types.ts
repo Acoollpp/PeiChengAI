@@ -152,6 +152,17 @@ export interface TaskCompletionNotificationPayload {
   pdfReportName?: string | null
 }
 
+export interface ClientUpdatePolicy {
+  platform: string
+  arch: string
+  current_version: string
+  active_version: string | null
+  minimum_supported_version: string | null
+  update_available: boolean
+  update_required: boolean
+  release_notes?: string | null
+}
+
 export type TaskCompletionNotificationResult =
   | {
       status: 'shown'

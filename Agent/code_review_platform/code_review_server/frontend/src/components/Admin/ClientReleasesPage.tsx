@@ -3,7 +3,12 @@ import { CheckCircle2, CircleOff, ShieldAlert, Upload } from "lucide-react"
 import { type FormEvent, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
-import { OpenAPI } from "@/client"
+import {
+  ApiError,
+  ClientReleasesService,
+  type ClientUpdatePolicyPublic,
+  OpenAPI,
+} from "@/client"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -69,18 +74,22 @@ type ClientReleaseUploadInput = {
   blockmap: File | null
 }
 
-type ClientUpdatePolicy = {
-  platform: string
-  arch: string
-  active_release_id: string | null
-  active_version: string | null
-  minimum_supported_release_id: string | null
-  minimum_supported_version: string | null
-  updated_by_user_id: string | null
-  updated_at: string | null
-}
-
 const DISABLED_POLICY_VALUE = "__disabled__"
+
+function clientErrorMessage(error: unknown, fallback: string): string {
+  if (
+    error instanceof ApiError &&
+    typeof error.body === "object" &&
+    error.body !== null &&
+    "detail" in error.body &&
+    typeof error.body.detail === "string" &&
+    error.body.detail.trim()
+  ) {
+    return error.body.detail
+  }
+
+  return error instanceof Error ? error.message : fallback
+}
 
 function authHeaders(): HeadersInit {
   const token = localStorage.getItem("access_token")
@@ -171,34 +180,19 @@ async function activateClientRelease(releaseId: string) {
   return response.json()
 }
 
-async function readClientUpdatePolicy(): Promise<ClientUpdatePolicy> {
-  const response = await fetch(
-    `${OpenAPI.BASE}/api/v1/client-update-policy/win32/x64`,
-    { headers: authHeaders() },
-  )
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response, "加载最低支持版本失败"))
-  }
-  return response.json()
+async function readClientUpdatePolicy(): Promise<ClientUpdatePolicyPublic> {
+  return ClientReleasesService.readClientUpdatePolicy({
+    platform: "win32",
+    arch: "x64",
+  })
 }
 
 async function updateClientUpdatePolicy(releaseId: string | null) {
-  const response = await fetch(
-    `${OpenAPI.BASE}/api/v1/client-update-policy/win32/x64`,
-    {
-      method: "PUT",
-      headers: (() => {
-        const headers = new Headers(authHeaders())
-        headers.set("Content-Type", "application/json")
-        return headers
-      })(),
-      body: JSON.stringify({ minimum_supported_release_id: releaseId }),
-    },
-  )
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response, "调整最低支持版本失败"))
-  }
-  return response.json()
+  return ClientReleasesService.updateClientUpdatePolicy({
+    platform: "win32",
+    arch: "x64",
+    requestBody: { minimum_supported_release_id: releaseId },
+  })
 }
 
 function isClientReleaseActive(release: ClientRelease) {
@@ -423,9 +417,7 @@ function ClientUpdatePolicyCard() {
       })
     },
     onError: (error) => {
-      toast.error(
-        error instanceof Error ? error.message : "调整最低支持版本失败",
-      )
+      toast.error(clientErrorMessage(error, "调整最低支持版本失败"))
     },
   })
 
@@ -458,7 +450,7 @@ function ClientUpdatePolicyCard() {
       <CardContent className="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
         {error ? (
           <div className="text-destructive md:col-span-3">
-            {error instanceof Error ? error.message : "加载最低支持版本失败"}
+            {clientErrorMessage(error, "加载最低支持版本失败")}
           </div>
         ) : (
           <>

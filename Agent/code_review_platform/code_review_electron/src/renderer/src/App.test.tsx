@@ -237,6 +237,21 @@ describe('App update flow', () => {
     expect(screen.queryByRole('heading', { name: '选择部门' })).not.toBeInTheDocument()
   })
 
+  it('continues to the task page when the update policy check fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.checkForAppUpdate).mockResolvedValueOnce({
+      status: 'check_failed'
+    })
+    render(<App />)
+
+    await user.type(await screen.findByLabelText('Key'), 'sk-cch-test')
+    await user.click(screen.getByRole('button', { name: 'Key 登录' }))
+
+    expect(await screen.findByRole('heading', { name: '任务工作台' })).toBeInTheDocument()
+    expect(window.codeReview.checkForAppUpdate).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('正在下载新版本')).not.toBeInTheDocument()
+  })
+
   it('keeps download progress in background after the user hides the downloading dialog', async () => {
     const user = userEvent.setup()
     render(<App />)

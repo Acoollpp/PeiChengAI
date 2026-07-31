@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test"
+import { expect, type Page, test } from "@playwright/test"
+import type { ClientUpdatePolicyPublic } from "../src/client"
 import { testApiKey, testSvnPassword } from "./config.ts"
 import { createUser, uniqueSvnUsername } from "./utils/privateApi"
 import { logInWithKey, logInWithSvn } from "./utils/user"
@@ -6,14 +7,94 @@ import { logInWithKey, logInWithSvn } from "./utils/user"
 const randomSvnUsername = () =>
   `svn_${Math.random().toString(36).substring(2, 10)}`
 
+const clientReleases = [
+  {
+    id: "release-140",
+    version: "1.4.0",
+    platform: "win32",
+    arch: "x64",
+    is_active: false,
+  },
+  {
+    id: "release-150",
+    version: "1.5.0",
+    platform: "win32",
+    arch: "x64",
+    is_active: false,
+  },
+  {
+    id: "release-160",
+    version: "1.6.0",
+    platform: "win32",
+    arch: "x64",
+    is_active: true,
+  },
+]
+
+const initialClientUpdatePolicy = {
+  platform: "win32",
+  arch: "x64",
+  active_release_id: "release-160",
+  active_version: "1.6.0",
+  minimum_supported_release_id: "release-150",
+  minimum_supported_version: "1.5.0",
+  updated_by_user_id: "admin-1",
+  updated_at: "2026-07-31T12:00:00Z",
+}
+
+async function mockClientReleasePolicy(page: Page, updateError?: string) {
+  let policy: ClientUpdatePolicyPublic = { ...initialClientUpdatePolicy }
+  const updates: Array<string | null> = []
+
+  await page.route("**/api/v1/client-releases", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue()
+      return
+    }
+    await route.fulfill({ json: { data: clientReleases, count: 3 } })
+  })
+  await page.route(
+    "**/api/v1/client-update-policy/win32/x64",
+    async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({ json: policy })
+        return
+      }
+
+      const body = route.request().postDataJSON() as {
+        minimum_supported_release_id: string | null
+      }
+      updates.push(body.minimum_supported_release_id)
+      if (updateError) {
+        await route.fulfill({
+          status: 409,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: updateError }),
+        })
+        return
+      }
+
+      const release = clientReleases.find(
+        (candidate) => candidate.id === body.minimum_supported_release_id,
+      )
+      policy = {
+        ...policy,
+        minimum_supported_release_id: body.minimum_supported_release_id,
+        minimum_supported_version: release?.version ?? null,
+      }
+      await route.fulfill({ json: policy })
+    },
+  )
+
+  return updates
+}
+
 test("Admin page is accessible and shows current management sections", async ({
   page,
 }) => {
   await page.goto("/admin")
   await expect(page.getByRole("heading", { name: "用户管理" })).toBeVisible()
-  await expect(
-    page.getByRole("button", { name: "同步用户Key" }),
-  ).toBeVisible()
+  await expect(page.getByRole("button", { name: "同步用户Key" })).toBeVisible()
   await expect(
     page.getByText("SVN账号和密码管理将在专用用户接口接入后启用。"),
   ).toBeVisible()
@@ -44,7 +125,9 @@ test("Admin page is accessible and shows current management sections", async ({
   ).toBeVisible()
 })
 
-test("Admin tasks page redirects to shared task management", async ({ page }) => {
+test("Admin tasks page redirects to shared task management", async ({
+  page,
+}) => {
   await page.goto("/admin/tasks")
   await expect(page).toHaveURL(/\/tasks\/review/)
   await expect(
@@ -58,10 +141,54 @@ test("Client release page separates activation and minimum supported version", a
   await page.goto("/admin/client-releases")
 
   await expect(page.getByRole("heading", { name: "客户端版本" })).toBeVisible()
-  await expect(page.getByText("最低支持版本", { exact: true })).toBeVisible()
   await expect(page.getByText("上传客户端版本", { exact: true })).toBeVisible()
-  await expect(page.getByLabel("最低支持版本")).toBeVisible()
+  await expect(page.locator("#minimum-supported-release")).toBeVisible()
   await expect(page.getByRole("button", { name: "调整门槛" })).toBeDisabled()
+})
+
+test("Client release page confirms lowering and disabling the minimum version", async ({
+  page,
+}) => {
+  const updates = await mockClientReleasePolicy(page)
+  await page.goto("/admin/client-releases")
+
+  await page.locator("#minimum-supported-release").click()
+  await page.getByRole("option", { name: "1.4.0" }).click()
+  await page.getByRole("button", { name: "调整门槛" }).click()
+  const lowerDialog = page.getByRole("dialog")
+  await expect(lowerDialog).toContainText("当前门槛：1.5.0")
+  await expect(lowerDialog).toContainText("目标门槛：1.4.0")
+  await lowerDialog.getByRole("button", { name: "确认调整" }).click()
+  await expect(page.getByText("最低支持版本已更新").last()).toBeVisible()
+  expect(updates).toEqual(["release-140"])
+
+  await page.locator("#minimum-supported-release").click()
+  await page.getByRole("option", { name: "未启用" }).click()
+  await page.getByRole("button", { name: "调整门槛" }).click()
+  const disableDialog = page.getByRole("dialog")
+  await expect(disableDialog).toContainText("目标门槛：未启用")
+  await expect(disableDialog).toContainText(
+    "调整后客户端不会因最低版本策略被强制更新",
+  )
+  await disableDialog.getByRole("button", { name: "确认调整" }).click()
+  await expect(page.getByText("最低支持版本已更新").last()).toBeVisible()
+  expect(updates).toEqual(["release-140", null])
+})
+
+test("Client release page shows a policy update failure", async ({ page }) => {
+  const updates = await mockClientReleasePolicy(
+    page,
+    "激活版本低于最低支持版本",
+  )
+  await page.goto("/admin/client-releases")
+
+  await page.locator("#minimum-supported-release").click()
+  await page.getByRole("option", { name: "1.4.0" }).click()
+  await page.getByRole("button", { name: "调整门槛" }).click()
+  await page.getByRole("button", { name: "确认调整" }).click()
+
+  await expect(page.getByText("激活版本低于最低支持版本")).toBeVisible()
+  expect(updates).toEqual(["release-140"])
 })
 
 test("Admin review tasks page has user filters", async ({ page }) => {
@@ -77,9 +204,7 @@ test("Admin sidebar entries are visible", async ({ page }) => {
   await expect(page.getByRole("link", { name: "主页" })).toBeVisible()
   await expect(page.getByRole("link", { name: "部门管理" })).toBeVisible()
   await expect(page.getByRole("link", { name: "用户管理" })).toBeVisible()
-  await expect(
-    page.getByRole("link", { name: "重点审查方向" }),
-  ).toBeVisible()
+  await expect(page.getByRole("link", { name: "重点审查方向" })).toBeVisible()
   await expect(page.getByRole("link", { name: "Skill库" })).toBeVisible()
   const taskMenu = page.getByRole("button", { name: "任务管理" })
   await expect(taskMenu).toBeVisible()
@@ -235,9 +360,7 @@ test.describe("Admin user management", () => {
 
     await page.getByRole("button", { name: "删除" }).click()
 
-    await expect(
-      page.getByText("用户删除成功"),
-    ).toBeVisible()
+    await expect(page.getByText("用户删除成功")).toBeVisible()
 
     await expect(
       page.getByRole("row").filter({ hasText: svnUsername }),

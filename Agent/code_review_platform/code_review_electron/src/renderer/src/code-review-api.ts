@@ -5,6 +5,7 @@ import type {
   ReportFeedbackSubmittedEvent
 } from '../../shared/report-feedback-window'
 import type {
+  ClientUpdatePolicy,
   EnvironmentProgressEvent,
   EnvironmentStatus,
   CurrentUser,
@@ -18,7 +19,7 @@ import type {
 } from '../../shared/types'
 import type { TaskPreflightErrorField, TaskPreflightResult } from '../../shared/task-preflight'
 
-export type { EnvironmentProgressEvent, TaskProgressEvent }
+export type { ClientUpdatePolicy, EnvironmentProgressEvent, TaskProgressEvent }
 export type { CurrentUser, DepartmentsResponse }
 export type {
   TaskCompletionNotificationPayload,
@@ -213,17 +214,6 @@ export interface AppUpdateError {
   message: string
   stack?: string
   phase?: 'check' | 'download' | 'install'
-}
-
-export interface ClientUpdatePolicy {
-  platform: string
-  arch: string
-  current_version: string
-  active_version: string | null
-  minimum_supported_version: string | null
-  update_available: boolean
-  update_required: boolean
-  release_notes?: string | null
 }
 
 export type AppUpdateCheckResult =

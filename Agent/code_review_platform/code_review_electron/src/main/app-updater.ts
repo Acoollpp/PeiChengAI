@@ -3,10 +3,11 @@ import log from 'electron-log/main'
 import { NsisUpdater } from 'electron-updater'
 import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-updater'
 
-import type { TokenPair } from './api-client'
+import { ApiClient, type TokenPair } from './api-client'
 import type { AuthStore } from './auth-store'
 import type { ServerConfig, ServerConfigStore } from './server-config-store'
 import { normalizeServerUrl } from './server-config-store'
+import type { ClientUpdatePolicy } from '../shared/types'
 
 const DEFAULT_UPDATE_CHECK_TIMEOUT_MS = 10_000
 
@@ -14,17 +15,6 @@ export interface AppUpdateError {
   message: string
   stack?: string
   phase?: 'check' | 'download' | 'install'
-}
-
-export interface ClientUpdatePolicy {
-  platform: string
-  arch: string
-  current_version: string
-  active_version: string | null
-  minimum_supported_version: string | null
-  update_available: boolean
-  update_required: boolean
-  release_notes?: string | null
 }
 
 export type AppUpdateCheckResult =
@@ -292,15 +282,7 @@ async function readClientUpdatePolicy(
   token: string,
   currentVersion: string
 ): Promise<ClientUpdatePolicy> {
-  const query = new URLSearchParams({ current_version: currentVersion })
-  const response = await fetch(
-    `${normalizeServerUrl(serverUrl)}/api/v1/client-update-policy/win32/x64/check?${query}`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  )
-  if (!response.ok) {
-    throw new Error(`更新策略接口返回 HTTP ${response.status}`)
-  }
-  return (await response.json()) as ClientUpdatePolicy
+  return new ApiClient(serverUrl).checkClientUpdatePolicy(token, currentVersion)
 }
 
 function sendToAllRendererWindows(channel: string, payload: unknown): void {
