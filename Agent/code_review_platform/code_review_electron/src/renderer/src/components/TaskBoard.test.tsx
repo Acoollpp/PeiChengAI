@@ -260,6 +260,44 @@ describe('TaskBoard', () => {
     expect(screen.queryByText('反馈：未提交')).not.toBeInTheDocument()
   })
 
+  it('新协议任务根据正式提交时间显示反馈状态', async () => {
+    const user = userEvent.setup()
+    const tasks: TaskViewItem[] = [
+      {
+        ...historyTasks[0],
+        id: 'task-issue-feedback-pending',
+        localTaskId: 'task-issue-feedback-pending',
+        feedback_protocol_version: 1,
+        feedback_submitted_at: null,
+        report_feedback_helpful: null
+      },
+      {
+        ...historyTasks[0],
+        id: 'task-issue-feedback-submitted',
+        localTaskId: 'task-issue-feedback-submitted',
+        feedback_protocol_version: 1,
+        feedback_submitted_at: '2026-07-31T10:00:00Z',
+        report_feedback_helpful: null
+      }
+    ]
+
+    renderTaskBoard({ runningTasks: [], queuedTasks: [], historyTasks: tasks })
+
+    await user.click(screen.getByRole('tab', { name: '历史任务 2' }))
+
+    const pendingTaskCard = screen
+      .getByText('task-issue-feedback-pending')
+      .closest<HTMLElement>('.task-card')
+    const submittedTaskCard = screen
+      .getByText('task-issue-feedback-submitted')
+      .closest<HTMLElement>('.task-card')
+
+    expect(pendingTaskCard).not.toBeNull()
+    expect(submittedTaskCard).not.toBeNull()
+    expect(within(pendingTaskCard as HTMLElement).getByText('已完成 · 未提交')).toBeInTheDocument()
+    expect(within(submittedTaskCard as HTMLElement).getByText('已完成 · 已提交')).toBeInTheDocument()
+  })
+
   it('全量审查任务显示目标版本', async () => {
     const user = userEvent.setup()
     const fullReviewTask: TaskViewItem = {

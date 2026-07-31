@@ -962,7 +962,8 @@ h2 {
   background: rgb(255 255 255 / 8%);
 }
 
-.task-feedback-status-helpful {
+.task-feedback-status-helpful,
+.task-feedback-status-submitted {
   color: #a7f3d0;
   border-color: rgb(13 172 104 / 32%);
   background: rgb(13 172 104 / 20%);

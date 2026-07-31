@@ -1258,6 +1258,7 @@ describe('TaskPage', () => {
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
     expect(screen.getByRole('button', { name: '查看PDF报告' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '提交反馈并查看PDF报告' })).not.toBeInTheDocument()
+    expect(within(historyPanel).getByText('已完成 · 未提交')).toBeInTheDocument()
 
     const submitted = vi.mocked(window.codeReview.onIssueFeedbackSubmitted).mock.calls[0][0]
     submitted({
@@ -1269,6 +1270,7 @@ describe('TaskPage', () => {
 
     expect(await screen.findByRole('button', { name: '查看已提交反馈' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '提交反馈并查看PDF报告' })).not.toBeInTheDocument()
+    expect(within(historyPanel).getByText('已完成 · 已提交')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
     expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
       taskId: 'task-issue-feedback',
