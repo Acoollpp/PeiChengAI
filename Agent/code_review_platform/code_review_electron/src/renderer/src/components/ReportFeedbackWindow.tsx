@@ -21,7 +21,7 @@ const feedbackPlaceholder = (helpful: boolean | null): string => {
   if (helpful === false) {
     return '例如：说明这个问题无效的原因和具体情况。'
   }
-  return '可选填反馈说明；评价后会显示对应的填写示例。'
+  return '请先评价审查问题；评价后会显示对应的填写示例。'
 }
 
 const formatFeedbackSubmittedAt = (value: string): string => {
@@ -42,6 +42,11 @@ const scrollToIssue = (issueId: string): void => {
     block: 'center',
     behavior: 'smooth'
   })
+}
+
+const focusIssueFeedbackText = (issueId: string): void => {
+  scrollToIssue(issueId)
+  document.getElementById(`feedback-text-${issueId}`)?.focus()
 }
 
 function LegacyReportFeedbackForm({
@@ -334,12 +339,23 @@ function IssueFeedbackForm({
     }
 
     setError('')
-    setIsPreparing(true)
     const firstUnevaluated = draftsRef.current.find((draft) => draft.helpful === null)
     if (firstUnevaluated) {
       scrollToIssue(firstUnevaluated.id)
+      setError('请先评价所有审查问题。')
+      return
+    }
+    const firstMissingFeedbackText = draftsRef.current.find(
+      (draft) => !draft.feedbackText.trim()
+    )
+    if (firstMissingFeedbackText) {
+      const issueNumber = draftsRef.current.indexOf(firstMissingFeedbackText) + 1
+      focusIssueFeedbackText(firstMissingFeedbackText.id)
+      setError(`请填写第 ${issueNumber} 个审查问题的反馈说明。`)
+      return
     }
 
+    setIsPreparing(true)
     const saveResults = await Promise.allSettled(
       draftsRef.current.map((draft) => enqueueSave(draft.id, draft.saveState === 'failed'))
     )
@@ -349,11 +365,6 @@ function IssueFeedbackForm({
         scrollToIssue(firstFailed.id)
       }
       setError('仍有反馈保存失败，请重试后再提交。')
-      setIsPreparing(false)
-      return
-    }
-    if (firstUnevaluated) {
-      setError('请先评价所有审查问题。')
       setIsPreparing(false)
       return
     }
@@ -481,6 +492,7 @@ function IssueFeedbackForm({
   return (
     <form
       className="report-feedback-form"
+      noValidate
       onSubmit={(event) => void handleSubmitIssueFeedback(event)}
     >
       <div className="report-feedback-scroll">
@@ -530,11 +542,14 @@ function IssueFeedbackForm({
               </fieldset>
 
               <label className="issue-feedback-text">
-                <span>反馈说明（选填）</span>
+                <span>反馈说明（必填）</span>
                 <textarea
+                  id={`feedback-text-${draft.id}`}
                   aria-label={`问题 ${index + 1} 反馈说明`}
+                  aria-required="true"
                   value={draft.feedbackText}
                   maxLength={4096}
+                  required
                   rows={4}
                   placeholder={feedbackPlaceholder(draft.helpful)}
                   disabled={isReadOnly || isPreparing}
@@ -626,7 +641,7 @@ export function ReportFeedbackWindow(): React.JSX.Element {
           {isSubmittedIssueFeedback
             ? '反馈已正式提交，以下内容仅供查看。'
             : context?.mode === 'issues'
-            ? '请逐项评价审查问题；反馈说明可按需填写。软件质量提升需要你的真实反馈，谢谢！'
+            ? '请逐项评价审查问题并填写反馈说明。软件质量提升需要你的真实反馈，谢谢！'
             : '请选择报告中有帮助的问题，也可以补充说明。'}
         </p>
       </header>

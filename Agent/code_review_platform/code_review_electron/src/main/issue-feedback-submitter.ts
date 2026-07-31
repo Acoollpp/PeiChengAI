@@ -154,6 +154,12 @@ export const submitIssueFeedback = async ({
   if (issueResponse.data.some((issue) => issue.helpful == null)) {
     throw new Error('请先评价所有审查问题')
   }
+  const missingFeedbackTextIndex = issueResponse.data.findIndex(
+    (issue) => !issue.feedback_text?.trim()
+  )
+  if (missingFeedbackTextIndex >= 0) {
+    throw new Error(`请填写第 ${missingFeedbackTextIndex + 1} 个审查问题的反馈说明`)
+  }
 
   const reportPath = runtimePaths.reportPathForTask(
     taskId,

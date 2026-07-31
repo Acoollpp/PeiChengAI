@@ -264,7 +264,7 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     expect(screen.getByText('返回值未经校验就被解引用。')).toBeInTheDocument()
     expect(
       screen.getByText(
-        '请逐项评价审查问题；反馈说明可按需填写。软件质量提升需要你的真实反馈，谢谢！'
+        '请逐项评价审查问题并填写反馈说明。软件质量提升需要你的真实反馈，谢谢！'
       )
     ).toBeInTheDocument()
     expect(screen.getAllByText('未评价')).toHaveLength(2)
@@ -523,12 +523,38 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     expect(window.reportFeedback.submitIssueFeedback).not.toHaveBeenCalled()
   })
 
+  it('正式提交时反馈说明必填且纯空白会定位并聚焦首个缺失问题', async () => {
+    const user = userEvent.setup()
+    window.reportFeedback.getContext = vi.fn(async () => ({
+      ...issueContext,
+      issues: [
+        { ...issueContext.issues[0], helpful: true, feedbackText: '  \n ' },
+        { ...issueContext.issues[1], helpful: false, feedbackText: '已说明无效原因' }
+      ]
+    }))
+    render(<ReportFeedbackWindow />)
+
+    const firstFeedbackText = await screen.findByLabelText('问题 1 反馈说明')
+    expect(screen.getAllByText('反馈说明（必填）')).toHaveLength(2)
+    expect(firstFeedbackText).toBeRequired()
+    expect(firstFeedbackText).toHaveAttribute('aria-required', 'true')
+
+    await user.click(screen.getByRole('button', { name: '提交反馈并查看PDF报告' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '请填写第 1 个审查问题的反馈说明'
+    )
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(firstFeedbackText).toHaveFocus()
+    expect(window.reportFeedback.submitIssueFeedback).not.toHaveBeenCalled()
+  })
+
   it('全部评价后等待进行中的保存完成才执行提交前门禁', async () => {
     const user = userEvent.setup()
     let resolveSave: (() => void) | undefined
     window.reportFeedback.getContext = vi.fn(async () => ({
       ...issueContext,
-      issues: [{ ...issueContext.issues[0] }]
+      issues: [{ ...issueContext.issues[0], feedbackText: '已填写反馈说明' }]
     }))
     vi.mocked(window.reportFeedback.saveIssueDraft).mockImplementationOnce(
       () =>

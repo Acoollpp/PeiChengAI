@@ -1210,6 +1210,14 @@ async def upload_review_task_pdf_report(
         )
         if any(issue.helpful is None for issue in issues):
             raise HTTPException(status_code=409, detail="issue_feedback_incomplete")
+        if any(
+            issue.feedback_text is None or not issue.feedback_text.strip()
+            for issue in issues
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="issue_feedback_text_required",
+            )
 
     report_path = await report_service.save_pdf_upload(task_id, upload)
     now = _utcnow()

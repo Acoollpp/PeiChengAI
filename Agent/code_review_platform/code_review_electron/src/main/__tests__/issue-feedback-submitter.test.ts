@@ -27,7 +27,7 @@ const toServerIssues = (markdown: string): ReviewTaskIssue[] =>
       heading_level: issue.location.headingLevel
     },
     helpful: issue.order !== 1,
-    feedback_text: issue.order === 0 ? '已完成修复' : null
+    feedback_text: issue.order === 0 ? '已完成修复' : '已记录验证结果'
   }))
 
 const makeTask = (overrides: Partial<ReviewTask> = {}): ReviewTask => ({
@@ -165,6 +165,41 @@ describe('submitIssueFeedback', () => {
         generatePdf
       })
     ).rejects.toThrow('图片资产不存在')
+    expect(generatePdf).not.toHaveBeenCalled()
+    expect(uploadPdfReport).not.toHaveBeenCalled()
+  })
+
+  it('反馈说明为空白时在生成PDF前拒绝并指出审查问题序号', async () => {
+    const { runtimePaths } = await createRuntime()
+    const issues = toServerIssues(templateOneReportFixture)
+    issues[1].feedback_text = ' \n '
+    const readTaskReport = vi.fn(async () => templateOneReportFixture)
+    const generatePdf = vi.fn(async () => {
+      throw new Error('不应生成PDF')
+    })
+    const uploadPdfReport = vi.fn()
+
+    await expect(
+      submitIssueFeedback({
+        api: {
+          readTask: vi.fn(async () => makeTask()),
+          readTaskReport,
+          readTaskIssues: vi.fn(async () => ({
+            data: issues,
+            count: issues.length,
+            evaluated_count: issues.length,
+            feedback_submitted_at: null
+          })),
+          downloadReportAsset: vi.fn(),
+          uploadPdfReport
+        },
+        token: 'token-123',
+        taskId: 'task-1',
+        runtimePaths,
+        generatePdf
+      })
+    ).rejects.toThrow('请填写第 2 个审查问题的反馈说明')
+    expect(readTaskReport).not.toHaveBeenCalled()
     expect(generatePdf).not.toHaveBeenCalled()
     expect(uploadPdfReport).not.toHaveBeenCalled()
   })

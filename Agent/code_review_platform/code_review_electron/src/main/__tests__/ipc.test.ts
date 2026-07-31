@@ -2713,6 +2713,66 @@ describe('registerIpcHandlers', () => {
     ).rejects.toThrow('评价所有')
   })
 
+  it('提交前服务端问题说明为空白时拒绝生成上传和定位最终PDF', async () => {
+    const context = {
+      mode: 'issues' as const,
+      taskId: 'task-1',
+      feedbackSubmittedAt: null,
+      issues: [
+        {
+          id: 'issue-1', issueText: '问题一', descriptionText: '描述一', order: 0,
+          helpful: true, feedbackText: '已完成修复'
+        },
+        {
+          id: 'issue-2', issueText: '问题二', descriptionText: '描述二', order: 1,
+          helpful: false, feedbackText: ' \n '
+        }
+      ]
+    }
+    const readTaskReport = vi.fn()
+    const uploadPdfReport = vi.fn()
+    const generatePdfReport = vi.fn()
+    const send = vi.fn()
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      api: {
+        readTask: vi.fn(async () => ({
+          id: 'task-1', svn_url: 'svn://repo/project', old_revision: '1', new_revision: '2',
+          status: 'success', feedback_protocol_version: 1
+        })),
+        readTaskIssues: vi.fn(async () => ({
+          data: [
+            { id: 'issue-1', order: 0, helpful: true, feedback_text: '已完成修复' },
+            { id: 'issue-2', order: 1, helpful: false, feedback_text: ' \n ' }
+          ],
+          count: 2,
+          evaluated_count: 2,
+          feedback_submitted_at: null
+        })),
+        readTaskReport,
+        downloadReportAsset: vi.fn(),
+        uploadPdfReport
+      } as never,
+      authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never,
+      getReportFeedbackWindowManager: () => ({ getContext: () => context } as never),
+      getMainWindow: () => ({ webContents: { send } }) as never,
+      runtimePaths: {} as never,
+      generatePdfReport
+    })
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'report-feedback-window:submit-issues'
+    )?.[1]
+
+    await expect(
+      handler({ sender: { id: 22 } }, { taskId: 'task-1' })
+    ).rejects.toThrow('请填写第 2 个审查问题的反馈说明')
+    expect(readTaskReport).not.toHaveBeenCalled()
+    expect(generatePdfReport).not.toHaveBeenCalled()
+    expect(uploadPdfReport).not.toHaveBeenCalled()
+    expect(showItemInFolderMock).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+  })
+
   it('gets context and closes only for the active feedback window sender', async () => {
     const context = {
       taskId: 'task-1',
