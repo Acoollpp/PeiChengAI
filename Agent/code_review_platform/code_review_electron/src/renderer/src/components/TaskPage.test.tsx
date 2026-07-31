@@ -101,6 +101,18 @@ const openHistoryTasks = async (user: ReturnType<typeof userEvent.setup>): Promi
   return screen.getByRole('tabpanel', { name: '历史任务' })
 }
 
+const viewTaskReport = async (
+  user: ReturnType<typeof userEvent.setup>,
+  historyPanel: HTMLElement,
+  taskId: string
+): Promise<void> => {
+  const taskCard = within(historyPanel).getByText(taskId).closest<HTMLElement>('.task-card')
+  if (!taskCard) {
+    throw new Error(`未找到任务卡片：${taskId}`)
+  }
+  await user.click(within(taskCard).getByRole('button', { name: '查看报告' }))
+}
+
 beforeEach(() => {
   setupCodeReviewApi()
 })
@@ -299,7 +311,7 @@ describe('TaskPage', () => {
     renderReadyTaskPage()
 
     const historyPanel = await openHistoryTasks(user)
-    await user.click(within(historyPanel).getAllByRole('button', { name: '查看报告' })[1])
+    await viewTaskReport(user, historyPanel, 'task-history-2')
     await screen.findByText('历史报告 2')
     await user.click(await screen.findByRole('button', { name: '查看PDF报告' }))
 
@@ -356,9 +368,8 @@ describe('TaskPage', () => {
     renderReadyTaskPage()
 
     const historyPanel = await openHistoryTasks(user)
-    const viewButtons = within(historyPanel).getAllByRole('button', { name: '查看报告' })
-    await user.click(viewButtons[0])
-    await user.click(viewButtons[1])
+    await viewTaskReport(user, historyPanel, 'task-history-a')
+    await viewTaskReport(user, historyPanel, 'task-history-b')
 
     reportB.resolve('# B 报告')
     expect(await screen.findByRole('heading', { name: 'B 报告' })).toBeInTheDocument()
@@ -1001,10 +1012,9 @@ describe('TaskPage', () => {
 
     renderReadyTaskPage()
     const historyPanel = await openHistoryTasks(user)
-    const viewButtons = within(historyPanel).getAllByRole('button', { name: '查看报告' })
-    await user.click(viewButtons[0])
+    await viewTaskReport(user, historyPanel, 'task-a')
     await user.click(screen.getByRole('button', { name: '没帮助' }))
-    await user.click(viewButtons[1])
+    await viewTaskReport(user, historyPanel, 'task-b')
 
     vi.mocked(window.codeReview.onReportFeedbackSubmitted).mock.calls[0][0]({
       taskId: 'task-a', helpful: false, usefulIssuesText: null
@@ -1040,10 +1050,9 @@ describe('TaskPage', () => {
 
     renderReadyTaskPage()
     const historyPanel = await openHistoryTasks(user)
-    const viewButtons = within(historyPanel).getAllByRole('button', { name: '查看报告' })
-    await user.click(viewButtons[0])
+    await viewTaskReport(user, historyPanel, 'task-a')
     await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
-    await user.click(viewButtons[1])
+    await viewTaskReport(user, historyPanel, 'task-b')
 
     pdf.resolve({ status: 'ready', pdfPath: '/local/task-a.pdf' })
 
@@ -1073,10 +1082,9 @@ describe('TaskPage', () => {
 
     renderReadyTaskPage()
     const historyPanel = await openHistoryTasks(user)
-    const viewButtons = within(historyPanel).getAllByRole('button', { name: '查看报告' })
-    await user.click(viewButtons[0])
+    await viewTaskReport(user, historyPanel, 'task-a')
     await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
-    await user.click(viewButtons[1])
+    await viewTaskReport(user, historyPanel, 'task-b')
 
     pdf.reject(new Error('A任务PDF打开失败'))
     await pdf.promise.catch(() => undefined)
@@ -1361,10 +1369,9 @@ describe('TaskPage', () => {
 
     renderReadyTaskPage()
     const historyPanel = await openHistoryTasks(user)
-    const viewButtons = within(historyPanel).getAllByRole('button', { name: '查看报告' })
-    await user.click(viewButtons[0])
+    await viewTaskReport(user, historyPanel, 'task-a')
     await user.click(screen.getByRole('button', { name: '有帮助' }))
-    await user.click(viewButtons[1])
+    await viewTaskReport(user, historyPanel, 'task-b')
 
     open.reject(new Error('A任务反馈窗口打开失败'))
     await open.promise.catch(() => undefined)
@@ -1391,7 +1398,14 @@ describe('TaskPage', () => {
       count: 1
     }))
     window.codeReview.readTaskReport = vi.fn(async () =>
-      ['# 审查报告', '## 高风险问题', '### 空指针风险', '正文'].join('\n')
+      [
+        '# 审查报告',
+        '## 高风险问题',
+        '### 空指针风险',
+        '正文',
+        '### 越界风险',
+        '正文'
+      ].join('\n')
     )
 
     renderReadyTaskPage()
@@ -1410,6 +1424,9 @@ describe('TaskPage', () => {
       }
       if (this.dataset.reportAnchorId === 'report-option-2') {
         return { top: 260 } as DOMRect
+      }
+      if (this.dataset.reportAnchorId === 'report-option-4') {
+        return { top: 360 } as DOMRect
       }
       return { top: 0 } as DOMRect
     })
@@ -1431,12 +1448,27 @@ describe('TaskPage', () => {
     focusAnchor({ taskId: 'task-history-1', anchorId: 'report-option-2' })
     await waitFor(() => expect(scrollTo).toHaveBeenCalledTimes(2))
 
+    focusAnchor({ taskId: 'task-history-1', anchorId: 'report-option-4' })
+    await waitFor(() =>
+      expect(scrollTo).toHaveBeenCalledWith({ top: 366, behavior: 'smooth' })
+    )
+    expect(
+      screen
+        .getByRole('heading', { name: '空指针风险' })
+        .closest('[data-report-issue-anchor-id="report-option-2"]')
+    ).not.toHaveClass('report-issue-block-active')
+    expect(
+      screen
+        .getByRole('heading', { name: '越界风险' })
+        .closest('[data-report-issue-anchor-id="report-option-4"]')
+    ).toHaveClass('report-issue-block-active')
+
     focusAnchor({ taskId: 'task-history-1' })
     await waitFor(() =>
       expect(
         screen
-          .getByRole('heading', { name: '空指针风险' })
-          .closest('[data-report-issue-anchor-id="report-option-2"]')
+          .getByRole('heading', { name: '越界风险' })
+          .closest('[data-report-issue-anchor-id="report-option-4"]')
       ).not.toHaveClass('report-issue-block-active')
     )
   })
@@ -1496,9 +1528,8 @@ describe('TaskPage', () => {
 
     renderReadyTaskPage()
     const historyPanel = await openHistoryTasks(user)
-    const viewButtons = within(historyPanel).getAllByRole('button', { name: '查看报告' })
-    await user.click(viewButtons[0])
-    await user.click(viewButtons[1])
+    await viewTaskReport(user, historyPanel, 'task-a')
+    await viewTaskReport(user, historyPanel, 'task-b')
     const submitted = vi.mocked(window.codeReview.onReportFeedbackSubmitted).mock.calls[0][0]
 
     submitted({ taskId: 'task-a', helpful: true, usefulIssuesText: '1. A问题' })
