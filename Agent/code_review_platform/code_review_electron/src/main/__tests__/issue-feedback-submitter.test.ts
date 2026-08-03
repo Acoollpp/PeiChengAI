@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { ApiClient } from '../api-client'
 import { submitIssueFeedback } from '../issue-feedback-submitter'
 import type { GeneratePdfReportDependencies } from '../report-pdf-generator'
 import { extractReviewIssues } from '../../shared/review-issues'
@@ -134,6 +135,63 @@ describe('submitIssueFeedback', () => {
       pdfPath: join(workspace, '本地报告.pdf'),
       pdfReportName: '本地报告.pdf'
     })
+  })
+
+  it('已有 BOM 报告可按服务端原偏移生成并提交最终 PDF', async () => {
+    const { workspace, runtimePaths } = await createRuntime()
+    const markdown =
+      '\uFEFF# 代码审查报告\r\n\r\n### 高风险问题\r\n\r\n- **问题描述：** BOM 偏移回归。\r\n'
+    const issues = toServerIssues(markdown)
+    const fetchMock = vi.fn(async () =>
+      new Response(Buffer.from(markdown, 'utf8'), {
+        status: 200,
+        headers: { 'content-type': 'text/markdown' }
+      })
+    )
+    const client = new ApiClient('https://server.example', fetchMock)
+    const uploadPdfReport = vi.fn(async () =>
+      makeTask({
+        feedback_submitted_at: '2026-08-03T12:00:00Z',
+        pdf_report_name: '本地报告.pdf'
+      })
+    )
+    let renderingMarkdown = ''
+    const generatePdf = vi.fn(async (
+      reportPath: string,
+      options?: GeneratePdfReportDependencies
+    ) => {
+      renderingMarkdown = options?.markdown ?? ''
+      const pdfPath = reportPath.replace(/\.md$/i, '.pdf')
+      await writeFile(pdfPath, '%PDF-1.4\nfinal')
+      return { status: 'ready' as const, reportPath, pdfPath }
+    })
+
+    await expect(
+      submitIssueFeedback({
+        api: {
+          readTask: vi.fn(async () => makeTask()),
+          readTaskReport: client.readTaskReport.bind(client),
+          readTaskIssues: vi.fn(async () => ({
+            data: issues,
+            count: issues.length,
+            evaluated_count: issues.length,
+            feedback_submitted_at: null
+          })),
+          downloadReportAsset: vi.fn(),
+          uploadPdfReport
+        },
+        token: 'token-123',
+        taskId: 'task-1',
+        runtimePaths,
+        generatePdf
+      })
+    ).resolves.toEqual(expect.objectContaining({ status: 'submitted' }))
+
+    expect(renderingMarkdown.startsWith('\uFEFF')).toBe(false)
+    expect(renderingMarkdown).toContain('# 代码审查报告')
+    expect(renderingMarkdown).toContain('> 用户反馈：`已完成修复`')
+    expect(uploadPdfReport).toHaveBeenCalledTimes(1)
+    await expect(readFile(join(workspace, '本地报告.pdf'), 'utf8')).resolves.toContain('%PDF-1.4')
   })
 
   it('图片缺失或PDF生成失败时不上传也不锁定', async () => {
