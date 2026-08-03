@@ -257,7 +257,8 @@ export class ApiClient {
       throw new ApiError(response.status, await this.readErrorMessage(response))
     }
 
-    return response.text()
+    const reportBytes = await response.arrayBuffer()
+    return new TextDecoder('utf-8', { ignoreBOM: true }).decode(reportBytes)
   }
 
   readTaskIssues(token: string, taskId: string): Promise<ReviewTaskIssuesResponse> {

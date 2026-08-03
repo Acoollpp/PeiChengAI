@@ -579,7 +579,10 @@ export const prepareReportForPublishing = async (reportPath: string): Promise<st
   await ensureReportReady(reportPath)
 
   const originalReport = await readFile(reportPath, 'utf8')
-  const cleanedReport = stripReviewReportOutputMetadata(originalReport)
+  const reportWithoutBom = originalReport.startsWith('\uFEFF')
+    ? originalReport.slice(1)
+    : originalReport
+  const cleanedReport = stripReviewReportOutputMetadata(reportWithoutBom)
   if (!cleanedReport.trim()) {
     throw new Error(`审查报告为空：${reportPath}`)
   }

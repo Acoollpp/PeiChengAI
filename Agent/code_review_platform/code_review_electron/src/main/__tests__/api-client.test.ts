@@ -340,6 +340,22 @@ describe('ApiClient', () => {
     )
   })
 
+  it('读取已有 UTF-8 BOM 报告时保留开头 BOM', async () => {
+    const markdown = '\uFEFF# Review\r\n\r\nLooks good.\r\n'
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(Buffer.from(markdown, 'utf8'), {
+        status: 200,
+        headers: { 'content-type': 'text/markdown' }
+      })
+    )
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    const result = await client.readTaskReport('token-123', 'task-1')
+
+    expect(result).toBe(markdown)
+    expect(result.charCodeAt(0)).toBe(0xfeff)
+  })
+
   it('按任务读取问题快照和反馈进度', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({

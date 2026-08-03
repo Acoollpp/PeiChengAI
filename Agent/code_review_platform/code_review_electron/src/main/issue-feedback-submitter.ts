@@ -172,7 +172,9 @@ export const submitIssueFeedback = async ({
     originalMarkdown,
     issueResponse.data
   )
-  const pdf = await generatePdf(reportPath, { markdown: renderingMarkdown })
+  const pdf = await generatePdf(reportPath, {
+    markdown: renderingMarkdown.replace(/^\uFEFF/, '')
+  })
   let submittedTask: ReviewTask
   try {
     submittedTask = await uploadPdfReportFile(api, token, taskId, pdf.pdfPath)

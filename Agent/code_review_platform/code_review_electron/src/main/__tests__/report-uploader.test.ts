@@ -120,6 +120,38 @@ describe('report uploader', () => {
     })
   })
 
+  it('发布新报告前只移除开头 UTF-8 BOM 并基于规范化正文计算偏移', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-bom-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    const originalReport =
+      '\uFEFF# 代码审查报告\r\n\r\n### 高风险问题\r\n\r\n- **问题描述：** 保留正文中的 \uFEFF 字符。\r\n'
+    const expectedReport = originalReport.slice(1)
+    const expectedStartOffset = expectedReport.indexOf('### 高风险问题')
+    await writeFile(reportPath, originalReport, 'utf8')
+
+    await uploadReportFile(api, 'token-123', 'task-1', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-1',
+      expect.objectContaining({
+        report_content: expectedReport,
+        issues: [
+          expect.objectContaining({
+            issue_text: '高风险问题',
+            description_text: '保留正文中的 \uFEFF 字符。',
+            location: expect.objectContaining({ start_offset: expectedStartOffset })
+          })
+        ]
+      })
+    )
+    await expect(readFile(reportPath, 'utf8')).resolves.toBe(expectedReport)
+  })
+
   it('上传新报告时提交有序问题快照和 Markdown 引用的相对图片资产', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'report-uploader-new-protocol-'))
     tempDirs.push(dir)
