@@ -350,6 +350,67 @@ h2 {
   accent-color: #12b978;
 }
 
+.review-item-choice {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.review-item-choice legend {
+  margin-bottom: 7px;
+  color: rgb(245 247 251 / 56%);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.review-item-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 7px;
+  color: #f5f7fb;
+  background: rgb(8 10 12 / 48%);
+}
+
+.review-item-option:has(input:checked) {
+  border-color: rgb(18 185 120 / 58%);
+  background: rgb(18 185 120 / 8%);
+}
+
+.review-item-option input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: #12b978;
+}
+
+.review-item-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.review-item-copy strong {
+  font-size: 14px;
+}
+
+.review-item-copy span {
+  color: rgb(245 247 251 / 58%);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.review-item-rules {
+  margin-left: 28px;
+}
+
 .auth-field input::placeholder {
   color: rgb(245 247 251 / 34%);
 }

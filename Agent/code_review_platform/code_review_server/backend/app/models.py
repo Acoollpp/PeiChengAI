@@ -348,6 +348,7 @@ class ReviewTask(SQLModel, table=True):
     svn_url: str = Field(max_length=2048)
     old_revision: str = Field(max_length=255)
     new_revision: str = Field(max_length=255)
+    review_item_ids: list[str] = Field(default_factory=list, sa_type=JSONB)
     template_key: str | None = Field(default=None, max_length=64)
     skill_name: str | None = Field(default=None, max_length=255)
     department_id: uuid.UUID | None = Field(
@@ -522,6 +523,7 @@ class ReviewTaskCreate(SQLModel):
     svn_url: str = Field(min_length=1, max_length=2048)
     old_revision: str = Field(min_length=1, max_length=255)
     new_revision: str = Field(min_length=1, max_length=255)
+    review_item_ids: list[str] = Field(default_factory=list, max_length=32)
     template_key: str | None = Field(default=None, max_length=64)
     skill_name: str | None = Field(default=None, max_length=255)
     focus_direction_id: uuid.UUID | None = None
@@ -613,6 +615,7 @@ class ReviewTaskPublic(SQLModel):
     svn_url: str
     old_revision: str
     new_revision: str
+    review_item_ids: list[str] = Field(default_factory=list)
     template_key: str | None = Field(default=None, max_length=64)
     skill_name: str | None = Field(default=None, max_length=255)
     department_id: uuid.UUID | None = None

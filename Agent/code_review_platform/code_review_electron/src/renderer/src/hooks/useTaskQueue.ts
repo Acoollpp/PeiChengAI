@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ReviewTask, TaskProgressEvent } from '../../../shared/types'
+import type { SelectedReviewItemInput } from '../../../shared/review-items'
 import type {
   CancelTaskRequest,
   CancelTaskResult,
@@ -22,6 +23,7 @@ export type TaskViewItem = ReviewTask & {
   queueIndex: number
   createdAtMs: number
   requirement_file_path?: string
+  review_items?: SelectedReviewItemInput[]
   reportMarkdown?: string
   pdfPath?: string
   isLocalOnly?: boolean
@@ -121,11 +123,15 @@ const isMatchingUnboundLocalTask = (
   localTask.new_revision === serverTask.new_revision &&
   localTask.template_key === serverTask.template_key &&
   localTask.skill_name === serverTask.skill_name &&
+  arraysEqual(localTask.review_item_ids ?? [], serverTask.review_item_ids ?? []) &&
   (localTask.focus_direction_id ?? undefined) === (serverTask.focus_direction_id ?? undefined) &&
   (localTask.focus_direction_snapshot ?? undefined) ===
     (serverTask.focus_direction_snapshot ?? undefined) &&
   (!serverTask.requirement_file_name ||
     (localTask.requirement_file_name ?? undefined) === serverTask.requirement_file_name)
+
+const arraysEqual = (left: readonly string[], right: readonly string[]): boolean =>
+  left.length === right.length && left.every((value, index) => value === right[index])
 
 const getErrorMessage = (error: unknown): string =>
   toUserFacingIpcErrorMessage(error, '审查任务执行失败。')
@@ -203,6 +209,7 @@ export function useTaskQueue({
         svn_url: task.svn_url,
         old_revision: task.old_revision,
         new_revision: task.new_revision,
+        review_items: task.review_items,
         template_key: task.template_key,
         skill_name: task.skill_name,
         requirement_file_path: task.requirement_file_path ?? undefined,
@@ -349,6 +356,8 @@ export function useTaskQueue({
       svn_url: payload.svn_url,
       old_revision: payload.old_revision,
       new_revision: payload.new_revision,
+      review_item_ids: payload.review_items?.map((item) => item.id) ?? [],
+      review_items: payload.review_items,
       template_key: payload.template_key,
       skill_name: payload.skill_name,
       requirement_file_path: payload.requirement_file_path,
@@ -376,7 +385,8 @@ export function useTaskQueue({
     const retryPayload: RetryTaskRequest = {
       task_id: task.id,
       client_task_id: task.localTaskId,
-      requirement_file_path: task.requirement_file_path ?? undefined
+      requirement_file_path: task.requirement_file_path ?? undefined,
+      review_items: task.review_items
     }
     const retryingTask: TaskViewItem = {
       ...task,
@@ -545,6 +555,8 @@ export function useTaskQueue({
           isLocallyExecuting: isTerminalStatus(task.status)
             ? false
             : existing?.isLocallyExecuting === true,
+          requirement_file_path: existing?.requirement_file_path,
+          review_items: existing?.review_items,
           reportMarkdown: existing?.reportMarkdown,
           codex_log_path: existing?.codex_log_path ?? task.codex_log_path,
           codex_log: existing?.codex_log

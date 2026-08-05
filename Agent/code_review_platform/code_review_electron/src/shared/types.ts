@@ -58,6 +58,7 @@ export interface ReviewTask {
   svn_url: string
   old_revision: string
   new_revision: string
+  review_item_ids?: string[] | null
   template_key?: ReviewTemplateKey
   skill_name?: string
   department_id?: string | null

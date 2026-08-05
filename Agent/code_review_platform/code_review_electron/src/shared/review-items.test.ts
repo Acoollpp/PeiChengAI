@@ -1,0 +1,44 @@
+import { describe, expect, it } from 'vitest'
+
+import {
+  BMS_CODE_REVIEW_SKILL_NAME,
+  REVIEW_ITEM_CATALOG,
+  REVIEW_ITEM_CATALOG_VERSION,
+  resolveReviewItemInputs
+} from './review-items'
+
+describe('审查项目录', () => {
+  it('以版本化类型配置发布唯一启用的 DS-03 且不要求专项材料', () => {
+    expect(REVIEW_ITEM_CATALOG_VERSION).toBe(1)
+    expect(BMS_CODE_REVIEW_SKILL_NAME).toBe('bms-code-reviewer')
+    expect(REVIEW_ITEM_CATALOG).toEqual([
+      expect.objectContaining({
+        id: 'DS-03',
+        category: expect.objectContaining({ id: expect.any(String), name: expect.any(String) }),
+        name: '状态机审核',
+        summary: expect.any(String),
+        details: {
+          target: expect.any(String),
+          process: expect.any(String),
+          specification: expect.any(String)
+        },
+        sortOrder: 30,
+        enabled: true,
+        materialFields: []
+      })
+    ])
+  })
+
+  it('解析逐项额外规则并拒绝空选择、重复项和未知项', () => {
+    expect(resolveReviewItemInputs([{ id: 'DS-03', user_extra_rules: '  检查休眠唤醒  ' }])).toEqual([
+      { id: 'DS-03', name: '状态机审核', user_extra_rules: '检查休眠唤醒' }
+    ])
+    expect(() => resolveReviewItemInputs([])).toThrow('请至少选择一个审查项。')
+    expect(() => resolveReviewItemInputs([{ id: 'DS-03' }, { id: 'DS-03' }])).toThrow(
+      '审查项 DS-03 不能重复选择。'
+    )
+    expect(() => resolveReviewItemInputs([{ id: 'DS-99' }])).toThrow(
+      '审查项 DS-99 不存在或未启用。'
+    )
+  })
+})

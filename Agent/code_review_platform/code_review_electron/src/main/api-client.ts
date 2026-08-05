@@ -1,4 +1,5 @@
 import type { ReviewTemplateKey } from '../shared/review-templates'
+import type { SelectedReviewItemInput } from '../shared/review-items'
 import { REVIEW_REPORT_FILE_NAME } from '../shared/report-artifacts'
 import type {
   ClientUpdatePolicy,
@@ -33,6 +34,8 @@ export interface CreateTaskRequest {
   svn_url: string
   old_revision: string
   new_revision: string
+  review_items?: SelectedReviewItemInput[]
+  review_item_ids?: string[]
   template_key?: ReviewTemplateKey
   skill_name?: string
   requirement_file_path?: string
@@ -186,7 +189,11 @@ export class ApiClient {
   }
 
   createTask(token: string, payload: CreateTaskRequest): Promise<unknown> {
-    const { requirement_file_path: _requirementFilePath, ...requestPayload } = payload
+    const {
+      requirement_file_path: _requirementFilePath,
+      review_items: _reviewItems,
+      ...requestPayload
+    } = payload
     return this.request('/api/v1/review-tasks', {
       method: 'POST',
       headers: this.authHeaders(token),

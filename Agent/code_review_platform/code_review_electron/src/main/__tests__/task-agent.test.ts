@@ -263,6 +263,83 @@ describe('executeReviewTask', () => {
     )
   })
 
+  it('DS-03 结构化任务贯通创建、预检、Codex 和报告上传且原样透传 0', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-ds03-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, 'DS-03_审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    const ds03Request = {
+      svn_url: 'svn://repo/ds03',
+      old_revision: '0',
+      new_revision: 'r30',
+      review_items: [
+        {
+          id: 'DS-03',
+          user_extra_rules: '重点检查休眠唤醒状态'
+        }
+      ]
+    }
+    const serverTask = makeTask({
+      svn_url: ds03Request.svn_url,
+      old_revision: 'r0',
+      new_revision: ds03Request.new_revision,
+      department_name: '软件开发部',
+      review_item_ids: ['DS-03'],
+      skill_name: 'bms-code-reviewer'
+    })
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => serverTask),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      preflightSvn: vi.fn(),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      runCodex: vi.fn(async () => {
+        await writeFile(reportPath, '# DS-03 report\n')
+      }),
+      uploadReport: vi.fn()
+    })
+
+    await expect(
+      executeReviewTask({ token: 'token-123', request: ds03Request }, dependencies)
+    ).resolves.toMatchObject({
+      taskId: 'task-1',
+      status: 'success',
+      reportMarkdown: '# DS-03 report\n'
+    })
+
+    expect(dependencies.api.createTask).toHaveBeenCalledWith('token-123', {
+      ...ds03Request,
+      skill_name: 'bms-code-reviewer',
+      review_item_ids: ['DS-03']
+    })
+    expect(dependencies.preflightSvn).toHaveBeenCalled()
+    expect(dependencies.runCodex).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: serverTask,
+        skillName: 'bms-code-reviewer',
+        reviewItems: [
+          {
+            id: 'DS-03',
+            name: '状态机审核',
+            user_extra_rules: '重点检查休眠唤醒状态'
+          }
+        ],
+        oldRevision: '0',
+        newRevision: 'r30',
+        reportPath
+      })
+    )
+    expect(dependencies.uploadRequirementFile).not.toHaveBeenCalled()
+    expect(dependencies.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-1',
+      reportPath,
+      '# DS-03 report\n'
+    )
+  })
+
   it('发布前清理报告输出元数据并返回稳定的原始Markdown', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-report-metadata-'))
     tempDirs.push(cwd)

@@ -3,7 +3,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { ExecuteTaskRequest, ExecuteTaskResult } from '../code-review-api'
+import type {
+  ExecuteTaskRequest,
+  ExecuteTaskResult,
+  RetryTaskRequest
+} from '../code-review-api'
 import { REVIEW_TASK_TIMEOUT_MS, useTaskQueue } from './useTaskQueue'
 
 const basePayload = (index: number): ExecuteTaskRequest => ({
@@ -1166,6 +1170,79 @@ describe('useTaskQueue', () => {
       ])
     )
     expect(result.current.tasks).toHaveLength(1)
+  })
+
+  it('服务端刷新后仍保留 DS-03 额外规则并在失败重试时原样透传', async () => {
+    const execution = createDeferred<ExecuteTaskResult>()
+    const retry = createDeferred<ExecuteTaskResult>()
+    const executeTask = vi.fn((_payload: ExecuteTaskRequest) => execution.promise)
+    const retryTask = vi.fn((_payload: RetryTaskRequest) => retry.promise)
+    const reviewItems = [{ id: 'DS-03', user_extra_rules: '仅检查休眠唤醒状态' }]
+    const { result } = renderHook(() => useTaskQueue({ executeTask, retryTask }))
+
+    await act(async () => {
+      await result.current.submitTask({
+        svn_url: 'svn://repo/ds03',
+        old_revision: '0',
+        new_revision: '12',
+        review_items: reviewItems
+      })
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
+    const clientTaskId = executeTask.mock.calls[0][0].client_task_id
+
+    act(() => {
+      result.current.applyProgressEvent({
+        taskId: 'task-ds03',
+        clientTaskId,
+        type: 'stage',
+        stage: 'created',
+        message: '任务已创建'
+      })
+      result.current.setServerTasks([
+        {
+          id: 'task-ds03',
+          svn_url: 'svn://repo/ds03',
+          old_revision: '0',
+          new_revision: 'r12',
+          review_item_ids: ['DS-03'],
+          skill_name: 'bms-code-reviewer',
+          status: 'running_codex'
+        }
+      ])
+    })
+
+    await waitFor(() =>
+      expect(result.current.runningTasks[0]?.review_items).toEqual(reviewItems)
+    )
+
+    await act(async () => {
+      execution.reject(new Error('Codex 执行失败'))
+      await execution.promise.catch(() => undefined)
+    })
+    await waitFor(() => expect(result.current.historyTasks[0]?.status).toBe('failed'))
+
+    await act(async () => {
+      await result.current.retryTask(result.current.historyTasks[0])
+    })
+
+    await waitFor(() => expect(retryTask).toHaveBeenCalledTimes(1))
+    expect(retryTask).toHaveBeenCalledWith({
+      task_id: 'task-ds03',
+      client_task_id: clientTaskId,
+      requirement_file_path: undefined,
+      review_items: reviewItems
+    })
+
+    await act(async () => {
+      retry.resolve({
+        taskId: 'task-ds03',
+        status: 'success',
+        reportMarkdown: '# DS-03 report',
+        reportPath: '/tmp/ds03.md'
+      })
+    })
   })
 
   it('历史任务按完成时间倒序展示', () => {
