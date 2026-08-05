@@ -33,4 +33,19 @@ npm run typecheck
 npm run build
 ```
 
+2.0 工作台视觉基线使用独立的本地 fixture 入口，不注入生产 preload，也不会请求服务端、SVN、Codex 或本地材料：
+
+```bash
+npm run dev:workbench
+```
+
+验证构建产物中的预览入口时使用：
+
+```bash
+npm run build
+npm run preview:workbench
+```
+
+默认的 `npm run dev` 和 `npm run preview` 仍进入现有生产任务页。
+
 构建产物输出到 `out/`，不要提交该目录。
