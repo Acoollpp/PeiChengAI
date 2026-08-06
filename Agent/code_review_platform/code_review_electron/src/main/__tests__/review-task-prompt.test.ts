@@ -13,7 +13,8 @@ describe('buildBmsReviewTaskPrompt', () => {
         {
           id: 'DS-03',
           name: '状态机审核',
-          user_extra_rules: '重点检查休眠唤醒状态转换'
+          user_extra_rules: '重点检查休眠唤醒状态转换',
+          materials: []
         }
       ],
       reportPath: '/tmp/task-30/BMS_V2_审查报告.md'
@@ -40,7 +41,7 @@ describe('buildBmsReviewTaskPrompt', () => {
       svnUrl: 'svn://example.com/bms/trunk',
       oldRevision: '12',
       newRevision: '14',
-      reviewItems: [{ id: 'DS-03', name: '状态机审核' }],
+      reviewItems: [{ id: 'DS-03', name: '状态机审核', materials: [] }],
       reportPath: 'relative/report.md'
     }
 
@@ -48,5 +49,40 @@ describe('buildBmsReviewTaskPrompt', () => {
     expect(
       buildBmsReviewTaskPrompt({ ...input, reportPath: 'C:\\review\\report.md' })
     ).toContain('用户额外规则：无')
+  })
+
+  it('DS-01 只输出工作区副本路径且材料与额外规则保持逐项归属', () => {
+    const prompt = buildBmsReviewTaskPrompt({
+      svnUrl: 'svn://example.com/bms/trunk',
+      oldRevision: '120',
+      newRevision: '130',
+      departmentName: 'BMS 软件部',
+      reviewItems: [{
+        id: 'DS-01',
+        name: '变更点审查',
+        user_extra_rules: '仅核对本次协议变更',
+        materials: [
+          {
+            fieldId: 'requirement-sheet', name: '产品开发需求表', required: true,
+            multiple: false, allowedExtensions: ['.xlsx', '.xls'],
+            filePaths: ['/runtime/workspaces/task-31/materials/DS-01/requirement-sheet/需求表.xlsx']
+          },
+          {
+            fieldId: 'product-spec', name: '产品规格书', required: true,
+            multiple: false, allowedExtensions: ['.pdf'],
+            filePaths: ['/runtime/workspaces/task-31/materials/DS-01/product-spec/规格书.pdf']
+          }
+        ]
+      }],
+      reportPath: '/runtime/workspaces/task-31/report.md'
+    })
+
+    expect(prompt).toContain('### DS-01：变更点审查')
+    expect(prompt).toContain('用户额外规则：仅核对本次协议变更')
+    expect(prompt).toContain('产品开发需求表（requirement-sheet）')
+    expect(prompt).toContain('/runtime/workspaces/task-31/materials/DS-01/requirement-sheet/需求表.xlsx')
+    expect(prompt).toContain('/runtime/workspaces/task-31/materials/DS-01/product-spec/规格书.pdf')
+    expect(prompt).not.toContain('/Users/source')
+    expect(prompt).not.toContain('DS-03')
   })
 })

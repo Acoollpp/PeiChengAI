@@ -24,6 +24,7 @@ import {
 import { resolveReviewReportFileName, type RunSvnLog } from './svn-report-name-resolver'
 import { CODEX_REVIEW_LOG_FILE_NAME } from './task-log'
 import { buildBmsReviewTaskPrompt } from './review-task-prompt'
+import { prepareReviewTaskMaterials } from './review-task-materials'
 import {
   BMS_CODE_REVIEW_SKILL_NAME,
   resolveReviewItemInputs,
@@ -60,6 +61,7 @@ export interface PreparedWorkspace {
   imagesDir: string
   codexLogPath?: string
   requirementFilePath?: string
+  reviewItems?: ResolvedReviewItemInput[]
 }
 
 export interface PrepareWorkspaceInput {
@@ -69,6 +71,7 @@ export interface PrepareWorkspaceInput {
   newRevision: string
   svnCommand: string
   requirementFilePath?: string
+  reviewItems?: ResolvedReviewItemInput[]
   generatedAt?: Date
   runSvnLog?: RunSvnLog
 }
@@ -180,12 +183,16 @@ export const defaultPrepareWorkspace = async ({
   newRevision,
   svnCommand,
   requirementFilePath,
+  reviewItems,
   generatedAt,
   runSvnLog
 }: PrepareWorkspaceInput): Promise<PreparedWorkspace> => {
   const runtimePaths = await getRuntimePaths()
   const cwd = runtimePaths.workspaceForTask(taskId)
   const imagesDir = runtimePaths.imagesDirForTask(taskId)
+  const preparedReviewItems = reviewItems
+    ? await prepareReviewTaskMaterials(reviewItems, join(cwd, 'materials'))
+    : undefined
   const reportFileName = await resolveReviewReportFileName({
     svnCommand,
     svnUrl,
@@ -198,7 +205,7 @@ export const defaultPrepareWorkspace = async ({
   await mkdir(cwd, { recursive: true })
   await mkdir(imagesDir, { recursive: true })
   const workspaceRequirementFilePath = await prepareRequirementFile(
-    requirementFilePath,
+    reviewItems ? undefined : requirementFilePath,
     join(cwd, 'requirements')
   )
 
@@ -208,7 +215,8 @@ export const defaultPrepareWorkspace = async ({
     imagesDir,
     codexLogPath:
       runtimePaths.codexLogPathForTask?.(taskId) ?? join(cwd, CODEX_REVIEW_LOG_FILE_NAME),
-    requirementFilePath: workspaceRequirementFilePath
+    requirementFilePath: workspaceRequirementFilePath,
+    ...(preparedReviewItems ? { reviewItems: preparedReviewItems } : {})
   }
 }
 
@@ -321,13 +329,20 @@ export const executeReviewTask = async (
   const reviewItems = input.request.review_items
     ? resolveReviewItemInputs(input.request.review_items)
     : undefined
-  const createRequest = reviewItems
-    ? {
-        ...input.request,
-        skill_name: BMS_CODE_REVIEW_SKILL_NAME,
-        review_item_ids: reviewItems.map((item) => item.id)
-      }
-    : input.request
+  let createRequest: CreateTaskRequest = input.request
+  if (reviewItems) {
+    const {
+      review_items: _localReviewItems,
+      requirement_file_path: _legacyRequirementFilePath,
+      requirement_file_name: _legacyRequirementFileName,
+      ...serverRequest
+    } = input.request
+    createRequest = {
+      ...serverRequest,
+      skill_name: BMS_CODE_REVIEW_SKILL_NAME,
+      review_item_ids: reviewItems.map((item) => item.id)
+    }
+  }
   const task = toReviewTask(await dependencies.api.createTask(input.token, createRequest))
   emitStage(onProgress, task.id, input.clientTaskId, 'created', '任务已创建')
 
@@ -338,7 +353,7 @@ export const executeReviewTask = async (
     reviewItems,
     oldRevision: input.request.old_revision,
     newRevision: input.request.new_revision,
-    requirementFilePath: input.request.requirement_file_path,
+    requirementFilePath: reviewItems ? undefined : input.request.requirement_file_path,
     clientTaskId: input.clientTaskId,
     signal: input.signal
   }, dependencies, onProgress)
@@ -365,7 +380,7 @@ export const retryReviewTask = async (
     token: input.token,
     task,
     reviewItems,
-    requirementFilePath: input.requirementFilePath,
+    requirementFilePath: reviewItems ? undefined : input.requirementFilePath,
     clientTaskId: input.clientTaskId,
     signal: input.signal
   }, dependencies, onProgress)
@@ -447,11 +462,23 @@ const runExistingReviewTask = async (
       oldRevision: task.old_revision,
       newRevision: task.new_revision,
       svnCommand: environment.svnPath,
-      requirementFilePath: input.requirementFilePath
+      ...(input.requirementFilePath
+        ? { requirementFilePath: input.requirementFilePath }
+        : {}),
+      ...(input.reviewItems ? { reviewItems: input.reviewItems } : {})
     })
     throwIfCancelled(input.signal)
 
-    if (workspace.requirementFilePath) {
+    const reviewItemsForCodex = input.reviewItems
+      ? workspace.reviewItems ?? (input.reviewItems.some((item) => item.materials.length > 0)
+        ? undefined
+        : input.reviewItems)
+      : undefined
+    if (input.reviewItems && !reviewItemsForCodex) {
+      throw new Error('审查材料工作区准备结果缺失，未启动 Codex。')
+    }
+
+    if (!input.reviewItems && workspace.requirementFilePath) {
       try {
         await dependencies.uploadRequirementFile(input.token, task.id, workspace.requirementFilePath)
       } catch {
@@ -471,13 +498,14 @@ const runExistingReviewTask = async (
       status: 'running_codex'
     })
 
+    const { requirementFilePath: _legacyWorkspaceRequirementFilePath, ...bmsWorkspace } = workspace
     await dependencies.runCodex({
-      ...workspace,
+      ...(input.reviewItems ? bmsWorkspace : workspace),
       skillName,
       task,
-      ...(input.reviewItems
+      ...(reviewItemsForCodex
         ? {
-            reviewItems: input.reviewItems,
+            reviewItems: reviewItemsForCodex,
             oldRevision: input.oldRevision ?? task.old_revision,
             newRevision: input.newRevision ?? task.new_revision
           }

@@ -122,6 +122,7 @@ export function ReviewItemSelector({
         fieldId,
         currentFiles.map((value) => value.id)
       )
+      if (!file) return
       updateInput(activeItem.id, (input) => ({
         ...input,
         materials: {

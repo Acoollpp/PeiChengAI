@@ -38,8 +38,12 @@ interface ProductionReviewWorkbenchProps {
   onInstallSkill: () => Promise<void>
 }
 
+const productionReviewItemIds = new Set<ReviewItemId>(['DS-01', 'DS-03'])
+const isProductionReviewItemId = (id: string): id is ReviewItemId =>
+  productionReviewItemIds.has(id as ReviewItemId)
+
 const productionCatalog: ReviewItemDefinition[] = REVIEW_ITEM_CATALOG.filter(
-  (item) => item.enabled && item.id === 'DS-03'
+  (item) => item.enabled && isProductionReviewItemId(item.id)
 ).map((item) => ({
   id: item.id as ReviewItemId,
   category: item.category.name,
@@ -48,7 +52,14 @@ const productionCatalog: ReviewItemDefinition[] = REVIEW_ITEM_CATALOG.filter(
   goal: item.details.target,
   process: [item.details.process],
   specification: item.details.specification,
-  materialFields: []
+  materialFields: item.materialFields.map((field) => ({
+    id: field.id,
+    label: field.name,
+    description: field.description,
+    required: field.required,
+    extensions: [...field.allowedExtensions],
+    multiplicity: field.multiple ? 'multiple' : 'single'
+  }))
 }))
 
 const phaseOrder: Array<Exclude<TaskStage, 'waiting' | 'failed' | 'cancelled'>> = [
@@ -93,11 +104,16 @@ const formatTime = (task: TaskViewItem): string => {
   })
 }
 const itemIds = (task: TaskViewItem): ReviewItemId[] =>
-  (task.review_item_ids ?? []).filter((id): id is ReviewItemId => id === 'DS-03')
+  (task.review_item_ids ?? []).filter(isProductionReviewItemId)
 const taskTitle = (task: TaskViewItem): string => {
   const reportName = task.report_name?.replace(/\.(md|markdown)$/i, '').trim()
   if (reportName) return reportName
-  return itemIds(task).length > 0 ? 'DS-03 状态机审核' : `审查任务 ${task.id}`
+  const ids = itemIds(task)
+  if (ids.length === 1) {
+    const definition = productionCatalog.find((item) => item.id === ids[0])
+    return definition ? `${definition.id} ${definition.name}` : `审查任务 ${task.id}`
+  }
+  return ids.length > 1 ? `${ids.join(' + ')} 审查` : `审查任务 ${task.id}`
 }
 const extractedIssueCount = (markdown: string | undefined): number | undefined => {
   if (!markdown) return undefined
@@ -134,6 +150,11 @@ const toReportViewModel = (task: TaskViewItem): ReviewReportViewModel => ({
 })
 const emptySample: CreateTaskCommand = { svnUrl: '', oldRevision: '', newRevision: '', selection: {} }
 const commandResult = (message: string): PreviewCommandResult => ({ message })
+const formatFileSize = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 const isRendererForeground = (): boolean =>
   document.visibilityState === 'visible' && document.hasFocus()
 
@@ -284,19 +305,33 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
 
   const createTask = useCallback(async (input: CreateTaskCommand): Promise<PreviewCommandResult> => {
     if (createTaskInFlightRef.current) return commandResult('任务正在创建，请勿重复提交。')
-    const selectedIds = Object.keys(input.selection)
-    if (selectedIds.length !== 1 || selectedIds[0] !== 'DS-03') {
-      showNotice('生产任务当前只支持 DS-03 状态机审核。')
-      return commandResult('生产任务当前只支持 DS-03 状态机审核。')
+    const selectedIds = Object.keys(input.selection) as ReviewItemId[]
+    if (
+      selectedIds.length !== 1 ||
+      !isProductionReviewItemId(selectedIds[0])
+    ) {
+      showNotice('生产任务当前只支持单独选择 DS-01 或 DS-03。')
+      return commandResult('生产任务当前只支持单独选择 DS-01 或 DS-03。')
     }
     if (!canCreateTask) {
       showNotice('本地环境就绪后才可发起审查。')
       return commandResult('本地环境就绪后才可发起审查。')
     }
+    const selectedId = selectedIds[0]
+    const selectedInput = input.selection[selectedId]
+    const materials = Object.entries(selectedInput?.materials ?? {}).map(([fieldId, files]) => ({
+      field_id: fieldId,
+      file_paths: files.map((file) => file.id)
+    }))
     const payload = {
       svn_url: input.svnUrl.trim(), old_revision: input.oldRevision.trim(), new_revision: input.newRevision.trim(),
-      review_items: [{ id: 'DS-03', ...(input.selection['DS-03']?.extraRules.trim()
-        ? { user_extra_rules: input.selection['DS-03']?.extraRules.trim() } : {}) }],
+      review_items: [{
+        id: selectedId,
+        ...(selectedInput?.extraRules.trim()
+          ? { user_extra_rules: selectedInput.extraRules.trim() }
+          : {}),
+        ...(materials.length > 0 ? { materials } : {})
+      }],
       skill_name: BMS_CODE_REVIEW_SKILL_NAME
     }
     createTaskInFlightRef.current = true
@@ -438,7 +473,18 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
         feedbackInFlightRef.current = false
       }
     },
-    async chooseMaterial() { throw new Error('DS-03 不需要专项材料。') },
+    async chooseMaterial(itemId, fieldId) {
+      const result = await window.codeReview.selectReviewMaterialFile({
+        review_item_id: itemId,
+        field_id: fieldId
+      })
+      if (result.status === 'cancelled') return null
+      return {
+        id: result.filePath,
+        name: result.fileName,
+        sizeLabel: formatFileSize(result.fileSize)
+      }
+    },
     async dismissNotice() {
       setNotice(undefined)
       setNoticeAction(undefined)

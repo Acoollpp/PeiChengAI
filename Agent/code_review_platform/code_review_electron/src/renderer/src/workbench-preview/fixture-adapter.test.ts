@@ -71,6 +71,7 @@ describe('fixture workbench adapter', () => {
       currentFile ? [currentFile.id] : []
     )
 
+    if (!replacement) throw new Error('fixture 应返回替换材料')
     expect(replacement.id).not.toBe(currentFile?.id)
     expect(replacement.name).not.toBe(currentFile?.name)
   })

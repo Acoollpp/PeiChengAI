@@ -49,6 +49,42 @@ describe('useTaskQueue', () => {
     expect(REVIEW_TASK_TIMEOUT_MS).toBe(60 * 60 * 1000)
   })
 
+  it('DS-01 等待任务只保留原始本地材料路径', async () => {
+    const executions = [
+      createDeferred<ExecuteTaskResult>(),
+      createDeferred<ExecuteTaskResult>()
+    ]
+    const executeTask = vi.fn(() => executions[executeTask.mock.calls.length - 1].promise)
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
+    const reviewItems = [{
+      id: 'DS-01',
+      materials: [
+        { field_id: 'requirement-sheet', file_paths: ['/source/requirements.xlsx'] },
+        { field_id: 'product-spec', file_paths: ['/source/specification.pdf'] }
+      ]
+    }]
+
+    await act(async () => {
+      await result.current.submitTask(basePayload(1))
+      await result.current.submitTask(basePayload(2))
+      await result.current.submitTask({
+        svn_url: 'svn://repo/ds01',
+        old_revision: '120',
+        new_revision: '130',
+        review_items: reviewItems,
+        skill_name: 'bms-code-reviewer'
+      })
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(2))
+    expect(result.current.queuedTasks).toHaveLength(1)
+    expect(result.current.queuedTasks[0].executePayload).toEqual(expect.objectContaining({
+      review_items: reviewItems,
+      client_task_id: expect.stringMatching(/^local-/)
+    }))
+    expect(JSON.stringify(result.current.queuedTasks[0])).not.toContain('workspace')
+  })
+
   it('初始加载 2 个服务端运行任务时新提交任务仍按本地并发上限执行', async () => {
     const deferreds = [
       createDeferred<ExecuteTaskResult>(),

@@ -152,7 +152,7 @@ export interface WorkbenchCommands {
     itemId: ReviewItemId,
     fieldId: string,
     currentFileIds?: string[]
-  ): Promise<MaterialFileView>
+  ): Promise<MaterialFileView | null>
   dismissNotice(): Promise<void>
 }
 

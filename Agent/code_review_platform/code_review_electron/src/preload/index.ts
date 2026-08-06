@@ -28,6 +28,8 @@ import type {
   SvnLoginRequest,
   ReviewTasksResponse,
   SelectRequirementFileResult,
+  SelectReviewMaterialFileRequest,
+  SelectReviewMaterialFileResult,
   TaskCompletionNotificationPayload,
   TaskCompletionNotificationResult,
   TaskProgressEvent
@@ -97,6 +99,10 @@ contextBridge.exposeInMainWorld('codeReview', {
     ipcRenderer.invoke('task:open-log', { taskId }),
   selectRequirementFile: (): Promise<SelectRequirementFileResult> =>
     ipcRenderer.invoke('requirement-file:select'),
+  selectReviewMaterialFile: (
+    payload: SelectReviewMaterialFileRequest
+  ): Promise<SelectReviewMaterialFileResult> =>
+    invoke('review-material-file:select', payload),
   getPathForPastedFile: (file: File): string => webUtils.getPathForFile(file),
   onTaskProgress: (callback: (event: TaskProgressEvent) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progressEvent: TaskProgressEvent): void => {

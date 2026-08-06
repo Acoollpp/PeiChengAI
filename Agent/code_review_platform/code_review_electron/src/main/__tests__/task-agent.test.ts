@@ -310,7 +310,9 @@ describe('executeReviewTask', () => {
     })
 
     expect(dependencies.api.createTask).toHaveBeenCalledWith('token-123', {
-      ...ds03Request,
+      svn_url: ds03Request.svn_url,
+      old_revision: ds03Request.old_revision,
+      new_revision: ds03Request.new_revision,
       skill_name: 'bms-code-reviewer',
       review_item_ids: ['DS-03']
     })
@@ -323,7 +325,8 @@ describe('executeReviewTask', () => {
           {
             id: 'DS-03',
             name: '状态机审核',
-            user_extra_rules: '重点检查休眠唤醒状态'
+            user_extra_rules: '重点检查休眠唤醒状态',
+            materials: []
           }
         ],
         oldRevision: '0',
@@ -338,6 +341,214 @@ describe('executeReviewTask', () => {
       reportPath,
       '# DS-03 report\n'
     )
+  })
+
+  it('DS-01 只把工作区材料交给 Codex，服务端创建与旧需求表上传均不接收材料', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-ds01-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, 'DS-01_审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    const requirementSource = '/local/source/产品开发需求表.xlsx'
+    const specificationSource = '/local/source/产品规格书.pdf'
+    const legacyRequirementSource = '/legacy/source/不得上传的需求表.xlsx'
+    const request = {
+      svn_url: 'svn://repo/ds01',
+      old_revision: '120',
+      new_revision: '130',
+      requirement_file_path: legacyRequirementSource,
+      requirement_file_name: '不得发送到服务端.xlsx',
+      review_items: [{
+        id: 'DS-01',
+        user_extra_rules: '仅核对协议导入',
+        materials: [
+          { field_id: 'requirement-sheet', file_paths: [requirementSource] },
+          { field_id: 'product-spec', file_paths: [specificationSource] }
+        ]
+      }]
+    }
+    const serverTask = makeTask({
+      svn_url: request.svn_url,
+      old_revision: request.old_revision,
+      new_revision: request.new_revision,
+      review_item_ids: ['DS-01'],
+      skill_name: 'bms-code-reviewer'
+    })
+    const requirementCopy = join(cwd, 'materials', 'DS-01', 'requirement-sheet', '产品开发需求表.xlsx')
+    const specificationCopy = join(cwd, 'materials', 'DS-01', 'product-spec', '产品规格书.pdf')
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => serverTask),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      preflightSvn: vi.fn(),
+      prepareWorkspace: vi.fn(async (
+        input: Parameters<TaskAgentDependencies['prepareWorkspace']>[0]
+      ) => ({
+        cwd,
+        reportPath,
+        imagesDir,
+        reviewItems: input.reviewItems?.map((item) => ({
+          ...item,
+          materials: item.materials.map((material) => ({
+            ...material,
+            filePaths: [material.fieldId === 'requirement-sheet' ? requirementCopy : specificationCopy]
+          }))
+        }))
+      })),
+      runCodex: vi.fn(async () => {
+        await writeFile(reportPath, '# DS-01 report\n')
+      }),
+      uploadReport: vi.fn()
+    })
+
+    await expect(executeReviewTask({ token: 'token-123', request }, dependencies)).resolves.toMatchObject({
+      taskId: 'task-1', status: 'success'
+    })
+
+    expect(dependencies.api.createTask).toHaveBeenCalledWith('token-123', {
+      svn_url: request.svn_url,
+      old_revision: request.old_revision,
+      new_revision: request.new_revision,
+      skill_name: 'bms-code-reviewer',
+      review_item_ids: ['DS-01']
+    })
+    expect(JSON.stringify(vi.mocked(dependencies.api.createTask).mock.calls)).not.toContain('/local/source')
+    expect(JSON.stringify(vi.mocked(dependencies.api.createTask).mock.calls)).not.toContain('/legacy/source')
+    expect(JSON.stringify(vi.mocked(dependencies.api.createTask).mock.calls)).not.toContain('不得发送到服务端.xlsx')
+    expect(dependencies.prepareWorkspace).toHaveBeenCalledWith(expect.objectContaining({
+      reviewItems: [expect.objectContaining({
+        id: 'DS-01',
+        materials: [
+          expect.objectContaining({ fieldId: 'requirement-sheet', filePaths: [requirementSource] }),
+          expect.objectContaining({ fieldId: 'product-spec', filePaths: [specificationSource] })
+        ]
+      })]
+    }))
+    expect(dependencies.runCodex).toHaveBeenCalledWith(expect.objectContaining({
+      reviewItems: [expect.objectContaining({
+        id: 'DS-01',
+        user_extra_rules: '仅核对协议导入',
+        materials: [
+          expect.objectContaining({ filePaths: [requirementCopy] }),
+          expect.objectContaining({ filePaths: [specificationCopy] })
+        ]
+      })]
+    }))
+    expect(JSON.stringify(vi.mocked(dependencies.prepareWorkspace).mock.calls)).not.toContain(legacyRequirementSource)
+    expect(JSON.stringify(vi.mocked(dependencies.runCodex).mock.calls)).not.toContain(legacyRequirementSource)
+    expect(dependencies.uploadRequirementFile).not.toHaveBeenCalled()
+  })
+
+  it('DS-01 从头重试时忽略混入的旧需求表字段且 Codex 只接收工作区副本', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-ds01-retry-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, 'DS-01_重试审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    const requirementSource = '/local/source/重试需求表.xlsx'
+    const specificationSource = '/local/source/重试规格书.pdf'
+    const legacyRequirementSource = '/legacy/source/不得复制的旧需求表.xls'
+    const requirementCopy = join(cwd, 'materials', 'DS-01', 'requirement-sheet', '重试需求表.xlsx')
+    const specificationCopy = join(cwd, 'materials', 'DS-01', 'product-spec', '重试规格书.pdf')
+    const reviewItems = [{
+      id: 'DS-01',
+      user_extra_rules: '从头重新核对',
+      materials: [
+        { field_id: 'requirement-sheet', file_paths: [requirementSource] },
+        { field_id: 'product-spec', file_paths: [specificationSource] }
+      ]
+    }]
+    const serverTask = makeTask({
+      id: 'task-ds01-retry',
+      status: 'failed',
+      review_item_ids: ['DS-01'],
+      skill_name: 'bms-code-reviewer'
+    })
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(),
+        readTask: vi.fn(async () => serverTask),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      preflightSvn: vi.fn(),
+      prepareWorkspace: vi.fn(async (
+        input: Parameters<TaskAgentDependencies['prepareWorkspace']>[0]
+      ) => ({
+        cwd,
+        reportPath,
+        imagesDir,
+        requirementFilePath: legacyRequirementSource,
+        reviewItems: input.reviewItems?.map((item) => ({
+          ...item,
+          materials: item.materials.map((material) => ({
+            ...material,
+            filePaths: [material.fieldId === 'requirement-sheet' ? requirementCopy : specificationCopy]
+          }))
+        }))
+      })),
+      runCodex: vi.fn(async () => {
+        await writeFile(reportPath, '# DS-01 retry report\n')
+      }),
+      uploadReport: vi.fn()
+    })
+
+    await expect(retryReviewTask({
+      token: 'token-123',
+      taskId: serverTask.id,
+      clientTaskId: serverTask.id,
+      requirementFilePath: legacyRequirementSource,
+      reviewItems
+    }, dependencies)).resolves.toMatchObject({
+      taskId: serverTask.id,
+      status: 'success'
+    })
+
+    const workspaceCalls = JSON.stringify(vi.mocked(dependencies.prepareWorkspace).mock.calls)
+    const codexCalls = JSON.stringify(vi.mocked(dependencies.runCodex).mock.calls)
+    expect(workspaceCalls).not.toContain(legacyRequirementSource)
+    expect(codexCalls).not.toContain(legacyRequirementSource)
+    expect(codexCalls).not.toContain(requirementSource)
+    expect(codexCalls).not.toContain(specificationSource)
+    expect(codexCalls).toContain(requirementCopy)
+    expect(codexCalls).toContain(specificationCopy)
+    expect(dependencies.uploadRequirementFile).not.toHaveBeenCalled()
+  })
+
+  it('DS-01 材料准备失败时先标记任务失败且绝不启动 Codex', async () => {
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => makeTask({ review_item_ids: ['DS-01'] })),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      preflightSvn: vi.fn(),
+      prepareWorkspace: vi.fn(async () => {
+        throw new Error('审查材料无效：DS-01 产品规格书不存在，请重新选择。')
+      }),
+      runCodex: vi.fn(),
+      uploadReport: vi.fn()
+    })
+    const invalidRequest = {
+      svn_url: 'svn://repo/ds01', old_revision: '120', new_revision: '130',
+      review_items: [{
+        id: 'DS-01',
+        materials: [
+          { field_id: 'requirement-sheet', file_paths: ['/source/requirements.xlsx'] },
+          { field_id: 'product-spec', file_paths: ['/source/missing.pdf'] }
+        ]
+      }]
+    }
+
+    await expect(
+      executeReviewTask({ token: 'token-123', request: invalidRequest }, dependencies)
+    ).rejects.toThrow('DS-01 产品规格书不存在')
+    expect(dependencies.runCodex).not.toHaveBeenCalled()
+    expect(dependencies.uploadRequirementFile).not.toHaveBeenCalled()
+    expect(dependencies.api.updateTaskStatus).toHaveBeenLastCalledWith('token-123', 'task-1', {
+      status: 'failed',
+      error_message: '审查材料无效：DS-01 产品规格书不存在，请重新选择。'
+    })
   })
 
   it('发布前清理报告输出元数据并返回稳定的原始Markdown', async () => {

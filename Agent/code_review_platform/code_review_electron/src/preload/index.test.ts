@@ -136,6 +136,16 @@ describe('preload codeReview API', () => {
     expect(invokeMock).toHaveBeenCalledWith('task:preflight', payload)
   })
 
+  it('通过类型化 IPC 选择 DS-01 本地材料', async () => {
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+    const payload = { review_item_id: 'DS-01', field_id: 'product-spec' }
+
+    await api.selectReviewMaterialFile(payload)
+
+    expect(invokeMock).toHaveBeenCalledWith('review-material-file:select', payload)
+  })
+
   it('移除任务 IPC 错误中的 Electron 英文调用前缀', async () => {
     invokeMock.mockRejectedValueOnce(
       new Error("Error invoking remote method 'task:execute': Error: SVN 新旧版本范围无效，请确保旧版本小于新版本。")

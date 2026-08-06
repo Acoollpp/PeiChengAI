@@ -155,9 +155,10 @@ const captureViewport = async (browser, viewport) => {
       animations: 'disabled'
     })
 
+    await dialog.getByRole('button', { name: /^移除 PCH-BMS-SPEC/ }).click()
     await dialog
       .locator('.wb-selector-footer')
-      .getByRole('button', { name: '取消', exact: true })
+      .getByRole('button', { name: /确认选择/ })
       .click()
     await page
       .getByLabel('SVN 地址')
@@ -194,12 +195,16 @@ const captureViewport = async (browser, viewport) => {
         revisionErrorClearsSelection: Boolean(
           revisionError && selection && revisionError.bottom <= selection.top
         ),
+        materialErrorVisible: alerts.some((alert) =>
+          alert.textContent?.includes('DS-01 产品规格书未选择')
+        ),
         submitDisabled: Boolean(document.querySelector('.wb-submit-button')?.disabled)
       }
     })
     assert(!errorMetrics.panelHorizontalOverflow, `${label}：错误态创建面板横向溢出。`)
-    assert(errorMetrics.alertCount === 2, `${label}：没有显示两条长中文错误。`)
-    assert(!errorMetrics.alertsOverlap, `${label}：两条错误提示发生重叠。`)
+    assert(errorMetrics.alertCount === 3, `${label}：没有同时显示 SVN、revision 和材料错误。`)
+    assert(errorMetrics.materialErrorVisible, `${label}：没有显示 DS-01 产品规格书缺失错误。`)
+    assert(!errorMetrics.alertsOverlap, `${label}：错误提示发生重叠。`)
     assert(errorMetrics.svnErrorClearsRevision, `${label}：SVN 错误与 revision 输入重叠。`)
     assert(errorMetrics.revisionErrorClearsSelection, `${label}：revision 错误与审查项区域重叠。`)
     assert(errorMetrics.submitDisabled, `${label}：错误态仍可提交。`)

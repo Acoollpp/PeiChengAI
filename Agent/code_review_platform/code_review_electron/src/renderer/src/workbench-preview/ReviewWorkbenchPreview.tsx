@@ -63,7 +63,8 @@ const cloneSelection = (selection: ReviewSelection): ReviewSelection => structur
 const validateForm = (
   draft: Omit<CreateTaskCommand, 'selection'>,
   selection: ReviewSelection,
-  catalog: ReviewItemDefinition[]
+  catalog: ReviewItemDefinition[],
+  singleSelectionOnly = false
 ): FormErrors => {
   const errors: FormErrors = {}
   const svnUrl = draft.svnUrl.trim()
@@ -90,14 +91,27 @@ const validateForm = (
   if (selectedIds.length === 0) {
     errors.selection = '至少选择一个审查项。'
   } else {
+    if (singleSelectionOnly && selectedIds.length > 1) {
+      errors.selection = '当前版本每个任务只能选择一个审查项。'
+    }
     const materialErrors: string[] = []
     selectedIds.forEach((itemId) => {
       const definition = catalog.find((item) => item.id === itemId)
       const input = selection[itemId]
       definition?.materialFields.forEach((field) => {
-        if (field.required && (input?.materials[field.id]?.length ?? 0) === 0) {
+        const files = input?.materials[field.id] ?? []
+        if (field.required && files.length === 0) {
           materialErrors.push(`${itemId} ${field.label}未选择`)
         }
+        if (field.multiplicity === 'single' && files.length > 1) {
+          materialErrors.push(`${itemId} ${field.label}只能选择一个文件`)
+        }
+        files.forEach((file) => {
+          const normalizedName = file.name.toLowerCase()
+          if (!field.extensions.some((extension) => normalizedName.endsWith(extension.toLowerCase()))) {
+            materialErrors.push(`${itemId} ${field.label}仅支持 ${field.extensions.join('、')} 文件`)
+          }
+        })
       })
     })
     if (materialErrors.length > 0) errors.materials = materialErrors
@@ -494,7 +508,12 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
     }
   }, [selectorOpen])
 
-  const errors = validateForm(draft, selection, viewModel.catalog)
+  const errors = validateForm(
+    draft,
+    selection,
+    viewModel.catalog,
+    viewModel.mode === 'production'
+  )
   const formValid = Object.keys(errors).length === 0
   const chosenItems = selectedItems(selection, viewModel.catalog)
   const catalogIdLabel = viewModel.catalog.map((item) => item.id).join('、')

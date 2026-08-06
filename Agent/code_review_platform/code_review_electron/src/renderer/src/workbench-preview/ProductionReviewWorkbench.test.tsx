@@ -36,6 +36,7 @@ const setupCodeReviewApi = (): void => {
     retryTask: vi.fn(),
     cancelTask: vi.fn(async () => ({ status: 'cancelled' as const })),
     onTaskProgress: vi.fn(() => vi.fn()),
+    selectReviewMaterialFile: vi.fn(async () => ({ status: 'cancelled' as const })),
     openPdfReport: vi.fn(async () => ({
       status: 'ready' as const,
       pdfPath: '/reports/task-production-1.pdf'
@@ -114,9 +115,10 @@ describe('ProductionReviewWorkbench', () => {
     await user.type(screen.getByLabelText('新 revision'), '10772')
     await user.click(screen.getByRole('button', { name: '选择' }))
     expect(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' })).toBeInTheDocument()
-    expect(screen.queryByRole('checkbox', { name: /DS-01/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: '选择 DS-01 变更点审查' })).toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: /DS-02/ })).not.toBeInTheDocument()
     await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
+    await user.click(screen.getByRole('button', { name: /DS-03.*状态机审核/ }))
     await user.type(screen.getByLabelText('DS-03 额外规则'), '重点检查故障恢复路径')
     await user.click(screen.getByRole('button', { name: '确认选择（1）' }))
     await user.click(screen.getByRole('button', { name: '创建审查任务' }))
@@ -156,6 +158,87 @@ describe('ProductionReviewWorkbench', () => {
       taskId: 'task-production-1',
       anchors: expect.any(Array)
     })
+  })
+
+  it('通过系统文件选择器提交 DS-01 的 Excel、PDF 和独立额外规则', async () => {
+    const user = userEvent.setup()
+    const longRequirementName = 'BMS_平台_V2.7_低压上下电与故障恢复产品开发需求表_最终评审修订版_20260806.xlsx'
+    vi.mocked(window.codeReview.selectReviewMaterialFile)
+      .mockResolvedValueOnce({
+        status: 'selected',
+        filePath: `/local/materials/${longRequirementName}`,
+        fileName: longRequirementName,
+        fileSize: 2048
+      })
+      .mockResolvedValueOnce({
+        status: 'selected',
+        filePath: '/local/materials/产品规格书.pdf',
+        fileName: '产品规格书.pdf',
+        fileSize: 4096
+      })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await user.type(await screen.findByLabelText('SVN 地址'), 'svn://server/ds01')
+    await user.type(screen.getByLabelText('旧 revision'), '120')
+    await user.type(screen.getByLabelText('新 revision'), '130')
+    await user.click(screen.getByRole('button', { name: '选择' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-01 变更点审查' }))
+    await user.type(screen.getByLabelText('DS-01 额外规则'), '仅核对本次协议导入')
+    await user.click(screen.getAllByRole('button', { name: '选择文件' })[0])
+    const longName = await screen.findByText(longRequirementName)
+    expect(longName).toHaveAttribute('title', longRequirementName)
+    await user.click(screen.getByRole('button', { name: '选择文件' }))
+    await user.click(screen.getByRole('button', { name: '确认选择（1）' }))
+    expect(screen.getByText('已选 1 项 · 2 个材料文件')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '创建审查任务' }))
+
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        svn_url: 'svn://server/ds01',
+        old_revision: '120',
+        new_revision: '130',
+        skill_name: 'bms-code-reviewer',
+        review_items: [{
+          id: 'DS-01',
+          user_extra_rules: '仅核对本次协议导入',
+          materials: [
+            {
+              field_id: 'requirement-sheet',
+              file_paths: [`/local/materials/${longRequirementName}`]
+            },
+            { field_id: 'product-spec', file_paths: ['/local/materials/产品规格书.pdf'] }
+          ]
+        }]
+      })
+    ))
+  })
+
+  it('DS-01 一次显示缺失材料和错误扩展名，且多审查项不能提交', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.selectReviewMaterialFile).mockResolvedValueOnce({
+      status: 'selected',
+      filePath: '/local/materials/错误格式.txt',
+      fileName: '错误格式.txt',
+      fileSize: 128
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.type(await screen.findByLabelText('SVN 地址'), 'svn://server/ds01-invalid')
+    await user.type(screen.getByLabelText('旧 revision'), '120')
+    await user.type(screen.getByLabelText('新 revision'), '130')
+    await user.click(screen.getByRole('button', { name: '选择' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-01 变更点审查' }))
+    await user.click(screen.getAllByRole('button', { name: '选择文件' })[0])
+    await user.click(screen.getByRole('button', { name: '确认选择（1）' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('DS-01 产品开发需求表仅支持 .xlsx、.xls 文件')
+    expect(screen.getByRole('alert')).toHaveTextContent('DS-01 产品规格书未选择')
+    expect(screen.getByRole('button', { name: '创建审查任务' })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: '调整' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
+    await user.click(screen.getByRole('button', { name: '确认选择（2）' }))
+    expect(screen.getByText('当前版本每个任务只能选择一个审查项。')).toBeInTheDocument()
+    expect(window.codeReview.executeTask).not.toHaveBeenCalled()
   })
 
   it('后台系统通知成功时不显示应用内完成提醒，点击通知可打开对应 Markdown', async () => {
