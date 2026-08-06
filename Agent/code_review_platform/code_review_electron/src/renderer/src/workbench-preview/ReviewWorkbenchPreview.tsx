@@ -23,7 +23,9 @@ import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+import { MarkdownPreview } from '../components/MarkdownPreview'
 import { ReviewItemSelector } from './ReviewItemSelector'
+import { formatRevisionLabel, isRevisionValue, normalizeRevisionDigits } from './revision'
 import type {
   CreateTaskCommand,
   FeedbackScreenshotView,
@@ -71,15 +73,15 @@ const validateForm = (
     errors.svnUrl = 'SVN 地址必须以 svn://、http:// 或 https:// 开头，请检查完整路径后重试。'
   }
 
-  if (!/^\d+$/.test(draft.oldRevision.trim())) {
+  if (!isRevisionValue(draft.oldRevision)) {
     errors.oldRevision = '旧 revision 必须是大于或等于 0 的整数。'
   }
-  if (!/^[1-9]\d*$/.test(draft.newRevision.trim())) {
+  if (!isRevisionValue(draft.newRevision) || Number(normalizeRevisionDigits(draft.newRevision)) === 0) {
     errors.newRevision = '新 revision 必须是大于 0 的整数。'
   } else if (
-    /^\d+$/.test(draft.oldRevision.trim()) &&
-    Number(draft.oldRevision) !== 0 &&
-    Number(draft.newRevision) <= Number(draft.oldRevision)
+    isRevisionValue(draft.oldRevision) &&
+    Number(normalizeRevisionDigits(draft.oldRevision)) !== 0 &&
+    Number(normalizeRevisionDigits(draft.newRevision)) <= Number(normalizeRevisionDigits(draft.oldRevision))
   ) {
     errors.newRevision = '新 revision 必须大于旧 revision；旧 revision 为 0 时将保持原值交由 Skill 判断。'
   }
@@ -126,7 +128,7 @@ const TaskTableRow = ({
   <article className={`wb-task-table-row ${taskStageClass(task)}`} aria-label={`${task.id} ${task.title}`}>
     <div className="wb-task-identity">
       <strong>{task.title}</strong>
-      <span>{task.id} · r{task.oldRevision} → r{task.newRevision} · {task.reviewItemIds.join(' / ')}</span>
+      <span>{task.id} · {formatRevisionLabel(task.oldRevision)} → {formatRevisionLabel(task.newRevision)} · {task.reviewItemIds.join(' / ')}</span>
     </div>
     <span className="wb-status-label">{task.stageLabel}</span>
     <div className="wb-task-progress">
@@ -153,15 +155,22 @@ const TaskTableRow = ({
         </button>
       )}
       {task.stage === 'failed' && (
-        <button
-          className="wb-icon-button"
-          type="button"
-          title={`从头重试 ${task.id}`}
-          onClick={() => void adapter.commands.retryTask(task.id)}
-        >
-          <RotateCcw aria-hidden="true" />
-          <span className="wb-sr-only">从头重试 {task.id}</span>
-        </button>
+        <>
+          {adapter.commands.openTaskLog && (
+            <button className="wb-icon-button" type="button" title={`打开任务日志 ${task.id}`} onClick={() => void adapter.commands.openTaskLog?.(task.id)}>
+              <FileText aria-hidden="true" /><span className="wb-sr-only">打开任务日志 {task.id}</span>
+            </button>
+          )}
+          <button
+            className="wb-icon-button"
+            type="button"
+            title={`从头重试 ${task.id}`}
+            onClick={() => void adapter.commands.retryTask(task.id)}
+          >
+            <RotateCcw aria-hidden="true" />
+            <span className="wb-sr-only">从头重试 {task.id}</span>
+          </button>
+        </>
       )}
     </div>
   </article>
@@ -197,9 +206,11 @@ function TaskManagementView({
     <section className="wb-workspace wb-task-management" aria-labelledby="workbench-title">
       <div className="wb-workspace-title">
         <div><p className="wb-eyebrow">本机任务</p><h2 id="workbench-title">审查任务总览</h2></div>
-        <button className="wb-secondary-button" type="button" onClick={() => void adapter.commands.advanceTasks()}>
-          <RefreshCw aria-hidden="true" />推进任务阶段
-        </button>
+        {viewModel.mode !== 'production' && (
+          <button className="wb-secondary-button" type="button" onClick={() => void adapter.commands.advanceTasks()}>
+            <RefreshCw aria-hidden="true" />推进任务阶段
+          </button>
+        )}
       </div>
 
       <section className="wb-overview" aria-label="任务总览">
@@ -241,7 +252,7 @@ function TaskManagementView({
               <article className="wb-management-report-row" key={report.id}>
                 <div><strong>{report.title}</strong><span>{report.taskId} · {report.reviewItemIds.join(' / ')}</span></div>
                 <span>{report.revisionRange}</span>
-                <strong className={`is-${report.highestSeverity}`}>{report.issueCount === 0 ? '无问题' : `${report.issueCount} 个`}</strong>
+                <strong className={report.highestSeverity ? `is-${report.highestSeverity}` : undefined}>{report.issueCount === undefined ? `问题数未知${report.highestSeverity ? '' : ' · 严重度未知'}` : `${report.issueCount === 0 ? '无问题' : `${report.issueCount} 个`}${report.highestSeverity ? '' : ' · 严重度未知'}`}</strong>
                 <time>{report.completedAt}</time>
                 <button className="wb-link-button" type="button" onClick={() => onOpenReport(report.id)}>查看报告<ArrowRight aria-hidden="true" /></button>
               </article>
@@ -264,13 +275,46 @@ function ReportCenterView({
   onSelect: (reportId: string) => void
   adapter: WorkbenchAdapter
 }): React.JSX.Element {
+  const feedbackSubmitted = Boolean(
+    selectedReport?.feedbackProtocolVersion === 1
+      ? selectedReport.feedbackSubmittedAt
+      : selectedReport?.reportFeedbackHelpful !== null && selectedReport?.reportFeedbackHelpful !== undefined
+  )
+  const usesIssueFeedback = selectedReport?.feedbackProtocolVersion === 1
   return (
     <section className="wb-workspace wb-report-center" aria-labelledby="report-center-title">
       <div className="wb-workspace-title">
         <div><p className="wb-eyebrow">审查结果</p><h2 id="report-center-title">报告中心</h2></div>
-        <button className="wb-secondary-button" type="button" disabled={!selectedReport} onClick={() => selectedReport && void adapter.commands.viewPdfReport(selectedReport.id)}>
-          <FileDown aria-hidden="true" />查看PDF报告
-        </button>
+        <div className="wb-report-actions">
+          {selectedReport && adapter.commands.openReportFeedback && !feedbackSubmitted && selectedReport.feedbackProtocolVersion === 1 && (
+            <button className="wb-secondary-button" type="button" disabled={!selectedReport} onClick={() => selectedReport && void adapter.commands.openReportFeedback?.(selectedReport.id)}>
+              <MessageSquareText aria-hidden="true" />反馈报告问题
+            </button>
+          )}
+          {selectedReport && adapter.commands.openReportFeedback && feedbackSubmitted && usesIssueFeedback && (
+            <button className="wb-secondary-button" type="button" onClick={() => void adapter.commands.openReportFeedback?.(selectedReport.id)}>
+              <MessageSquareText aria-hidden="true" />查看已提交反馈
+            </button>
+          )}
+          {selectedReport && adapter.commands.openReportFeedback && !feedbackSubmitted && selectedReport.feedbackProtocolVersion !== 1 && (
+            <button className="wb-secondary-button" type="button" onClick={() => void adapter.commands.openReportFeedback?.(selectedReport.id)}>
+              <MessageSquareText aria-hidden="true" />报告有帮助
+            </button>
+          )}
+          {selectedReport && adapter.commands.submitNegativeReportFeedback && !feedbackSubmitted && selectedReport.feedbackProtocolVersion !== 1 && (
+            <button className="wb-secondary-button" type="button" onClick={() => void adapter.commands.submitNegativeReportFeedback?.(selectedReport.id)}>
+              <X aria-hidden="true" />报告没帮助
+            </button>
+          )}
+          {selectedReport && feedbackSubmitted && !usesIssueFeedback && (
+            <span className="wb-feedback-submitted">反馈已提交</span>
+          )}
+          {selectedReport && (!usesIssueFeedback || feedbackSubmitted) && (
+            <button className="wb-secondary-button" type="button" onClick={() => void adapter.commands.viewPdfReport(selectedReport.id)}>
+              <FileDown aria-hidden="true" />查看PDF报告
+            </button>
+          )}
+        </div>
       </div>
       <div className="wb-report-center-grid">
         <aside className="wb-report-index" aria-label="任务和报告列表">
@@ -280,14 +324,21 @@ function ReportCenterView({
               <button className={selectedReport?.id === report.id ? 'is-active' : ''} type="button" aria-current={selectedReport?.id === report.id ? 'page' : undefined} key={report.id} onClick={() => onSelect(report.id)}>
                 <span className="wb-report-index-title"><FileText aria-hidden="true" /><strong>{report.title}</strong></span>
                 <small>{report.taskId} · {report.revisionRange}</small>
-                <span className="wb-report-index-meta"><span>{report.completedAt}</span><strong className={`is-${report.highestSeverity}`}>{report.issueCount === 0 ? '无问题' : `${report.issueCount} 个问题`}</strong></span>
+                <span className="wb-report-index-meta"><span>{report.completedAt}</span><strong className={report.highestSeverity ? `is-${report.highestSeverity}` : undefined}>{report.issueCount === undefined ? `问题数未知${report.highestSeverity ? '' : ' · 严重度未知'}` : `${report.issueCount === 0 ? '无问题' : `${report.issueCount} 个问题`}${report.highestSeverity ? '' : ' · 严重度未知'}`}</strong></span>
               </button>
             ))}
           </div>
         </aside>
         <article className="wb-markdown-panel" aria-label="Markdown 报告预览">
           {selectedReport ? (
-            <div className="wb-markdown-scroll"><ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedReport.markdown}</ReactMarkdown></div>
+            adapter.getViewModel().mode === 'production'
+              ? <MarkdownPreview
+                  markdown={selectedReport.markdown}
+                  reportPath={selectedReport.reportPath}
+                  activeFeedbackAnchorId={adapter.getViewModel().activeFeedbackAnchorId}
+                  feedbackAnchorScrollRequest={adapter.getViewModel().feedbackAnchorScrollRequest}
+                />
+              : <div className="wb-markdown-scroll"><ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedReport.markdown}</ReactMarkdown></div>
           ) : (
             <div className="wb-empty-band"><FileText aria-hidden="true" /><div><strong>暂无可预览报告</strong><span>任务完成后可在此查看 Markdown 报告。</span></div></div>
           )}
@@ -301,10 +352,56 @@ function FeedbackView({ adapter }: { adapter: WorkbenchAdapter }): React.JSX.Ele
   const [description, setDescription] = useState('')
   const [screenshots, setScreenshots] = useState<FeedbackScreenshotView[]>([])
   const [error, setError] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const submitInFlightRef = useRef(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const formatFileSize = (size: number): string =>
+    size < 1024 * 1024
+      ? `${Math.max(1, Math.round(size / 1024))} KB`
+      : `${(size / 1024 / 1024).toFixed(1)} MB`
+
+  const addProductionScreenshots = (files: File[]): void => {
+    const remaining = 5 - screenshots.length
+    if (remaining <= 0) {
+      setError('最多只能添加 5 张截图。')
+      return
+    }
+    const selected = files.slice(0, remaining)
+    const invalid = selected.find(
+      (file) => !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024
+    )
+    if (invalid) {
+      setError('仅支持不超过 5MB 的 PNG、JPG 或 WEBP 截图。')
+      return
+    }
+    const existingKeys = new Set(screenshots.map((value) => `${value.name}:${value.file?.size ?? ''}`))
+    const unique = selected.filter((file) => {
+      const key = `${file.name}:${file.size}`
+      if (existingKeys.has(key)) return false
+      existingKeys.add(key)
+      return true
+    })
+    setScreenshots((value) => [
+      ...value,
+      ...unique.map((file, index) => ({
+        id: `production-screenshot-${Date.now()}-${index}`,
+        name: file.name,
+        sizeLabel: formatFileSize(file.size),
+        file
+      }))
+    ])
+    setError(selected.length < files.length ? '最多只能添加 5 张截图。' : '')
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
 
   const addScreenshot = async (): Promise<void> => {
     if (screenshots.length >= 5) {
       setError('最多只能添加 5 张截图。')
+      return
+    }
+    if (adapter.getViewModel().mode === 'production') {
+      fileInputRef.current?.click()
       return
     }
     const next = await adapter.commands.chooseFeedbackScreenshot(screenshots.map((value) => value.id))
@@ -313,14 +410,24 @@ function FeedbackView({ adapter }: { adapter: WorkbenchAdapter }): React.JSX.Ele
   }
 
   const submit = async (): Promise<void> => {
+    if (submitInFlightRef.current) return
     if (!description.trim()) {
       setError('请填写问题描述。')
       return
     }
-    await adapter.commands.submitFeedback({ description, screenshots })
-    setDescription('')
-    setScreenshots([])
-    setError('')
+    submitInFlightRef.current = true
+    setIsSubmitting(true)
+    try {
+      await adapter.commands.submitFeedback({ description, screenshots })
+      setDescription('')
+      setScreenshots([])
+      setError('')
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : '意见提交失败，请稍后重试。')
+    } finally {
+      submitInFlightRef.current = false
+      setIsSubmitting(false)
+    }
   }
 
   const reset = (): void => {
@@ -337,10 +444,21 @@ function FeedbackView({ adapter }: { adapter: WorkbenchAdapter }): React.JSX.Ele
         <label className="wb-form-field wb-feedback-description"><span>问题描述</span><textarea rows={8} value={description} placeholder="请描述问题现象、操作步骤或期望结果" onChange={(event) => { setDescription(event.target.value); setError('') }} /></label>
         <section className="wb-feedback-screenshots" aria-labelledby="feedback-screenshot-title">
           <div className="wb-section-heading"><div><h3 id="feedback-screenshot-title">问题截图</h3><p>支持 PNG、JPG、WEBP，最多 5 张，每张最大 5MB</p></div><button className="wb-secondary-button" type="button" onClick={() => void addScreenshot()}><ImagePlus aria-hidden="true" />添加截图</button></div>
+          {adapter.getViewModel().mode === 'production' && (
+            <input
+              ref={fileInputRef}
+              className="wb-sr-only"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              aria-label="选择反馈截图"
+              onChange={(event) => addProductionScreenshots(Array.from(event.target.files ?? []))}
+            />
+          )}
           {screenshots.length === 0 ? <div className="wb-feedback-empty"><ImagePlus aria-hidden="true" /><span>尚未添加截图</span></div> : <div className="wb-feedback-file-list">{screenshots.map((screenshot) => <div key={screenshot.id}><FileText aria-hidden="true" /><span><strong>{screenshot.name}</strong><small>{screenshot.sizeLabel}</small></span><button className="wb-icon-button" type="button" title={`移除 ${screenshot.name}`} onClick={() => setScreenshots((value) => value.filter((item) => item.id !== screenshot.id))}><X aria-hidden="true" /><span className="wb-sr-only">移除 {screenshot.name}</span></button></div>)}</div>}
         </section>
         {error && <p className="wb-inline-error" role="alert">{error}</p>}
-        <div className="wb-feedback-actions"><button className="wb-secondary-button" type="button" disabled={!description && screenshots.length === 0} onClick={reset}>清空内容</button><button className="wb-primary-button" type="submit"><Send aria-hidden="true" />提交意见</button></div>
+        <div className="wb-feedback-actions"><button className="wb-secondary-button" type="button" disabled={isSubmitting || (!description && screenshots.length === 0)} onClick={reset}>清空内容</button><button className="wb-primary-button" type="submit" disabled={isSubmitting}><Send aria-hidden="true" />{isSubmitting ? '提交中...' : '提交意见'}</button></div>
       </form>
     </section>
   )
@@ -354,10 +472,15 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
   const [fieldTouched, setFieldTouched] = useState<Record<string, boolean>>({})
   const [selectionTouched, setSelectionTouched] = useState(false)
   const [selectorOpen, setSelectorOpen] = useState(false)
+  const [isCreatingTask, setIsCreatingTask] = useState(false)
+  const createTaskInFlightRef = useRef(false)
   const selectorReturnFocusRef = useRef<HTMLButtonElement | null>(null)
   const selectorWasOpenRef = useRef(false)
 
   useEffect(() => adapter.subscribe(setViewModel), [adapter])
+  useEffect(() => {
+    if (viewModel.requestedView) setActiveView(viewModel.requestedView.id)
+  }, [viewModel.requestedView])
   useEffect(() => {
     if (!selectorOpen && selectorWasOpenRef.current) {
       selectorWasOpenRef.current = false
@@ -411,8 +534,15 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
   }
 
   const submitTask = async (): Promise<void> => {
-    if (!formValid) return
-    await adapter.commands.createTask({ ...draft, selection })
+    if (!formValid || createTaskInFlightRef.current) return
+    createTaskInFlightRef.current = true
+    setIsCreatingTask(true)
+    try {
+      await adapter.commands.createTask({ ...draft, selection })
+    } finally {
+      createTaskInFlightRef.current = false
+      setIsCreatingTask(false)
+    }
   }
 
   const openReport = (reportId: string): void => {
@@ -471,10 +601,12 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
             </button>
           </div>
 
-          <div className="wb-preview-sample">
-            <span>需要快速检查完整状态？</span>
-            <button type="button" onClick={fillSample}><Sparkles aria-hidden="true" />填入验收样例</button>
-          </div>
+          {viewModel.mode !== 'production' && (
+            <div className="wb-preview-sample">
+              <span>需要快速检查完整状态？</span>
+              <button type="button" onClick={fillSample}><Sparkles aria-hidden="true" />填入验收样例</button>
+            </div>
+          )}
 
           <div className="wb-form-fields">
             <label className="wb-form-field">
@@ -584,10 +716,11 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
                 <span>{formValid ? '任务将进入本机执行队列' : hasTouchedError ? '请处理上方标记的输入问题' : '填写公共输入并选择审查项'}</span>
               </div>
             </div>
-            <button className="wb-primary-button wb-submit-button" type="button" disabled={!formValid} onClick={() => void submitTask()}>
+            <button className="wb-primary-button wb-submit-button" type="button" disabled={!formValid || viewModel.canCreateTask === false || isCreatingTask} onClick={() => void submitTask()}>
               <Play aria-hidden="true" />
-              创建审查任务
+              {isCreatingTask ? '创建中...' : '创建审查任务'}
             </button>
+            {viewModel.taskCreationDisabledReason && <p className="wb-inline-error">{viewModel.taskCreationDisabledReason}</p>}
           </div>
         </aside>
         )}
@@ -618,7 +751,17 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
       {viewModel.notice && (
         <div className="wb-toast" role="status">
           <Check aria-hidden="true" />
-          <span>{viewModel.notice}</span>
+          <span className="wb-toast-content">
+            <span>{viewModel.notice}</span>
+            {viewModel.noticeAction && (
+              <button type="button" onClick={() => {
+                void adapter.commands.dismissNotice()
+                openReport(viewModel.noticeAction?.reportId ?? '')
+              }}>
+                {viewModel.noticeAction.label}
+              </button>
+            )}
+          </span>
           <button className="wb-icon-button" type="button" title="关闭提示" onClick={() => void adapter.commands.dismissNotice()}>
             <X aria-hidden="true" /><span className="wb-sr-only">关闭提示</span>
           </button>

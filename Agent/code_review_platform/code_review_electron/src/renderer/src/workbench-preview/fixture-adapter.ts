@@ -13,6 +13,7 @@ import type {
   WorkbenchAdapter,
   WorkbenchViewModel
 } from './types'
+import { formatRevisionLabel } from './revision'
 
 const catalog: ReviewItemDefinition[] = [
   {
@@ -549,7 +550,7 @@ export const createFixtureWorkbenchAdapter = (): WorkbenchAdapter => {
               taskId: completedTask.id,
               title: completedTask.title,
               svnUrl: completedTask.svnUrl,
-              revisionRange: `r${completedTask.oldRevision} → r${completedTask.newRevision}`,
+              revisionRange: `${formatRevisionLabel(completedTask.oldRevision)} → ${formatRevisionLabel(completedTask.newRevision)}`,
               reviewItemIds: completedTask.reviewItemIds,
               completedAt: '刚刚',
               issueCount: 1,

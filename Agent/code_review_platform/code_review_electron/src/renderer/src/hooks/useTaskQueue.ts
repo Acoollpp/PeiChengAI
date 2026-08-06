@@ -30,6 +30,7 @@ export type TaskViewItem = ReviewTask & {
   isLocallyExecuting?: boolean
   executePayload?: ExecuteTaskRequest | RetryTaskRequest
   executeWith?: 'create' | 'retry'
+  localProgressStage?: Extract<TaskProgressEvent, { type: 'stage' }>['stage']
 }
 
 type UseTaskQueueOptions = {
@@ -503,6 +504,7 @@ export function useTaskQueue({
             id: event.taskId,
             isLocalOnly: false,
             status,
+            ...(event.type === 'stage' ? { localProgressStage: event.stage } : {}),
             progress_message: event.message,
             codex_log: codexLog,
             started_at: task.started_at ?? nowIso(),

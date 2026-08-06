@@ -33,6 +33,19 @@ describe('fixture workbench adapter', () => {
     expect(dynamicReport?.revisionRange).not.toContain('全量')
   })
 
+  it('带 r 前缀的 revision 始终只显示一个 r', async () => {
+    const adapter = createFixtureWorkbenchAdapter()
+    await adapter.commands.setScenario('empty')
+    await adapter.commands.createTask({
+      svnUrl: 'svn://fixture/prefixed',
+      oldRevision: 'r0',
+      newRevision: 'R12',
+      selection: { 'DS-03': { itemId: 'DS-03', extraRules: '', materials: {} } }
+    })
+    for (let index = 0; index < 4; index += 1) await adapter.commands.advanceTasks()
+    expect(adapter.getViewModel().reports[0]?.revisionRange).toBe('r0 → r12')
+  })
+
   it('取消首个等待任务后，即使执行槽已满也会重排剩余序号', async () => {
     const adapter = createFixtureWorkbenchAdapter()
 

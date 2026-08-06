@@ -75,10 +75,14 @@ export interface ReviewReportViewModel {
   revisionRange: string
   reviewItemIds: ReviewItemId[]
   completedAt: string
-  issueCount: number
-  highestSeverity: 'high' | 'medium' | 'none'
+  issueCount?: number
+  highestSeverity?: 'high' | 'medium' | 'none'
   summary: string
   markdown: string
+  reportPath?: string
+  feedbackProtocolVersion?: number | null
+  feedbackSubmittedAt?: string | null
+  reportFeedbackHelpful?: boolean | null
 }
 
 export type PreviewScenario = 'active' | 'empty'
@@ -89,6 +93,7 @@ export interface FeedbackScreenshotView {
   id: string
   name: string
   sizeLabel: string
+  file?: File
 }
 
 export interface SubmitFeedbackCommand {
@@ -109,6 +114,13 @@ export interface WorkbenchViewModel {
   reports: ReviewReportViewModel[]
   selectedReportId?: string
   notice?: string
+  noticeAction?: { label: string; reportId: string }
+  activeFeedbackAnchorId?: string
+  feedbackAnchorScrollRequest?: { anchorId: string; requestId: number }
+  mode?: 'preview' | 'production'
+  canCreateTask?: boolean
+  taskCreationDisabledReason?: string
+  requestedView?: { id: WorkbenchViewId; requestId: number }
 }
 
 export interface CreateTaskCommand {
@@ -131,6 +143,9 @@ export interface WorkbenchCommands {
   openReport(reportId: string): Promise<PreviewCommandResult>
   closeReport(): Promise<PreviewCommandResult>
   viewPdfReport(reportId: string): Promise<PreviewCommandResult>
+  openReportFeedback?(reportId: string): Promise<PreviewCommandResult>
+  submitNegativeReportFeedback?(reportId: string): Promise<PreviewCommandResult>
+  openTaskLog?(taskId: string): Promise<PreviewCommandResult>
   chooseFeedbackScreenshot(currentScreenshotIds?: string[]): Promise<FeedbackScreenshotView>
   submitFeedback(input: SubmitFeedbackCommand): Promise<PreviewCommandResult>
   chooseMaterial(
