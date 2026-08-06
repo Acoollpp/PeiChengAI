@@ -61,4 +61,19 @@ describe('fixture workbench adapter', () => {
     expect(replacement.id).not.toBe(currentFile?.id)
     expect(replacement.name).not.toBe(currentFile?.name)
   })
+
+  it('连续选择五张反馈截图时保持唯一，耗尽后明确拒绝', async () => {
+    const adapter = createFixtureWorkbenchAdapter()
+    const selectedIds: string[] = []
+
+    for (let index = 0; index < 5; index += 1) {
+      const screenshot = await adapter.commands.chooseFeedbackScreenshot(selectedIds)
+      selectedIds.push(screenshot.id)
+    }
+
+    expect(new Set(selectedIds).size).toBe(5)
+    await expect(adapter.commands.chooseFeedbackScreenshot(selectedIds)).rejects.toThrow(
+      '没有更多可用截图。'
+    )
+  })
 })

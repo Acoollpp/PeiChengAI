@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -108,11 +108,17 @@ describe('ReviewWorkbenchPreview', () => {
     expect(trigger).toHaveFocus()
   })
 
-  it('覆盖空数据、取消、重试、阶段推进和报告摘要交互', async () => {
+  it('展示三视图导航，并覆盖取消、重试和阶段推进交互', async () => {
     const user = userEvent.setup()
     const adapter = createFixtureWorkbenchAdapter()
     render(<ReviewWorkbenchPreview adapter={adapter} />)
 
+    const navigation = screen.getByRole('navigation', { name: '工作台视图' })
+    expect(within(navigation).getByRole('button', { name: '任务管理' })).toHaveAttribute('aria-current', 'page')
+    expect(within(navigation).getByRole('button', { name: '报告中心' })).toBeInTheDocument()
+    expect(within(navigation).getByRole('button', { name: '意见反馈' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '完整状态' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '空数据' })).not.toBeInTheDocument()
     expect(screen.getAllByText('正在执行').length).toBeGreaterThan(0)
     expect(screen.getByText('本机等待第 3 位')).toBeInTheDocument()
     expect(screen.getByText('产品规格书在任务开始前已被移动，请重新选择材料后从头重试。')).toBeInTheDocument()
@@ -125,18 +131,84 @@ describe('ReviewWorkbenchPreview', () => {
     await user.click(screen.getByRole('button', { name: '取消任务 CR-240806-018' }))
     expect(await screen.findByRole('status')).toHaveTextContent('已取消任务 CR-240806-018')
 
-    await user.click(screen.getByRole('button', { name: '推进模拟阶段' }))
+    await user.click(screen.getByRole('button', { name: '推进任务阶段' }))
     expect(await screen.findByRole('status')).toHaveTextContent('已推进一轮本地任务阶段')
+  })
 
-    await user.click(screen.getByRole('button', { name: /查看 低压上下电状态机复核 报告摘要/ }))
-    expect(await screen.findByRole('complementary', { name: '低压上下电状态机复核' })).toHaveTextContent(
-      '4 个问题'
-    )
-    await user.click(screen.getByRole('button', { name: '关闭报告摘要' }))
-    await waitFor(() => expect(screen.queryByRole('complementary', { name: '低压上下电状态机复核' })).not.toBeInTheDocument())
+  it('在报告中心选择真实 Markdown 报告并触发 PDF 预览命令', async () => {
+    const user = userEvent.setup()
+    const adapter = createFixtureWorkbenchAdapter()
+    render(<ReviewWorkbenchPreview adapter={adapter} />)
 
-    await user.click(screen.getByRole('button', { name: '空数据' }))
-    expect(screen.getByText('暂无执行或等待任务')).toBeInTheDocument()
-    expect(screen.getByText('暂无可查看报告')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '报告中心' }))
+    expect(screen.queryByRole('heading', { name: '创建审查任务' })).not.toBeInTheDocument()
+    const preview = screen.getByRole('article', { name: 'Markdown 报告预览' })
+    expect(within(preview).getByRole('heading', { name: '低压上下电状态机复核' })).toBeInTheDocument()
+    expect(within(preview).getByRole('table')).toHaveTextContent('处置建议')
+
+    const socReportButton = screen.getByRole('button', { name: /SOC 滤波边界复查/ })
+    await user.click(socReportButton)
+    expect(socReportButton).toHaveAttribute('aria-current', 'page')
+    expect(within(preview).getByRole('heading', { name: 'SOC 滤波边界复查' })).toBeInTheDocument()
+    expect(within(preview).getByText(/未发现需要报告的问题/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('已打开《SOC 滤波边界复查》PDF 报告。')
+  })
+
+  it('从任务表进入报告中心，并完成意见反馈页基础交互', async () => {
+    const user = userEvent.setup()
+    const adapter = createFixtureWorkbenchAdapter()
+    render(<ReviewWorkbenchPreview adapter={adapter} />)
+
+    await user.click(screen.getAllByRole('button', { name: /查看报告/ })[0])
+    expect(screen.getByRole('heading', { name: '报告中心' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '低压上下电状态机复核' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '意见反馈' }))
+    expect(screen.queryByRole('heading', { name: '创建审查任务' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '提交意见' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('请填写问题描述。')
+
+    await user.type(screen.getByLabelText('问题描述'), '任务在环境检查阶段停留，重新进入页面后仍未推进。')
+    await user.click(screen.getByRole('button', { name: '添加截图' }))
+    expect(screen.getByText('任务阶段停留在环境检查.png')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '提交意见' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('意见已提交，包含 1 张截图。')
+    expect(screen.getByLabelText('问题描述')).toHaveValue('')
+  })
+
+  it('反馈截图最多添加五张且保持唯一，移除时只删除目标截图', async () => {
+    const user = userEvent.setup()
+    const adapter = createFixtureWorkbenchAdapter()
+    render(<ReviewWorkbenchPreview adapter={adapter} />)
+
+    await user.click(screen.getByRole('button', { name: '意见反馈' }))
+    const addButton = screen.getByRole('button', { name: '添加截图' })
+    const screenshotNames = [
+      '任务阶段停留在环境检查.png',
+      '报告列表未刷新.webp',
+      '长路径显示问题.jpg',
+      '任务等待序号异常.png',
+      '报告预览滚动位置.webp'
+    ]
+
+    for (let index = 0; index < 5; index += 1) {
+      await user.click(addButton)
+    }
+
+    screenshotNames.forEach((name) => expect(screen.getByText(name)).toBeInTheDocument())
+    expect(screen.getAllByRole('button', { name: /^移除 / })).toHaveLength(5)
+
+    await user.click(addButton)
+    expect(screen.getByRole('alert')).toHaveTextContent('最多只能添加 5 张截图。')
+    expect(screen.getAllByRole('button', { name: /^移除 / })).toHaveLength(5)
+
+    await user.click(screen.getByRole('button', { name: '移除 任务等待序号异常.png' }))
+    expect(screen.queryByText('任务等待序号异常.png')).not.toBeInTheDocument()
+    screenshotNames
+      .filter((name) => name !== '任务等待序号异常.png')
+      .forEach((name) => expect(screen.getByText(name)).toBeInTheDocument())
+    expect(screen.getAllByRole('button', { name: /^移除 / })).toHaveLength(4)
   })
 })

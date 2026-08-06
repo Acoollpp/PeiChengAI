@@ -78,9 +78,23 @@ export interface ReviewReportViewModel {
   issueCount: number
   highestSeverity: 'high' | 'medium' | 'none'
   summary: string
+  markdown: string
 }
 
 export type PreviewScenario = 'active' | 'empty'
+
+export type WorkbenchViewId = 'task-management' | 'report-center' | 'feedback'
+
+export interface FeedbackScreenshotView {
+  id: string
+  name: string
+  sizeLabel: string
+}
+
+export interface SubmitFeedbackCommand {
+  description: string
+  screenshots: FeedbackScreenshotView[]
+}
 
 export interface WorkbenchViewModel {
   productName: string
@@ -116,6 +130,9 @@ export interface WorkbenchCommands {
   advanceTasks(): Promise<PreviewCommandResult>
   openReport(reportId: string): Promise<PreviewCommandResult>
   closeReport(): Promise<PreviewCommandResult>
+  viewPdfReport(reportId: string): Promise<PreviewCommandResult>
+  chooseFeedbackScreenshot(currentScreenshotIds?: string[]): Promise<FeedbackScreenshotView>
+  submitFeedback(input: SubmitFeedbackCommand): Promise<PreviewCommandResult>
   chooseMaterial(
     itemId: ReviewItemId,
     fieldId: string,

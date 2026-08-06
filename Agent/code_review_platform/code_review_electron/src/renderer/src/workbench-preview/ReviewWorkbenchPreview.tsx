@@ -2,28 +2,38 @@ import {
   ArrowRight,
   Check,
   CircleAlert,
+  ClipboardList,
   FileCheck2,
+  FileDown,
   FileText,
   FolderSearch,
+  ImagePlus,
+  MessageSquareText,
   Play,
   Plus,
   RefreshCw,
   RotateCcw,
   SearchX,
+  Send,
   Sparkles,
   Trash2,
   X
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 import { ReviewItemSelector } from './ReviewItemSelector'
 import type {
   CreateTaskCommand,
+  FeedbackScreenshotView,
   ReviewItemDefinition,
   ReviewItemId,
+  ReviewReportViewModel,
   ReviewSelection,
   ReviewTaskViewModel,
   WorkbenchAdapter,
+  WorkbenchViewId,
   WorkbenchViewModel
 } from './types'
 
@@ -106,41 +116,30 @@ const taskStageClass = (task: ReviewTaskViewModel): string => {
   return 'is-running'
 }
 
-const TaskRow = ({
+const TaskTableRow = ({
   task,
-  adapter,
-  onOpenReport
+  adapter
 }: {
   task: ReviewTaskViewModel
   adapter: WorkbenchAdapter
-  onOpenReport: (taskId: string) => void
 }): React.JSX.Element => (
-  <article className={`wb-task-row ${taskStageClass(task)}`}>
-    <div className="wb-task-main">
-      <div className="wb-task-title-line">
-        <span className="wb-task-id">{task.id}</span>
-        <h4>{task.title}</h4>
-        <span className="wb-status-label">{task.stageLabel}</span>
-      </div>
-      <p className="wb-task-url" title={task.svnUrl}>{task.svnUrl}</p>
-      <div className="wb-task-meta">
-        <span>r{task.oldRevision} → r{task.newRevision}</span>
-        <span>{task.reviewItemIds.join(' · ')}</span>
-        <span>{task.updatedAt}</span>
-        {task.queueIndex && <strong>本机等待第 {task.queueIndex} 位</strong>}
-      </div>
+  <article className={`wb-task-table-row ${taskStageClass(task)}`} aria-label={`${task.id} ${task.title}`}>
+    <div className="wb-task-identity">
+      <strong>{task.title}</strong>
+      <span>{task.id} · r{task.oldRevision} → r{task.newRevision} · {task.reviewItemIds.join(' / ')}</span>
+    </div>
+    <span className="wb-status-label">{task.stageLabel}</span>
+    <div className="wb-task-progress">
+      <strong>{task.queueIndex ? `本机等待第 ${task.queueIndex} 位` : task.message}</strong>
       {activeStages.includes(task.stage) && (
-        <ol className="wb-stage-track" aria-label={`${task.id} 执行阶段`}>
+        <ol className="wb-compact-stage-track" aria-label={`${task.id} 执行阶段`}>
           {task.phaseTrack.map((phase) => (
-            <li className={`is-${phase.state}`} key={phase.id}>
-              <span aria-hidden="true" />
-              <small>{phase.label}</small>
-            </li>
+            <li className={`is-${phase.state}`} key={phase.id} title={phase.label}><span /></li>
           ))}
         </ol>
       )}
-      <p className="wb-task-message">{task.message}</p>
     </div>
+    <time>{task.updatedAt}</time>
     <div className="wb-task-actions">
       {['waiting', ...activeStages].includes(task.stage) && (
         <button
@@ -164,23 +163,192 @@ const TaskRow = ({
           <span className="wb-sr-only">从头重试 {task.id}</span>
         </button>
       )}
-      {task.stage === 'completed' && (
-        <button
-          className="wb-icon-button"
-          type="button"
-          title={`查看任务 ${task.id} 的报告`}
-          onClick={() => onOpenReport(task.id)}
-        >
-          <FileText aria-hidden="true" />
-          <span className="wb-sr-only">查看任务 {task.id} 的报告</span>
-        </button>
-      )}
     </div>
   </article>
 )
 
+interface TaskManagementViewProps {
+  viewModel: WorkbenchViewModel
+  adapter: WorkbenchAdapter
+  runningTasks: ReviewTaskViewModel[]
+  waitingTasks: ReviewTaskViewModel[]
+  onOpenReport: (reportId: string) => void
+}
+
+function TaskManagementView({
+  viewModel,
+  adapter,
+  runningTasks,
+  waitingTasks,
+  onOpenReport
+}: TaskManagementViewProps): React.JSX.Element {
+  const taskPriority = (task: ReviewTaskViewModel): number => {
+    if (activeStages.includes(task.stage)) return 0
+    if (task.stage === 'failed') return 1
+    if (task.stage === 'waiting') return 2
+    return 3
+  }
+  const managedTasks = viewModel.tasks
+    .filter((task) => task.stage !== 'completed')
+    .sort((left, right) => taskPriority(left) - taskPriority(right))
+  const failedCount = managedTasks.filter((task) => task.stage === 'failed').length
+
+  return (
+    <section className="wb-workspace wb-task-management" aria-labelledby="workbench-title">
+      <div className="wb-workspace-title">
+        <div><p className="wb-eyebrow">本机任务</p><h2 id="workbench-title">审查任务总览</h2></div>
+        <button className="wb-secondary-button" type="button" onClick={() => void adapter.commands.advanceTasks()}>
+          <RefreshCw aria-hidden="true" />推进任务阶段
+        </button>
+      </div>
+
+      <section className="wb-overview" aria-label="任务总览">
+        <div><span>正在执行</span><strong className="is-running">{runningTasks.length}</strong><small>本机并发上限 2</small></div>
+        <div><span>本机等待</span><strong className="is-waiting">{waitingTasks.length}</strong><small>按创建顺序执行</small></div>
+        <div><span>需要处理</span><strong className="is-failed">{failedCount}</strong><small>失败任务可重试</small></div>
+        <div><span>可查看报告</span><strong>{viewModel.reports.length}</strong><small>本机已完成结果</small></div>
+      </section>
+
+      <section className="wb-task-section wb-execution-section" aria-labelledby="execution-heading">
+        <div className="wb-band-heading">
+          <div><h3 id="execution-heading">执行与等待</h3><span>当前阶段与本机排队状态</span></div>
+          <span>{runningTasks.length} 执行 · {waitingTasks.length} 等待 · {failedCount} 失败</span>
+        </div>
+        <div className="wb-table-head wb-task-table-head" aria-hidden="true">
+          <span>任务</span><span>状态</span><span>当前进度</span><span>更新</span><span>操作</span>
+        </div>
+        {managedTasks.length === 0 ? (
+          <div className="wb-empty-band"><SearchX aria-hidden="true" /><div><strong>暂无执行或等待任务</strong><span>从左侧创建任务后，阶段会显示在这里。</span></div></div>
+        ) : (
+          <div className="wb-task-table-body">
+            {managedTasks.map((task) => (
+              <TaskTableRow key={task.id} task={task} adapter={adapter} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="wb-report-section wb-management-reports" aria-labelledby="reports-heading">
+        <div className="wb-band-heading"><div><h3 id="reports-heading">可查看报告</h3><span>按完成时间展示本机结果</span></div><span>{viewModel.reports.length} 份</span></div>
+        <div className="wb-table-head wb-report-table-head" aria-hidden="true">
+          <span>任务 / 报告</span><span>审查范围</span><span>问题</span><span>完成时间</span><span>操作</span>
+        </div>
+        {viewModel.reports.length === 0 ? (
+          <div className="wb-empty-band"><FileText aria-hidden="true" /><div><strong>暂无可查看报告</strong><span>任务完成后，报告会出现在这里。</span></div></div>
+        ) : (
+          <div className="wb-management-report-list">
+            {viewModel.reports.map((report) => (
+              <article className="wb-management-report-row" key={report.id}>
+                <div><strong>{report.title}</strong><span>{report.taskId} · {report.reviewItemIds.join(' / ')}</span></div>
+                <span>{report.revisionRange}</span>
+                <strong className={`is-${report.highestSeverity}`}>{report.issueCount === 0 ? '无问题' : `${report.issueCount} 个`}</strong>
+                <time>{report.completedAt}</time>
+                <button className="wb-link-button" type="button" onClick={() => onOpenReport(report.id)}>查看报告<ArrowRight aria-hidden="true" /></button>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </section>
+  )
+}
+
+function ReportCenterView({
+  reports,
+  selectedReport,
+  onSelect,
+  adapter
+}: {
+  reports: ReviewReportViewModel[]
+  selectedReport?: ReviewReportViewModel
+  onSelect: (reportId: string) => void
+  adapter: WorkbenchAdapter
+}): React.JSX.Element {
+  return (
+    <section className="wb-workspace wb-report-center" aria-labelledby="report-center-title">
+      <div className="wb-workspace-title">
+        <div><p className="wb-eyebrow">审查结果</p><h2 id="report-center-title">报告中心</h2></div>
+        <button className="wb-secondary-button" type="button" disabled={!selectedReport} onClick={() => selectedReport && void adapter.commands.viewPdfReport(selectedReport.id)}>
+          <FileDown aria-hidden="true" />查看PDF报告
+        </button>
+      </div>
+      <div className="wb-report-center-grid">
+        <aside className="wb-report-index" aria-label="任务和报告列表">
+          <header><strong>任务 / 报告</strong><span>{reports.length} 份</span></header>
+          <div>
+            {reports.map((report) => (
+              <button className={selectedReport?.id === report.id ? 'is-active' : ''} type="button" aria-current={selectedReport?.id === report.id ? 'page' : undefined} key={report.id} onClick={() => onSelect(report.id)}>
+                <span className="wb-report-index-title"><FileText aria-hidden="true" /><strong>{report.title}</strong></span>
+                <small>{report.taskId} · {report.revisionRange}</small>
+                <span className="wb-report-index-meta"><span>{report.completedAt}</span><strong className={`is-${report.highestSeverity}`}>{report.issueCount === 0 ? '无问题' : `${report.issueCount} 个问题`}</strong></span>
+              </button>
+            ))}
+          </div>
+        </aside>
+        <article className="wb-markdown-panel" aria-label="Markdown 报告预览">
+          {selectedReport ? (
+            <div className="wb-markdown-scroll"><ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedReport.markdown}</ReactMarkdown></div>
+          ) : (
+            <div className="wb-empty-band"><FileText aria-hidden="true" /><div><strong>暂无可预览报告</strong><span>任务完成后可在此查看 Markdown 报告。</span></div></div>
+          )}
+        </article>
+      </div>
+    </section>
+  )
+}
+
+function FeedbackView({ adapter }: { adapter: WorkbenchAdapter }): React.JSX.Element {
+  const [description, setDescription] = useState('')
+  const [screenshots, setScreenshots] = useState<FeedbackScreenshotView[]>([])
+  const [error, setError] = useState('')
+
+  const addScreenshot = async (): Promise<void> => {
+    if (screenshots.length >= 5) {
+      setError('最多只能添加 5 张截图。')
+      return
+    }
+    const next = await adapter.commands.chooseFeedbackScreenshot(screenshots.map((value) => value.id))
+    setScreenshots((value) => [...value, next])
+    setError('')
+  }
+
+  const submit = async (): Promise<void> => {
+    if (!description.trim()) {
+      setError('请填写问题描述。')
+      return
+    }
+    await adapter.commands.submitFeedback({ description, screenshots })
+    setDescription('')
+    setScreenshots([])
+    setError('')
+  }
+
+  const reset = (): void => {
+    setDescription('')
+    setScreenshots([])
+    setError('')
+  }
+
+  return (
+    <section className="wb-workspace wb-feedback-page" aria-labelledby="feedback-title">
+      <div className="wb-workspace-title"><div><p className="wb-eyebrow">使用反馈</p><h2 id="feedback-title">意见反馈</h2></div></div>
+      <form className="wb-feedback-form" onSubmit={(event) => { event.preventDefault(); void submit() }}>
+        <div className="wb-feedback-intro"><MessageSquareText aria-hidden="true" /><div><strong>提交意见</strong><span>描述问题现象、操作步骤或期望结果，截图可通过下方入口添加。</span></div></div>
+        <label className="wb-form-field wb-feedback-description"><span>问题描述</span><textarea rows={8} value={description} placeholder="请描述问题现象、操作步骤或期望结果" onChange={(event) => { setDescription(event.target.value); setError('') }} /></label>
+        <section className="wb-feedback-screenshots" aria-labelledby="feedback-screenshot-title">
+          <div className="wb-section-heading"><div><h3 id="feedback-screenshot-title">问题截图</h3><p>支持 PNG、JPG、WEBP，最多 5 张，每张最大 5MB</p></div><button className="wb-secondary-button" type="button" onClick={() => void addScreenshot()}><ImagePlus aria-hidden="true" />添加截图</button></div>
+          {screenshots.length === 0 ? <div className="wb-feedback-empty"><ImagePlus aria-hidden="true" /><span>尚未添加截图</span></div> : <div className="wb-feedback-file-list">{screenshots.map((screenshot) => <div key={screenshot.id}><FileText aria-hidden="true" /><span><strong>{screenshot.name}</strong><small>{screenshot.sizeLabel}</small></span><button className="wb-icon-button" type="button" title={`移除 ${screenshot.name}`} onClick={() => setScreenshots((value) => value.filter((item) => item.id !== screenshot.id))}><X aria-hidden="true" /><span className="wb-sr-only">移除 {screenshot.name}</span></button></div>)}</div>}
+        </section>
+        {error && <p className="wb-inline-error" role="alert">{error}</p>}
+        <div className="wb-feedback-actions"><button className="wb-secondary-button" type="button" disabled={!description && screenshots.length === 0} onClick={reset}>清空内容</button><button className="wb-primary-button" type="submit"><Send aria-hidden="true" />提交意见</button></div>
+      </form>
+    </section>
+  )
+}
+
 export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps): React.JSX.Element {
   const [viewModel, setViewModel] = useState<WorkbenchViewModel>(() => adapter.getViewModel())
+  const [activeView, setActiveView] = useState<WorkbenchViewId>('task-management')
   const [draft, setDraft] = useState({ svnUrl: '', oldRevision: '', newRevision: '' })
   const [selection, setSelection] = useState<ReviewSelection>({})
   const [fieldTouched, setFieldTouched] = useState<Record<string, boolean>>({})
@@ -220,10 +388,8 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
 
   const runningTasks = viewModel.tasks.filter((task) => activeStages.includes(task.stage))
   const waitingTasks = viewModel.tasks.filter((task) => task.stage === 'waiting')
-  const recentTasks = viewModel.tasks.filter((task) =>
-    ['failed', 'cancelled', 'completed'].includes(task.stage)
-  )
-  const selectedReport = viewModel.reports.find((report) => report.id === viewModel.selectedReportId)
+  const selectedReport =
+    viewModel.reports.find((report) => report.id === viewModel.selectedReportId) ?? viewModel.reports[0]
 
   const resetForm = (): void => {
     setDraft({ svnUrl: '', oldRevision: '', newRevision: '' })
@@ -249,9 +415,9 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
     await adapter.commands.createTask({ ...draft, selection })
   }
 
-  const openReportForTask = (taskId: string): void => {
-    const report = viewModel.reports.find((value) => value.taskId === taskId)
-    if (report) void adapter.commands.openReport(report.id)
+  const openReport = (reportId: string): void => {
+    void adapter.commands.openReport(reportId)
+    setActiveView('report-center')
   }
 
   const openSelector = (trigger: HTMLButtonElement): void => {
@@ -274,26 +440,19 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
             <span>{viewModel.previewLabel}</span>
           </div>
         </div>
-        <div className="wb-preview-controls" aria-label="预览数据场景">
-          {viewModel.scenarios.map((scenario) => (
-            <button
-              type="button"
-              className={viewModel.activeScenario === scenario.id ? 'is-active' : ''}
-              aria-pressed={viewModel.activeScenario === scenario.id}
-              key={scenario.id}
-              onClick={() => void adapter.commands.setScenario(scenario.id)}
-            >
-              {scenario.label}
-            </button>
-          ))}
-        </div>
+        <nav className="wb-preview-controls" aria-label="工作台视图">
+          <button type="button" className={activeView === 'task-management' ? 'is-active' : ''} aria-current={activeView === 'task-management' ? 'page' : undefined} onClick={() => setActiveView('task-management')}><ClipboardList aria-hidden="true" />任务管理</button>
+          <button type="button" className={activeView === 'report-center' ? 'is-active' : ''} aria-current={activeView === 'report-center' ? 'page' : undefined} onClick={() => setActiveView('report-center')}><FileText aria-hidden="true" />报告中心</button>
+          <button type="button" className={activeView === 'feedback' ? 'is-active' : ''} aria-current={activeView === 'feedback' ? 'page' : undefined} onClick={() => setActiveView('feedback')}><MessageSquareText aria-hidden="true" />意见反馈</button>
+        </nav>
         <div className="wb-user">
           <div><strong>{viewModel.userName}</strong><span>{viewModel.departmentName}</span></div>
           <span className="wb-avatar" aria-hidden="true">{avatarText}</span>
         </div>
       </header>
 
-      <div className="wb-layout">
+      <div className={`wb-layout${activeView === 'task-management' ? '' : ' is-full-view'}`}>
+        {activeView === 'task-management' && (
         <aside className="wb-create-panel" aria-labelledby="create-task-title">
           <div className="wb-panel-heading">
             <div>
@@ -431,84 +590,15 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
             </button>
           </div>
         </aside>
+        )}
 
-        <section className="wb-workspace" aria-labelledby="workbench-title">
-          <div className="wb-workspace-title">
-            <div>
-              <p className="wb-eyebrow">本机任务</p>
-              <h2 id="workbench-title">任务工作台</h2>
-            </div>
-            <button className="wb-secondary-button" type="button" onClick={() => void adapter.commands.advanceTasks()}>
-              <RefreshCw aria-hidden="true" />
-              推进模拟阶段
-            </button>
-          </div>
-
-          <section className="wb-overview" aria-label="任务总览">
-            <div><span>正在执行</span><strong className="is-running">{runningTasks.length}</strong></div>
-            <div><span>本机等待</span><strong className="is-waiting">{waitingTasks.length}</strong></div>
-            <div><span>需要处理</span><strong className="is-failed">{recentTasks.filter((task) => task.stage === 'failed').length}</strong></div>
-            <div><span>可查看报告</span><strong>{viewModel.reports.length}</strong></div>
-          </section>
-
-          <div className="wb-workspace-grid">
-            <section className="wb-task-section wb-execution-section" aria-labelledby="execution-heading">
-              <div className="wb-band-heading">
-                <div><h3 id="execution-heading">执行与等待</h3><span>每台客户端最多同时执行两个任务</span></div>
-                <span>{runningTasks.length} 执行 · {waitingTasks.length} 等待</span>
-              </div>
-              {runningTasks.length + waitingTasks.length === 0 ? (
-                <div className="wb-empty-band"><SearchX aria-hidden="true" /><div><strong>暂无执行或等待任务</strong><span>从左侧创建任务后，阶段会显示在这里。</span></div></div>
-              ) : (
-                <div className="wb-task-groups">
-                  {runningTasks.length > 0 && <div className="wb-task-group"><p>正在执行</p>{runningTasks.map((task) => <TaskRow key={task.id} task={task} adapter={adapter} onOpenReport={openReportForTask} />)}</div>}
-                  {waitingTasks.length > 0 && <div className="wb-task-group"><p>本机等待</p>{waitingTasks.map((task) => <TaskRow key={task.id} task={task} adapter={adapter} onOpenReport={openReportForTask} />)}</div>}
-                </div>
-              )}
-            </section>
-
-            <div className="wb-side-stack">
-              <section className="wb-task-section wb-recent-section" aria-labelledby="recent-heading">
-                <div className="wb-band-heading"><div><h3 id="recent-heading">最近状态</h3><span>失败任务从头重试，取消任务不会恢复</span></div></div>
-                {recentTasks.length === 0 ? (
-                  <div className="wb-empty-band"><SearchX aria-hidden="true" /><div><strong>暂无最近状态</strong><span>完成、失败和取消任务会显示在这里。</span></div></div>
-                ) : (
-                  <div className="wb-recent-list">
-                    {recentTasks.map((task) => <TaskRow key={task.id} task={task} adapter={adapter} onOpenReport={openReportForTask} />)}
-                  </div>
-                )}
-              </section>
-
-              <section className="wb-report-section" aria-labelledby="reports-heading">
-                <div className="wb-band-heading"><div><h3 id="reports-heading">可查看报告</h3><span>按完成时间展示本机可查看结果</span></div><span>{viewModel.reports.length} 份</span></div>
-                {viewModel.reports.length === 0 ? (
-                  <div className="wb-empty-band"><FileText aria-hidden="true" /><div><strong>暂无可查看报告</strong><span>任务完成后，报告摘要会出现在这里。</span></div></div>
-                ) : (
-                  <div className="wb-report-list">
-                    {viewModel.reports.map((report) => (
-                      <article className="wb-report-row" key={report.id}>
-                        <FileText aria-hidden="true" />
-                        <div className="wb-report-main">
-                          <strong>{report.title}</strong>
-                          <span className="wb-report-url" title={report.svnUrl}>{report.svnUrl}</span>
-                          <small>{report.revisionRange} · {report.reviewItemIds.join(' · ')} · {report.completedAt}</small>
-                        </div>
-                        <div className={`wb-issue-count is-${report.highestSeverity}`}>
-                          <strong>{report.issueCount}</strong>
-                          <span>{report.issueCount === 0 ? '未发现问题' : '个问题'}</span>
-                        </div>
-                        <button className="wb-icon-button" type="button" title={`查看 ${report.title} 报告摘要`} onClick={() => void adapter.commands.openReport(report.id)}>
-                          <ArrowRight aria-hidden="true" />
-                          <span className="wb-sr-only">查看 {report.title} 报告摘要</span>
-                        </button>
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </section>
-            </div>
-          </div>
-        </section>
+        {activeView === 'task-management' && (
+          <TaskManagementView viewModel={viewModel} adapter={adapter} runningTasks={runningTasks} waitingTasks={waitingTasks} onOpenReport={openReport} />
+        )}
+        {activeView === 'report-center' && (
+          <ReportCenterView reports={viewModel.reports} selectedReport={selectedReport} onSelect={(reportId) => void adapter.commands.openReport(reportId)} adapter={adapter} />
+        )}
+        {activeView === 'feedback' && <FeedbackView adapter={adapter} />}
       </div>
 
       {selectorOpen && (
@@ -523,26 +613,6 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
             closeSelector()
           }}
         />
-      )}
-
-      {selectedReport && (
-        <aside className="wb-report-drawer" role="complementary" aria-labelledby="report-drawer-title">
-          <header>
-            <div><p className="wb-eyebrow">{selectedReport.taskId}</p><h2 id="report-drawer-title">{selectedReport.title}</h2></div>
-            <button className="wb-icon-button" type="button" title="关闭报告摘要" onClick={() => void adapter.commands.closeReport()}>
-              <X aria-hidden="true" /><span className="wb-sr-only">关闭报告摘要</span>
-            </button>
-          </header>
-          <p className="wb-drawer-url">{selectedReport.svnUrl}</p>
-          <dl>
-            <div><dt>审查范围</dt><dd>{selectedReport.revisionRange}</dd></div>
-            <div><dt>审查项</dt><dd>{selectedReport.reviewItemIds.join(' · ')}</dd></div>
-            <div><dt>完成时间</dt><dd>{selectedReport.completedAt}</dd></div>
-            <div><dt>问题结论</dt><dd>{selectedReport.issueCount === 0 ? '未发现问题' : `${selectedReport.issueCount} 个问题`}</dd></div>
-          </dl>
-          <section><h3>报告摘要</h3><p>{selectedReport.summary}</p></section>
-          <div className="wb-drawer-note"><CircleAlert aria-hidden="true" /><span>这是 2.0 开发预览中的模拟摘要，不会读取生产报告。</span></div>
-        </aside>
       )}
 
       {viewModel.notice && (

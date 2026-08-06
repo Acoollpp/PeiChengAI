@@ -68,31 +68,49 @@ const captureViewport = async (browser, viewport) => {
     await page.getByRole('button', { name: '填入验收样例', exact: true }).click()
     await assertNoDocumentOverflow(page, `${label} 工作台`)
 
-    const firstViewportMetrics = await page.evaluate(() => {
+    const taskManagementMetrics = await page.evaluate(() => {
       const selectors = {
         create: '.wb-create-panel',
         overview: '.wb-overview',
         execution: '.wb-execution-section',
-        reports: '.wb-report-section'
+        reports: '.wb-management-reports'
       }
-      return Object.fromEntries(
+      const regions = Object.fromEntries(
         Object.entries(selectors).map(([name, selector]) => {
           const rect = document.querySelector(selector)?.getBoundingClientRect()
-          return [name, rect ? { top: rect.top, bottom: rect.bottom, height: rect.height } : null]
+          return [name, rect ? { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, height: rect.height } : null]
         })
       )
+      const rows = [...document.querySelectorAll('.wb-task-table-row, .wb-management-report-row')]
+      const executionRect = document.querySelector('.wb-execution-section')?.getBoundingClientRect()
+      const failedRect = document.querySelector('.wb-task-table-row.is-failed')?.getBoundingClientRect()
+      const cellsDoNotOverlap = rows.every((row) => {
+        const cells = [...row.children].map((cell) => cell.getBoundingClientRect())
+        return cells.every((cell, index) => index === cells.length - 1 || cell.right <= cells[index + 1].left + 1)
+      })
+      return {
+        regions,
+        cellsDoNotOverlap,
+        rowCount: rows.length,
+        failedTaskVisible: Boolean(
+          executionRect && failedRect && failedRect.top >= executionRect.top && failedRect.bottom <= executionRect.bottom
+        )
+      }
     })
-    for (const [region, rect] of Object.entries(firstViewportMetrics)) {
+    for (const [region, rect] of Object.entries(taskManagementMetrics.regions)) {
       assert(rect, `${label}：未找到 ${region} 区域。`)
       assert(rect.height > 0, `${label}：${region} 区域高度为 0。`)
       assert(rect.top >= 0 && rect.top < viewport.height, `${label}：${region} 区域未进入首屏。`)
     }
     assert(
-      firstViewportMetrics.reports.top < viewport.height,
-      `${label}：报告区 top=${firstViewportMetrics.reports.top}，未进入首屏。`
+      taskManagementMetrics.regions.execution.bottom <= taskManagementMetrics.regions.reports.top,
+      `${label}：执行与等待表格和报告表格发生重叠。`
     )
+    assert(taskManagementMetrics.rowCount > 0, `${label}：任务管理表格没有 fixture 行。`)
+    assert(taskManagementMetrics.cellsDoNotOverlap, `${label}：任务或报告表格列发生重叠。`)
+    assert(taskManagementMetrics.failedTaskVisible, `${label}：失败任务和重试入口未在执行表格首屏可见。`)
     await page.screenshot({
-      path: join(screenshotDirectory, `workbench-${label}.png`),
+      path: join(screenshotDirectory, `task-management-${label}.png`),
       animations: 'disabled'
     })
 
@@ -190,8 +208,111 @@ const captureViewport = async (browser, viewport) => {
       animations: 'disabled'
     })
 
+    await page.getByRole('button', { name: '报告中心', exact: true }).click()
+    await page.getByRole('heading', { name: '报告中心', exact: true }).waitFor()
+    await assertNoDocumentOverflow(page, `${label} 报告中心`)
+    const reportCenterMetrics = await page.evaluate(() => {
+      const layout = document.querySelector('.wb-layout')
+      const grid = document.querySelector('.wb-report-center-grid')?.getBoundingClientRect()
+      const index = document.querySelector('.wb-report-index')?.getBoundingClientRect()
+      const markdown = document.querySelector('.wb-markdown-panel')?.getBoundingClientRect()
+      const title = document.querySelector('.wb-report-center .wb-workspace-title > div')?.getBoundingClientRect()
+      const pdfButton = document
+        .querySelector('.wb-report-center .wb-workspace-title > button')
+        ?.getBoundingClientRect()
+      const markdownScroll = document.querySelector('.wb-markdown-scroll')
+      const navButtons = [...document.querySelectorAll('.wb-preview-controls button')].map((button) =>
+        button.getBoundingClientRect()
+      )
+      const navButtonsDoNotOverlap = navButtons.every(
+        (button, indexValue) =>
+          indexValue === navButtons.length - 1 || button.right <= navButtons[indexValue + 1].left + 1
+      )
+      return {
+        fullView: layout?.classList.contains('is-full-view') ?? false,
+        createPanelAbsent: !document.querySelector('.wb-create-panel'),
+        gridWithinViewport: Boolean(
+          grid && grid.left >= 0 && grid.top >= 0 && grid.right <= innerWidth && grid.bottom <= innerHeight
+        ),
+        columnsDoNotOverlap: Boolean(index && markdown && index.right <= markdown.left + 1),
+        markdownWidth: markdown?.width ?? 0,
+        markdownScrollable: Boolean(markdownScroll && markdownScroll.scrollHeight > markdownScroll.clientHeight),
+        markdownHeadingVisible: Boolean(document.querySelector('.wb-markdown-scroll h1')),
+        titleClearsPdfButton: Boolean(title && pdfButton && title.right <= pdfButton.left + 1),
+        pdfButtonWithinViewport: Boolean(
+          pdfButton && pdfButton.left >= 0 && pdfButton.right <= innerWidth && pdfButton.bottom <= innerHeight
+        ),
+        navButtonsDoNotOverlap
+      }
+    })
+    assert(reportCenterMetrics.fullView, `${label}：报告中心未占满主内容区。`)
+    assert(reportCenterMetrics.createPanelAbsent, `${label}：报告中心仍显示创建任务左栏。`)
+    assert(reportCenterMetrics.gridWithinViewport, `${label}：报告中心双栏超出视口。`)
+    assert(reportCenterMetrics.columnsDoNotOverlap, `${label}：报告索引与 Markdown 区发生重叠。`)
+    assert(reportCenterMetrics.markdownWidth > 0, `${label}：Markdown 区宽度为 0。`)
+    assert(reportCenterMetrics.markdownScrollable, `${label}：Markdown 区没有形成独立滚动。`)
+    assert(reportCenterMetrics.markdownHeadingVisible, `${label}：Markdown 标题未渲染。`)
+    assert(reportCenterMetrics.titleClearsPdfButton, `${label}：报告标题与 PDF 按钮发生重叠。`)
+    assert(reportCenterMetrics.pdfButtonWithinViewport, `${label}：PDF 按钮超出视口。`)
+    assert(reportCenterMetrics.navButtonsDoNotOverlap, `${label}：顶部三导航发生重叠。`)
+
+    await page.locator('.wb-report-index button').filter({ hasText: 'SOC 滤波边界复查' }).click()
+    await page.getByRole('heading', { name: 'SOC 滤波边界复查', exact: true }).waitFor()
+    await page.screenshot({
+      path: join(screenshotDirectory, `report-center-${label}.png`),
+      animations: 'disabled'
+    })
+    await page.getByRole('button', { name: '查看PDF报告', exact: true }).click()
+    await page.getByText('已打开《SOC 滤波边界复查》PDF 报告。', { exact: true }).waitFor()
+    await page.getByRole('button', { name: '关闭提示', exact: true }).click()
+
+    await page.getByRole('button', { name: '意见反馈', exact: true }).click()
+    await page.getByLabel('问题描述', { exact: true }).fill(
+      '任务在环境检查阶段停留，重新进入页面后仍未推进，请协助核对本机环境状态。'
+    )
+    await page.getByRole('button', { name: '添加截图', exact: true }).click()
+    await page.getByRole('button', { name: '添加截图', exact: true }).click()
+    await assertNoDocumentOverflow(page, `${label} 意见反馈`)
+    const feedbackMetrics = await page.evaluate(() => {
+      const form = document.querySelector('.wb-feedback-form')?.getBoundingClientRect()
+      const actions = [...document.querySelectorAll('.wb-feedback-actions button')].map((button) =>
+        button.getBoundingClientRect()
+      )
+      const screenshotRows = [...document.querySelectorAll('.wb-feedback-file-list > div')]
+      const screenshotContentDoesNotOverlap = screenshotRows.every((row) => {
+        const cells = [...row.children].map((cell) => cell.getBoundingClientRect())
+        return cells.every(
+          (cell, indexValue) =>
+            indexValue === cells.length - 1 || cell.right <= cells[indexValue + 1].left + 1
+        )
+      })
+      return {
+        createPanelAbsent: !document.querySelector('.wb-create-panel'),
+        formWithinViewport: Boolean(
+          form && form.left >= 0 && form.top >= 0 && form.right <= innerWidth && form.bottom <= innerHeight
+        ),
+        actionsDoNotOverlap: Boolean(
+          actions.length === 2 && actions[0].right <= actions[1].left + 1
+        ),
+        screenshotCount: screenshotRows.length,
+        screenshotContentDoesNotOverlap
+      }
+    })
+    assert(feedbackMetrics.createPanelAbsent, `${label}：意见反馈仍显示创建任务左栏。`)
+    assert(feedbackMetrics.formWithinViewport, `${label}：意见反馈表单超出视口。`)
+    assert(feedbackMetrics.actionsDoNotOverlap, `${label}：意见反馈操作按钮发生重叠。`)
+    assert(feedbackMetrics.screenshotCount === 2, `${label}：未显示两个反馈截图 fixture。`)
+    assert(
+      feedbackMetrics.screenshotContentDoesNotOverlap,
+      `${label}：反馈截图名称、大小或移除按钮发生重叠。`
+    )
+    await page.screenshot({
+      path: join(screenshotDirectory, `feedback-${label}.png`),
+      animations: 'disabled'
+    })
+
     assert(consoleErrors.length === 0, `${label}：控制台错误：${consoleErrors.join('；')}`)
-    console.log(`${label} 通过：四区首屏、选择器滚动、长内容和错误态均符合断言。`)
+    console.log(`${label} 通过：三视图布局、任务表格、Markdown/PDF、反馈表单、选择器和错误态均符合断言。`)
   } finally {
     await page.close()
   }

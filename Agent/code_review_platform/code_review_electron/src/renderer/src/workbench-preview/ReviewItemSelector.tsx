@@ -132,7 +132,7 @@ export function ReviewItemSelector({
         }
       }))
     } catch (error) {
-      setMaterialError(error instanceof Error ? error.message : '模拟材料选择失败。')
+      setMaterialError(error instanceof Error ? error.message : '材料选择失败。')
     }
   }
 
@@ -354,7 +354,7 @@ export function ReviewItemSelector({
                 <div className="wb-section-heading">
                   <div>
                     <h4>专项材料</h4>
-                    <p>预览只模拟本机文件名，不读取或上传文件。</p>
+                    <p>当前预览仅展示文件名，不读取或上传文件。</p>
                   </div>
                   <span>{activeItem.materialFields.length === 0 ? '无需材料' : `${activeItem.materialFields.length} 项`}</span>
                 </div>
@@ -406,7 +406,7 @@ export function ReviewItemSelector({
                             onClick={() => void chooseMaterial(field.id, field.multiplicity === 'multiple')}
                           >
                             <FolderOpen aria-hidden="true" />
-                            {files.length > 0 && field.multiplicity === 'single' ? '更换模拟文件' : '选择模拟文件'}
+                            {files.length > 0 && field.multiplicity === 'single' ? '更换文件' : '选择文件'}
                           </button>
                         </div>
                       )

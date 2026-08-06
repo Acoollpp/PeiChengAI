@@ -38,7 +38,7 @@ describe('ReviewItemSelector', () => {
       screen.getByLabelText('DS-01 额外规则'),
       '这是一段只属于 DS-01 的很长额外规则，用于验证详情切换后输入不会串到其他审查项。'
     )
-    const fileButtons = screen.getAllByRole('button', { name: '选择模拟文件' })
+    const fileButtons = screen.getAllByRole('button', { name: '选择文件' })
     await user.click(fileButtons[0])
     await user.click(fileButtons[1])
 
@@ -54,7 +54,7 @@ describe('ReviewItemSelector', () => {
     const originalRequirementName = viewModel.sampleTask.selection['DS-01']?.materials[
       'requirement-sheet'
     ][0].name
-    await user.click(screen.getAllByRole('button', { name: '更换模拟文件' })[0])
+    await user.click(screen.getAllByRole('button', { name: '更换文件' })[0])
     expect(screen.queryByText(originalRequirementName ?? '')).not.toBeInTheDocument()
     expect(screen.getAllByText(/二次评审修订版/).length).toBeGreaterThan(0)
     expect(onConfirm).not.toHaveBeenCalled()

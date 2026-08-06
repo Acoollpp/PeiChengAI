@@ -1,5 +1,6 @@
 import type {
   CreateTaskCommand,
+  FeedbackScreenshotView,
   MaterialFileView,
   PreviewCommandResult,
   PreviewScenario,
@@ -208,6 +209,88 @@ const activeTasks: ReviewTaskViewModel[] = [
   })
 ]
 
+const reportMarkdown = {
+  powerMode: `# 低压上下电状态机复核
+
+> 审查范围：\`r0 → r10772\` · 审查项：\`DS-03\`
+
+## 审查结论
+
+本次复核识别出 **4 个问题**，其中 1 个高等级问题会导致故障降级状态无法按预期退出。建议阻断当前版本发布，完成修复并补充状态迁移测试后重新审查。
+
+| 等级 | 数量 | 处置建议 |
+| --- | ---: | --- |
+| 高 | 1 | 本版本必须修复 |
+| 中 | 2 | 合入前完成验证 |
+| 低 | 1 | 纳入本迭代整理 |
+
+## 高等级问题：故障恢复后缺少退出事件
+
+**位置**：\`src/power_mode/PowerModeState.c:286\`
+
+从 \`POWER_MODE_DERATE\` 进入恢复分支后，仅清理故障快照，没有向主状态机投递 \`EVT_RECOVERY_DONE\`。状态会停留在降级模式，后续上电请求被守卫条件拒绝。
+
+\`\`\`c
+if (fault_snapshot == FAULT_CLEARED) {
+    PowerMode_ClearDerateReason();
+    /* 缺少状态迁移事件 */
+}
+\`\`\`
+
+### 建议
+
+1. 清理降级原因后投递恢复完成事件。
+2. 增加“故障清除 → 恢复 → 再次上电”的往返路径测试。
+3. 核对休眠唤醒路径是否复用同一故障快照。
+
+## 证据范围
+
+- 状态定义与转换表
+- 故障快照读取和清理路径
+- 休眠、唤醒、降级与恢复的相邻状态
+`,
+  soc: `# SOC 滤波边界复查
+
+> 审查范围：\`r8920 → r8934\` · 审查项：\`DS-01\`、\`DS-02\`
+
+## 审查结论
+
+需求项、规格约束与代码变更范围能够对应，**未发现需要报告的问题**。滤波窗口上下限均有显式保护，异常采样不会写入历史窗口。
+
+## 核对摘要
+
+| 核对项 | 结果 | 证据 |
+| --- | --- | --- |
+| 需求软件项 | 通过 | 3 项变更均可定位到提交 |
+| 规格边界 | 通过 | 第五章 5.4.2 与实现一致 |
+| 异常采样 | 通过 | 无效值在入队前被拒绝 |
+
+## 残余建议
+
+- 保留极端温度下的回归用例。
+- 下次调整窗口长度时同步检查定点数溢出边界。
+`,
+  timer: `# 故障恢复计时器审查
+
+> 审查范围：\`r17603 → r17628\` · 审查项：\`DS-02\`、\`DS-03\`
+
+## 审查结论
+
+发现 **2 个中等级问题**，涉及计时器复位时机和异常状态的重复进入保护。
+
+## 问题清单
+
+1. \`FaultRecoveryTimer_Reset\` 在状态退出前调用，下一周期仍可能读取旧的超时标记。
+2. 重复进入恢复状态时未检查计时器是否已经启动，可能覆盖首次启动时间。
+
+## 建议验证
+
+- 连续两次触发同一故障恢复事件。
+- 在计时器临界周期同步触发状态退出。
+- 验证恢复完成后所有诊断标志都已清零。
+`
+}
+
 const reports: ReviewReportViewModel[] = [
   {
     id: 'report-009',
@@ -219,7 +302,8 @@ const reports: ReviewReportViewModel[] = [
     completedAt: '今天 12:48',
     issueCount: 4,
     highestSeverity: 'high',
-    summary: '发现 1 项状态退出条件缺失和 3 项异常事件覆盖问题，均已定位到源码文件与状态转换。'
+    summary: '发现 1 项状态退出条件缺失和 3 项异常事件覆盖问题，均已定位到源码文件与状态转换。',
+    markdown: reportMarkdown.powerMode
   },
   {
     id: 'report-007',
@@ -231,7 +315,8 @@ const reports: ReviewReportViewModel[] = [
     completedAt: '今天 11:06',
     issueCount: 0,
     highestSeverity: 'none',
-    summary: '未发现需要报告的问题；需求项、规格约束与代码变更范围能够对应。'
+    summary: '未发现需要报告的问题；需求项、规格约束与代码变更范围能够对应。',
+    markdown: reportMarkdown.soc
   },
   {
     id: 'report-004',
@@ -243,7 +328,8 @@ const reports: ReviewReportViewModel[] = [
     completedAt: '昨天 18:32',
     issueCount: 2,
     highestSeverity: 'medium',
-    summary: '发现 2 项中等级问题，涉及计时器复位时机和异常状态的重复进入保护。'
+    summary: '发现 2 项中等级问题，涉及计时器复位时机和异常状态的重复进入保护。',
+    markdown: reportMarkdown.timer
   }
 ]
 
@@ -273,6 +359,14 @@ const fixtureFiles: Record<string, MaterialFileView[]> = {
     }
   ]
 }
+
+const feedbackScreenshots: FeedbackScreenshotView[] = [
+  { id: 'feedback-screen-1', name: '任务阶段停留在环境检查.png', sizeLabel: '684 KB' },
+  { id: 'feedback-screen-2', name: '报告列表未刷新.webp', sizeLabel: '1.2 MB' },
+  { id: 'feedback-screen-3', name: '长路径显示问题.jpg', sizeLabel: '932 KB' },
+  { id: 'feedback-screen-4', name: '任务等待序号异常.png', sizeLabel: '756 KB' },
+  { id: 'feedback-screen-5', name: '报告预览滚动位置.webp', sizeLabel: '1.5 MB' }
+]
 
 const clone = <T,>(value: T): T => structuredClone(value)
 
@@ -395,7 +489,7 @@ export const createFixtureWorkbenchAdapter = (): WorkbenchAdapter => {
           newRevision: input.newRevision,
           reviewItemIds: selectedIds,
           stage: 'waiting',
-          message: '任务已加入本机等待列表，模拟材料路径已保留。',
+          message: '任务已加入本机等待列表，材料路径已保留。',
           updatedAt: '刚刚',
           queueIndex: state.tasks.filter((value) => value.stage === 'waiting').length + 1
         })
@@ -440,8 +534,8 @@ export const createFixtureWorkbenchAdapter = (): WorkbenchAdapter => {
             stage: advancedStage,
             message:
               advancedStage === 'completed'
-                ? '模拟任务已完成，报告已生成。'
-                : `模拟阶段已推进到${stageLabels[advancedStage]}。`,
+                ? '任务已完成，报告已生成。'
+                : `任务阶段已推进到${stageLabels[advancedStage]}。`,
             updatedAt: '刚刚'
           })
           if (advancedStage === 'completed') newlyCompleted.push(advancedTask)
@@ -460,7 +554,8 @@ export const createFixtureWorkbenchAdapter = (): WorkbenchAdapter => {
               completedAt: '刚刚',
               issueCount: 1,
               highestSeverity: 'medium',
-              summary: '模拟阶段推进已完成，生成 1 项用于验证报告查看交互的示例问题。'
+              summary: '任务阶段推进已完成，生成 1 项用于验证报告查看交互的示例问题。',
+              markdown: `# ${completedTask.title}\n\n> 审查范围：\`r${completedTask.oldRevision} → r${completedTask.newRevision}\`\n\n## 审查结论\n\n任务阶段推进已完成，生成 **1 个中等级示例问题**，用于验证报告中心的 Markdown 展示与后续 PDF 逻辑绑定。\n\n## 建议\n\n- 核对对应源码位置。\n- 修复后重新执行本地审查。\n`
             },
             ...state.reports
           ]
@@ -470,11 +565,33 @@ export const createFixtureWorkbenchAdapter = (): WorkbenchAdapter => {
       },
       async openReport(reportId) {
         state.selectedReportId = reportId
-        return result('已打开报告摘要。')
+        return result('已在报告中心选择该报告。')
       },
       async closeReport() {
         state.selectedReportId = undefined
-        return result('已关闭报告摘要。')
+        return result('已清除报告选择。')
+      },
+      async viewPdfReport(reportId) {
+        const report = state.reports.find((value) => value.id === reportId)
+        return result(
+          report
+            ? `已打开《${report.title}》PDF 报告。`
+            : '未找到可查看的 PDF 报告。'
+        )
+      },
+      async chooseFeedbackScreenshot(currentScreenshotIds = []) {
+        const screenshot = feedbackScreenshots.find(
+          (value) => !currentScreenshotIds.includes(value.id)
+        )
+        if (!screenshot) {
+          throw new Error('没有更多可用截图。')
+        }
+        return clone(screenshot)
+      },
+      async submitFeedback(input) {
+        const description = input.description.trim()
+        if (!description) return result('请填写问题描述。')
+        return result(`意见已提交，包含 ${input.screenshots.length} 张截图。`)
       },
       async chooseMaterial(itemId, fieldId, currentFileIds = []) {
         const values = fixtureFiles[`${itemId}:${fieldId}`]
