@@ -9,9 +9,15 @@ import {
   type ReportFeedbackWindowManager
 } from './report-feedback-window'
 import { configureExternalLinkHandling } from './window-security'
+import {
+  getDevelopmentRendererUrl,
+  getRendererDocumentName,
+  isWorkbenchPreviewEnabled
+} from './renderer-entry'
 
 const APP_USER_MODEL_ID = 'com.peicheng.code-review'
 const MAIN_PROCESS_DIR = dirname(fileURLToPath(import.meta.url))
+const workbenchPreviewEnabled = isWorkbenchPreviewEnabled()
 let mainWindow: BrowserWindow | undefined
 let reportFeedbackWindowManager: ReportFeedbackWindowManager | undefined
 
@@ -26,13 +32,13 @@ const resolvePreloadPath = (): string => {
 
 const createWindow = (): void => {
   mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 760,
+    width: workbenchPreviewEnabled ? 1440 : 1180,
+    height: workbenchPreviewEnabled ? 900 : 760,
     minWidth: 920,
     minHeight: 620,
     title: 'Code Review Client',
     webPreferences: {
-      preload: resolvePreloadPath(),
+      preload: workbenchPreviewEnabled ? undefined : resolvePreloadPath(),
       sandbox: false,
       contextIsolation: true
     }
@@ -49,9 +55,13 @@ const createWindow = (): void => {
   configureExternalLinkHandling(window)
 
   if (process.env.ELECTRON_RENDERER_URL) {
-    void window.loadURL(process.env.ELECTRON_RENDERER_URL)
+    void window.loadURL(
+      getDevelopmentRendererUrl(process.env.ELECTRON_RENDERER_URL, workbenchPreviewEnabled)
+    )
   } else {
-    void window.loadFile(join(MAIN_PROCESS_DIR, '../renderer/index.html'))
+    void window.loadFile(
+      join(MAIN_PROCESS_DIR, '../renderer', getRendererDocumentName(workbenchPreviewEnabled))
+    )
   }
 }
 
