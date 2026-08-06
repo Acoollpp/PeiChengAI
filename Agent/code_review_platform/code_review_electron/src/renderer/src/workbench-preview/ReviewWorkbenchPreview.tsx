@@ -127,8 +127,9 @@ const TaskTableRow = ({
 }): React.JSX.Element => (
   <article className={`wb-task-table-row ${taskStageClass(task)}`} aria-label={`${task.id} ${task.title}`}>
     <div className="wb-task-identity">
-      <strong>{task.title}</strong>
-      <span>{task.id} · {formatRevisionLabel(task.oldRevision)} → {formatRevisionLabel(task.newRevision)} · {task.reviewItemIds.join(' / ')}</span>
+      <strong title={task.title}>{task.title}</strong>
+      <span className="wb-row-svn" title={task.svnUrl}>{task.svnUrl}</span>
+      <span className="wb-row-meta">{task.id} · {formatRevisionLabel(task.oldRevision)} → {formatRevisionLabel(task.newRevision)} · {task.reviewItemIds.join(' / ')}</span>
     </div>
     <span className="wb-status-label">{task.stageLabel}</span>
     <div className="wb-task-progress">
@@ -250,7 +251,11 @@ function TaskManagementView({
           <div className="wb-management-report-list">
             {viewModel.reports.map((report) => (
               <article className="wb-management-report-row" key={report.id}>
-                <div><strong>{report.title}</strong><span>{report.taskId} · {report.reviewItemIds.join(' / ')}</span></div>
+                <div>
+                  <strong title={report.title}>{report.title}</strong>
+                  <span className="wb-row-svn" title={report.svnUrl}>{report.svnUrl}</span>
+                  <span className="wb-row-meta">{report.taskId} · {report.reviewItemIds.join(' / ')}</span>
+                </div>
                 <span>{report.revisionRange}</span>
                 <strong className={report.highestSeverity ? `is-${report.highestSeverity}` : undefined}>{report.issueCount === undefined ? `问题数未知${report.highestSeverity ? '' : ' · 严重度未知'}` : `${report.issueCount === 0 ? '无问题' : `${report.issueCount} 个`}${report.highestSeverity ? '' : ' · 严重度未知'}`}</strong>
                 <time>{report.completedAt}</time>
@@ -322,7 +327,8 @@ function ReportCenterView({
           <div>
             {reports.map((report) => (
               <button className={selectedReport?.id === report.id ? 'is-active' : ''} type="button" aria-current={selectedReport?.id === report.id ? 'page' : undefined} key={report.id} onClick={() => onSelect(report.id)}>
-                <span className="wb-report-index-title"><FileText aria-hidden="true" /><strong>{report.title}</strong></span>
+                <span className="wb-report-index-title"><FileText aria-hidden="true" /><strong title={report.title}>{report.title}</strong></span>
+                <span className="wb-report-index-svn" title={report.svnUrl}>{report.svnUrl}</span>
                 <small>{report.taskId} · {report.revisionRange}</small>
                 <span className="wb-report-index-meta"><span>{report.completedAt}</span><strong className={report.highestSeverity ? `is-${report.highestSeverity}` : undefined}>{report.issueCount === undefined ? `问题数未知${report.highestSeverity ? '' : ' · 严重度未知'}` : `${report.issueCount === 0 ? '无问题' : `${report.issueCount} 个问题`}${report.highestSeverity ? '' : ' · 严重度未知'}`}</strong></span>
               </button>
