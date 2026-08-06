@@ -86,6 +86,7 @@ describe('registerIpcHandlers', () => {
       'task:list',
       'task:report',
       'requirement-file:select',
+      'review-material-file:select',
       'codex:install',
       'svn:install',
       'skill:install',
@@ -192,6 +193,33 @@ describe('registerIpcHandlers', () => {
 
     await expect(handler()).resolves.toEqual({
       status: 'cancelled'
+    })
+  })
+
+  it('按 DS-01 材料字段打开系统文件选择器并返回真实本地文件信息', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'ipc-review-material-'))
+    tempDirs.push(directory)
+    const filePath = join(directory, '产品规格书.pdf')
+    await writeFile(filePath, 'pdf')
+    showOpenDialogMock.mockResolvedValue({ canceled: false, filePaths: [filePath] })
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers()
+    const handler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'review-material-file:select'
+    )?.[1]
+
+    await expect(handler({}, {
+      review_item_id: 'DS-01',
+      field_id: 'product-spec'
+    })).resolves.toEqual({
+      status: 'selected',
+      filePath,
+      fileName: '产品规格书.pdf',
+      fileSize: 3
+    })
+    expect(showOpenDialogMock).toHaveBeenCalledWith({
+      properties: ['openFile'],
+      filters: [{ name: '产品规格书', extensions: ['pdf'] }]
     })
   })
 
@@ -861,10 +889,13 @@ describe('registerIpcHandlers', () => {
       'token-123',
       expect.objectContaining({
         old_revision: '0',
-        review_items: reviewItems,
         review_item_ids: ['DS-03'],
         skill_name: 'bms-code-reviewer'
       })
+    )
+    expect(api.createTask).toHaveBeenCalledWith(
+      'token-123',
+      expect.not.objectContaining({ review_items: expect.anything() })
     )
     expect(runCodex).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -875,7 +906,8 @@ describe('registerIpcHandlers', () => {
           {
             id: 'DS-03',
             name: '状态机审核',
-            user_extra_rules: '仅检查休眠唤醒状态'
+            user_extra_rules: '仅检查休眠唤醒状态',
+            materials: []
           }
         ]
       })

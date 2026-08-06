@@ -34,10 +34,27 @@ export const buildBmsReviewTaskPrompt = ({
 
   const reviewItemSections = reviewItems.map((item) => {
     const extraRules = item.user_extra_rules?.trim() || '无'
+    const materials = item.materials.filter((material) => material.filePaths.length > 0)
+    const materialLines = materials.length === 0
+      ? ['- 专项材料：无']
+      : [
+          '- 专项材料：',
+          ...materials.flatMap((material) => {
+            material.filePaths.forEach((filePath) => {
+              if (!isAbsoluteOnSupportedPlatform(filePath)) {
+                throw new Error(`${item.id} ${material.name}路径必须是绝对路径。`)
+              }
+            })
+            return [
+              `  - ${material.name}（${material.fieldId}）：`,
+              ...material.filePaths.map((filePath) => `    - ${filePath}`)
+            ]
+          })
+        ]
     return [
       `### ${item.id}：${item.name}`,
       `- 用户额外规则：${extraRules}`,
-      '- 专项材料：无'
+      ...materialLines
     ].join('\n')
   })
 

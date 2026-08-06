@@ -95,6 +95,22 @@ export type SelectRequirementFileResult =
       status: 'cancelled'
     }
 
+export interface SelectReviewMaterialFileRequest {
+  review_item_id: string
+  field_id: string
+}
+
+export type SelectReviewMaterialFileResult =
+  | {
+      status: 'selected'
+      filePath: string
+      fileName: string
+      fileSize: number
+    }
+  | {
+      status: 'cancelled'
+    }
+
 export interface EnvironmentCheckResult {
   status: EnvironmentStatus
   codexVersion?: string
@@ -243,6 +259,9 @@ export interface CodeReviewApi {
   cancelTask(payload: CancelTaskRequest): Promise<CancelTaskResult>
   openTaskLog(taskId: string): Promise<OpenTaskLogResult>
   selectRequirementFile(): Promise<SelectRequirementFileResult>
+  selectReviewMaterialFile(
+    payload: SelectReviewMaterialFileRequest
+  ): Promise<SelectReviewMaterialFileResult>
   getPathForPastedFile(file: File): string
   onTaskProgress(callback: (event: TaskProgressEvent) => void): () => void
   downloadCurrentReport(taskId?: string): Promise<DownloadCurrentReportResult>

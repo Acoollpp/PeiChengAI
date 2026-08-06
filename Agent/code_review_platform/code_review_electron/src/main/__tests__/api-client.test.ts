@@ -118,17 +118,24 @@ describe('ApiClient', () => {
     })
   })
 
-  it('只向服务端发送审查项 ID，不发送逐项用户额外规则', async () => {
+  it('只向服务端发送审查项 ID，不发送逐项用户额外规则和本地材料路径', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'task-1' }))
     const client = new ApiClient('https://server.example', fetchMock)
 
     await client.createTask('token-123', {
       svn_url: 'svn://repo/project',
-      old_revision: '0',
+      old_revision: '12',
       new_revision: '14',
       skill_name: 'bms-code-reviewer',
-      review_item_ids: ['DS-03'],
-      review_items: [{ id: 'DS-03', user_extra_rules: '仅属于本次本地执行' }]
+      review_item_ids: ['DS-01'],
+      review_items: [{
+        id: 'DS-01',
+        user_extra_rules: '仅属于本次本地执行',
+        materials: [
+          { field_id: 'requirement-sheet', file_paths: ['/local/requirements.xlsx'] },
+          { field_id: 'product-spec', file_paths: ['/local/specification.pdf'] }
+        ]
+      }]
     })
 
     expect(fetchMock).toHaveBeenCalledWith('https://server.example/api/v1/review-tasks', {
@@ -139,10 +146,10 @@ describe('ApiClient', () => {
       },
       body: JSON.stringify({
         svn_url: 'svn://repo/project',
-        old_revision: '0',
+        old_revision: '12',
         new_revision: '14',
         skill_name: 'bms-code-reviewer',
-        review_item_ids: ['DS-03']
+        review_item_ids: ['DS-01']
       })
     })
   })

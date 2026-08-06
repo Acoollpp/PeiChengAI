@@ -1,5 +1,5 @@
 import { mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
-import { dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
 
 import { dialog, ipcMain, Notification, shell, type BrowserWindow } from 'electron'
 
@@ -71,7 +71,7 @@ import {
 } from './svn-preflight'
 import { buildDirectCommandOptions } from './environment-checker'
 import type { TaskPreflightErrorField, TaskPreflightResult } from '../shared/task-preflight'
-import type { SelectedReviewItemInput } from '../shared/review-items'
+import { findReviewItem, type SelectedReviewItemInput } from '../shared/review-items'
 
 interface SerializedFeedbackScreenshot {
   name: string
@@ -167,6 +167,22 @@ type SelectRequirementFileResult =
   | {
       status: 'selected'
       filePath: string
+    }
+  | {
+      status: 'cancelled'
+    }
+
+interface SelectReviewMaterialFileRequest {
+  review_item_id: string
+  field_id: string
+}
+
+type SelectReviewMaterialFileResult =
+  | {
+      status: 'selected'
+      filePath: string
+      fileName: string
+      fileSize: number
     }
   | {
       status: 'cancelled'
@@ -970,6 +986,48 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       filePath: result.filePaths[0]
     }
   })
+
+  ipcMain.handle(
+    'review-material-file:select',
+    async (
+      _event,
+      payload: SelectReviewMaterialFileRequest
+    ): Promise<SelectReviewMaterialFileResult> => {
+      const reviewItem = findReviewItem(payload.review_item_id)
+      const field = reviewItem?.materialFields.find((candidate) => candidate.id === payload.field_id)
+      if (!reviewItem?.enabled || !field) {
+        throw new Error('审查材料字段无效，请刷新客户端后重试。')
+      }
+
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [{
+          name: field.name,
+          extensions: field.allowedExtensions.map((extension) => extension.replace(/^\./, ''))
+        }]
+      })
+      if (result.canceled || result.filePaths.length === 0) {
+        return { status: 'cancelled' }
+      }
+
+      const filePath = result.filePaths[0]
+      const extension = extname(filePath).toLowerCase()
+      if (!field.allowedExtensions.includes(extension)) {
+        throw new Error(`${reviewItem.id} ${field.name}仅支持 ${field.allowedExtensions.join('、')} 文件。`)
+      }
+      const fileStat = await stat(filePath).catch(() => undefined)
+      if (!fileStat?.isFile()) {
+        throw new Error(`${reviewItem.id} ${field.name}不存在或不是文件，请重新选择。`)
+      }
+
+      return {
+        status: 'selected',
+        filePath,
+        fileName: basename(filePath),
+        fileSize: fileStat.size
+      }
+    }
+  )
 
   ipcMain.handle('codex:install', (): Promise<EnvironmentCheckResult> => installLocalCodexCli())
 
