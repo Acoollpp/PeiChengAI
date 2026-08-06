@@ -49,20 +49,24 @@ describe('useTaskQueue', () => {
     expect(REVIEW_TASK_TIMEOUT_MS).toBe(60 * 60 * 1000)
   })
 
-  it('DS-01 等待任务只保留原始本地材料路径', async () => {
+  it('组合等待任务保留逐项规则和 DS-01 原始材料路径', async () => {
     const executions = [
       createDeferred<ExecuteTaskResult>(),
       createDeferred<ExecuteTaskResult>()
     ]
     const executeTask = vi.fn(() => executions[executeTask.mock.calls.length - 1].promise)
     const { result } = renderHook(() => useTaskQueue({ executeTask }))
-    const reviewItems = [{
-      id: 'DS-01',
-      materials: [
-        { field_id: 'requirement-sheet', file_paths: ['/source/requirements.xlsx'] },
-        { field_id: 'product-spec', file_paths: ['/source/specification.pdf'] }
-      ]
-    }]
+    const reviewItems = [
+      {
+        id: 'DS-01',
+        user_extra_rules: '只核对需求变更',
+        materials: [
+          { field_id: 'requirement-sheet', file_paths: ['/source/requirements.xlsx'] },
+          { field_id: 'product-spec', file_paths: ['/source/specification.pdf'] }
+        ]
+      },
+      { id: 'DS-03', user_extra_rules: '只检查故障恢复状态' }
+    ]
 
     await act(async () => {
       await result.current.submitTask(basePayload(1))
@@ -83,6 +87,58 @@ describe('useTaskQueue', () => {
       client_task_id: expect.stringMatching(/^local-/)
     }))
     expect(JSON.stringify(result.current.queuedTasks[0])).not.toContain('workspace')
+  })
+
+  it('组合任务运行中取消和失败都会释放槽位，后续任务仍保留完整逐项输入', async () => {
+    const deferreds = Array.from({ length: 4 }, () => createDeferred<ExecuteTaskResult>())
+    const executeTask = vi.fn((_payload: ExecuteTaskRequest) =>
+      deferreds[executeTask.mock.calls.length - 1].promise
+    )
+    const cancelTask = vi.fn(async () => ({ status: 'cancelled' as const }))
+    const reviewItems = [
+      {
+        id: 'DS-01',
+        user_extra_rules: '只核对需求变更',
+        materials: [
+          { field_id: 'requirement-sheet', file_paths: ['/source/requirements.xlsx'] },
+          { field_id: 'product-spec', file_paths: ['/source/specification.pdf'] }
+        ]
+      },
+      { id: 'DS-03', user_extra_rules: '只检查故障恢复状态' }
+    ]
+    const { result } = renderHook(() => useTaskQueue({ executeTask, cancelTask }))
+
+    await act(async () => {
+      for (let index = 1; index <= 4; index += 1) {
+        await result.current.submitTask({
+          svn_url: `svn://repo/multi-${index}`,
+          old_revision: '120',
+          new_revision: '130',
+          review_items: reviewItems,
+          skill_name: 'bms-code-reviewer'
+        })
+      }
+    })
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(2))
+    expect(result.current.queuedTasks).toHaveLength(2)
+
+    const firstRunningTask = result.current.runningTasks[0]
+    await act(async () => {
+      await result.current.cancelTask(firstRunningTask)
+    })
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(3))
+    expect(executeTask.mock.calls[2][0].review_items).toEqual(reviewItems)
+
+    await act(async () => {
+      deferreds[1].reject(new Error('组合任务执行失败'))
+      await deferreds[1].promise.catch(() => undefined)
+    })
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(4))
+    expect(executeTask.mock.calls[3][0].review_items).toEqual(reviewItems)
+    expect(result.current.historyTasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: 'cancelled', review_items: reviewItems }),
+      expect.objectContaining({ status: 'failed', error_message: '组合任务执行失败', review_items: reviewItems })
+    ]))
   })
 
   it('初始加载 2 个服务端运行任务时新提交任务仍按本地并发上限执行', async () => {
@@ -867,6 +923,7 @@ describe('useTaskQueue', () => {
   })
 
   it('任务执行超过配置超时时间后标记失败并继续调度下一条', async () => {
+    vi.useFakeTimers()
     const deferreds = [
       createDeferred<ExecuteTaskResult>(),
       createDeferred<ExecuteTaskResult>(),
@@ -887,27 +944,29 @@ describe('useTaskQueue', () => {
 
     expect(executeTask).toHaveBeenCalledTimes(2)
 
-    await waitFor(() =>
-      expect(result.current.historyTasks).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            svn_url: 'svn://repo/project-1',
-            status: 'failed',
-            error_message: '任务执行超时，请联系管理员处理。',
-            progress_message: '任务执行超时，请联系管理员处理。',
-            localQueueState: 'finished',
-            isLocallyExecuting: false
-          }),
-          expect.objectContaining({
-            svn_url: 'svn://repo/project-2',
-            status: 'failed',
-            error_message: '任务执行超时，请联系管理员处理。',
-            progress_message: '任务执行超时，请联系管理员处理。',
-            localQueueState: 'finished',
-            isLocallyExecuting: false
-          })
-        ])
-      )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100)
+    })
+
+    expect(result.current.historyTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          svn_url: 'svn://repo/project-1',
+          status: 'failed',
+          error_message: '任务执行超时，请联系管理员处理。',
+          progress_message: '任务执行超时，请联系管理员处理。',
+          localQueueState: 'finished',
+          isLocallyExecuting: false
+        }),
+        expect.objectContaining({
+          svn_url: 'svn://repo/project-2',
+          status: 'failed',
+          error_message: '任务执行超时，请联系管理员处理。',
+          progress_message: '任务执行超时，请联系管理员处理。',
+          localQueueState: 'finished',
+          isLocallyExecuting: false
+        })
+      ])
     )
     expect(executeTask).toHaveBeenCalledTimes(3)
     expect(result.current.runningTasks.map((task) => task.svn_url)).toContain('svn://repo/project-3')
@@ -1098,6 +1157,7 @@ describe('useTaskQueue', () => {
 
     await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
     const clientTaskId = executeTask.mock.calls[0][0].client_task_id
+    expect(clientTaskId).toMatch(/^local-/)
 
     await act(async () => {
       result.current.applyProgressEvent({
@@ -1174,6 +1234,8 @@ describe('useTaskQueue', () => {
     expect(retryTask).toHaveBeenCalledWith({
       task_id: 'task-failed',
       client_task_id: 'task-failed',
+      old_revision: '10',
+      new_revision: '12',
       requirement_file_path: '/tmp/产品开发需求表.xls'
     })
     expect(executeTask).not.toHaveBeenCalled()
@@ -1208,20 +1270,31 @@ describe('useTaskQueue', () => {
     expect(result.current.tasks).toHaveLength(1)
   })
 
-  it('服务端刷新后仍保留 DS-03 额外规则并在失败重试时原样透传', async () => {
+  it('服务端刷新后仍保留组合逐项输入并在失败重试时原样透传', async () => {
     const execution = createDeferred<ExecuteTaskResult>()
     const retry = createDeferred<ExecuteTaskResult>()
     const executeTask = vi.fn((_payload: ExecuteTaskRequest) => execution.promise)
     const retryTask = vi.fn((_payload: RetryTaskRequest) => retry.promise)
-    const reviewItems = [{ id: 'DS-03', user_extra_rules: '仅检查休眠唤醒状态' }]
+    const reviewItems = [
+      {
+        id: 'DS-01',
+        user_extra_rules: '仅核对本次协议导入',
+        materials: [
+          { field_id: 'requirement-sheet', file_paths: ['/source/requirements.xlsx'] },
+          { field_id: 'product-spec', file_paths: ['/source/specification.pdf'] }
+        ]
+      },
+      { id: 'DS-03', user_extra_rules: '' }
+    ]
     const { result } = renderHook(() => useTaskQueue({ executeTask, retryTask }))
 
     await act(async () => {
       await result.current.submitTask({
-        svn_url: 'svn://repo/ds03',
+        svn_url: 'svn://repo/multi-items',
         old_revision: '0',
-        new_revision: '12',
-        review_items: reviewItems
+        new_revision: 'R130',
+        review_items: reviewItems,
+        skill_name: 'bms-code-reviewer'
       })
     })
 
@@ -1229,29 +1302,64 @@ describe('useTaskQueue', () => {
     const clientTaskId = executeTask.mock.calls[0][0].client_task_id
 
     act(() => {
-      result.current.applyProgressEvent({
-        taskId: 'task-ds03',
-        clientTaskId,
-        type: 'stage',
-        stage: 'created',
-        message: '任务已创建'
-      })
       result.current.setServerTasks([
         {
-          id: 'task-ds03',
-          svn_url: 'svn://repo/ds03',
+          id: 'task-multi-items',
+          svn_url: 'svn://repo/multi-items',
           old_revision: '0',
-          new_revision: 'r12',
-          review_item_ids: ['DS-03'],
+          new_revision: 'r130',
+          review_item_ids: ['DS-01', 'DS-03'],
           skill_name: 'bms-code-reviewer',
           status: 'running_codex'
         }
       ])
     })
 
-    await waitFor(() =>
-      expect(result.current.runningTasks[0]?.review_items).toEqual(reviewItems)
+    await waitFor(() => expect(result.current.tasks).toHaveLength(2))
+    expect(result.current.tasks.find((task) => task.id === 'task-multi-items')?.review_items)
+      .toBeUndefined()
+    expect(result.current.tasks.find((task) => task.localTaskId === clientTaskId)).toEqual(
+      expect.objectContaining({ id: clientTaskId, review_items: reviewItems })
     )
+
+    act(() => {
+      result.current.applyProgressEvent({
+        taskId: 'task-multi-items',
+        clientTaskId,
+        type: 'stage',
+        stage: 'created',
+        message: '任务已创建'
+      })
+    })
+
+    await waitFor(() => expect(result.current.runningTasks[0]).toEqual(expect.objectContaining({
+      old_revision: '0',
+      new_revision: 'R130',
+      review_items: reviewItems
+    })))
+    expect(result.current.tasks).toHaveLength(1)
+
+    act(() => {
+      result.current.setServerTasks([
+        {
+          id: 'task-multi-items',
+          svn_url: 'svn://repo/multi-items',
+          old_revision: '0',
+          new_revision: 'r130',
+          review_item_ids: ['DS-01', 'DS-03'],
+          skill_name: 'bms-code-reviewer',
+          status: 'running_codex'
+        }
+      ])
+    })
+    expect(result.current.tasks).toEqual([
+      expect.objectContaining({
+        localTaskId: clientTaskId,
+        old_revision: '0',
+        new_revision: 'R130',
+        review_items: reviewItems
+      })
+    ])
 
     await act(async () => {
       execution.reject(new Error('Codex 执行失败'))
@@ -1265,20 +1373,373 @@ describe('useTaskQueue', () => {
 
     await waitFor(() => expect(retryTask).toHaveBeenCalledTimes(1))
     expect(retryTask).toHaveBeenCalledWith({
-      task_id: 'task-ds03',
+      task_id: 'task-multi-items',
       client_task_id: clientTaskId,
+      old_revision: '0',
+      new_revision: 'R130',
       requirement_file_path: undefined,
       review_items: reviewItems
     })
 
     await act(async () => {
       retry.resolve({
-        taskId: 'task-ds03',
+        taskId: 'task-multi-items',
         status: 'success',
-        reportMarkdown: '# DS-03 report',
-        reportPath: '/tmp/ds03.md'
+        reportMarkdown: '# DS-01 + DS-03 report',
+        reportPath: '/tmp/multi-items.md'
       })
     })
+  })
+
+  it('2.0 任务旧 revision 不同时不绑定服务端另一任务或泄露逐项输入', async () => {
+    const execution = createDeferred<ExecuteTaskResult>()
+    const executeTask = vi.fn((_payload: ExecuteTaskRequest) => execution.promise)
+    const reviewItems = [
+      {
+        id: 'DS-01',
+        user_extra_rules: '本地 DS-01 规则不得泄露',
+        materials: [
+          { field_id: 'requirement-sheet', file_paths: ['/private/requirements.xlsx'] },
+          { field_id: 'product-spec', file_paths: ['/private/specification.pdf'] }
+        ]
+      },
+      { id: 'DS-03', user_extra_rules: '本地 DS-03 规则不得泄露' }
+    ]
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
+
+    await act(async () => {
+      await result.current.submitTask({
+        svn_url: 'svn://repo/same-project',
+        old_revision: '0',
+        new_revision: 'R130',
+        review_items: reviewItems,
+        skill_name: 'bms-code-reviewer'
+      })
+    })
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
+    const clientTaskId = executeTask.mock.calls[0][0].client_task_id
+
+    act(() => {
+      result.current.setServerTasks([
+        {
+          id: 'task-other-old-revision',
+          svn_url: 'svn://repo/same-project',
+          old_revision: 'r0',
+          new_revision: 'r130',
+          review_item_ids: ['DS-01', 'DS-03'],
+          skill_name: 'bms-code-reviewer',
+          status: 'running_codex'
+        }
+      ])
+    })
+
+    await waitFor(() => expect(result.current.tasks).toHaveLength(2))
+    const serverTask = result.current.tasks.find((task) => task.id === 'task-other-old-revision')
+    const localTask = result.current.tasks.find((task) => task.localTaskId === clientTaskId)
+    expect(serverTask).toEqual(expect.objectContaining({
+      localTaskId: 'task-other-old-revision',
+      old_revision: 'r0',
+      new_revision: 'r130',
+      review_items: undefined
+    }))
+    expect(JSON.stringify(serverTask)).not.toContain('/private/')
+    expect(JSON.stringify(serverTask)).not.toContain('不得泄露')
+    expect(localTask).toEqual(expect.objectContaining({
+      id: clientTaskId,
+      old_revision: '0',
+      new_revision: 'R130',
+      review_items: reviewItems
+    }))
+  })
+
+  it('公共字段相同的两个 2.0 任务按 clientTaskId 绑定，服务端倒序不交换逐项输入', async () => {
+    const executions = [createDeferred<ExecuteTaskResult>(), createDeferred<ExecuteTaskResult>()]
+    const executeTask = vi.fn((_payload: ExecuteTaskRequest) =>
+      executions[executeTask.mock.calls.length - 1].promise
+    )
+    const reviewItemsA = [
+      {
+        id: 'DS-01',
+        user_extra_rules: '任务 A 的 DS-01 规则',
+        materials: [
+          { field_id: 'requirement-sheet', file_paths: ['/task-a/requirements.xlsx'] },
+          { field_id: 'product-spec', file_paths: ['/task-a/specification.pdf'] }
+        ]
+      },
+      { id: 'DS-03', user_extra_rules: '任务 A 的 DS-03 规则' }
+    ]
+    const reviewItemsB = [
+      {
+        id: 'DS-01',
+        user_extra_rules: '任务 B 的 DS-01 规则',
+        materials: [
+          { field_id: 'requirement-sheet', file_paths: ['/task-b/requirements.xlsx'] },
+          { field_id: 'product-spec', file_paths: ['/task-b/specification.pdf'] }
+        ]
+      },
+      { id: 'DS-03', user_extra_rules: '任务 B 的 DS-03 规则' }
+    ]
+    const commonPayload = {
+      svn_url: 'svn://repo/identical-public-fields',
+      old_revision: '0',
+      new_revision: 'R130',
+      skill_name: 'bms-code-reviewer'
+    }
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
+
+    await act(async () => {
+      await result.current.submitTask({ ...commonPayload, review_items: reviewItemsA })
+      await result.current.submitTask({ ...commonPayload, review_items: reviewItemsB })
+    })
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(2))
+    const clientTaskIdA = executeTask.mock.calls[0][0].client_task_id
+    const clientTaskIdB = executeTask.mock.calls[1][0].client_task_id
+    const serverTaskA = {
+      id: 'task-a',
+      ...commonPayload,
+      new_revision: 'r130',
+      review_item_ids: ['DS-01', 'DS-03'],
+      status: 'running_codex' as const
+    }
+    const serverTaskB = { ...serverTaskA, id: 'task-b' }
+
+    act(() => result.current.setServerTasks([serverTaskB, serverTaskA]))
+    await waitFor(() => expect(result.current.tasks).toHaveLength(4))
+    expect(result.current.tasks.find((task) => task.id === 'task-a')?.review_items).toBeUndefined()
+    expect(result.current.tasks.find((task) => task.id === 'task-b')?.review_items).toBeUndefined()
+
+    act(() => {
+      result.current.applyProgressEvent({
+        taskId: 'task-a', clientTaskId: clientTaskIdA, type: 'stage',
+        stage: 'created', message: '任务 A 已创建'
+      })
+      result.current.applyProgressEvent({
+        taskId: 'task-b', clientTaskId: clientTaskIdB, type: 'stage',
+        stage: 'created', message: '任务 B 已创建'
+      })
+    })
+    await waitFor(() => expect(result.current.tasks).toHaveLength(2))
+
+    act(() => result.current.setServerTasks([serverTaskB, serverTaskA]))
+    const taskA = result.current.tasks.find((task) => task.id === 'task-a')
+    const taskB = result.current.tasks.find((task) => task.id === 'task-b')
+    expect(taskA).toEqual(expect.objectContaining({
+      localTaskId: clientTaskIdA,
+      review_items: reviewItemsA
+    }))
+    expect(taskB).toEqual(expect.objectContaining({
+      localTaskId: clientTaskIdB,
+      review_items: reviewItemsB
+    }))
+    expect(JSON.stringify(taskA)).not.toContain('/task-b/')
+    expect(JSON.stringify(taskB)).not.toContain('/task-a/')
+  })
+
+  it('本地 create 失败时重试原 create 载荷，不使用本地 ID 调用服务端任务重试', async () => {
+    const executions = [createDeferred<ExecuteTaskResult>(), createDeferred<ExecuteTaskResult>()]
+    const executeTask = vi.fn((_payload: ExecuteTaskRequest) =>
+      executions[executeTask.mock.calls.length - 1].promise
+    )
+    const retryTask = vi.fn()
+    const reviewItems = [
+      {
+        id: 'DS-01',
+        user_extra_rules: '本地创建失败规则',
+        materials: [
+          { field_id: 'requirement-sheet', file_paths: ['/local/requirements.xlsx'] },
+          { field_id: 'product-spec', file_paths: ['/local/specification.pdf'] }
+        ]
+      },
+      { id: 'DS-03', user_extra_rules: '' }
+    ]
+    const { result } = renderHook(() => useTaskQueue({ executeTask, retryTask }))
+
+    await act(async () => {
+      await result.current.submitTask({
+        svn_url: 'svn://repo/create-failure',
+        old_revision: '0',
+        new_revision: 'R130',
+        review_items: reviewItems,
+        skill_name: 'bms-code-reviewer'
+      })
+    })
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
+    const clientTaskId = executeTask.mock.calls[0][0].client_task_id
+
+    act(() => {
+      result.current.setServerTasks([
+        {
+          id: 'existing-same-parameters',
+          svn_url: 'svn://repo/create-failure',
+          old_revision: '0',
+          new_revision: 'r130',
+          review_item_ids: ['DS-01', 'DS-03'],
+          skill_name: 'bms-code-reviewer',
+          status: 'running_codex'
+        }
+      ])
+    })
+    await waitFor(() => expect(result.current.tasks).toHaveLength(2))
+
+    await act(async () => {
+      executions[0].reject(new Error('创建任务失败'))
+      await executions[0].promise.catch(() => undefined)
+    })
+    await waitFor(() => expect(
+      result.current.tasks.find((task) => task.localTaskId === clientTaskId)?.status
+    ).toBe('failed'))
+    const failedLocalTask = result.current.tasks.find((task) => task.localTaskId === clientTaskId)
+    if (!failedLocalTask) throw new Error('未找到本地创建失败任务')
+    expect(failedLocalTask.id).toBe(clientTaskId)
+
+    await act(async () => result.current.retryTask(failedLocalTask))
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(2))
+    expect(retryTask).not.toHaveBeenCalled()
+    expect(executeTask.mock.calls[1][0]).toEqual(expect.objectContaining({
+      client_task_id: clientTaskId,
+      old_revision: '0',
+      new_revision: 'R130',
+      review_items: reviewItems
+    }))
+    expect(executeTask.mock.calls[1][0]).not.toHaveProperty('task_id')
+    expect(result.current.tasks.find((task) => task.localTaskId === clientTaskId)).toEqual(
+      expect.objectContaining({ id: clientTaskId, isLocalOnly: true, executeWith: 'create' })
+    )
+  })
+
+  it('progress 丢失时完成结果按 taskId 去重并保留本地逐项输入', async () => {
+    const execution = createDeferred<ExecuteTaskResult>()
+    const executeTask = vi.fn((_payload: ExecuteTaskRequest) => execution.promise)
+    const reviewItems = [
+      {
+        id: 'DS-01',
+        user_extra_rules: '完成态保留规则',
+        materials: [
+          { field_id: 'requirement-sheet', file_paths: ['/complete/requirements.xlsx'] },
+          { field_id: 'product-spec', file_paths: ['/complete/specification.pdf'] }
+        ]
+      },
+      { id: 'DS-03', user_extra_rules: '' }
+    ]
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
+
+    await act(async () => {
+      await result.current.submitTask({
+        svn_url: 'svn://repo/progress-lost',
+        old_revision: '0',
+        new_revision: 'R130',
+        review_items: reviewItems,
+        skill_name: 'bms-code-reviewer'
+      })
+    })
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
+    const clientTaskId = executeTask.mock.calls[0][0].client_task_id
+
+    act(() => {
+      result.current.setServerTasks([
+        {
+          id: 'task-progress-lost',
+          svn_url: 'svn://repo/progress-lost',
+          old_revision: '0',
+          new_revision: 'r130',
+          review_item_ids: ['DS-01', 'DS-03'],
+          skill_name: 'bms-code-reviewer',
+          status: 'running_codex'
+        }
+      ])
+    })
+    await waitFor(() => expect(result.current.tasks).toHaveLength(2))
+
+    await act(async () => {
+      execution.resolve({
+        taskId: 'task-progress-lost',
+        status: 'success',
+        reportMarkdown: '# complete',
+        reportPath: '/tmp/complete.md'
+      })
+    })
+
+    await waitFor(() => expect(result.current.tasks).toEqual([
+      expect.objectContaining({
+        id: 'task-progress-lost',
+        localTaskId: clientTaskId,
+        status: 'success',
+        old_revision: '0',
+        new_revision: 'R130',
+        review_items: reviewItems
+      })
+    ]))
+  })
+
+  it('取消后的迟到进度和完成结果不把本地逐项输入挂到远端占位卡', async () => {
+    const execution = createDeferred<ExecuteTaskResult>()
+    const executeTask = vi.fn((_payload: ExecuteTaskRequest) => execution.promise)
+    const cancelTask = vi.fn(async () => ({ status: 'cancelled' as const }))
+    const reviewItems = [
+      {
+        id: 'DS-01',
+        user_extra_rules: '已取消任务私有规则',
+        materials: [
+          { field_id: 'requirement-sheet', file_paths: ['/cancelled/requirements.xlsx'] },
+          { field_id: 'product-spec', file_paths: ['/cancelled/specification.pdf'] }
+        ]
+      },
+      { id: 'DS-03', user_extra_rules: '' }
+    ]
+    const { result } = renderHook(() => useTaskQueue({ executeTask, cancelTask }))
+
+    await act(async () => {
+      await result.current.submitTask({
+        svn_url: 'svn://repo/cancelled-late-event',
+        old_revision: '0',
+        new_revision: 'R130',
+        review_items: reviewItems,
+        skill_name: 'bms-code-reviewer'
+      })
+    })
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
+    const clientTaskId = executeTask.mock.calls[0][0].client_task_id
+
+    act(() => {
+      result.current.setServerTasks([
+        {
+          id: 'task-cancelled-shadow',
+          svn_url: 'svn://repo/cancelled-late-event',
+          old_revision: '0',
+          new_revision: 'r130',
+          review_item_ids: ['DS-01', 'DS-03'],
+          skill_name: 'bms-code-reviewer',
+          status: 'running_codex'
+        }
+      ])
+    })
+    await waitFor(() => expect(result.current.tasks).toHaveLength(2))
+    const localTask = result.current.tasks.find((task) => task.localTaskId === clientTaskId)
+    if (!localTask) throw new Error('未找到待取消本地任务')
+
+    await act(async () => result.current.cancelTask(localTask))
+    act(() => {
+      result.current.applyProgressEvent({
+        taskId: 'task-cancelled-shadow',
+        clientTaskId,
+        type: 'stage',
+        stage: 'running_codex',
+        message: '迟到进度'
+      })
+    })
+    await act(async () => {
+      execution.resolve({ taskId: 'task-cancelled-shadow', status: 'success' })
+    })
+
+    const serverShadow = result.current.tasks.find((task) => task.id === 'task-cancelled-shadow')
+    const cancelledLocal = result.current.tasks.find((task) => task.localTaskId === clientTaskId)
+    expect(serverShadow?.review_items).toBeUndefined()
+    expect(JSON.stringify(serverShadow)).not.toContain('/cancelled/')
+    expect(cancelledLocal).toEqual(expect.objectContaining({
+      id: clientTaskId,
+      status: 'cancelled',
+      review_items: reviewItems
+    }))
   })
 
   it('历史任务按完成时间倒序展示', () => {

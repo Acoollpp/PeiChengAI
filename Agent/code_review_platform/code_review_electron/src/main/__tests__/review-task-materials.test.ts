@@ -49,6 +49,46 @@ describe('prepareReviewTaskMaterials', () => {
     await expect(readFile(prepared[0].materials[1].filePaths[0], 'utf8')).resolves.toBe('pdf-content')
   })
 
+  it('组合任务只为 DS-01 复制材料，DS-03 不产生材料目录', async () => {
+    const root = await makeTemporaryDirectory()
+    const requirementPath = join(root, '组合审查需求表.xlsx')
+    const specificationPath = join(root, '组合审查规格书.pdf')
+    const destinationRoot = join(root, 'workspace', 'materials')
+    await writeFile(requirementPath, 'xlsx-content')
+    await writeFile(specificationPath, 'pdf-content')
+    const reviewItems = resolveReviewItemInputs([
+      {
+        id: 'DS-01',
+        user_extra_rules: '只核对需求变更',
+        materials: [
+          { field_id: 'requirement-sheet', file_paths: [requirementPath] },
+          { field_id: 'product-spec', file_paths: [specificationPath] }
+        ]
+      },
+      { id: 'DS-03', user_extra_rules: '只检查故障恢复状态' }
+    ])
+
+    const prepared = await prepareReviewTaskMaterials(reviewItems, destinationRoot)
+
+    expect(prepared).toEqual([
+      expect.objectContaining({
+        id: 'DS-01',
+        user_extra_rules: '只核对需求变更',
+        materials: [
+          expect.objectContaining({ filePaths: [join(destinationRoot, 'DS-01', 'requirement-sheet', '组合审查需求表.xlsx')] }),
+          expect.objectContaining({ filePaths: [join(destinationRoot, 'DS-01', 'product-spec', '组合审查规格书.pdf')] })
+        ]
+      }),
+      {
+        id: 'DS-03',
+        name: '状态机审核',
+        user_extra_rules: '只检查故障恢复状态',
+        materials: []
+      }
+    ])
+    await expect(stat(join(destinationRoot, 'DS-03'))).rejects.toThrow()
+  })
+
   it('一次返回必填缺失、错误扩展名、文件缺失和不可读错误，且不复制任何文件', async () => {
     const root = await makeTemporaryDirectory()
     const wrongExtensionPath = join(root, '需求表.txt')

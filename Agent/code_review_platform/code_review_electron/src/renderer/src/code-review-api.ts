@@ -82,6 +82,8 @@ export class TaskPreflightValidationError extends Error {
 export interface RetryTaskRequest {
   task_id: string
   client_task_id?: string
+  old_revision?: string
+  new_revision?: string
   requirement_file_path?: string
   review_items?: SelectedReviewItemInput[]
 }

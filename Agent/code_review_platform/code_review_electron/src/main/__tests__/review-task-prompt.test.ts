@@ -85,4 +85,54 @@ describe('buildBmsReviewTaskPrompt', () => {
     expect(prompt).not.toContain('/Users/source')
     expect(prompt).not.toContain('DS-03')
   })
+
+  it('组合提示词逐项隔离规则和材料，并保持 r0 与新 revision 原样', () => {
+    const requirementPath = '/runtime/workspaces/task-32/materials/DS-01/requirement-sheet/需求表.xlsx'
+    const specificationPath = '/runtime/workspaces/task-32/materials/DS-01/product-spec/规格书.pdf'
+    const prompt = buildBmsReviewTaskPrompt({
+      svnUrl: 'svn://example.com/bms/trunk',
+      oldRevision: 'r0',
+      newRevision: 'R130',
+      departmentName: 'BMS 软件部',
+      reviewItems: [
+        {
+          id: 'DS-01',
+          name: '变更点审查',
+          user_extra_rules: '只核对协议导入',
+          materials: [
+            {
+              fieldId: 'requirement-sheet', name: '产品开发需求表', required: true,
+              multiple: false, allowedExtensions: ['.xlsx', '.xls'], filePaths: [requirementPath]
+            },
+            {
+              fieldId: 'product-spec', name: '产品规格书', required: true,
+              multiple: false, allowedExtensions: ['.pdf'], filePaths: [specificationPath]
+            }
+          ]
+        },
+        {
+          id: 'DS-03',
+          name: '状态机审核',
+          materials: []
+        }
+      ],
+      reportPath: '/runtime/workspaces/task-32/report.md'
+    })
+
+    const ds01Start = prompt.indexOf('### DS-01：变更点审查')
+    const ds03Start = prompt.indexOf('### DS-03：状态机审核')
+    const itemBoundary = prompt.indexOf('\n\n每项用户额外规则', ds03Start)
+    const ds01Section = prompt.slice(ds01Start, ds03Start)
+    const ds03Section = prompt.slice(ds03Start, itemBoundary)
+
+    expect(prompt).toContain('旧 revision：r0')
+    expect(prompt).toContain('新 revision：R130')
+    expect(ds01Section).toContain('用户额外规则：只核对协议导入')
+    expect(ds01Section).toContain(requirementPath)
+    expect(ds01Section).toContain(specificationPath)
+    expect(ds03Section).toContain('用户额外规则：无')
+    expect(ds03Section).toContain('专项材料：无')
+    expect(ds03Section).not.toContain('只核对协议导入')
+    expect(ds03Section).not.toContain('/materials/DS-01/')
+  })
 })

@@ -50,6 +50,8 @@ export interface RetryReviewTaskInput {
   token: string
   taskId: string
   clientTaskId?: string
+  oldRevision?: string
+  newRevision?: string
   requirementFilePath?: string
   reviewItems?: SelectedReviewItemInput[]
   signal?: AbortSignal
@@ -380,6 +382,8 @@ export const retryReviewTask = async (
     token: input.token,
     task,
     reviewItems,
+    oldRevision: input.oldRevision,
+    newRevision: input.newRevision,
     requirementFilePath: reviewItems ? undefined : input.requirementFilePath,
     clientTaskId: input.clientTaskId,
     signal: input.signal
@@ -402,6 +406,8 @@ const runExistingReviewTask = async (
   onProgress?: TaskProgressReporter
 ): Promise<ExecuteReviewTaskResult> => {
   const task = input.task
+  const oldRevision = input.oldRevision ?? task.old_revision
+  const newRevision = input.newRevision ?? task.new_revision
 
   try {
     throwIfCancelled(input.signal)
@@ -447,8 +453,8 @@ const runExistingReviewTask = async (
     )
     await dependencies.preflightSvn({
       svnUrl: task.svn_url,
-      oldRevision: task.old_revision,
-      newRevision: task.new_revision,
+      oldRevision,
+      newRevision,
       svnCommand: environment.svnPath,
       commandOptions: buildDirectCommandOptions(),
       signal: input.signal
@@ -459,8 +465,8 @@ const runExistingReviewTask = async (
     const workspace = await dependencies.prepareWorkspace({
       taskId: task.id,
       svnUrl: task.svn_url,
-      oldRevision: task.old_revision,
-      newRevision: task.new_revision,
+      oldRevision,
+      newRevision,
       svnCommand: environment.svnPath,
       ...(input.requirementFilePath
         ? { requirementFilePath: input.requirementFilePath }
@@ -506,8 +512,8 @@ const runExistingReviewTask = async (
       ...(reviewItemsForCodex
         ? {
             reviewItems: reviewItemsForCodex,
-            oldRevision: input.oldRevision ?? task.old_revision,
-            newRevision: input.newRevision ?? task.new_revision
+            oldRevision,
+            newRevision
           }
         : {}),
       clientTaskId: input.clientTaskId,
@@ -551,7 +557,10 @@ const runExistingReviewTask = async (
     const errorMessage = error instanceof CodexReviewError
       ? `${codexErrorMessages[error.errorCode]}（Codex 分析：${error.message}）`
       : error instanceof SvnPreflightError
-        ? toSvnPreflightUserMessage(error, task)
+        ? toSvnPreflightUserMessage(error, {
+            old_revision: oldRevision,
+            new_revision: newRevision
+          })
         : toUserFacingErrorMessage(sanitizeErrorSummary(error, input.token))
 
     await updateStatus(dependencies, input.token, task.id, {

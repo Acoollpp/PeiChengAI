@@ -306,32 +306,34 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
   const createTask = useCallback(async (input: CreateTaskCommand): Promise<PreviewCommandResult> => {
     if (createTaskInFlightRef.current) return commandResult('任务正在创建，请勿重复提交。')
     const selectedIds = Object.keys(input.selection) as ReviewItemId[]
-    if (
-      selectedIds.length !== 1 ||
-      !isProductionReviewItemId(selectedIds[0])
-    ) {
-      showNotice('生产任务当前只支持单独选择 DS-01 或 DS-03。')
-      return commandResult('生产任务当前只支持单独选择 DS-01 或 DS-03。')
+    if (selectedIds.length === 0) {
+      showNotice('请至少选择一个审查项。')
+      return commandResult('请至少选择一个审查项。')
+    }
+    if (selectedIds.some((selectedId) => !isProductionReviewItemId(selectedId))) {
+      showNotice('生产任务包含不存在或未启用的审查项。')
+      return commandResult('生产任务包含不存在或未启用的审查项。')
     }
     if (!canCreateTask) {
       showNotice('本地环境就绪后才可发起审查。')
       return commandResult('本地环境就绪后才可发起审查。')
     }
-    const selectedId = selectedIds[0]
-    const selectedInput = input.selection[selectedId]
-    const materials = Object.entries(selectedInput?.materials ?? {}).map(([fieldId, files]) => ({
-      field_id: fieldId,
-      file_paths: files.map((file) => file.id)
-    }))
     const payload = {
       svn_url: input.svnUrl.trim(), old_revision: input.oldRevision.trim(), new_revision: input.newRevision.trim(),
-      review_items: [{
-        id: selectedId,
-        ...(selectedInput?.extraRules.trim()
-          ? { user_extra_rules: selectedInput.extraRules.trim() }
-          : {}),
-        ...(materials.length > 0 ? { materials } : {})
-      }],
+      review_items: selectedIds.map((selectedId) => {
+        const selectedInput = input.selection[selectedId]
+        const materials = Object.entries(selectedInput?.materials ?? {}).map(([fieldId, files]) => ({
+          field_id: fieldId,
+          file_paths: files.map((file) => file.id)
+        }))
+        return {
+          id: selectedId,
+          ...(selectedInput?.extraRules.trim()
+            ? { user_extra_rules: selectedInput.extraRules.trim() }
+            : {}),
+          ...(materials.length > 0 ? { materials } : {})
+        }
+      }),
       skill_name: BMS_CODE_REVIEW_SKILL_NAME
     }
     createTaskInFlightRef.current = true
