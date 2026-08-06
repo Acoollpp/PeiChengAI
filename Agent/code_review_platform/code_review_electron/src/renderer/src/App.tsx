@@ -14,11 +14,11 @@ import type {
 import { DepartmentSelectionDialog } from './components/DepartmentSelectionDialog'
 import { LoginPage } from './components/LoginPage'
 import { SvnBindingDialog } from './components/SvnBindingDialog'
-import { TaskPage } from './components/TaskPage'
 import { UpdateDialog } from './components/UpdateDialog'
+import { ProductionReviewWorkbench } from './workbench-preview/ProductionReviewWorkbench'
 
 type AuthSession = {
-  displayName: string
+  currentUser: CurrentUser
 }
 
 type PendingDepartmentSession = {
@@ -232,7 +232,7 @@ export function App(): React.JSX.Element {
 
       setPendingDepartmentSession(null)
       setDepartments([])
-      setSession({ displayName })
+      setSession({ currentUser })
       if (needSvnBinding) {
         setNeedSvnBinding(true)
       }
@@ -250,11 +250,11 @@ export function App(): React.JSX.Element {
       setDepartmentError('')
       setIsSavingDepartment(true)
       try {
-        await window.codeReview.setDepartment({ department_id: departmentId })
+        const currentUser = await window.codeReview.setDepartment({ department_id: departmentId })
         const nextSession = pendingDepartmentSession
         setPendingDepartmentSession(null)
         setDepartments([])
-        setSession({ displayName: nextSession.displayName })
+        setSession({ currentUser })
         if (nextSession.needSvnBinding) {
           setNeedSvnBinding(true)
         }
@@ -381,14 +381,14 @@ export function App(): React.JSX.Element {
   }
 
   return (
-    <main className="app-shell">
-      <TaskPage
+    <main className="app-shell production-shell">
+      <ProductionReviewWorkbench
+        currentUser={session.currentUser}
         environment={environment}
         isCheckingEnvironment={isCheckingEnvironment}
         isInstallingSkillDuringCheck={environmentProgress?.stage === 'installing_skill'}
         isInstallingCodex={isInstallingCodex}
         isInstallingSvn={isInstallingSvn}
-        svnUsername={session.displayName}
         onRefreshEnvironment={checkEnvironment}
         onInstallCodex={installCodex}
         onInstallSvn={installSvn}

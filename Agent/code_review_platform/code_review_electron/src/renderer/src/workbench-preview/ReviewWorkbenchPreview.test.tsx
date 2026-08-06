@@ -123,6 +123,17 @@ describe('ReviewWorkbenchPreview', () => {
     expect(screen.getByText('本机等待第 3 位')).toBeInTheDocument()
     expect(screen.getByText('产品规格书在任务开始前已被移动，请重新选择材料后从头重试。')).toBeInTheDocument()
     expect(screen.getByText('任务已由当前用户取消。')).toBeInTheDocument()
+    const runningTask = screen.getByLabelText('CR-240806-017 电池包主控状态机变更')
+    expect(within(runningTask).getByTitle('svn://192.168.8.20/bms/platform/trunk/vehicle-control/pack-controller')).toHaveTextContent(
+      'svn://192.168.8.20/bms/platform/trunk/vehicle-control/pack-controller'
+    )
+
+    const reportRow = screen.getByText('低压上下电状态机复核').closest('.wb-management-report-row')
+    expect(reportRow).not.toBeNull()
+    expect(within(reportRow as HTMLElement).getByTitle('svn://192.168.8.20/bms/platform/trunk/power-mode')).toHaveTextContent(
+      'svn://192.168.8.20/bms/platform/trunk/power-mode'
+    )
+    expect(reportRow).toHaveTextContent('CR-240806-009 · DS-03')
 
     await user.click(screen.getByRole('button', { name: '从头重试 CR-240806-012' }))
     expect(await screen.findByRole('status')).toHaveTextContent('已从头重试')
@@ -147,6 +158,10 @@ describe('ReviewWorkbenchPreview', () => {
     expect(within(preview).getByRole('table')).toHaveTextContent('处置建议')
 
     const socReportButton = screen.getByRole('button', { name: /SOC 滤波边界复查/ })
+    expect(within(socReportButton).getByTitle('svn://192.168.8.20/bms/algorithm/trunk/soc-estimation')).toHaveTextContent(
+      'svn://192.168.8.20/bms/algorithm/trunk/soc-estimation'
+    )
+    expect(socReportButton).toHaveTextContent('CR-240806-007 · r8920 → r8934')
     await user.click(socReportButton)
     expect(socReportButton).toHaveAttribute('aria-current', 'page')
     expect(within(preview).getByRole('heading', { name: 'SOC 滤波边界复查' })).toBeInTheDocument()

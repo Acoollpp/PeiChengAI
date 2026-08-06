@@ -1666,6 +1666,14 @@ export const ReviewTaskCreateSchema = {
             minLength: 1,
             title: 'New Revision'
         },
+        review_item_ids: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            maxItems: 32,
+            title: 'Review Item Ids'
+        },
         template_key: {
             anyOf: [
                 {
@@ -1964,6 +1972,13 @@ export const ReviewTaskPublicSchema = {
         new_revision: {
             type: 'string',
             title: 'New Revision'
+        },
+        review_item_ids: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Review Item Ids'
         },
         template_key: {
             anyOf: [

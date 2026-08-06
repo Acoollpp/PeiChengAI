@@ -19,8 +19,7 @@ import { TaskBoard } from './TaskBoard'
 import { TaskForm } from './TaskForm'
 import { SubmitFeedbackDialog } from './SubmitFeedbackDialog'
 import {
-  DEFAULT_REVIEW_TEMPLATE_KEY,
-  type ReviewTemplateKey
+  DEFAULT_REVIEW_TEMPLATE_KEY
 } from '../../../shared/review-templates'
 import { REVIEW_TEMPLATE_PREVIEWS } from '../../../shared/review-template-previews'
 
@@ -76,9 +75,7 @@ export function TaskPage({
   onInstallSvn,
   onInstallSkill
 }: TaskPageProps): React.JSX.Element {
-  const [selectedTemplateKey, setSelectedTemplateKey] =
-    useState<ReviewTemplateKey>(DEFAULT_REVIEW_TEMPLATE_KEY)
-  const [markdown, setMarkdown] = useState(() => REVIEW_TEMPLATE_PREVIEWS[DEFAULT_REVIEW_TEMPLATE_KEY])
+  const [markdown, setMarkdown] = useState('# 审查报告')
   const [error, setError] = useState('')
   const [reportMessage, setReportMessage] = useState('')
   const [currentReportPath, setCurrentReportPath] = useState<string>()
@@ -179,25 +176,6 @@ export function TaskPage({
     selectedTaskIdRef.current = taskId
     setSelectedTaskId(taskId)
   }, [])
-
-  const handleTemplateChange = useCallback(
-    (templateKey: ReviewTemplateKey): void => {
-      setSelectedTemplateKey(templateKey)
-      setMarkdown(REVIEW_TEMPLATE_PREVIEWS[templateKey])
-      setCurrentReportPath(undefined)
-      setActivePdfPath(undefined)
-      setActivePdfReportName(undefined)
-      setReportMessage('')
-      selectedTaskIdRef.current = undefined
-      setSelectedTaskId(undefined)
-      setLoadingReportTaskId(undefined)
-      setReportFeedbackStatus('idle')
-      setActiveFeedbackAnchorId(undefined)
-      setFeedbackAnchorScrollRequest(undefined)
-      setError('')
-    },
-    [setActivePdfPath, setActivePdfReportName]
-  )
 
   useEffect(() => {
     let isMounted = true
@@ -578,8 +556,6 @@ export function TaskPage({
           <TaskForm
             disabled={!canRunTask}
             activeSkillNames={activeSkillNames}
-            selectedTemplateKey={selectedTemplateKey}
-            onTemplateChange={handleTemplateChange}
             onSubmit={handleTaskSubmit}
           />
           {!canRunTask && <p className="hint">本地环境就绪后才可发起审查。</p>}

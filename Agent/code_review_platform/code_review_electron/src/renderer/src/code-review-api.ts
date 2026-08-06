@@ -1,4 +1,5 @@
 import type { ReviewTemplateKey } from '../../shared/review-templates'
+import type { SelectedReviewItemInput } from '../../shared/review-items'
 import type {
   IssueFeedbackSubmittedEvent,
   OpenReportFeedbackWindowPayload,
@@ -54,6 +55,7 @@ export interface ExecuteTaskRequest {
   svn_url: string
   old_revision: string
   new_revision: string
+  review_items?: SelectedReviewItemInput[]
   template_key?: ReviewTemplateKey
   skill_name?: string
   requirement_file_path?: string
@@ -81,6 +83,7 @@ export interface RetryTaskRequest {
   task_id: string
   client_task_id?: string
   requirement_file_path?: string
+  review_items?: SelectedReviewItemInput[]
 }
 
 export type SelectRequirementFileResult =

@@ -1,0 +1,511 @@
+// @vitest-environment jsdom
+
+import '@testing-library/jest-dom/vitest'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { act } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { CodeReviewApi } from '../code-review-api'
+import type { TaskProgressEvent } from '../../../shared/types'
+import { ProductionReviewWorkbench } from './ProductionReviewWorkbench'
+
+const reportMarkdown = `# DS-03 状态机审核报告
+
+## 一、审查问题
+
+### P01 [高风险] 状态恢复事件缺失
+
+**问题描述：** 恢复分支没有发送完成事件。
+`
+
+const setupCodeReviewApi = (): void => {
+  window.codeReview = {
+    listTasks: vi.fn(async () => ({ data: [], count: 0 })),
+    readTaskReport: vi.fn(async () => reportMarkdown),
+    preflightTask: vi.fn(async () => ({ status: 'valid' as const })),
+    executeTask: vi.fn(async () => ({
+      taskId: 'task-production-1',
+      status: 'success' as const,
+      reportMarkdown,
+      reportPath: '/reports/task-production-1.md',
+      pdfPath: '/reports/task-production-1.pdf',
+      pdfReportName: 'task-production-1.pdf',
+      feedbackProtocolVersion: 1
+    })),
+    retryTask: vi.fn(),
+    cancelTask: vi.fn(async () => ({ status: 'cancelled' as const })),
+    onTaskProgress: vi.fn(() => vi.fn()),
+    openPdfReport: vi.fn(async () => ({
+      status: 'ready' as const,
+      pdfPath: '/reports/task-production-1.pdf'
+    })),
+    openReportFeedbackWindow: vi.fn(async () => true),
+    submitNegativeReportFeedback: vi.fn(async (taskId: string) => ({
+      taskId, helpful: false, usefulIssuesText: null
+    })),
+    openTaskLog: vi.fn(async () => ({ status: 'ready' as const, logPath: '/logs/task.log' })),
+    readReportAsset: vi.fn(async () => ({ dataUrl: 'data:image/png;base64,aW1hZ2U=' })),
+    showTaskCompletionNotification: vi.fn(async () => ({ status: 'shown' as const })),
+    onTaskCompletionNotificationClicked: vi.fn(() => vi.fn()),
+    submitFeedback: vi.fn(async () => ({ id: 'feedback-1', status: 'pending' as const })),
+    onReportFeedbackSubmitted: vi.fn(() => vi.fn()),
+    onIssueFeedbackSubmitted: vi.fn(() => vi.fn()),
+    onReportFeedbackFocusAnchor: vi.fn(() => vi.fn())
+  } as unknown as CodeReviewApi
+}
+
+const productionProps = {
+  currentUser: {
+    id: 'user-1',
+    full_name: '王工程师',
+    department_id: 'dept-1',
+    department_name: 'BMS 软件部'
+  },
+  environment: { status: 'ready' as const },
+  isCheckingEnvironment: false,
+  isInstallingSkillDuringCheck: false,
+  isInstallingCodex: false,
+  isInstallingSvn: false,
+  onRefreshEnvironment: vi.fn(),
+  onInstallCodex: vi.fn(),
+  onInstallSvn: vi.fn(),
+  onInstallSkill: vi.fn()
+}
+
+const submitMinimalDs03Task = async (svnUrl: string): Promise<void> => {
+  const user = userEvent.setup()
+  await user.type(await screen.findByLabelText('SVN 地址'), svnUrl)
+  await user.type(screen.getByLabelText('旧 revision'), '0')
+  await user.type(screen.getByLabelText('新 revision'), '12')
+  await user.click(screen.getByRole('button', { name: '选择' }))
+  await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
+  await user.click(screen.getByRole('button', { name: '确认选择（1）' }))
+  await user.click(screen.getByRole('button', { name: '创建审查任务' }))
+}
+
+const mockRendererForeground = (foreground: boolean): void => {
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue(foreground ? 'visible' : 'hidden')
+  vi.spyOn(document, 'hasFocus').mockReturnValue(foreground)
+}
+
+beforeEach(() => {
+  setupCodeReviewApi()
+  mockRendererForeground(true)
+})
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
+
+describe('ProductionReviewWorkbench', () => {
+  it('从生产工作台原样提交 r0 和 DS-03 规则，并打开真实 Markdown、PDF 与逐问题反馈', async () => {
+    const user = userEvent.setup()
+    render(
+      <ProductionReviewWorkbench {...productionProps} />
+    )
+
+    expect(await screen.findByRole('heading', { name: '创建审查任务' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '填入验收样例' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '推进任务阶段' })).not.toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('SVN 地址'), 'svn://server/project')
+    await user.type(screen.getByLabelText('旧 revision'), '0')
+    await user.type(screen.getByLabelText('新 revision'), '10772')
+    await user.click(screen.getByRole('button', { name: '选择' }))
+    expect(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /DS-01/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /DS-02/ })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
+    await user.type(screen.getByLabelText('DS-03 额外规则'), '重点检查故障恢复路径')
+    await user.click(screen.getByRole('button', { name: '确认选择（1）' }))
+    await user.click(screen.getByRole('button', { name: '创建审查任务' }))
+
+    await waitFor(() => {
+      expect(window.codeReview.preflightTask).toHaveBeenCalledWith({
+        svn_url: 'svn://server/project',
+        old_revision: '0',
+        new_revision: '10772'
+      })
+      expect(window.codeReview.executeTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          svn_url: 'svn://server/project',
+          old_revision: '0',
+          new_revision: '10772',
+          review_items: [{ id: 'DS-03', user_extra_rules: '重点检查故障恢复路径' }],
+          skill_name: 'bms-code-reviewer'
+        })
+      )
+    })
+
+    expect(window.codeReview.showTaskCompletionNotification).not.toHaveBeenCalled()
+    const completionMessage = await screen.findByText('任务 task-production-1 已完成，可查看报告。')
+    const completionNotice = completionMessage.closest('[role="status"]')
+    expect(completionNotice).not.toBeNull()
+    expect(completionNotice).toHaveTextContent('任务 task-production-1 已完成，可查看报告。')
+    await user.click(within(completionNotice as HTMLElement).getByRole('button', { name: '查看报告' }))
+    expect(await screen.findByRole('heading', { name: '报告中心' })).toBeInTheDocument()
+    const preview = screen.getByRole('article', { name: 'Markdown 报告预览' })
+    expect(within(preview).getByRole('heading', { name: 'DS-03 状态机审核报告' })).toBeInTheDocument()
+    expect(screen.getAllByText(/1 个问题.*严重度未知/).length).toBeGreaterThan(0)
+
+    expect(screen.queryByRole('button', { name: '查看PDF报告' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '反馈报告问题' }))
+    expect(window.codeReview.openReportFeedbackWindow).toHaveBeenCalledWith({
+      mode: 'issues',
+      taskId: 'task-production-1',
+      anchors: expect.any(Array)
+    })
+  })
+
+  it('后台系统通知成功时不显示应用内完成提醒，点击通知可打开对应 Markdown', async () => {
+    let notificationClick: Parameters<CodeReviewApi['onTaskCompletionNotificationClicked']>[0] | undefined
+    mockRendererForeground(false)
+    vi.mocked(window.codeReview.onTaskCompletionNotificationClicked).mockImplementation((listener) => {
+      notificationClick = listener
+      return vi.fn()
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await submitMinimalDs03Task('svn://server/background-shown')
+
+    await waitFor(() => expect(window.codeReview.showTaskCompletionNotification).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText('任务 task-production-1 已完成，可查看报告。')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+    const payload = vi.mocked(window.codeReview.showTaskCompletionNotification).mock.calls[0][0]
+    act(() => notificationClick?.(payload))
+    expect(await screen.findByRole('heading', { name: '报告中心' })).toBeInTheDocument()
+    expect(within(screen.getByRole('article', { name: 'Markdown 报告预览' }))
+      .getByRole('heading', { name: 'DS-03 状态机审核报告' })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['系统不支持', async () => ({ status: 'unsupported' as const })],
+    ['系统调用失败', async () => { throw new Error('系统通知失败') }]
+  ])('后台%s时降级为可操作的应用内完成提醒', async (_label, notificationResult) => {
+    mockRendererForeground(false)
+    vi.mocked(window.codeReview.showTaskCompletionNotification).mockImplementationOnce(notificationResult)
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await submitMinimalDs03Task('svn://server/background-fallback')
+
+    const completionMessage = await screen.findByText('任务 task-production-1 已完成，可查看报告。')
+    const completionNotice = completionMessage.closest('[role="status"]')
+    expect(completionNotice).not.toBeNull()
+    expect(completionNotice).toHaveTextContent('任务 task-production-1 已完成，可查看报告。')
+    expect(within(completionNotice as HTMLElement).getByRole('button', { name: '查看报告' })).toBeInTheDocument()
+    expect(screen.queryByText(/系统通知发送失败/)).not.toBeInTheDocument()
+    await userEvent.setup().click(within(completionNotice as HTMLElement).getByRole('button', { name: '关闭提示' }))
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('兼容缺少新字段的历史任务，并从真实阶段事件显示准备工作区', async () => {
+    let progressListener: ((event: TaskProgressEvent) => void) | undefined
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'legacy-success',
+          svn_url: 'svn://server/legacy',
+          old_revision: '0',
+          new_revision: '12',
+          status: 'success',
+          finished_at: '2026-08-06T08:00:00Z'
+        },
+        {
+          id: 'running-1',
+          svn_url: 'svn://server/running',
+          old_revision: '20',
+          new_revision: '21',
+          review_item_ids: ['DS-03'],
+          status: 'checking_environment'
+        }
+      ],
+      count: 2
+    })
+    vi.mocked(window.codeReview.onTaskProgress).mockImplementation((listener) => {
+      progressListener = listener
+      return vi.fn()
+    })
+
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    expect(await screen.findByText('审查任务 legacy-success')).toBeInTheDocument()
+    expect(screen.getByText('r0 → r12')).toBeInTheDocument()
+    expect(screen.getByText(/1 个.*严重度未知/)).toBeInTheDocument()
+    expect(screen.getByText(/严重度未知/)).toBeInTheDocument()
+    progressListener?.({
+      taskId: 'running-1',
+      type: 'stage',
+      stage: 'preparing_workspace',
+      message: '正在准备真实工作区'
+    })
+    expect(await screen.findByText('准备工作区')).toBeInTheDocument()
+    expect(screen.getByText('正在准备真实工作区')).toBeInTheDocument()
+  })
+
+  it('revision 接受可选 r 前缀，展示保持单个 r 且提交保留用户输入', async () => {
+    const user = userEvent.setup()
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.type(await screen.findByLabelText('SVN 地址'), 'svn://server/prefixed')
+    await user.type(screen.getByLabelText('旧 revision'), 'r0')
+    await user.type(screen.getByLabelText('新 revision'), 'R12')
+    await user.click(screen.getByRole('button', { name: '选择' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
+    await user.click(screen.getByRole('button', { name: '确认选择（1）' }))
+    await user.click(screen.getByRole('button', { name: '创建审查任务' }))
+
+    await waitFor(() => expect(window.codeReview.preflightTask).toHaveBeenCalledWith({
+      svn_url: 'svn://server/prefixed', old_revision: 'r0', new_revision: 'R12'
+    }))
+    expect(window.codeReview.executeTask).toHaveBeenCalledWith(expect.objectContaining({
+      old_revision: 'r0', new_revision: 'R12'
+    }))
+    expect(await screen.findByText('r0 → r12')).toBeInTheDocument()
+    expect(screen.queryByText(/rr0|rR12/)).not.toBeInTheDocument()
+  })
+
+  it('生产报告通过 MarkdownPreview 读取相对图片资源', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [{
+        id: 'asset-task', svn_url: 'svn://server/assets', old_revision: '0', new_revision: 'r12',
+        review_item_ids: ['DS-03'], status: 'success', report_path: '/reports/asset/report.md'
+      }],
+      count: 1
+    })
+    vi.mocked(window.codeReview.readTaskReport).mockResolvedValueOnce(
+      '# 状态机报告\n\n![状态图](images/state.png)'
+    )
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click((await screen.findAllByRole('button', { name: /查看报告/ }))[0])
+    await waitFor(() => expect(window.codeReview.readReportAsset).toHaveBeenCalledWith({
+      reportPath: '/reports/asset/report.md', assetPath: 'images/state.png'
+    }))
+    expect(await screen.findByRole('img', { name: '状态图' })).toHaveAttribute(
+      'src', 'data:image/png;base64,aW1hZ2U='
+    )
+  })
+
+  it('快速切换报告时迟到加载结果不会串到当前报告', async () => {
+    const user = userEvent.setup()
+    let resolveReportB: ((value: string) => void) | undefined
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [
+        { id: 'task-a', svn_url: 'svn://server/a', old_revision: '1', new_revision: '2', status: 'success' },
+        { id: 'task-b', svn_url: 'svn://server/b', old_revision: '2', new_revision: '3', status: 'success' }
+      ],
+      count: 2
+    })
+    vi.mocked(window.codeReview.readTaskReport)
+      .mockResolvedValueOnce('# 报告 A')
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveReportB = resolve }))
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click((await screen.findAllByRole('button', { name: /查看报告/ }))[1])
+    await user.click(screen.getByRole('button', { name: /task-a/ }))
+    expect(await screen.findByRole('heading', { name: '报告 A' })).toBeInTheDocument()
+    act(() => resolveReportB?.('# 报告 B'))
+    await waitFor(() => expect(screen.getByRole('heading', { name: '报告 A' })).toBeInTheDocument())
+    expect(screen.queryByRole('heading', { name: '报告 B' })).not.toBeInTheDocument()
+  })
+
+  it('把生产任务取消和失败任务重试交给本地队列', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'running-1', svn_url: 'svn://server/running', old_revision: '1', new_revision: '2',
+          review_item_ids: ['DS-03'], status: 'running_codex'
+        },
+        {
+          id: 'failed-1', svn_url: 'svn://server/failed', old_revision: '2', new_revision: '3',
+          review_item_ids: ['DS-03'], status: 'failed', error_message: '执行失败'
+        }
+      ],
+      count: 2
+    })
+    vi.mocked(window.codeReview.retryTask).mockResolvedValueOnce({
+      taskId: 'failed-1', status: 'success', reportMarkdown
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    vi.mocked(window.codeReview.openTaskLog).mockResolvedValueOnce({ status: 'missing' })
+    await user.click(await screen.findByRole('button', { name: '打开任务日志 failed-1' }))
+    expect(window.codeReview.openTaskLog).toHaveBeenCalledWith('failed-1')
+    expect(await screen.findByRole('status')).toHaveTextContent('未找到该任务的本地 Codex 执行日志。')
+    await user.click(await screen.findByRole('button', { name: '取消任务 running-1' }))
+    expect(window.codeReview.cancelTask).toHaveBeenCalledWith({
+      client_task_id: 'running-1', task_id: 'running-1'
+    })
+    await user.click(screen.getByRole('button', { name: '从头重试 failed-1' }))
+    await waitFor(() => expect(window.codeReview.retryTask).toHaveBeenCalledWith({
+      task_id: 'failed-1', client_task_id: 'failed-1',
+      requirement_file_path: undefined, review_items: undefined
+    }))
+  })
+
+  it('意见反馈只提交用户实际选择的文件，不生成 fixture 截图', async () => {
+    const user = userEvent.setup()
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+    await user.type(screen.getByLabelText('问题描述'), '生产任务阶段显示异常')
+    const screenshot = new File(['image'], '真实截图.png', { type: 'image/png' })
+    await user.upload(screen.getByLabelText('选择反馈截图'), [screenshot, screenshot])
+    expect(screen.getByText('真实截图.png')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: '移除 真实截图.png' })).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: '提交意见' }))
+    await waitFor(() => expect(window.codeReview.submitFeedback).toHaveBeenCalledWith({
+      description: '生产任务阶段显示异常', screenshots: [screenshot]
+    }))
+  })
+
+  it('环境未就绪时保留安装入口并禁止提交生产任务', async () => {
+    render(<ProductionReviewWorkbench {...productionProps} environment={{ status: 'missing_skill' }} />)
+    expect(await screen.findByLabelText('本地环境状态')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '创建审查任务' })).toBeDisabled()
+    expect(screen.getByText('本地环境就绪后才可发起审查。')).toBeInTheDocument()
+  })
+
+  it('问题反馈提交事件更新反馈版 PDF 路径', async () => {
+    const user = userEvent.setup()
+    let issueFeedbackListener: Parameters<CodeReviewApi['onIssueFeedbackSubmitted']>[0] | undefined
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [{
+        id: 'feedback-task', svn_url: 'svn://server/feedback', old_revision: '1', new_revision: '2',
+        review_item_ids: ['DS-03'], status: 'success', feedback_protocol_version: 1,
+        pdf_report_name: '原始报告.pdf'
+      }],
+      count: 1
+    })
+    vi.mocked(window.codeReview.onIssueFeedbackSubmitted).mockImplementation((listener) => {
+      issueFeedbackListener = listener
+      return vi.fn()
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await screen.findByRole('button', { name: /查看报告/ })
+    await user.click(screen.getByRole('button', { name: /查看报告/ }))
+    expect(screen.getByRole('button', { name: '反馈报告问题' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '查看PDF报告' })).not.toBeInTheDocument()
+    act(() => issueFeedbackListener?.({
+      taskId: 'feedback-task',
+      feedbackSubmittedAt: '2026-08-06T09:00:00Z',
+      pdfPath: '/reports/feedback-task-reviewed.pdf',
+      pdfReportName: '反馈版报告.pdf'
+    }))
+    expect(await screen.findByRole('button', { name: '查看已提交反馈' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '反馈报告问题' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '查看已提交反馈' }))
+    expect(window.codeReview.openReportFeedbackWindow).toHaveBeenCalledWith({
+      mode: 'issues', taskId: 'feedback-task', anchors: expect.any(Array)
+    })
+    await user.click(screen.getByRole('button', { name: '查看PDF报告' }))
+    expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
+      taskId: 'feedback-task',
+      localPdfPath: '/reports/feedback-task-reviewed.pdf',
+      pdfReportName: '反馈版报告.pdf',
+      action: 'reveal'
+    })
+  })
+
+  it('只响应当前报告的反馈锚点并在切换报告时清理高亮', async () => {
+    const user = userEvent.setup()
+    let focusAnchorListener: Parameters<CodeReviewApi['onReportFeedbackFocusAnchor']>[0] | undefined
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [
+        { id: 'anchor-a', svn_url: 'svn://server/a', old_revision: '1', new_revision: '2', status: 'success', feedback_protocol_version: 1 },
+        { id: 'anchor-b', svn_url: 'svn://server/b', old_revision: '2', new_revision: '3', status: 'success', feedback_protocol_version: 1 }
+      ],
+      count: 2
+    })
+    vi.mocked(window.codeReview.onReportFeedbackFocusAnchor).mockImplementation((listener) => {
+      focusAnchorListener = listener
+      return vi.fn()
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click((await screen.findAllByRole('button', { name: /查看报告/ }))[0])
+    const previewScroll = document.querySelector('.preview-scroll') as HTMLDivElement
+    previewScroll.scrollTo = vi.fn()
+    const issueBlock = document.querySelector('[data-report-issue-anchor-id="report-option-4"]')
+    expect(issueBlock).not.toHaveClass('report-issue-block-active')
+
+    act(() => focusAnchorListener?.({ taskId: 'anchor-b', anchorId: 'report-option-4' }))
+    expect(issueBlock).not.toHaveClass('report-issue-block-active')
+    act(() => focusAnchorListener?.({ taskId: 'anchor-a', anchorId: 'report-option-4' }))
+    expect(issueBlock).toHaveClass('report-issue-block-active')
+
+    await user.click(screen.getByRole('button', { name: /anchor-b/ }))
+    await waitFor(() => expect(document.querySelector('.report-issue-block-active')).not.toBeInTheDocument())
+  })
+
+  it('旧协议只由当前报告的反馈提交事件自动打开 PDF', async () => {
+    const user = userEvent.setup()
+    let feedbackSubmittedListener: Parameters<CodeReviewApi['onReportFeedbackSubmitted']>[0] | undefined
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [{
+        id: 'legacy-feedback', svn_url: 'svn://server/legacy-feedback', old_revision: '1', new_revision: '2',
+        review_item_ids: ['DS-03'], status: 'success', report_feedback_helpful: null
+      }],
+      count: 1
+    })
+    vi.mocked(window.codeReview.onReportFeedbackSubmitted).mockImplementation((listener) => {
+      feedbackSubmittedListener = listener
+      return vi.fn()
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: /查看报告/ }))
+    await user.click(screen.getByRole('button', { name: '报告有帮助' }))
+    expect(window.codeReview.openReportFeedbackWindow).toHaveBeenCalledWith({
+      mode: 'legacy', taskId: 'legacy-feedback', options: expect.any(Array)
+    })
+    await user.click(screen.getByRole('button', { name: '报告没帮助' }))
+    expect(window.codeReview.submitNegativeReportFeedback).toHaveBeenCalledTimes(1)
+    expect(window.codeReview.openPdfReport).not.toHaveBeenCalled()
+    expect(await screen.findByText('反馈已提交')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '报告有帮助' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '报告没帮助' })).not.toBeInTheDocument()
+
+    act(() => feedbackSubmittedListener?.({
+      taskId: 'other-task', helpful: false, usefulIssuesText: null
+    }))
+    expect(window.codeReview.openPdfReport).not.toHaveBeenCalled()
+    act(() => feedbackSubmittedListener?.({
+      taskId: 'legacy-feedback', helpful: false, usefulIssuesText: null
+    }))
+    await waitFor(() => expect(window.codeReview.openPdfReport).toHaveBeenCalledWith({
+      taskId: 'legacy-feedback', localPdfPath: undefined, pdfReportName: undefined
+    }))
+  })
+
+  it('任务创建和通用意见反馈提交中均防止重复调用', async () => {
+    const user = userEvent.setup()
+    let resolvePreflight: ((value: { status: 'valid' }) => void) | undefined
+    vi.mocked(window.codeReview.preflightTask).mockImplementationOnce(() => new Promise((resolve) => {
+      resolvePreflight = resolve
+    }))
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.type(await screen.findByLabelText('SVN 地址'), 'svn://server/no-duplicate')
+    await user.type(screen.getByLabelText('旧 revision'), '0')
+    await user.type(screen.getByLabelText('新 revision'), '12')
+    await user.click(screen.getByRole('button', { name: '选择' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
+    await user.click(screen.getByRole('button', { name: '确认选择（1）' }))
+    const createButton = screen.getByRole('button', { name: '创建审查任务' })
+    fireEvent.click(createButton)
+    fireEvent.click(createButton)
+    expect(window.codeReview.preflightTask).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: '创建中...' })).toBeDisabled()
+    act(() => resolvePreflight?.({ status: 'valid' }))
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(1))
+
+    let resolveFeedback: ((value: { id: string; status: 'pending' }) => void) | undefined
+    vi.mocked(window.codeReview.submitFeedback).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveFeedback = resolve
+    }))
+    await user.click(screen.getByRole('button', { name: '意见反馈' }))
+    await user.type(screen.getByLabelText('问题描述'), '防重复提交')
+    const feedbackButton = screen.getByRole('button', { name: '提交意见' })
+    fireEvent.click(feedbackButton)
+    fireEvent.click(feedbackButton)
+    expect(window.codeReview.submitFeedback).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: '提交中...' })).toBeDisabled()
+    act(() => resolveFeedback?.({ id: 'feedback-once', status: 'pending' }))
+    await waitFor(() => expect(screen.getByLabelText('问题描述')).toHaveValue(''))
+  })
+})

@@ -216,6 +216,9 @@ const findTemplateOneBoundary = (
   return horizontalRule.index < nextHeading.index ? horizontalRule : nextHeading
 }
 
+const reviewCoverageSectionPattern =
+  /^(?:(?:[一二三四五六七八九十百]+|\d+)[、.．:：\s]+)?审查覆盖$/
+
 const extractTemplateOneIssues = (markdown: string, lines: MarkdownLine[]): ReviewIssueSnapshot[] => {
   const headings = collectHeadings(lines)
   const leafHeadings = headings.filter((heading, index) => {
@@ -225,9 +228,17 @@ const extractTemplateOneIssues = (markdown: string, lines: MarkdownLine[]): Revi
     const children = headings.slice(index + 1, boundary ? headings.indexOf(boundary) : headings.length)
     return children.length === 0
   })
-  const issueHeadings = leafHeadings.filter(
-    (heading) => heading.level >= 3 && !isPlaceholderText(heading.text)
-  )
+  const issueHeadings = leafHeadings.filter((heading) => {
+    if (heading.level < 3 || isPlaceholderText(heading.text)) {
+      return false
+    }
+    const headingIndex = headings.indexOf(heading)
+    const parentSection = headings
+      .slice(0, headingIndex)
+      .reverse()
+      .find((candidate) => candidate.level <= 2)
+    return !parentSection || !reviewCoverageSectionPattern.test(parentSection.text.trim())
+  })
 
   return issueHeadings.map((heading, order) => {
     const headingIndex = headings.indexOf(heading)

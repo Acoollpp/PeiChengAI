@@ -304,7 +304,8 @@ describe('TaskBoard', () => {
       ...historyTasks[0],
       id: 'task-full-review',
       old_revision: 'r0',
-      new_revision: 'r123'
+      new_revision: 'r123',
+      review_item_ids: []
     }
 
     renderTaskBoard({ runningTasks: [], queuedTasks: [], historyTasks: [fullReviewTask] })
@@ -313,6 +314,29 @@ describe('TaskBoard', () => {
 
     expect(screen.getByText('全量审查 r123')).toBeInTheDocument()
     expect(screen.getByText('审查范围')).toBeInTheDocument()
+  })
+
+  it('DS-03 的 r0 任务显示原始 revision 且不解释为全量审查', async () => {
+    const user = userEvent.setup()
+    const ds03Task: TaskViewItem = {
+      ...historyTasks[0],
+      id: 'task-ds03-r0',
+      localTaskId: 'task-ds03-r0',
+      old_revision: 'r0',
+      new_revision: 'r123',
+      review_item_ids: ['DS-03']
+    }
+
+    renderTaskBoard({ runningTasks: [], queuedTasks: [], historyTasks: [ds03Task] })
+
+    await user.click(screen.getByRole('tab', { name: '历史任务 1' }))
+
+    expect(screen.getByText('旧版本')).toBeInTheDocument()
+    expect(screen.getByText('r0')).toBeInTheDocument()
+    expect(screen.getByText('新版本')).toBeInTheDocument()
+    expect(screen.getByText('r123')).toBeInTheDocument()
+    expect(screen.queryByText(/全量审查/)).not.toBeInTheDocument()
+    expect(screen.queryByText('审查范围')).not.toBeInTheDocument()
   })
 
   it('空列表切换后显示对应空状态', async () => {

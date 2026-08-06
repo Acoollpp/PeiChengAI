@@ -158,7 +158,7 @@ describe('App update flow', () => {
     await user.click(screen.getByRole('button', { name: 'Key 登录' }))
 
     expect(await screen.findByRole('heading', { name: '选择部门' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '任务工作台' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '创建审查任务' })).not.toBeInTheDocument()
 
     await user.selectOptions(screen.getByLabelText('部门'), 'dept-1')
     await user.click(screen.getByRole('button', { name: '确认选择' }))
@@ -168,7 +168,7 @@ describe('App update flow', () => {
         department_id: 'dept-1'
       })
     })
-    expect(await screen.findByRole('heading', { name: '任务工作台' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '创建审查任务' })).toBeInTheDocument()
   })
 
   it('blocks a required update before showing department selection', async () => {
@@ -233,7 +233,7 @@ describe('App update flow', () => {
     await user.type(await screen.findByLabelText('Key'), 'sk-cch-test')
     await user.click(screen.getByRole('button', { name: 'Key 登录' }))
 
-    expect(await screen.findByRole('heading', { name: '任务工作台' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '创建审查任务' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '选择部门' })).not.toBeInTheDocument()
   })
 
@@ -247,7 +247,7 @@ describe('App update flow', () => {
     await user.type(await screen.findByLabelText('Key'), 'sk-cch-test')
     await user.click(screen.getByRole('button', { name: 'Key 登录' }))
 
-    expect(await screen.findByRole('heading', { name: '任务工作台' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '创建审查任务' })).toBeInTheDocument()
     expect(window.codeReview.checkForAppUpdate).toHaveBeenCalledTimes(1)
     expect(screen.queryByText('正在下载新版本')).not.toBeInTheDocument()
   })
@@ -314,7 +314,7 @@ describe('App update flow', () => {
       await user.click(screen.getByRole('button', { name: 'Key 登录' }))
 
       expect(await screen.findByText('正在下载新版本')).toBeInTheDocument()
-      expect(screen.queryByRole('heading', { name: '任务工作台' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: '创建审查任务' })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: '后台下载' })).not.toBeInTheDocument()
       await user.keyboard('{Escape}')
       expect(screen.getByText('正在下载新版本')).toBeInTheDocument()

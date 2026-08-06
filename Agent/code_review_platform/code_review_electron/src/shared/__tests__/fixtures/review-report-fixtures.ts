@@ -1,3 +1,11 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
+export const bmsDs03ReportFixture = readFileSync(
+  fileURLToPath(new URL('./bms-ds03-report.md', import.meta.url)),
+  'utf8'
+)
+
 export const templateOneReportFixture = `# 代码审查报告-模版一
 
 ## 五、代码质量问题

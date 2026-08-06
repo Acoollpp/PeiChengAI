@@ -542,9 +542,15 @@ def _parse_asset_paths(raw_asset_paths: str | None) -> list[str]:
 def create_review_task(
     *, session: SessionDep, current_user: CurrentUser, task_in: ReviewTaskCreate
 ) -> Any:
-    old_revision = _normalize_revision(task_in.old_revision)
+    normalized_review_item_ids = [item_id.strip() for item_id in task_in.review_item_ids]
+    if any(not item_id or len(item_id) > 64 for item_id in normalized_review_item_ids):
+        raise HTTPException(status_code=400, detail="审查项 ID 无效")
+    if len(set(normalized_review_item_ids)) != len(normalized_review_item_ids):
+        raise HTTPException(status_code=400, detail="审查项 ID 不能重复")
+
+    normalized_old_revision = _normalize_revision(task_in.old_revision)
     new_revision = _normalize_revision(task_in.new_revision)
-    old_revision_number = int(old_revision[1:])
+    old_revision_number = int(normalized_old_revision[1:])
     new_revision_number = int(new_revision[1:])
     if new_revision_number == 0:
         raise HTTPException(status_code=400, detail="新版本号不能为 0")
@@ -560,8 +566,13 @@ def create_review_task(
         task_in,
         update={
             "user_id": current_user.id,
-            "old_revision": old_revision,
+            "old_revision": (
+                task_in.old_revision.strip()
+                if normalized_review_item_ids
+                else normalized_old_revision
+            ),
             "new_revision": new_revision,
+            "review_item_ids": normalized_review_item_ids,
             "department_id": department.id if department else None,
             "department_name": department.name if department else None,
             "focus_direction_snapshot": task_in.focus_direction_snapshot,

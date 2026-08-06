@@ -354,7 +354,7 @@ export function ReviewItemSelector({
                 <div className="wb-section-heading">
                   <div>
                     <h4>专项材料</h4>
-                    <p>当前预览仅展示文件名，不读取或上传文件。</p>
+                    <p>材料按审查项独立选择，仅用于本次任务。</p>
                   </div>
                   <span>{activeItem.materialFields.length === 0 ? '无需材料' : `${activeItem.materialFields.length} 项`}</span>
                 </div>

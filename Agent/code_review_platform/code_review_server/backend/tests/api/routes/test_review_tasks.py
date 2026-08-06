@@ -16,6 +16,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 from pydantic import ValidationError
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.api.routes import review_tasks as review_tasks_route
@@ -439,6 +440,80 @@ def test_create_review_task_without_template_fields_remains_supported(
     content = response.json()
     assert content["template_key"] is None
     assert content["skill_name"] is None
+    assert content["review_item_ids"] == []
+
+
+def test_create_review_task_stores_and_returns_review_item_ids(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+        json={
+            "svn_url": "svn://repo/project",
+            "old_revision": "0",
+            "new_revision": "r14",
+            "skill_name": "bms-code-reviewer",
+            "review_item_ids": ["DS-03"],
+        },
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["old_revision"] == "0"
+    assert content["review_item_ids"] == ["DS-03"]
+    task = db.get(ReviewTask, UUID(content["id"]))
+    assert task is not None
+    assert task.review_item_ids == ["DS-03"]
+
+    read_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{content['id']}",
+        headers=normal_user_token_headers,
+    )
+    assert read_response.status_code == 200
+    assert read_response.json()["review_item_ids"] == ["DS-03"]
+
+
+def test_read_legacy_review_task_uses_database_default_for_review_item_ids(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    me_response = client.get(
+        f"{settings.API_V1_STR}/users/me",
+        headers=normal_user_token_headers,
+    )
+    assert me_response.status_code == 200
+    task_id = uuid4()
+    db.execute(
+        text(
+            """
+            INSERT INTO review_task (
+                id, user_id, svn_url, old_revision, new_revision, status
+            ) VALUES (
+                :id, :user_id, :svn_url, :old_revision, :new_revision, 'success'
+            )
+            """
+        ),
+        {
+            "id": task_id,
+            "user_id": UUID(me_response.json()["id"]),
+            "svn_url": "svn://repo/legacy",
+            "old_revision": "r0",
+            "new_revision": "r14",
+        },
+    )
+    db.commit()
+
+    read_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task_id}",
+        headers=normal_user_token_headers,
+    )
+
+    assert read_response.status_code == 200
+    assert read_response.json()["review_item_ids"] == []
 
 
 def test_create_review_task_legacy_payload_returns_new_fields_as_empty(
@@ -457,6 +532,7 @@ def test_create_review_task_legacy_payload_returns_new_fields_as_empty(
 
     assert response.status_code == 200
     content = response.json()
+    assert content["review_item_ids"] == []
     assert content["department_id"] is None
     assert content["department_name"] is None
     assert content["focus_direction_id"] is None

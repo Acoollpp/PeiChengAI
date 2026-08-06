@@ -71,6 +71,39 @@ textarea:focus-visible {
   background: var(--wb-bg);
 }
 
+.wb-production-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.wb-environment-banner {
+  position: absolute;
+  z-index: 20;
+  top: 70px;
+  right: 18px;
+  width: min(520px, calc(100% - 36px));
+}
+
+.wb-environment-banner .environment-box {
+  margin: 0;
+  box-shadow: 0 12px 36px rgb(0 0 0 / 35%);
+}
+
+.wb-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.wb-feedback-submitted {
+  align-self: center;
+  color: var(--wb-accent);
+  font-size: 11px;
+}
+
 .wb-app-header {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -1558,6 +1591,29 @@ input[type="checkbox"] {
   color: var(--wb-accent);
 }
 
+.wb-toast-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.wb-toast-content > span {
+  min-width: 0;
+}
+
+.wb-toast-content > button {
+  flex: 0 0 auto;
+  border: 0;
+  padding: 4px 6px;
+  color: var(--wb-accent);
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 @media (max-width: 1100px) {
   .wb-layout {
     grid-template-columns: 328px minmax(0, 1fr);
@@ -1694,7 +1750,7 @@ input[type="checkbox"] {
 .wb-overview > div small {
   grid-column: 1 / -1;
   color: #6f7d7a;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .wb-task-management .wb-task-section,
@@ -1711,13 +1767,13 @@ input[type="checkbox"] {
   color: #74827f;
   background: #0c1113;
   font-family: var(--wb-utility);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
 }
 
 .wb-task-table-head,
 .wb-task-table-row {
-  grid-template-columns: minmax(190px, 2fr) 74px minmax(150px, 1.45fr) 54px 34px;
+  grid-template-columns: minmax(190px, 2fr) 74px minmax(150px, 1.45fr) 54px 68px;
   gap: 10px;
 }
 
@@ -1741,7 +1797,7 @@ input[type="checkbox"] {
   display: grid;
   align-items: center;
   min-width: 0;
-  min-height: 54px;
+  min-height: 66px;
   padding: 8px 12px 8px 9px;
   border-bottom: 1px solid var(--wb-line);
   border-left: 3px solid var(--wb-line-strong);
@@ -1767,13 +1823,11 @@ input[type="checkbox"] {
 .wb-task-identity strong,
 .wb-management-report-row > div:first-child strong {
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.wb-task-identity span,
-.wb-management-report-row > div:first-child span,
 .wb-management-report-row > span,
 .wb-management-report-row time,
 .wb-task-table-row time {
@@ -1781,14 +1835,34 @@ input[type="checkbox"] {
   overflow: hidden;
   color: var(--wb-muted);
   font-family: var(--wb-utility);
-  font-size: 8px;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.wb-row-svn,
+.wb-row-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--wb-muted);
+  font-family: var(--wb-utility);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-row-svn {
+  color: var(--wb-text-soft);
+  font-size: 11px;
+}
+
+.wb-row-meta {
+  font-size: 10px;
 }
 
 .wb-task-table-row .wb-status-label {
   justify-self: start;
   margin: 0;
+  font-size: 10px;
 }
 
 .wb-task-progress {
@@ -1800,7 +1874,7 @@ input[type="checkbox"] {
 .wb-task-progress > strong {
   overflow: hidden;
   color: var(--wb-muted);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1842,7 +1916,7 @@ input[type="checkbox"] {
 }
 
 .wb-management-report-row > strong {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .wb-management-report-row > strong.is-high { color: var(--wb-danger); }
@@ -1858,7 +1932,7 @@ input[type="checkbox"] {
   border: 0;
   color: var(--wb-accent);
   background: transparent;
-  font-size: 10px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -1897,12 +1971,12 @@ input[type="checkbox"] {
   justify-content: space-between;
   padding: 0 13px;
   border-bottom: 1px solid var(--wb-line);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .wb-report-index > header span {
   color: var(--wb-muted);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .wb-report-index > div {
@@ -1913,7 +1987,7 @@ input[type="checkbox"] {
 .wb-report-index button {
   display: grid;
   width: 100%;
-  gap: 7px;
+  gap: 6px;
   padding: 13px;
   border: 0;
   border-bottom: 1px solid var(--wb-line);
@@ -1953,19 +2027,25 @@ input[type="checkbox"] {
 
 .wb-report-index-title strong {
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.wb-report-index-svn,
 .wb-report-index button small,
 .wb-report-index-meta {
+  min-width: 0;
   overflow: hidden;
   color: var(--wb-muted);
   font-family: var(--wb-utility);
-  font-size: 8px;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.wb-report-index-svn {
+  color: var(--wb-text-soft);
 }
 
 .wb-report-index-meta strong.is-high { color: var(--wb-danger); }
@@ -1977,6 +2057,12 @@ input[type="checkbox"] {
   min-height: 0;
   overflow: hidden;
   background: #121719;
+}
+
+.wb-markdown-panel > .preview-scroll {
+  height: 100%;
+  scrollbar-color: var(--wb-line-strong) transparent;
+  scrollbar-width: thin;
 }
 
 .wb-markdown-scroll {
@@ -2181,7 +2267,7 @@ input[type="checkbox"] {
 
   .wb-task-table-head,
   .wb-task-table-row {
-    grid-template-columns: minmax(160px, 1.8fr) 66px minmax(130px, 1.25fr) 44px 30px;
+    grid-template-columns: minmax(160px, 1.8fr) 66px minmax(130px, 1.25fr) 44px 64px;
     gap: 7px;
   }
 

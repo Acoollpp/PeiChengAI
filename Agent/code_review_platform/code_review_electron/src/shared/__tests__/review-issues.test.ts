@@ -3,12 +3,50 @@ import { describe, expect, it } from 'vitest'
 import { extractReviewIssues } from '../review-issues'
 import { REVIEW_TEMPLATE_PREVIEWS } from '../review-template-previews'
 import {
+  bmsDs03ReportFixture,
   templateOneReportFixture,
   templateTwoConclusionReportFixture,
   templateTwoTableReportFixture
 } from './fixtures/review-report-fixtures'
 
 describe('extractReviewIssues', () => {
+  it('新版 DS-03 固定报告只提取含问题描述的正式问题且忽略审查覆盖标题', () => {
+    const issues = extractReviewIssues(bmsDs03ReportFixture)
+
+    expect(issues).toHaveLength(1)
+    expect(issues[0]).toMatchObject({
+      issueText: 'P01 [高风险] 休眠状态仍可打开充电 MOS',
+      descriptionText:
+        '休眠状态分支未阻断充电 MOS 开启路径，满足远程唤醒条件时会绕过休眠保护。',
+      source: 'template_1_heading'
+    })
+    expect(issues[0].displaySnapshot).toContain(
+      '| `source/control.c` | 88 | `ApplyChargeMos` 中的充电 MOS 输出动作 |'
+    )
+    expect(issues[0].displaySnapshot).not.toContain('## 二、审查覆盖')
+    expect(issues[0].displaySnapshot).not.toContain('受控输出写入点')
+  })
+
+  it('精确排除审查覆盖子标题但保留旧报告“未覆盖”章节中的正式问题', () => {
+    const issues = extractReviewIssues(
+      [
+        '# 旧版代码审查报告',
+        '## 六、未覆盖保护路径问题',
+        '### 中风险：异常恢复路径未关闭输出',
+        '**问题描述：** 异常恢复分支未关闭受控输出。',
+        '## 七、审查覆盖',
+        '### DS-03 状态机审核覆盖',
+        '已判定 12 个写入点。'
+      ].join('\n')
+    )
+
+    expect(issues).toHaveLength(1)
+    expect(issues[0]).toMatchObject({
+      issueText: '中风险：异常恢复路径未关闭输出',
+      descriptionText: '异常恢复分支未关闭受控输出。'
+    })
+  })
+
   it('按模板一叶子标题保留问题快照、描述、顺序和重复标题定位', () => {
     const issues = extractReviewIssues(templateOneReportFixture)
 

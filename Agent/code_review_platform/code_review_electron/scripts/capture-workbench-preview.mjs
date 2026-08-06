@@ -217,8 +217,10 @@ const captureViewport = async (browser, viewport) => {
       const index = document.querySelector('.wb-report-index')?.getBoundingClientRect()
       const markdown = document.querySelector('.wb-markdown-panel')?.getBoundingClientRect()
       const title = document.querySelector('.wb-report-center .wb-workspace-title > div')?.getBoundingClientRect()
-      const pdfButton = document
-        .querySelector('.wb-report-center .wb-workspace-title > button')
+      const actionsElement = document.querySelector('.wb-report-center .wb-report-actions')
+      const actions = actionsElement?.getBoundingClientRect()
+      const pdfButton = [...(actionsElement?.querySelectorAll('button') ?? [])]
+        .find((button) => button.textContent?.trim().includes('查看PDF报告'))
         ?.getBoundingClientRect()
       const markdownScroll = document.querySelector('.wb-markdown-scroll')
       const navButtons = [...document.querySelectorAll('.wb-preview-controls button')].map((button) =>
@@ -238,9 +240,15 @@ const captureViewport = async (browser, viewport) => {
         markdownWidth: markdown?.width ?? 0,
         markdownScrollable: Boolean(markdownScroll && markdownScroll.scrollHeight > markdownScroll.clientHeight),
         markdownHeadingVisible: Boolean(document.querySelector('.wb-markdown-scroll h1')),
+        titleClearsActions: Boolean(title && actions && title.right <= actions.left + 1),
         titleClearsPdfButton: Boolean(title && pdfButton && title.right <= pdfButton.left + 1),
+        actionsWithinViewport: Boolean(
+          actions && actions.left >= 0 && actions.top >= 0 &&
+          actions.right <= innerWidth && actions.bottom <= innerHeight
+        ),
         pdfButtonWithinViewport: Boolean(
-          pdfButton && pdfButton.left >= 0 && pdfButton.right <= innerWidth && pdfButton.bottom <= innerHeight
+          pdfButton && pdfButton.left >= 0 && pdfButton.top >= 0 &&
+          pdfButton.right <= innerWidth && pdfButton.bottom <= innerHeight
         ),
         navButtonsDoNotOverlap
       }
@@ -252,7 +260,9 @@ const captureViewport = async (browser, viewport) => {
     assert(reportCenterMetrics.markdownWidth > 0, `${label}：Markdown 区宽度为 0。`)
     assert(reportCenterMetrics.markdownScrollable, `${label}：Markdown 区没有形成独立滚动。`)
     assert(reportCenterMetrics.markdownHeadingVisible, `${label}：Markdown 标题未渲染。`)
+    assert(reportCenterMetrics.titleClearsActions, `${label}：报告标题与报告操作区发生重叠。`)
     assert(reportCenterMetrics.titleClearsPdfButton, `${label}：报告标题与 PDF 按钮发生重叠。`)
+    assert(reportCenterMetrics.actionsWithinViewport, `${label}：报告操作区超出视口。`)
     assert(reportCenterMetrics.pdfButtonWithinViewport, `${label}：PDF 按钮超出视口。`)
     assert(reportCenterMetrics.navButtonsDoNotOverlap, `${label}：顶部三导航发生重叠。`)
 

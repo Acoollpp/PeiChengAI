@@ -303,6 +303,7 @@ export type ReviewTaskCreate = {
     svn_url: string;
     old_revision: string;
     new_revision: string;
+    review_item_ids?: Array<(string)>;
     template_key?: (string | null);
     skill_name?: (string | null);
     focus_direction_id?: (string | null);
@@ -353,6 +354,7 @@ export type ReviewTaskPublic = {
     svn_url: string;
     old_revision: string;
     new_revision: string;
+    review_item_ids?: Array<(string)>;
     template_key?: (string | null);
     skill_name?: (string | null);
     department_id?: (string | null);

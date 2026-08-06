@@ -52,14 +52,16 @@ function formatRevisionLabel(value: string): string {
   return revision ? `r${revision}` : ''
 }
 
-function isFullReviewTask(task: Pick<TaskViewItem, 'old_revision'>): boolean {
-  return formatRevisionLabel(task.old_revision) === 'r0'
+function isLegacyFullReviewTask(
+  task: Pick<TaskViewItem, 'old_revision' | 'review_item_ids'>
+): boolean {
+  return !task.review_item_ids?.length && formatRevisionLabel(task.old_revision) === 'r0'
 }
 
 function formatTaskRevisionRange(task: TaskViewItem): string {
   const newRevision = formatRevisionLabel(task.new_revision)
 
-  if (isFullReviewTask(task)) {
+  if (isLegacyFullReviewTask(task)) {
     return `全量审查 ${newRevision || task.new_revision}`
   }
 
@@ -173,7 +175,7 @@ function TaskCard({
       </div>
       <p className="task-url">{task.svn_url}</p>
       <dl className="task-meta">
-        {isFullReviewTask(task) ? (
+        {isLegacyFullReviewTask(task) ? (
           <div>
             <dt>审查范围</dt>
             <dd>{formatTaskRevisionRange(task)}</dd>

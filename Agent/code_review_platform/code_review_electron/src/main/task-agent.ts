@@ -23,6 +23,13 @@ import {
 } from './svn-preflight'
 import { resolveReviewReportFileName, type RunSvnLog } from './svn-report-name-resolver'
 import { CODEX_REVIEW_LOG_FILE_NAME } from './task-log'
+import { buildBmsReviewTaskPrompt } from './review-task-prompt'
+import {
+  BMS_CODE_REVIEW_SKILL_NAME,
+  resolveReviewItemInputs,
+  type ResolvedReviewItemInput,
+  type SelectedReviewItemInput
+} from '../shared/review-items'
 import type {
   EnvironmentStatus,
   ReviewTask,
@@ -43,6 +50,7 @@ export interface RetryReviewTaskInput {
   taskId: string
   clientTaskId?: string
   requirementFilePath?: string
+  reviewItems?: SelectedReviewItemInput[]
   signal?: AbortSignal
 }
 
@@ -70,6 +78,9 @@ export interface RunCodexInput {
   reportPath: string
   imagesDir: string
   requirementFilePath?: string
+  reviewItems?: ResolvedReviewItemInput[]
+  oldRevision?: string
+  newRevision?: string
   skillName: string
   task: ReviewTask
   clientTaskId?: string
@@ -240,25 +251,39 @@ export const defaultRunCodex = async ({
   reportPath,
   imagesDir,
   requirementFilePath,
+  reviewItems,
+  oldRevision,
+  newRevision,
   skillName,
   task,
   clientTaskId,
   signal,
   onProgress
 }: RunCodexInput): Promise<void> => {
+  const prompt = reviewItems?.length
+    ? buildBmsReviewTaskPrompt({
+        svnUrl: task.svn_url,
+        oldRevision: oldRevision ?? task.old_revision,
+        newRevision: newRevision ?? task.new_revision,
+        departmentName: task.department_name ?? undefined,
+        reviewItems,
+        reportPath
+      })
+    : buildReviewPrompt({
+        svnUrl: task.svn_url,
+        oldRevision: task.old_revision,
+        newRevision: task.new_revision,
+        reportPath,
+        imagesDir,
+        skillName,
+        requirementFilePath,
+        departmentName: task.department_name ?? undefined,
+        focusDirectionSnapshot: task.focus_direction_snapshot ?? undefined
+      })
+
   await runCodexReview({
     cwd,
-    prompt: buildReviewPrompt({
-      svnUrl: task.svn_url,
-      oldRevision: task.old_revision,
-      newRevision: task.new_revision,
-      reportPath,
-      imagesDir,
-      skillName,
-      requirementFilePath,
-      departmentName: task.department_name ?? undefined,
-      focusDirectionSnapshot: task.focus_direction_snapshot ?? undefined
-    }),
+    prompt,
     timeoutMs: CODEX_REVIEW_TIMEOUT_MS,
     signal,
     onOutput: (event) =>
@@ -293,13 +318,26 @@ export const executeReviewTask = async (
   onProgress?: TaskProgressReporter
 ): Promise<ExecuteReviewTaskResult> => {
   throwIfCancelled(input.signal)
-  const task = toReviewTask(await dependencies.api.createTask(input.token, input.request))
+  const reviewItems = input.request.review_items
+    ? resolveReviewItemInputs(input.request.review_items)
+    : undefined
+  const createRequest = reviewItems
+    ? {
+        ...input.request,
+        skill_name: BMS_CODE_REVIEW_SKILL_NAME,
+        review_item_ids: reviewItems.map((item) => item.id)
+      }
+    : input.request
+  const task = toReviewTask(await dependencies.api.createTask(input.token, createRequest))
   emitStage(onProgress, task.id, input.clientTaskId, 'created', '任务已创建')
 
   return runExistingReviewTask({
     token: input.token,
     task,
     skillName: input.request.skill_name,
+    reviewItems,
+    oldRevision: input.request.old_revision,
+    newRevision: input.request.new_revision,
     requirementFilePath: input.request.requirement_file_path,
     clientTaskId: input.clientTaskId,
     signal: input.signal
@@ -316,11 +354,17 @@ export const retryReviewTask = async (
     throw new Error('当前服务端客户端不支持读取审查任务')
   }
   const task = toReviewTask(await dependencies.api.readTask(input.token, input.taskId))
+  const reviewItems = input.reviewItems
+    ? resolveReviewItemInputs(input.reviewItems)
+    : task.review_item_ids?.length
+      ? resolveReviewItemInputs(task.review_item_ids.map((id) => ({ id })))
+      : undefined
   emitStage(onProgress, task.id, input.clientTaskId, 'created', '任务重新启动')
 
   return runExistingReviewTask({
     token: input.token,
     task,
+    reviewItems,
     requirementFilePath: input.requirementFilePath,
     clientTaskId: input.clientTaskId,
     signal: input.signal
@@ -332,6 +376,9 @@ const runExistingReviewTask = async (
     token: string
     task: ReviewTask
     skillName?: string
+    reviewItems?: ResolvedReviewItemInput[]
+    oldRevision?: string
+    newRevision?: string
     requirementFilePath?: string
     clientTaskId?: string
     signal?: AbortSignal
@@ -343,7 +390,9 @@ const runExistingReviewTask = async (
 
   try {
     throwIfCancelled(input.signal)
-    const skillName = resolveSkillName(input.skillName, task.skill_name)
+    const skillName = input.reviewItems?.length
+      ? BMS_CODE_REVIEW_SKILL_NAME
+      : resolveSkillName(input.skillName, task.skill_name)
 
     emitStage(onProgress, task.id, input.clientTaskId, 'checking_environment', '检查本机环境')
     await updateStatus(dependencies, input.token, task.id, {
@@ -426,6 +475,13 @@ const runExistingReviewTask = async (
       ...workspace,
       skillName,
       task,
+      ...(input.reviewItems
+        ? {
+            reviewItems: input.reviewItems,
+            oldRevision: input.oldRevision ?? task.old_revision,
+            newRevision: input.newRevision ?? task.new_revision
+          }
+        : {}),
       clientTaskId: input.clientTaskId,
       signal: input.signal,
       onProgress: withClientTaskId(onProgress, input.clientTaskId)

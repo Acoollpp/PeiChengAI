@@ -787,6 +787,101 @@ describe('registerIpcHandlers', () => {
     )
   })
 
+  it('通过 IPC 将 DS-03 结构化输入和原始 revision 0 交给假 Codex 适配器', async () => {
+    const api = {
+      createTask: vi.fn(async () => ({
+        id: 'task-ds03',
+        svn_url: 'svn://repo/ds03',
+        old_revision: 'r0',
+        new_revision: 'r12',
+        review_item_ids: ['DS-03'],
+        skill_name: 'bms-code-reviewer',
+        status: 'created'
+      })),
+      updateTaskStatus: vi.fn(async () => undefined),
+      uploadReport: vi.fn(async () => undefined),
+      uploadPdfReport: vi.fn(async () => undefined)
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123' })),
+      save: vi.fn()
+    }
+    const cwd = await mkdtemp(join(tmpdir(), 'ipc-ds03-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, 'DS-03_审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    const runCodex = vi.fn(async () => {
+      await writeFile(reportPath, '# DS-03 report\n')
+    })
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      syncSkill: vi.fn(async () => ({
+        status: 'current' as const,
+        skills: [
+          {
+            id: 'skill-ds03',
+            name: 'bms-code-reviewer',
+            version: '2.0.0',
+            package_path: '/tmp/code-review-runtime/skill-packages/bms-code-reviewer.zip',
+            installed_at: '2026-08-05T10:00:00.000Z'
+          }
+        ]
+      })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      preflightSvn: vi.fn(),
+      runCodex
+    })
+
+    const executeHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:execute')?.[1]
+    const reviewItems = [
+      {
+        id: 'DS-03',
+        user_extra_rules: '仅检查休眠唤醒状态'
+      }
+    ]
+
+    await expect(
+      executeHandler({}, {
+        client_task_id: 'local-ds03',
+        svn_url: 'svn://repo/ds03',
+        old_revision: '0',
+        new_revision: '12',
+        review_items: reviewItems
+      })
+    ).resolves.toMatchObject({
+      taskId: 'task-ds03',
+      status: 'success',
+      reportMarkdown: '# DS-03 report\n'
+    })
+    expect(api.createTask).toHaveBeenCalledWith(
+      'token-123',
+      expect.objectContaining({
+        old_revision: '0',
+        review_items: reviewItems,
+        review_item_ids: ['DS-03'],
+        skill_name: 'bms-code-reviewer'
+      })
+    )
+    expect(runCodex).toHaveBeenCalledWith(
+      expect.objectContaining({
+        oldRevision: '0',
+        newRevision: '12',
+        skillName: 'bms-code-reviewer',
+        reviewItems: [
+          {
+            id: 'DS-03',
+            name: '状态机审核',
+            user_extra_rules: '仅检查休眠唤醒状态'
+          }
+        ]
+      })
+    )
+  })
+
   it('retries an existing failed task through IPC without creating a new task', async () => {
     const api = {
       createTask: vi.fn(),

@@ -1,29 +1,30 @@
-import { ClipboardEvent, FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useMemo, useState } from 'react'
 
 import {
-  DEFAULT_REVIEW_TEMPLATE_KEY,
-  REVIEW_TEMPLATES,
-  resolveReviewTemplate,
-  type ReviewTemplateKey
-} from '../../../shared/review-templates'
+  BMS_CODE_REVIEW_SKILL_NAME,
+  findReviewItem
+} from '../../../shared/review-items'
 import { TaskPreflightValidationError, type ExecuteTaskRequest } from '../code-review-api'
 
 const RECENT_SVN_URLS_STORAGE_KEY = 'code-review:recent-svn-urls'
 const MAX_RECENT_SVN_URLS = 3
+const ds03Definition = (() => {
+  const definition = findReviewItem('DS-03')
+  if (!definition) {
+    throw new Error('审查项目录缺少稳定 ID DS-03。')
+  }
+  return definition
+})()
 
 type TaskFormProps = {
   disabled: boolean
   activeSkillNames?: string[]
-  selectedTemplateKey?: ReviewTemplateKey
-  onTemplateChange?: (templateKey: ReviewTemplateKey) => void
   onSubmit: (payload: ExecuteTaskRequest) => Promise<void>
 }
 
 export function TaskForm({
   disabled,
   activeSkillNames,
-  selectedTemplateKey,
-  onTemplateChange,
   onSubmit
 }: TaskFormProps): React.JSX.Element {
   const [svnUrl, setSvnUrl] = useState('')
@@ -37,11 +38,9 @@ export function TaskForm({
   })
   const [oldRevision, setOldRevision] = useState('')
   const [newRevision, setNewRevision] = useState('')
-  const [requirementFilePath, setRequirementFilePath] = useState('')
-  const [focusDirectionSnapshot, setFocusDirectionSnapshot] = useState('')
-  const [requirementFileError, setRequirementFileError] = useState('')
-  const [uncontrolledTemplateKey, setUncontrolledTemplateKey] =
-    useState<ReviewTemplateKey>(DEFAULT_REVIEW_TEMPLATE_KEY)
+  const [isDs03Selected, setIsDs03Selected] = useState(true)
+  const [ds03ExtraRules, setDs03ExtraRules] = useState('')
+  const [reviewItemError, setReviewItemError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const visibleRecentSvnUrls = useMemo(() => {
     const query = svnUrl.trim().toLocaleLowerCase()
@@ -54,37 +53,12 @@ export function TaskForm({
     return recentSvnUrls.filter((item) => item.toLocaleLowerCase().includes(query))
   }, [recentSvnUrls, svnUrl])
   const showSvnHistory = isSvnHistoryOpen && visibleRecentSvnUrls.length > 0
-  const templateKey = selectedTemplateKey ?? uncontrolledTemplateKey
   const activeSkillNameSet = useMemo(
     () => (activeSkillNames ? new Set(activeSkillNames) : null),
     [activeSkillNames]
   )
-  const selectedTemplate = resolveReviewTemplate(templateKey)
-  const selectedTemplateAvailable =
-    !activeSkillNameSet || activeSkillNameSet.has(selectedTemplate.skillName)
-
-  useEffect(() => {
-    if (!activeSkillNameSet || activeSkillNameSet.has(selectedTemplate.skillName)) {
-      return
-    }
-
-    const firstAvailableTemplate = REVIEW_TEMPLATES.find((template) =>
-      activeSkillNameSet.has(template.skillName)
-    )
-    if (firstAvailableTemplate) {
-      if (selectedTemplateKey === undefined) {
-        setUncontrolledTemplateKey(firstAvailableTemplate.key)
-      }
-      onTemplateChange?.(firstAvailableTemplate.key)
-    }
-  }, [activeSkillNameSet, onTemplateChange, selectedTemplate.skillName, selectedTemplateKey])
-
-  const updateTemplateKey = (nextTemplateKey: ReviewTemplateKey): void => {
-    if (selectedTemplateKey === undefined) {
-      setUncontrolledTemplateKey(nextTemplateKey)
-    }
-    onTemplateChange?.(nextTemplateKey)
-  }
+  const bmsSkillAvailable =
+    !activeSkillNameSet || activeSkillNameSet.has(BMS_CODE_REVIEW_SKILL_NAME)
 
   const selectSvnHistoryItem = (selectedSvnUrl: string): void => {
     setSvnUrl(selectedSvnUrl)
@@ -95,26 +69,31 @@ export function TaskForm({
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
     setSvnValidationErrors({ svnUrl: '', oldRevision: '', newRevision: '' })
+    setReviewItemError('')
+
+    if (!isDs03Selected) {
+      setReviewItemError('请至少选择一个审查项。')
+      return
+    }
+    if (!bmsSkillAvailable) {
+      setReviewItemError('本机尚未同步 bms-code-reviewer Skill，请先刷新环境。')
+      return
+    }
+
     setIsSubmitting(true)
 
     try {
-      const template = resolveReviewTemplate(templateKey)
-      if (activeSkillNameSet && !activeSkillNameSet.has(template.skillName)) {
-        return
-      }
-
       const normalizedSvnUrl = svnUrl.trim()
       await onSubmit({
         svn_url: normalizedSvnUrl,
         old_revision: oldRevision.trim(),
         new_revision: newRevision.trim(),
-        template_key: template.key,
-        skill_name: template.skillName,
-        requirement_file_path: requirementFilePath.trim() || undefined,
-        requirement_file_name: requirementFilePath.trim()
-          ? basenameLike(requirementFilePath.trim())
-          : undefined,
-        focus_direction_snapshot: focusDirectionSnapshot.trim() || undefined
+        review_items: [
+          {
+            id: ds03Definition.id,
+            ...(ds03ExtraRules.trim() ? { user_extra_rules: ds03ExtraRules.trim() } : {})
+          }
+        ]
       })
       setRecentSvnUrls(rememberRecentSvnUrl(normalizedSvnUrl))
       setActiveSvnHistoryIndex(null)
@@ -122,9 +101,7 @@ export function TaskForm({
       setSvnUrl('')
       setOldRevision('')
       setNewRevision('')
-      setRequirementFilePath('')
-      setFocusDirectionSnapshot('')
-      setRequirementFileError('')
+      setDs03ExtraRules('')
     } catch (error) {
       if (error instanceof TaskPreflightValidationError) {
         setSvnValidationErrors({
@@ -142,36 +119,6 @@ export function TaskForm({
       return
     } finally {
       setIsSubmitting(false)
-    }
-  }
-
-  const handleSelectRequirementFile = async (): Promise<void> => {
-    setRequirementFileError('')
-    const result = await window.codeReview.selectRequirementFile()
-    if (result.status === 'selected') {
-      setRequirementFilePath(result.filePath)
-    }
-  }
-
-  const handleRequirementFilePaste = (event: ClipboardEvent<HTMLInputElement>): void => {
-    const file = Array.from(event.clipboardData.files).find((item) =>
-      /\.(xls|xlsx)$/i.test(item.name)
-    )
-    if (!file) {
-      return
-    }
-
-    event.preventDefault()
-    try {
-      const filePath = window.codeReview.getPathForPastedFile(file)
-      if (!filePath) {
-        setRequirementFileError('无法读取粘贴文件路径，请使用选择文件按钮。')
-        return
-      }
-      setRequirementFilePath(filePath)
-      setRequirementFileError('')
-    } catch {
-      setRequirementFileError('无法读取粘贴文件路径，请使用选择文件按钮。')
     }
   }
 
@@ -271,7 +218,7 @@ export function TaskForm({
             aria-label="旧版本号"
             value={oldRevision}
             inputMode="numeric"
-            placeholder="填 0 表示全量审查新版本代码"
+            placeholder="例如 0 或 123"
             onChange={(event) => {
               setOldRevision(event.target.value)
               setSvnValidationErrors((current) => ({ ...current, oldRevision: '' }))
@@ -299,75 +246,53 @@ export function TaskForm({
         </label>
       </div>
 
-      <label className="field">
-        <span>产品开发需求表（可选）</span>
-        <div className="file-input-row">
+      <fieldset className="review-item-choice">
+        <legend>审查项</legend>
+        <label className="review-item-option">
           <input
-            aria-label="产品开发需求表"
-            value={requirementFilePath}
-            placeholder="选择、粘贴 Excel 文件或粘贴本机路径"
-            onPaste={handleRequirementFilePaste}
+            type="checkbox"
+            checked={isDs03Selected}
+            disabled={!bmsSkillAvailable}
+            aria-label="DS-03 状态机审核"
             onChange={(event) => {
-              setRequirementFilePath(event.target.value)
-              setRequirementFileError('')
+              setIsDs03Selected(event.target.checked)
+              setReviewItemError('')
             }}
           />
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={disabled || isSubmitting}
-            onClick={() => {
-              void handleSelectRequirementFile()
-            }}
-          >
-            选择文件
-          </button>
-        </div>
-        {requirementFileError && <span className="form-error">{requirementFileError}</span>}
-      </label>
-
-      <label className="field">
-        <span>重点审查方向（可选）</span>
-        <textarea
-          aria-label="重点审查方向"
-          maxLength={4096}
-          value={focusDirectionSnapshot}
-          placeholder="填写本次希望 Codex 重点关注的模块、风险或业务规则"
-          onChange={(event) => setFocusDirectionSnapshot(event.target.value)}
-        />
-      </label>
-
-      <fieldset className="template-choice">
-        <legend>审查模板</legend>
-        <div className="template-options">
-          {REVIEW_TEMPLATES.map((template) => (
-            <label className="template-option" key={template.key}>
-              <input
-                type="radio"
-                name="review-template"
-                value={template.key}
-                disabled={Boolean(activeSkillNameSet && !activeSkillNameSet.has(template.skillName))}
-                checked={templateKey === template.key}
-                onChange={() => updateTemplateKey(template.key)}
-              />
-              <span>{template.label}</span>
-            </label>
-          ))}
-        </div>
+          <span className="review-item-copy">
+            <strong>{ds03Definition.id} · {ds03Definition.name}</strong>
+            <span>{ds03Definition.category.name} · {ds03Definition.summary}</span>
+            <span>{ds03Definition.details.target}</span>
+          </span>
+        </label>
+        {isDs03Selected ? (
+          <label className="field review-item-rules">
+            <span>DS-03 用户额外规则（可选）</span>
+            <textarea
+              aria-label="DS-03 用户额外规则"
+              maxLength={4096}
+              value={ds03ExtraRules}
+              placeholder="补充本次状态条件、状态转换或受控输出约束"
+              onChange={(event) => setDs03ExtraRules(event.target.value)}
+            />
+          </label>
+        ) : null}
+        {!bmsSkillAvailable ? (
+          <span className="form-error">本机尚未同步 bms-code-reviewer Skill。</span>
+        ) : null}
+        {reviewItemError ? <span className="form-error">{reviewItemError}</span> : null}
       </fieldset>
 
       <button
         className="primary-button"
         type="submit"
-        disabled={disabled || isSubmitting || !selectedTemplateAvailable}
+        disabled={disabled || isSubmitting || !bmsSkillAvailable}
       >
         {isSubmitting ? '提交中...' : '开始审查'}
       </button>
     </form>
   )
 }
-
-const basenameLike = (value: string): string => value.split(/[\\/]/).filter(Boolean).at(-1) ?? value
 
 function readRecentSvnUrls(): string[] {
   try {

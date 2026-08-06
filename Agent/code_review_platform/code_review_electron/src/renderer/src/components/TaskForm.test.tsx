@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -20,40 +20,33 @@ afterEach(() => {
 })
 
 describe('TaskForm', () => {
-  it('提交成功后清空 SVN 字段并保留选中的审查模板', async () => {
+  it('提交成功后清空 SVN 字段并保留选中的 DS-03', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn(async () => undefined)
     render(<TaskForm disabled={false} onSubmit={onSubmit} />)
 
     expect(screen.getByLabelText('SVN 地址')).toBeInTheDocument()
     expect(screen.getByLabelText('旧版本号')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('填 0 表示全量审查新版本代码')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('例如 0 或 123')).toBeInTheDocument()
     expect(screen.getByLabelText('新版本号')).toBeInTheDocument()
-    expect(screen.getByText('产品开发需求表（可选）')).toBeInTheDocument()
-    expect(screen.getByText('重点审查方向（可选）')).toBeInTheDocument()
-    expect(screen.getByLabelText('模板一')).toBeChecked()
-    expect(screen.getByLabelText('模板二')).not.toBeChecked()
+    expect(screen.getByLabelText('DS-03 状态机审核')).toBeChecked()
+    expect(screen.queryByText(/无需额外上传材料/)).not.toBeInTheDocument()
 
     await user.type(screen.getByLabelText('SVN 地址'), 'svn://repo/project')
     await user.type(screen.getByLabelText('旧版本号'), '12')
     await user.type(screen.getByLabelText('新版本号'), '14')
-    await user.click(screen.getByLabelText('模板二'))
     await user.click(screen.getByRole('button', { name: '开始审查' }))
 
     expect(onSubmit).toHaveBeenCalledWith({
       svn_url: 'svn://repo/project',
       old_revision: '12',
       new_revision: '14',
-      template_key: 'template_2',
-      skill_name: '通用-代码审查-模版二',
-      requirement_file_path: undefined,
-      requirement_file_name: undefined,
-      focus_direction_snapshot: undefined
+      review_items: [{ id: 'DS-03' }]
     })
     expect(screen.getByLabelText('SVN 地址')).toHaveValue('')
     expect(screen.getByLabelText('旧版本号')).toHaveValue('')
     expect(screen.getByLabelText('新版本号')).toHaveValue('')
-    expect(screen.getByLabelText('模板二')).toBeChecked()
+    expect(screen.getByLabelText('DS-03 状态机审核')).toBeChecked()
   })
 
   it('提交失败后保留 SVN 字段便于修改重试', async () => {
@@ -207,7 +200,7 @@ describe('TaskForm', () => {
     expect(screen.getByLabelText('旧版本号')).toHaveFocus()
   })
 
-  it('提交时包含产品开发需求表路径和重点审查方向', async () => {
+  it('提交时把用户额外规则绑定到 DS-03', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn(async () => undefined)
     render(<TaskForm disabled={false} onSubmit={onSubmit} />)
@@ -215,47 +208,47 @@ describe('TaskForm', () => {
     await user.type(screen.getByLabelText('SVN 地址'), 'svn://repo/project')
     await user.type(screen.getByLabelText('旧版本号'), '12')
     await user.type(screen.getByLabelText('新版本号'), '14')
-    await user.type(screen.getByLabelText('产品开发需求表'), '/tmp/产品开发需求表.xls')
-    await user.type(screen.getByLabelText('重点审查方向'), '重点检查 SOC 跳变')
+    await user.type(screen.getByLabelText('DS-03 用户额外规则'), '重点检查休眠唤醒状态')
     await user.click(screen.getByRole('button', { name: '开始审查' }))
 
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
-        requirement_file_path: '/tmp/产品开发需求表.xls',
-        requirement_file_name: '产品开发需求表.xls',
-        focus_direction_snapshot: '重点检查 SOC 跳变'
+        review_items: [
+          {
+            id: 'DS-03',
+            user_extra_rules: '重点检查休眠唤醒状态'
+          }
+        ]
       })
     )
   })
 
-  it('通过选择文件按钮填入产品开发需求表路径', async () => {
+  it('未选择审查项时显示明确中文提示且不提交', async () => {
     const user = userEvent.setup()
-    vi.mocked(window.codeReview.selectRequirementFile).mockResolvedValue({
-      status: 'selected',
-      filePath: '/tmp/产品开发需求表.xlsx'
-    })
-    render(<TaskForm disabled={false} onSubmit={vi.fn()} />)
+    const onSubmit = vi.fn()
+    render(<TaskForm disabled={false} onSubmit={onSubmit} />)
 
-    await user.click(screen.getByRole('button', { name: '选择文件' }))
+    await user.type(screen.getByLabelText('SVN 地址'), 'svn://repo/project')
+    await user.type(screen.getByLabelText('旧版本号'), '0')
+    await user.type(screen.getByLabelText('新版本号'), '14')
+    await user.click(screen.getByLabelText('DS-03 状态机审核'))
+    await user.click(screen.getByRole('button', { name: '开始审查' }))
 
-    expect(screen.getByLabelText('产品开发需求表')).toHaveValue('/tmp/产品开发需求表.xlsx')
+    expect(screen.getByText('请至少选择一个审查项。')).toBeInTheDocument()
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 
-  it('粘贴 Excel 文件时读取本机路径', async () => {
-    vi.mocked(window.codeReview.getPathForPastedFile).mockReturnValue('/tmp/粘贴需求表.xls')
-    render(<TaskForm disabled={false} onSubmit={vi.fn()} />)
-    const input = screen.getByLabelText('产品开发需求表')
-    const file = new File(['excel'], '粘贴需求表.xls', {
-      type: 'application/vnd.ms-excel'
-    })
+  it('本机未同步 bms-code-reviewer 时禁止提交', () => {
+    render(
+      <TaskForm
+        disabled={false}
+        activeSkillNames={['通用-代码审查-模版一']}
+        onSubmit={vi.fn()}
+      />
+    )
 
-    fireEvent.paste(input, {
-      clipboardData: {
-        files: [file]
-      }
-    })
-
-    expect(window.codeReview.getPathForPastedFile).toHaveBeenCalledWith(file)
-    expect(input).toHaveValue('/tmp/粘贴需求表.xls')
+    expect(screen.getByLabelText('DS-03 状态机审核')).toBeDisabled()
+    expect(screen.getByText('本机尚未同步 bms-code-reviewer Skill。')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '开始审查' })).toBeDisabled()
   })
 })

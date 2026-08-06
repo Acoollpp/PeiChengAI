@@ -71,6 +71,7 @@ import {
 } from './svn-preflight'
 import { buildDirectCommandOptions } from './environment-checker'
 import type { TaskPreflightErrorField, TaskPreflightResult } from '../shared/task-preflight'
+import type { SelectedReviewItemInput } from '../shared/review-items'
 
 interface SerializedFeedbackScreenshot {
   name: string
@@ -146,6 +147,7 @@ interface RetryTaskRequest {
   task_id: string
   client_task_id?: string
   requirement_file_path?: string
+  review_items?: SelectedReviewItemInput[]
 }
 
 interface CancelTaskResult {
@@ -1196,6 +1198,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
           taskId: payload.task_id,
           clientTaskId: payload.client_task_id,
           requirementFilePath: payload.requirement_file_path,
+          reviewItems: payload.review_items,
           signal: abortController.signal
         },
         {

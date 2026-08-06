@@ -177,7 +177,7 @@ describe('TaskPage', () => {
     expect(screen.getByRole('button', { name: '开始审查' })).toBeDisabled()
   })
 
-  it('提交任务时 executeTask payload 包含默认模板字段', async () => {
+  it('提交任务时 executeTask payload 包含结构化 DS-03 输入', async () => {
     const user = userEvent.setup()
     window.codeReview.executeTask = vi.fn(async () => ({
       taskId: 'task-1',
@@ -211,8 +211,7 @@ describe('TaskPage', () => {
         svn_url: 'svn://repo/project',
         old_revision: '12',
         new_revision: '14',
-        template_key: 'template_1',
-        skill_name: '通用-代码审查-模版一'
+        review_items: [{ id: 'DS-03' }]
       })
     )
   })
@@ -586,25 +585,18 @@ describe('TaskPage', () => {
     expect(await screen.findByRole('heading', { name: '点击通知报告' })).toBeInTheDocument()
   })
 
-  it('未选中任务时右侧显示当前审查模板且不显示 PDF 报告按钮', async () => {
-    const user = userEvent.setup()
-
+  it('未选中任务时右侧显示中性报告视图且不显示 PDF 报告按钮', async () => {
     renderReadyTaskPage()
 
     await waitFor(() => expect(window.codeReview.listTasks).toHaveBeenCalled())
     expect(await screen.findByText('暂无运行中任务。')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '代码审查报告-模版一' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '代码审查报告模板二' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '查看PDF报告' })).not.toBeInTheDocument()
-
-    await user.click(screen.getByLabelText('模板二'))
-
-    expect(screen.getByRole('heading', { name: '代码审查报告模板二' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '审查报告', level: 1 })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '代码审查报告-模版一' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '代码审查报告模板二' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '查看PDF报告' })).not.toBeInTheDocument()
   })
 
-  it('选择任务报告后再切换模板会回到模板预览', async () => {
+  it('选择历史任务报告后调整新任务审查项不会覆盖报告预览', async () => {
     const user = userEvent.setup()
     window.codeReview.listTasks = vi.fn(async () => ({
       data: [
@@ -627,10 +619,9 @@ describe('TaskPage', () => {
     await user.click(within(historyPanel).getByRole('button', { name: '查看报告' }))
     expect(await screen.findByRole('heading', { name: '历史报告' })).toBeInTheDocument()
 
-    await user.click(screen.getByLabelText('模板二'))
+    await user.click(screen.getByLabelText('DS-03 状态机审核'))
 
-    expect(screen.getByRole('heading', { name: '代码审查报告模板二' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '历史报告' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '历史报告' })).toBeInTheDocument()
     expect(within(historyPanel).getByRole('button', { name: '查看报告' })).toBeEnabled()
   })
 
@@ -673,7 +664,7 @@ describe('TaskPage', () => {
     expect(screen.queryByText('新完成报告')).not.toBeInTheDocument()
   })
 
-  it('只允许选择已同步 Skill 对应的审查模板', async () => {
+  it('已同步 bms-code-reviewer 时允许提交 DS-03', async () => {
     const user = userEvent.setup()
     window.codeReview.executeTask = vi.fn(async () => ({
       taskId: 'task-1',
@@ -691,7 +682,7 @@ describe('TaskPage', () => {
           skills: [
             {
               id: 'skill-1',
-              name: '通用-代码审查-模版一',
+              name: 'bms-code-reviewer',
               version: '2026.05.29',
               package_path: '/tmp/skill.zip',
               installed_at: '2026-05-29T10:00:00.000Z'
@@ -710,8 +701,7 @@ describe('TaskPage', () => {
       />
     )
 
-    expect(screen.getByLabelText('模板一')).toBeEnabled()
-    expect(screen.getByLabelText('模板二')).toBeDisabled()
+    expect(screen.getByLabelText('DS-03 状态机审核')).toBeEnabled()
 
     await user.type(screen.getByLabelText('SVN 地址'), 'svn://repo/project')
     await user.type(screen.getByLabelText('旧版本号'), '12')
@@ -720,8 +710,7 @@ describe('TaskPage', () => {
 
     expect(window.codeReview.executeTask).toHaveBeenCalledWith(
       expect.objectContaining({
-        template_key: 'template_1',
-        skill_name: '通用-代码审查-模版一'
+        review_items: [{ id: 'DS-03' }]
       })
     )
   })

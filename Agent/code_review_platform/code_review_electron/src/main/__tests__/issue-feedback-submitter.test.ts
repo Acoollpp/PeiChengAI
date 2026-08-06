@@ -6,10 +6,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiClient } from '../api-client'
 import { submitIssueFeedback } from '../issue-feedback-submitter'
-import type { GeneratePdfReportDependencies } from '../report-pdf-generator'
+import {
+  generatePdfReport,
+  type GeneratePdfReportDependencies
+} from '../report-pdf-generator'
 import { extractReviewIssues } from '../../shared/review-issues'
 import type { ReviewTask, ReviewTaskIssue } from '../../shared/types'
-import { templateOneReportFixture } from '../../shared/__tests__/fixtures/review-report-fixtures'
+import {
+  bmsDs03ReportFixture,
+  templateOneReportFixture
+} from '../../shared/__tests__/fixtures/review-report-fixtures'
 
 const toServerIssues = (markdown: string): ReviewTaskIssue[] =>
   extractReviewIssues(markdown).map((issue) => ({
@@ -135,6 +141,69 @@ describe('submitIssueFeedback', () => {
       pdfPath: join(workspace, '本地报告.pdf'),
       pdfReportName: '本地报告.pdf'
     })
+  })
+
+  it('新版 DS-03 固定报告通过真实生成器写入反馈版 PDF', async () => {
+    const { workspace, runtimePaths } = await createRuntime()
+    await mkdir(workspace, { recursive: true })
+    const issues = toServerIssues(bmsDs03ReportFixture)
+    expect(issues).toHaveLength(1)
+    const uploadPdfReport = vi.fn(async () =>
+      makeTask({
+        report_name: 'DS-03_审查报告.md',
+        feedback_submitted_at: '2026-08-05T12:00:00Z',
+        pdf_report_name: 'DS-03_审查报告.pdf'
+      })
+    )
+    let loadedHtml = ''
+    const printToPDF = vi.fn(async () => Buffer.from('%PDF-1.4\nDS-03 final feedback'))
+    const createWindow = vi.fn(() => ({
+      loadFile: vi.fn(async (path: string) => {
+        loadedHtml = await readFile(path, 'utf8')
+      }),
+      webContents: { printToPDF },
+      close: vi.fn()
+    }))
+    const generatePdf = vi.fn(
+      (reportPath: string, options?: GeneratePdfReportDependencies) =>
+        generatePdfReport(reportPath, { ...options, createWindow })
+    )
+
+    const result = await submitIssueFeedback({
+      api: {
+        readTask: vi.fn(async () =>
+          makeTask({ report_name: 'DS-03_审查报告.md', review_item_ids: ['DS-03'] })
+        ),
+        readTaskReport: vi.fn(async () => bmsDs03ReportFixture),
+        readTaskIssues: vi.fn(async () => ({
+          data: issues,
+          count: 1,
+          evaluated_count: 1,
+          feedback_submitted_at: null
+        })),
+        downloadReportAsset: vi.fn(),
+        uploadPdfReport
+      },
+      token: 'token-123',
+      taskId: 'task-1',
+      runtimePaths,
+      generatePdf
+    })
+
+    expect(loadedHtml).toContain('是否有效：有效')
+    expect(loadedHtml).toContain('<code>已完成修复</code>')
+    expect(loadedHtml).toContain('二、审查覆盖')
+    expect(loadedHtml.match(/是否有效：有效/g)).toHaveLength(1)
+    expect(printToPDF).toHaveBeenCalledWith({ printBackground: true, pageSize: 'A4' })
+    expect(uploadPdfReport).toHaveBeenCalledTimes(1)
+    expect(result).toEqual({
+      status: 'submitted',
+      taskId: 'task-1',
+      feedbackSubmittedAt: '2026-08-05T12:00:00Z',
+      pdfPath: join(workspace, 'DS-03_审查报告.pdf'),
+      pdfReportName: 'DS-03_审查报告.pdf'
+    })
+    await expect(readFile(result.pdfPath, 'utf8')).resolves.toContain('DS-03 final feedback')
   })
 
   it('已有 BOM 报告可按服务端原偏移生成并提交最终 PDF', async () => {
