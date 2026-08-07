@@ -60,7 +60,7 @@ export interface ReviewTaskViewModel {
   svnUrl: string
   oldRevision: string
   newRevision: string
-  reviewItemIds: ReviewItemId[]
+  reviewItemIds: string[]
   stage: TaskStage
   stageLabel: string
   message: string
@@ -75,12 +75,14 @@ export interface ReviewReportViewModel {
   title: string
   svnUrl: string
   revisionRange: string
-  reviewItemIds: ReviewItemId[]
+  reviewItemIds: string[]
   completedAt: string
   issueCount?: number
-  highestSeverity?: 'high' | 'medium' | 'none'
+  highestSeverity: 'high' | 'medium' | 'low' | 'suggestion' | 'none' | 'unknown'
   summary: string
   markdown: string
+  contentStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'parse_error'
+  contentMessage?: string
   reportPath?: string
   feedbackProtocolVersion?: number | null
   feedbackSubmittedAt?: string | null
@@ -114,6 +116,11 @@ export type WorkbenchTaskStats =
     }
   | { status: 'error'; message: string }
 
+export type WorkbenchReportListState =
+  | { status: 'loading' }
+  | { status: 'ready' }
+  | { status: 'error'; message: string }
+
 export interface WorkbenchViewModel {
   productName: string
   previewLabel: string
@@ -135,6 +142,7 @@ export interface WorkbenchViewModel {
   taskCreationDisabledReason?: string
   requestedView?: { id: WorkbenchViewId; requestId: number }
   taskStats?: WorkbenchTaskStats
+  reportListState?: WorkbenchReportListState
 }
 
 export interface CreateTaskCommand {
@@ -155,7 +163,9 @@ export interface WorkbenchCommands {
   retryTask(taskId: string): Promise<PreviewCommandResult>
   advanceTasks(): Promise<PreviewCommandResult>
   reloadTaskStats?(): Promise<PreviewCommandResult>
+  reloadReportList?(): Promise<PreviewCommandResult>
   openReport(reportId: string): Promise<PreviewCommandResult>
+  retryReport?(reportId: string): Promise<PreviewCommandResult>
   closeReport(): Promise<PreviewCommandResult>
   viewPdfReport(reportId: string): Promise<PreviewCommandResult>
   openReportFeedback?(reportId: string): Promise<PreviewCommandResult>

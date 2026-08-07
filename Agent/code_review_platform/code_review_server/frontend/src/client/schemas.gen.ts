@@ -1646,6 +1646,12 @@ export const ReviewFocusDirectionsPublicSchema = {
     title: 'ReviewFocusDirectionsPublic'
 } as const;
 
+export const ReviewIssueSeveritySchema = {
+    type: 'string',
+    enum: ['high', 'medium', 'low', 'suggestion'],
+    title: 'ReviewIssueSeverity'
+} as const;
+
 export const ReviewTaskCreateSchema = {
     properties: {
         svn_url: {
@@ -2169,6 +2175,16 @@ export const ReviewTaskPublicSchema = {
             type: 'integer',
             title: 'Issue Count',
             default: 0
+        },
+        highest_issue_severity: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/ReviewIssueSeverity'
+                },
+                {
+                    type: 'null'
+                }
+            ]
         },
         evaluated_issue_count: {
             type: 'integer',

@@ -39,6 +39,13 @@ class ReviewTaskStatus(str, Enum):
     cancelled = "cancelled"
 
 
+class ReviewIssueSeverity(str, Enum):
+    high = "high"
+    medium = "medium"
+    low = "low"
+    suggestion = "suggestion"
+
+
 class FeedbackStatus(str, Enum):
     pending = "pending"
     processing = "processing"
@@ -634,6 +641,7 @@ class ReviewTaskPublic(SQLModel):
     feedback_protocol_version: int | None = None
     feedback_submitted_at: datetime | None = None
     issue_count: int = 0
+    highest_issue_severity: ReviewIssueSeverity | None = None
     evaluated_issue_count: int = 0
     has_issue_feedback_draft: bool = False
     report_feedback_helpful: bool | None = None

@@ -1,4 +1,5 @@
 export type ReviewIssueSource =
+  | 'bms_code_reviewer_heading'
   | 'template_1_heading'
   | 'template_2_table_row'
   | 'template_2_conclusion_item'
@@ -19,8 +20,25 @@ export type ReviewIssueSnapshot = {
   descriptionText: string
   displayText: string
   displaySnapshot: string
+  severity?: ReviewIssueSeverity
+  codeLocations?: ReviewIssueCodeLocation[]
   anchorId: string
   location: ReviewIssueLocation
+}
+
+export type ReviewIssueSeverity = 'high' | 'medium' | 'low' | 'suggestion' | 'unknown'
+
+export type ReviewIssueCodeLocation = {
+  file: string
+  line: string
+  description: string
+}
+
+export type ReviewIssueExtractionResult = {
+  format: 'bms_code_reviewer' | 'legacy'
+  status: 'parsed' | 'invalid'
+  issues: ReviewIssueSnapshot[]
+  message?: string
 }
 
 type MarkdownLine = {
@@ -43,6 +61,10 @@ const horizontalRulePattern = /^\s{0,3}(?:(?:-\s*){3,}|(?:_\s*){3,}|(?:\*\s*){3,
 const tableSeparatorPattern = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/
 const descriptionFieldPattern =
   /^\s*(?:[-*+]\s*)?(?:\*\*|__)?(?:问题描述|缺陷描述(?:\s*\(Root Cause\))?|不合规现象描述)\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/i
+const codeLocationFieldPattern =
+  /^\s*(?:[-*+]\s*)?(?:\*\*|__)?涉及文件及行号\s*[：:](?:\*\*|__)?\s*$/
+const bmsIssueHeadingPattern =
+  /^(?:P\d+|CR-\d+)\s+\[(高风险|高|中风险|中|低风险|低|建议)\]\s+\S.*$/
 
 const stripMarkerListPrefix = (value: string): string =>
   value
@@ -124,6 +146,16 @@ const splitTableRow = (line: string): string[] => {
 const getHeaderIndex = (headers: string[], names: string[]): number =>
   headers.findIndex((header) => names.some((name) => header.includes(name)))
 
+const severityByLabel: Record<string, ReviewIssueSeverity> = {
+  高风险: 'high',
+  高: 'high',
+  中风险: 'medium',
+  中: 'medium',
+  低风险: 'low',
+  低: 'low',
+  建议: 'suggestion'
+}
+
 const splitMarkdownLines = (markdown: string): MarkdownLine[] => {
   const lines: MarkdownLine[] = []
   let offset = 0
@@ -194,6 +226,36 @@ const findDescriptionText = (lines: MarkdownLine[]): string => {
   return ''
 }
 
+const findCodeLocations = (lines: MarkdownLine[]): ReviewIssueCodeLocation[] => {
+  const fieldIndex = lines.findIndex(
+    (line) => !line.inCodeBlock && codeLocationFieldPattern.test(line.text)
+  )
+  if (fieldIndex === -1) return []
+
+  const tableLines = lines.slice(fieldIndex + 1)
+  const headerLineIndex = tableLines.findIndex(
+    (line) => !line.inCodeBlock && line.text.trim().startsWith('|')
+  )
+  if (headerLineIndex === -1) return []
+  const headers = splitTableRow(tableLines[headerLineIndex].text)
+  const fileIndex = getHeaderIndex(headers, ['文件'])
+  const lineIndex = getHeaderIndex(headers, ['行号'])
+  const descriptionIndex = getHeaderIndex(headers, ['位置说明'])
+  if (fileIndex === -1 || lineIndex === -1 || descriptionIndex === -1) return []
+
+  const locations: ReviewIssueCodeLocation[] = []
+  for (const line of tableLines.slice(headerLineIndex + 1)) {
+    if (line.inCodeBlock || !line.text.trim().startsWith('|')) break
+    if (tableSeparatorPattern.test(line.text)) continue
+    const cells = splitTableRow(line.text)
+    const file = cells[fileIndex] ?? ''
+    const codeLine = cells[lineIndex] ?? ''
+    const description = cells[descriptionIndex] ?? ''
+    if (file && codeLine) locations.push({ file, line: codeLine, description })
+  }
+  return locations
+}
+
 const findTemplateOneBoundary = (
   lines: MarkdownLine[],
   headings: MarkdownHeading[],
@@ -218,6 +280,81 @@ const findTemplateOneBoundary = (
 
 const reviewCoverageSectionPattern =
   /^(?:(?:[一二三四五六七八九十百]+|\d+)[、.．:：\s]+)?审查覆盖$/
+const reviewIssuesSectionPattern =
+  /^(?:(?:[一二三四五六七八九十百]+|\d+)[、.．:：\s]+)?审查问题$/
+
+const extractBmsCodeReviewerIssues = (
+  markdown: string,
+  lines: MarkdownLine[]
+): ReviewIssueExtractionResult | undefined => {
+  const headings = collectHeadings(lines)
+  const sectionIndex = headings.findIndex(
+    (heading) => heading.level === 2 && reviewIssuesSectionPattern.test(heading.text.trim())
+  )
+  if (sectionIndex === -1) return undefined
+
+  const section = headings[sectionIndex]
+  const nextSection = headings
+    .slice(sectionIndex + 1)
+    .find((heading) => heading.level <= section.level)
+  const candidates = headings.slice(
+    sectionIndex + 1,
+    nextSection ? headings.indexOf(nextSection) : headings.length
+  )
+  const directHeadings = candidates.filter((heading) => heading.level === 3)
+  const issueHeadings = directHeadings.filter(
+    (heading) => heading.level === 3 && bmsIssueHeadingPattern.test(heading.text)
+  )
+
+  const issues = issueHeadings.flatMap((heading) => {
+    const headingIndex = headings.indexOf(heading)
+    const boundary = findTemplateOneBoundary(lines, headings, headingIndex)
+    const endOffset = boundary?.startOffset ?? markdown.length
+    const issueLines = lines.slice(heading.line.index + 1, boundary?.index)
+    const descriptionText = findDescriptionText(issueLines)
+    if (!descriptionText) return []
+    const severityLabel = bmsIssueHeadingPattern.exec(heading.text)?.[1] ?? ''
+    const anchorId = `report-option-${heading.line.index}`
+    return [{
+      id: `review-issue-${heading.line.index}`,
+      order: 0,
+      source: 'bms_code_reviewer_heading' as const,
+      issueText: heading.text,
+      descriptionText,
+      displayText: heading.text,
+      displaySnapshot: markdown.slice(heading.line.startOffset, endOffset).trimEnd(),
+      severity: severityByLabel[severityLabel] ?? 'unknown',
+      codeLocations: findCodeLocations(issueLines),
+      anchorId,
+      location: {
+        startOffset: heading.line.startOffset,
+        endOffset,
+        feedbackInsertionOffset: endOffset,
+        anchorLine: heading.line.index,
+        headingLevel: heading.level
+      }
+    }]
+  }).map((issue, order) => ({ ...issue, order }))
+  const sectionLines = lines.slice(
+    section.line.index + 1,
+    nextSection?.line.index
+  )
+  const hasZeroIssueStatement = sectionLines.some(
+    (line) => !line.inCodeBlock && line.text.trim() === '本次未发现能够闭环的问题'
+  )
+  const valid =
+    (directHeadings.length > 0 &&
+      directHeadings.length === issueHeadings.length &&
+      issues.length === issueHeadings.length) ||
+    (directHeadings.length === 0 && hasZeroIssueStatement)
+
+  return {
+    format: 'bms_code_reviewer',
+    status: valid ? 'parsed' : 'invalid',
+    issues,
+    ...(!valid ? { message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。' } : {})
+  }
+}
 
 const extractTemplateOneIssues = (markdown: string, lines: MarkdownLine[]): ReviewIssueSnapshot[] => {
   const headings = collectHeadings(lines)
@@ -414,17 +551,30 @@ const extractTemplateTwoConclusionIssues = (
   return issues
 }
 
-export const extractReviewIssues = (markdown: string): ReviewIssueSnapshot[] => {
+export const inspectReviewIssues = (markdown: string): ReviewIssueExtractionResult => {
   if (!markdown.trim()) {
-    return []
+    return { format: 'legacy', status: 'invalid', issues: [], message: '报告正文为空。' }
   }
 
   const lines = splitMarkdownLines(markdown)
+  const bmsCodeReviewerIssues = extractBmsCodeReviewerIssues(markdown, lines)
+  if (bmsCodeReviewerIssues !== undefined) return bmsCodeReviewerIssues
   if (/代码审查报告模?板二/.test(markdown)) {
     const tableIssues = extractTemplateTwoTableIssues(markdown, lines)
-    return tableIssues.length > 0
-      ? tableIssues
-      : extractTemplateTwoConclusionIssues(markdown, lines)
+    return {
+      format: 'legacy',
+      status: 'parsed',
+      issues: tableIssues.length > 0
+        ? tableIssues
+        : extractTemplateTwoConclusionIssues(markdown, lines)
+    }
   }
-  return extractTemplateOneIssues(markdown, lines)
+  return {
+    format: 'legacy',
+    status: 'parsed',
+    issues: extractTemplateOneIssues(markdown, lines)
+  }
 }
+
+export const extractReviewIssues = (markdown: string): ReviewIssueSnapshot[] =>
+  inspectReviewIssues(markdown).issues
