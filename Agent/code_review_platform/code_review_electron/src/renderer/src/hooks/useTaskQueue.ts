@@ -119,9 +119,11 @@ const isMatchingUnboundLocalTask = (
   !isTerminalStatus(serverTask.status) &&
   localTask.id === localTask.localTaskId &&
   (localTask.localQueueState === 'starting' || localTask.localQueueState === 'running') &&
+  // 2.0 私有逐项输入不在服务端，必须等待 clientTaskId 进度事件精确绑定。
+  (serverTask.review_item_ids?.length ?? 0) === 0 &&
   localTask.svn_url === serverTask.svn_url &&
-  localTask.old_revision === serverTask.old_revision &&
-  localTask.new_revision === serverTask.new_revision &&
+  revisionsMatch(localTask.old_revision, serverTask.old_revision) &&
+  revisionsMatch(localTask.new_revision, serverTask.new_revision) &&
   localTask.template_key === serverTask.template_key &&
   localTask.skill_name === serverTask.skill_name &&
   arraysEqual(localTask.review_item_ids ?? [], serverTask.review_item_ids ?? []) &&
@@ -133,6 +135,11 @@ const isMatchingUnboundLocalTask = (
 
 const arraysEqual = (left: readonly string[], right: readonly string[]): boolean =>
   left.length === right.length && left.every((value, index) => value === right[index])
+
+const revisionsMatch = (left: string, right: string): boolean => {
+  const normalize = (value: string): string => value.trim().replace(/^r/i, '')
+  return left === right || normalize(left) === normalize(right)
+}
 
 const getErrorMessage = (error: unknown): string =>
   toUserFacingIpcErrorMessage(error, '审查任务执行失败。')
@@ -264,9 +271,13 @@ export function useTaskQueue({
 
           setTasks((current) =>
             normalizeQueueIndexes(
-              current.map((currentTask) =>
-                currentTask.localTaskId === task.localTaskId ? completedTask : currentTask
-              )
+              current
+                .filter((currentTask) =>
+                  currentTask.localTaskId === task.localTaskId || currentTask.id !== result.taskId
+                )
+                .map((currentTask) =>
+                  currentTask.localTaskId === task.localTaskId ? completedTask : currentTask
+                )
             )
           )
 
@@ -383,9 +394,16 @@ export function useTaskQueue({
   }, [])
 
   const retryTask = useCallback((task: TaskViewItem): Promise<void> => {
+    const shouldRetryCreate =
+      task.isLocalOnly === true &&
+      task.executeWith === 'create' &&
+      task.executePayload !== undefined &&
+      'svn_url' in task.executePayload
     const retryPayload: RetryTaskRequest = {
       task_id: task.id,
       client_task_id: task.localTaskId,
+      old_revision: task.old_revision,
+      new_revision: task.new_revision,
       requirement_file_path: task.requirement_file_path ?? undefined,
       review_items: task.review_items
     }
@@ -403,10 +421,10 @@ export function useTaskQueue({
       finished_at: undefined,
       localQueueState: 'queued',
       queueIndex: 0,
-      isLocalOnly: false,
+      isLocalOnly: shouldRetryCreate,
       isLocallyExecuting: false,
-      executeWith: 'retry',
-      executePayload: retryPayload
+      executeWith: shouldRetryCreate ? 'create' : 'retry',
+      executePayload: shouldRetryCreate ? task.executePayload : retryPayload
     }
 
     setTasks((current) =>
@@ -468,8 +486,8 @@ export function useTaskQueue({
   const applyProgressEvent = useCallback((event: TaskProgressEvent): void => {
     setTasks((current) => {
       const targetIndex = current.findIndex((task) => {
-        if (event.clientTaskId && task.localTaskId === event.clientTaskId) {
-          return true
+        if (event.clientTaskId) {
+          return task.localTaskId === event.clientTaskId
         }
 
         const isUnboundLocalTask = Boolean(task.isLocalOnly && task.id === task.localTaskId)
@@ -480,41 +498,45 @@ export function useTaskQueue({
         return current
       }
 
+      if (current[targetIndex].status === 'cancelled') {
+        return current
+      }
+
       return normalizeQueueIndexes(
-        current.map((task, index) => {
-          if (index !== targetIndex) {
-            return task
-          }
+        current
+          .map((task, index) => {
+            if (index !== targetIndex) {
+              return task
+            }
 
-          if (task.status === 'cancelled') {
-            return task
-          }
+            const status =
+              event.type === 'stage' ? mapProgressStageToTaskStatus(event.stage) : task.status
+            const codexLog =
+              event.type === 'codex_output'
+                ? [...(task.codex_log ?? []), event].slice(-20)
+                : task.codex_log
 
-          const status =
-            event.type === 'stage' ? mapProgressStageToTaskStatus(event.stage) : task.status
-          const codexLog =
-            event.type === 'codex_output'
-              ? [...(task.codex_log ?? []), event].slice(-20)
-              : task.codex_log
+            const localQueueState: LocalTaskQueueState = isTerminalStatus(status)
+              ? 'finished'
+              : 'running'
 
-          const localQueueState = isTerminalStatus(status) ? 'finished' : 'running'
-
-          return {
-            ...task,
-            id: event.taskId,
-            isLocalOnly: false,
-            status,
-            ...(event.type === 'stage' ? { localProgressStage: event.stage } : {}),
-            progress_message: event.message,
-            codex_log: codexLog,
-            started_at: task.started_at ?? nowIso(),
-            finished_at: isTerminalStatus(status)
-              ? (task.finished_at ?? nowIso())
-              : task.finished_at,
-            localQueueState,
-            isLocallyExecuting: isTerminalStatus(status) ? false : task.isLocallyExecuting
-          }
-        })
+            return {
+              ...task,
+              id: event.taskId,
+              isLocalOnly: false,
+              status,
+              ...(event.type === 'stage' ? { localProgressStage: event.stage } : {}),
+              progress_message: event.message,
+              codex_log: codexLog,
+              started_at: task.started_at ?? nowIso(),
+              finished_at: isTerminalStatus(status)
+                ? (task.finished_at ?? nowIso())
+                : task.finished_at,
+              localQueueState,
+              isLocallyExecuting: isTerminalStatus(status) ? false : task.isLocallyExecuting
+            }
+          })
+          .filter((task, index) => index === targetIndex || task.id !== event.taskId)
       )
     })
   }, [])
@@ -553,6 +575,8 @@ export function useTaskQueue({
         return {
           ...toTaskViewItem(task, existing?.createdAtMs ?? Date.now()),
           localTaskId: existing?.localTaskId ?? task.id,
+          old_revision: existing?.old_revision ?? task.old_revision,
+          new_revision: existing?.new_revision ?? task.new_revision,
           localQueueState,
           isLocallyExecuting: isTerminalStatus(task.status)
             ? false

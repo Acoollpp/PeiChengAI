@@ -213,7 +213,71 @@ describe('ProductionReviewWorkbench', () => {
     ))
   })
 
-  it('DS-01 一次显示缺失材料和错误扩展名，且多审查项不能提交', async () => {
+  it('同时提交 DS-01 和 DS-03，并保留各自额外规则与材料边界', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.selectReviewMaterialFile)
+      .mockResolvedValueOnce({
+        status: 'selected',
+        filePath: '/local/materials/组合审查需求表.xlsx',
+        fileName: '组合审查需求表.xlsx',
+        fileSize: 2048
+      })
+      .mockResolvedValueOnce({
+        status: 'selected',
+        filePath: '/local/materials/组合审查规格书.pdf',
+        fileName: '组合审查规格书.pdf',
+        fileSize: 4096
+      })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await user.type(await screen.findByLabelText('SVN 地址'), 'svn://server/multi-items')
+    await user.type(screen.getByLabelText('旧 revision'), '120')
+    await user.type(screen.getByLabelText('新 revision'), 'R130')
+    await user.click(screen.getByRole('button', { name: '选择' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-01 变更点审查' }))
+    await user.type(screen.getByLabelText('DS-01 额外规则'), '只核对协议导入与第五章')
+    await user.click(screen.getAllByRole('button', { name: '选择文件' })[0])
+    await user.click(screen.getByRole('button', { name: '选择文件' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
+    await user.click(screen.getByRole('button', { name: /DS-03.*状态机审核/ }))
+    expect(screen.getByText('此审查项不需要专项材料。')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('DS-03 额外规则'), '只检查故障恢复状态')
+    await user.click(screen.getByRole('button', { name: '确认选择（2）' }))
+
+    expect(screen.getByText('已选 2 项 · 2 个材料文件')).toBeInTheDocument()
+    expect(screen.getByText('DS-01').closest('.wb-selected-item')).toHaveTextContent('2 个材料文件已就绪')
+    expect(screen.getByText('DS-03').closest('.wb-selected-item')).toHaveTextContent('无需专项材料')
+    expect(screen.queryByText('当前版本每个任务只能选择一个审查项。')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '创建审查任务' }))
+
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        svn_url: 'svn://server/multi-items',
+        old_revision: '120',
+        new_revision: 'R130',
+        skill_name: 'bms-code-reviewer',
+        review_items: [
+          {
+            id: 'DS-01',
+            user_extra_rules: '只核对协议导入与第五章',
+            materials: [
+              {
+                field_id: 'requirement-sheet',
+                file_paths: ['/local/materials/组合审查需求表.xlsx']
+              },
+              {
+                field_id: 'product-spec',
+                file_paths: ['/local/materials/组合审查规格书.pdf']
+              }
+            ]
+          },
+          { id: 'DS-03', user_extra_rules: '只检查故障恢复状态' }
+        ]
+      })
+    ))
+  })
+
+  it('DS-01 一次显示缺失材料和错误扩展名', async () => {
     const user = userEvent.setup()
     vi.mocked(window.codeReview.selectReviewMaterialFile).mockResolvedValueOnce({
       status: 'selected',
@@ -233,11 +297,6 @@ describe('ProductionReviewWorkbench', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('DS-01 产品开发需求表仅支持 .xlsx、.xls 文件')
     expect(screen.getByRole('alert')).toHaveTextContent('DS-01 产品规格书未选择')
     expect(screen.getByRole('button', { name: '创建审查任务' })).toBeDisabled()
-
-    await user.click(screen.getByRole('button', { name: '调整' }))
-    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
-    await user.click(screen.getByRole('button', { name: '确认选择（2）' }))
-    expect(screen.getByText('当前版本每个任务只能选择一个审查项。')).toBeInTheDocument()
     expect(window.codeReview.executeTask).not.toHaveBeenCalled()
   })
 
@@ -420,6 +479,7 @@ describe('ProductionReviewWorkbench', () => {
     await user.click(screen.getByRole('button', { name: '从头重试 failed-1' }))
     await waitFor(() => expect(window.codeReview.retryTask).toHaveBeenCalledWith({
       task_id: 'failed-1', client_task_id: 'failed-1',
+      old_revision: '2', new_revision: '3',
       requirement_file_path: undefined, review_items: undefined
     }))
   })

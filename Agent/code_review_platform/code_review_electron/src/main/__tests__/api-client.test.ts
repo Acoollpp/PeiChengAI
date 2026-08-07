@@ -127,15 +127,18 @@ describe('ApiClient', () => {
       old_revision: '12',
       new_revision: '14',
       skill_name: 'bms-code-reviewer',
-      review_item_ids: ['DS-01'],
-      review_items: [{
-        id: 'DS-01',
-        user_extra_rules: '仅属于本次本地执行',
-        materials: [
-          { field_id: 'requirement-sheet', file_paths: ['/local/requirements.xlsx'] },
-          { field_id: 'product-spec', file_paths: ['/local/specification.pdf'] }
-        ]
-      }]
+      review_item_ids: ['DS-01', 'DS-03'],
+      review_items: [
+        {
+          id: 'DS-01',
+          user_extra_rules: '仅属于本次本地执行',
+          materials: [
+            { field_id: 'requirement-sheet', file_paths: ['/local/requirements.xlsx'] },
+            { field_id: 'product-spec', file_paths: ['/local/specification.pdf'] }
+          ]
+        },
+        { id: 'DS-03', user_extra_rules: '不得发送的状态机规则' }
+      ]
     })
 
     expect(fetchMock).toHaveBeenCalledWith('https://server.example/api/v1/review-tasks', {
@@ -149,7 +152,7 @@ describe('ApiClient', () => {
         old_revision: '12',
         new_revision: '14',
         skill_name: 'bms-code-reviewer',
-        review_item_ids: ['DS-01']
+        review_item_ids: ['DS-01', 'DS-03']
       })
     })
   })

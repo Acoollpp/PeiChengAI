@@ -136,6 +136,32 @@ describe('preload codeReview API', () => {
     expect(invokeMock).toHaveBeenCalledWith('task:preflight', payload)
   })
 
+  it('从头重试时通过类型化 IPC 原样传递 revision 和逐项输入', async () => {
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+    const payload = {
+      task_id: 'task-multi-items',
+      client_task_id: 'local-multi-items',
+      old_revision: '0',
+      new_revision: 'R130',
+      review_items: [
+        {
+          id: 'DS-01',
+          user_extra_rules: '仅核对本次协议导入',
+          materials: [
+            { field_id: 'requirement-sheet', file_paths: ['/source/requirements.xlsx'] },
+            { field_id: 'product-spec', file_paths: ['/source/specification.pdf'] }
+          ]
+        },
+        { id: 'DS-03', user_extra_rules: '' }
+      ]
+    }
+
+    await api.retryTask(payload)
+
+    expect(invokeMock).toHaveBeenCalledWith('task:retry', payload)
+  })
+
   it('通过类型化 IPC 选择 DS-01 本地材料', async () => {
     await import('./index')
     const api = exposeInMainWorldMock.mock.calls[0][1]

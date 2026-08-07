@@ -456,24 +456,24 @@ def test_create_review_task_stores_and_returns_review_item_ids(
             "old_revision": "0",
             "new_revision": "r14",
             "skill_name": "bms-code-reviewer",
-            "review_item_ids": ["DS-03"],
+            "review_item_ids": ["DS-01", "DS-03"],
         },
     )
 
     assert response.status_code == 200
     content = response.json()
     assert content["old_revision"] == "0"
-    assert content["review_item_ids"] == ["DS-03"]
+    assert content["review_item_ids"] == ["DS-01", "DS-03"]
     task = db.get(ReviewTask, UUID(content["id"]))
     assert task is not None
-    assert task.review_item_ids == ["DS-03"]
+    assert task.review_item_ids == ["DS-01", "DS-03"]
 
     read_response = client.get(
         f"{settings.API_V1_STR}/review-tasks/{content['id']}",
         headers=normal_user_token_headers,
     )
     assert read_response.status_code == 200
-    assert read_response.json()["review_item_ids"] == ["DS-03"]
+    assert read_response.json()["review_item_ids"] == ["DS-01", "DS-03"]
 
 
 def test_read_legacy_review_task_uses_database_default_for_review_item_ids(

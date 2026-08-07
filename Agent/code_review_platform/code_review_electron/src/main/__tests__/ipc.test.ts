@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { SubmitFeedbackRequest } from '../api-client'
+import type { PrepareWorkspaceInput } from '../task-agent'
 
 const handleMock = vi.fn()
 const showItemInFolderMock = vi.fn()
@@ -815,14 +816,14 @@ describe('registerIpcHandlers', () => {
     )
   })
 
-  it('通过 IPC 将 DS-03 结构化输入和原始 revision 0 交给假 Codex 适配器', async () => {
+  it('通过 IPC 将 DS-01 与 DS-03 逐项数组和原始 revision 0 交给假 Codex 适配器', async () => {
     const api = {
       createTask: vi.fn(async () => ({
-        id: 'task-ds03',
-        svn_url: 'svn://repo/ds03',
-        old_revision: 'r0',
+        id: 'task-multi-items',
+        svn_url: 'svn://repo/multi-items',
+        old_revision: '0',
         new_revision: 'r12',
-        review_item_ids: ['DS-03'],
+        review_item_ids: ['DS-01', 'DS-03'],
         skill_name: 'bms-code-reviewer',
         status: 'created'
       })),
@@ -834,12 +835,12 @@ describe('registerIpcHandlers', () => {
       load: vi.fn(async () => ({ access_token: 'token-123' })),
       save: vi.fn()
     }
-    const cwd = await mkdtemp(join(tmpdir(), 'ipc-ds03-'))
+    const cwd = await mkdtemp(join(tmpdir(), 'ipc-multi-items-'))
     tempDirs.push(cwd)
-    const reportPath = join(cwd, 'DS-03_审查报告.md')
+    const reportPath = join(cwd, '组合审查报告.md')
     const imagesDir = join(cwd, 'images')
     const runCodex = vi.fn(async () => {
-      await writeFile(reportPath, '# DS-03 report\n')
+      await writeFile(reportPath, '# DS-01 + DS-03 report\n')
     })
     const { registerIpcHandlers } = await import('../ipc')
 
@@ -859,7 +860,18 @@ describe('registerIpcHandlers', () => {
         ]
       })),
       checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
-      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      prepareWorkspace: vi.fn(async (input: PrepareWorkspaceInput) => ({
+        cwd,
+        reportPath,
+        imagesDir,
+        reviewItems: input.reviewItems?.map((item) => ({
+          ...item,
+          materials: item.materials.map((material) => ({
+            ...material,
+            filePaths: [join(cwd, 'materials', item.id, material.fieldId, material.fieldId)]
+          }))
+        }))
+      })),
       preflightSvn: vi.fn(),
       runCodex
     })
@@ -867,29 +879,34 @@ describe('registerIpcHandlers', () => {
     const executeHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:execute')?.[1]
     const reviewItems = [
       {
-        id: 'DS-03',
-        user_extra_rules: '仅检查休眠唤醒状态'
-      }
+        id: 'DS-01',
+        user_extra_rules: '仅核对协议导入',
+        materials: [
+          { field_id: 'requirement-sheet', file_paths: ['/source/requirements.xlsx'] },
+          { field_id: 'product-spec', file_paths: ['/source/specification.pdf'] }
+        ]
+      },
+      { id: 'DS-03', user_extra_rules: '仅检查休眠唤醒状态' }
     ]
 
     await expect(
       executeHandler({}, {
-        client_task_id: 'local-ds03',
-        svn_url: 'svn://repo/ds03',
+        client_task_id: 'local-multi-items',
+        svn_url: 'svn://repo/multi-items',
         old_revision: '0',
         new_revision: '12',
         review_items: reviewItems
       })
     ).resolves.toMatchObject({
-      taskId: 'task-ds03',
+      taskId: 'task-multi-items',
       status: 'success',
-      reportMarkdown: '# DS-03 report\n'
+      reportMarkdown: '# DS-01 + DS-03 report\n'
     })
     expect(api.createTask).toHaveBeenCalledWith(
       'token-123',
       expect.objectContaining({
         old_revision: '0',
-        review_item_ids: ['DS-03'],
+        review_item_ids: ['DS-01', 'DS-03'],
         skill_name: 'bms-code-reviewer'
       })
     )
@@ -903,6 +920,15 @@ describe('registerIpcHandlers', () => {
         newRevision: '12',
         skillName: 'bms-code-reviewer',
         reviewItems: [
+          expect.objectContaining({
+            id: 'DS-01',
+            name: '变更点审查',
+            user_extra_rules: '仅核对协议导入',
+            materials: expect.arrayContaining([
+              expect.objectContaining({ fieldId: 'requirement-sheet' }),
+              expect.objectContaining({ fieldId: 'product-spec' })
+            ])
+          }),
           {
             id: 'DS-03',
             name: '状态机审核',
@@ -920,8 +946,8 @@ describe('registerIpcHandlers', () => {
       readTask: vi.fn(async () => ({
         id: 'task-retry',
         svn_url: 'svn://repo/retry',
-        old_revision: '10',
-        new_revision: '12',
+        old_revision: 'r0',
+        new_revision: 'r130',
         template_key: 'template_2',
         skill_name: '通用-代码审查-模版二',
         status: 'failed'
@@ -940,6 +966,7 @@ describe('registerIpcHandlers', () => {
     const imagesDir = join(cwd, 'images')
     const sender = { send: vi.fn() }
     const prepareReport = vi.fn(async () => '# cleaned retry report\n')
+    const prepareWorkspace = vi.fn(async () => ({ cwd, reportPath, imagesDir }))
     const uploadReport = vi.fn(async () => undefined)
     const { registerIpcHandlers } = await import('../ipc')
 
@@ -948,7 +975,7 @@ describe('registerIpcHandlers', () => {
       authStore: authStore as never,
       syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
       checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
-      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      prepareWorkspace,
       preflightSvn: vi.fn(),
       prepareReport,
       uploadReport,
@@ -965,6 +992,8 @@ describe('registerIpcHandlers', () => {
         {
           task_id: 'task-retry',
           client_task_id: 'task-retry',
+          old_revision: '0',
+          new_revision: 'R130',
           requirement_file_path: '/tmp/产品开发需求表.xls'
         }
       )
@@ -975,6 +1004,10 @@ describe('registerIpcHandlers', () => {
     })
     expect(api.createTask).not.toHaveBeenCalled()
     expect(api.readTask).toHaveBeenCalledWith('token-123', 'task-retry')
+    expect(prepareWorkspace).toHaveBeenCalledWith(expect.objectContaining({
+      oldRevision: '0',
+      newRevision: 'R130'
+    }))
     expect(sender.send).toHaveBeenCalledWith(
       'task:progress',
       expect.objectContaining({

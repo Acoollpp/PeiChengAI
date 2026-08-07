@@ -63,8 +63,7 @@ const cloneSelection = (selection: ReviewSelection): ReviewSelection => structur
 const validateForm = (
   draft: Omit<CreateTaskCommand, 'selection'>,
   selection: ReviewSelection,
-  catalog: ReviewItemDefinition[],
-  singleSelectionOnly = false
+  catalog: ReviewItemDefinition[]
 ): FormErrors => {
   const errors: FormErrors = {}
   const svnUrl = draft.svnUrl.trim()
@@ -91,9 +90,6 @@ const validateForm = (
   if (selectedIds.length === 0) {
     errors.selection = '至少选择一个审查项。'
   } else {
-    if (singleSelectionOnly && selectedIds.length > 1) {
-      errors.selection = '当前版本每个任务只能选择一个审查项。'
-    }
     const materialErrors: string[] = []
     selectedIds.forEach((itemId) => {
       const definition = catalog.find((item) => item.id === itemId)
@@ -511,8 +507,7 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
   const errors = validateForm(
     draft,
     selection,
-    viewModel.catalog,
-    viewModel.mode === 'production'
+    viewModel.catalog
   )
   const formValid = Object.keys(errors).length === 0
   const chosenItems = selectedItems(selection, viewModel.catalog)

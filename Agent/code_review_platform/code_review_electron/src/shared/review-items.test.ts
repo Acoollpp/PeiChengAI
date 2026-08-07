@@ -80,4 +80,26 @@ describe('审查项目录', () => {
       ]
     }))
   })
+
+  it('组合解析保持逐项规则，并拒绝向 DS-03 夹带专项材料', () => {
+    expect(resolveReviewItemInputs([
+      {
+        id: 'DS-01',
+        user_extra_rules: '  只核对协议导入  ',
+        materials: [
+          { field_id: 'requirement-sheet', file_paths: ['/input/requirements.xlsx'] },
+          { field_id: 'product-spec', file_paths: ['/input/specification.pdf'] }
+        ]
+      },
+      { id: 'DS-03', user_extra_rules: '   ' }
+    ])).toEqual([
+      expect.objectContaining({ id: 'DS-01', user_extra_rules: '只核对协议导入' }),
+      { id: 'DS-03', name: '状态机审核', materials: [] }
+    ])
+
+    expect(() => resolveReviewItemInputs([{
+      id: 'DS-03',
+      materials: [{ field_id: 'product-spec', file_paths: ['/input/specification.pdf'] }]
+    }])).toThrow('审查项 DS-03 不支持材料字段 product-spec。')
+  })
 })
