@@ -1,1 +1,6 @@
 .understand-anything/
+.codegraph/
+
+# 一次性工具产物（构建包、临时截图、中间数据）
+output/
+outputs/

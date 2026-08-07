@@ -4,6 +4,20 @@
 > **唯一事实来源是代码本身。** [`docs/代码审查平台系统设计文档.md`](docs/代码审查平台系统设计文档.md) 是 **v1.0.0 基线快照**（2026-06-04，1011 行），与当前代码已有多处偏差，**切勿当作权威清单**——详见下一节。
 > 本项目用 AI 全流程开发，已迭代多次。改动前请先读完本文件，尤其是「⚠️ 文档资料的时效性」「§3 跨端契约」「§8 陷阱清单」。
 
+## Agent skills
+
+### Issue tracker
+
+问题和 PRD 统一记录在 GitHub Issues 中，使用 `gh` CLI 操作。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+五种标准分类角色映射为本仓库的中文标签。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+采用单上下文布局：根目录使用一个 `CONTEXT.md`，架构决策记录在 `docs/adr/`。详见 `docs/agents/domain.md`。
+
 ## ⚠️ 文档资料的时效性（改动前务必先读）
 
 仓库里有三类资料，**可信度不同**，弄混会基于过时信息做错误改动：
@@ -11,7 +25,8 @@
 | 资料 | 定位 | 可信度 |
 |---|---|---|
 | **代码** | 唯一事实来源 | 🟢 永远以此为准 |
-| `docs/superpowers/{specs,plans}/` | 每个功能的**增量**设计稿与实现计划（带日期，越新越准） | 🟡 较新，但仍要以代码核对 |
+| `CONTEXT.md` + `docs/adr/` | **现行**领域词汇与架构决策记录（约定见 `docs/agents/domain.md`） | 🟢 现行，新决策写这里 |
+| `docs/superpowers/{specs,plans}/` | **历史归档**：旧功能的增量设计稿与实现计划，**已停止维护**（最后更新 2026-07） | 🟡 仅供追溯旧设计，须以代码核对 |
 | [`docs/代码审查平台系统设计文档.md`](docs/代码审查平台系统设计文档.md) | **v1.0.0 初始设计快照**（2026-06-04，1011 行） | 🔴 **已过时，仅作基线参考** |
 
 **原则：设计文档与代码冲突时，一律以代码为准。** 设计文档里的 REST API 表、IPC 表、需求清单（FR）都不再完整。
@@ -38,7 +53,7 @@
 - 设计文档 IPC 表缺失：`task:cancel`、`feedback:submit`、`report:open-pdf`、`report:asset`、`app-update:*` 等。
 - 环境变量表不全（缺 `CLIENT_RELEASE_STORAGE_DIR`、`FEEDBACK_STORAGE_DIR`、`SENTRY_DSN`）；设计文档提的 `CODE_REVIEW_API_BASE_URL`（Electron 默认地址）现由 `ServerConfigStore`（`server-config.json`）机制取代，以代码为准。
 
-> 查某个功能"为什么这么设计"，优先去 `docs/superpowers/specs/<date>-<feature>-design.md` 找对应的**增量设计稿**（比 v1.0.0 总文档新得多）。
+> 查某个功能"为什么这么设计"：先看 `docs/adr/` 有没有对应的架构决策记录；没有再去 `docs/superpowers/specs/<date>-<feature>-design.md` 翻历史设计稿（比 v1.0.0 总文档新，但已停止维护，只作追溯用）。
 
 ## 0. 速查（TL;DR）
 
@@ -91,10 +106,14 @@
 ```
 code_review_platform/
 ├── CLAUDE.md                      ← 本文件
+├── AGENTS.md                      ← 智能体协作规则（Issue → PR 交付流程、旧功能保护）
+├── CONTEXT.md                     ← 领域词汇与核心概念
 ├── docs/
-│   ├── 代码审查平台系统设计文档.md   ← 权威设计（需求/架构/API/状态机/测试策略）
+│   ├── adr/                       ← 架构决策记录（现行，新决策写这里）
+│   ├── agents/                    ← issue-tracker / triage-labels / domain 约定
+│   ├── 代码审查平台系统设计文档.md   ← v1.0.0 基线快照（已过时）
 │   ├── AI代码审查平台使用手册.md     ← 用户手册
-│   └── superpowers/{specs,plans}/  ← 每个功能的设计稿(spec)与实现计划(plan)，AI 开发产物
+│   └── superpowers/{specs,plans}/  ← 历史归档：旧设计稿与实现计划，已停止维护
 ├── code_review_server/             ← 后端 + Web 管理后台（基于 fastapi full-stack template）
 │   ├── backend/
 │   │   ├── app/
@@ -232,7 +251,6 @@ code_review_platform/
 
 ## 7. 开发工作流约定
 
-- **AI 全流程开发产物在 `docs/superpowers/`**：每个功能先写 `specs/<date>-<feature>-design.md`（设计稿），再写 `plans/<date>-<feature>.md`（实现计划），再编码。加新功能请延续这个流程。
 - **提交信息**：中文，动宾结构（如"修复客户端任务时间显示缺失""新增任务提交趋势统计"）。
 - **改后端 API**：改完跑 `bash scripts/generate-client.sh`（或让 pre-commit 自动跑），并**手动同步 Electron `api-client.ts`**。
 - **数据库结构变更**：写 Alembic 迁移（`alembic revision --autogenerate`），不要只改模型不留迁移。
