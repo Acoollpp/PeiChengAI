@@ -212,6 +212,16 @@ function TaskManagementView({
     .filter((task) => task.stage !== 'completed')
     .sort((left, right) => taskPriority(left) - taskPriority(right))
   const failedCount = managedTasks.filter((task) => task.stage === 'failed').length
+  const taskStats = viewModel.taskStats
+  const serviceRunning = taskStats === undefined
+    ? runningTasks.length
+    : taskStats.status === 'ready' ? taskStats.running : '—'
+  const serviceFailed = taskStats === undefined
+    ? failedCount
+    : taskStats.status === 'ready' ? taskStats.failedOrError : '—'
+  const serviceSuccess = taskStats === undefined
+    ? viewModel.reports.length
+    : taskStats.status === 'ready' ? taskStats.success : '—'
 
   return (
     <section className="wb-workspace wb-task-management" aria-labelledby="workbench-title">
@@ -224,12 +234,27 @@ function TaskManagementView({
         )}
       </div>
 
-      <section className="wb-overview" aria-label="任务总览">
-        <div><span>正在执行</span><strong className="is-running">{runningTasks.length}</strong><small>本机并发上限 2</small></div>
-        <div><span>本机等待</span><strong className="is-waiting">{waitingTasks.length}</strong><small>按创建顺序执行</small></div>
-        <div><span>需要处理</span><strong className="is-failed">{failedCount}</strong><small>失败任务可重试</small></div>
-        <div><span>可查看报告</span><strong>{viewModel.reports.length}</strong><small>本机已完成结果</small></div>
-      </section>
+      <div className="wb-overview-block">
+        {taskStats?.status === 'loading' && (
+          <div className="wb-stats-state" role="status">正在加载今日服务端统计。</div>
+        )}
+        {taskStats?.status === 'error' && (
+          <div className="wb-stats-state is-error" role="alert">
+            <span title={taskStats.message}>今日任务统计加载失败，任务创建与本机队列仍可使用。</span>
+            {adapter.commands.reloadTaskStats && (
+              <button type="button" onClick={() => void adapter.commands.reloadTaskStats?.()}>
+                <RefreshCw aria-hidden="true" />重新加载统计
+              </button>
+            )}
+          </div>
+        )}
+        <section className="wb-overview" aria-label="任务总览">
+          <div><span>正在执行</span><strong className="is-running">{serviceRunning}</strong><small>{taskStats ? '今日服务端任务' : '本机并发上限 2'}</small></div>
+          <div><span>本机等待</span><strong className="is-waiting">{waitingTasks.length}</strong><small>按创建顺序执行</small></div>
+          <div><span>需要处理</span><strong className="is-failed">{serviceFailed}</strong><small>{taskStats ? '今日失败或环境异常' : '失败任务可重试'}</small></div>
+          <div><span>可查看报告</span><strong>{serviceSuccess}</strong><small>{taskStats ? '今日服务端完成' : '本机已完成结果'}</small></div>
+        </section>
+      </div>
 
       <section className="wb-task-section wb-execution-section" aria-labelledby="execution-heading">
         <div className="wb-band-heading">

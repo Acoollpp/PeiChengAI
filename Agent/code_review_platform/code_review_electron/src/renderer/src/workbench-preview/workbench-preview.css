@@ -635,6 +635,54 @@ textarea:focus-visible {
   background: var(--wb-surface);
 }
 
+.wb-overview-block {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wb-stats-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--wb-line);
+  color: var(--wb-muted);
+  background: var(--wb-surface);
+  font-size: 11px;
+}
+
+.wb-stats-state.is-error {
+  border-color: color-mix(in srgb, var(--wb-danger) 48%, var(--wb-line));
+  color: #f3b5ad;
+}
+
+.wb-stats-state span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-stats-state button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  color: currentColor;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.wb-stats-state button svg {
+  width: 13px;
+  height: 13px;
+}
+
 .wb-overview > div {
   display: flex;
   align-items: baseline;

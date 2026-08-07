@@ -33,6 +33,17 @@ const makeTask = (overrides: Partial<ReviewTask> = {}): ReviewTask => ({
   ...overrides
 })
 
+const createDeferred = <T,>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+} => {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 const withPdfDependencies = (
   dependencies: Omit<
     TaskAgentDependencies,
@@ -1129,6 +1140,67 @@ describe('executeReviewTask', () => {
     ])
   })
 
+  it('重试阶段事件只在对应服务端状态落库后发出', async () => {
+    const checkingStarted = createDeferred<void>()
+    const checkingPersisted = createDeferred<void>()
+    const environmentErrorStarted = createDeferred<void>()
+    const environmentErrorPersisted = createDeferred<void>()
+    const events: string[] = []
+    const failedTask = makeTask({
+      id: 'task-retry-order',
+      status: 'failed',
+      skill_name: request.skill_name
+    })
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(),
+        readTask: vi.fn(async () => failedTask),
+        updateTaskStatus: vi.fn(async (_token, _taskId, payload) => {
+          if (payload.status === 'checking_environment') {
+            checkingStarted.resolve(undefined)
+            await checkingPersisted.promise
+          }
+          if (payload.status === 'environment_error') {
+            environmentErrorStarted.resolve(undefined)
+            await environmentErrorPersisted.promise
+          }
+        })
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'missing_svn' as const })),
+      prepareWorkspace: vi.fn(),
+      runCodex: vi.fn(),
+      uploadReport: vi.fn()
+    })
+
+    const execution = retryReviewTask(
+      { token: 'token-123', taskId: failedTask.id, clientTaskId: failedTask.id },
+      dependencies,
+      (event) => {
+        if (event.type === 'stage') events.push(`${event.stage}:${event.message}`)
+      }
+    )
+
+    await checkingStarted.promise
+    expect(events).toEqual([])
+    checkingPersisted.resolve(undefined)
+    await environmentErrorStarted.promise
+    expect(events).toEqual([
+      'checking_environment:任务重新启动',
+      'checking_environment:检查本机环境'
+    ])
+    environmentErrorPersisted.resolve(undefined)
+
+    await expect(execution).resolves.toEqual({
+      taskId: failedTask.id,
+      status: 'environment_error'
+    })
+    expect(events).toEqual([
+      'checking_environment:任务重新启动',
+      'checking_environment:检查本机环境',
+      'environment_error:本机 SVN CLI 不可用，请联系管理员处理。'
+    ])
+  })
+
   it('任务完成阶段不调用PDF生成或上传依赖', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-pdf-fail-'))
     tempDirs.push(cwd)
@@ -1207,8 +1279,13 @@ describe('executeReviewTask', () => {
     const events: string[] = []
     const dependencies: TaskAgentDependencies = withPdfDependencies({
       api: {
-        createTask: vi.fn(async () => makeTask()),
-        updateTaskStatus: vi.fn(async () => undefined)
+        createTask: vi.fn(async () => {
+          events.push('persisted:created')
+          return makeTask()
+        }),
+        updateTaskStatus: vi.fn(async (_token, _taskId, payload) => {
+          events.push(`persisted:${payload.status}`)
+        })
       },
       checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
@@ -1221,7 +1298,9 @@ describe('executeReviewTask', () => {
         })
         await writeFile(reportPath, '# report\n')
       }),
-      uploadReport: vi.fn()
+      uploadReport: vi.fn(async () => {
+        events.push('persisted:success')
+      })
     })
 
     await executeReviewTask(
@@ -1234,13 +1313,18 @@ describe('executeReviewTask', () => {
     )
 
     expect(events).toEqual([
+      'persisted:created',
       'local-task-1:task-1:stage:created:任务已创建',
+      'persisted:checking_environment',
       'local-task-1:task-1:stage:checking_environment:检查本机环境',
       'local-task-1:task-1:stage:checking_environment:校验 SVN 地址和版本',
       'local-task-1:task-1:stage:preparing_workspace:准备任务工作区',
+      'persisted:running_codex',
       'local-task-1:task-1:stage:running_codex:启动 Codex 执行审查 Skill',
       'local-task-1:task-1:codex_output:stdout:读取 Skill\n',
+      'persisted:uploading_report',
       'local-task-1:task-1:stage:uploading_report:上传审查报告',
+      'persisted:success',
       'local-task-1:task-1:stage:success:审查完成'
     ])
   })

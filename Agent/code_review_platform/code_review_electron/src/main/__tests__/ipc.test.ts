@@ -85,6 +85,7 @@ describe('registerIpcHandlers', () => {
       'app-update:quit',
       'notification:show-task-completed',
       'task:list',
+      'task:stats',
       'task:report',
       'requirement-file:select',
       'review-material-file:select',
@@ -1924,6 +1925,44 @@ describe('registerIpcHandlers', () => {
       count: 14
     })
     expect(api.listTasks).toHaveBeenCalledWith('token-123', { mine: true })
+  })
+
+  it('读取当前登录用户可见范围内的今日任务统计', async () => {
+    const stats = {
+      range: 'today',
+      total: 12,
+      success: 7,
+      running: 2,
+      failed_or_error: 3,
+      average_duration_seconds: null,
+      by_status: { success: 7, running_codex: 2, failed: 3 },
+      reports_by_user: [],
+      trend: []
+    }
+    const api = { readTodayTaskStats: vi.fn(async () => stats) }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({ api: api as never, authStore: authStore as never })
+    const statsHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:stats')?.[1]
+
+    await expect(statsHandler()).resolves.toEqual(stats)
+    expect(api.readTodayTaskStats).toHaveBeenCalledWith('token-123')
+  })
+
+  it('未登录时拒绝读取今日任务统计', async () => {
+    const api = { readTodayTaskStats: vi.fn() }
+    const authStore = { load: vi.fn(async () => null), save: vi.fn() }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({ api: api as never, authStore: authStore as never })
+    const statsHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:stats')?.[1]
+
+    await expect(statsHandler()).rejects.toThrow('Not authenticated')
+    expect(api.readTodayTaskStats).not.toHaveBeenCalled()
   })
 
   it('在服务端分页前只请求当前用户的历史任务', async () => {

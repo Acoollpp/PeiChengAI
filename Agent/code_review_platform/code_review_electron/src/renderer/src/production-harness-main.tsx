@@ -13,9 +13,12 @@ const longReviewItemName = '状态机审核与故障恢复及跨模式安全降�
 const longNameStressCatalog = PRODUCTION_REVIEW_ITEM_CATALOG.map((item) =>
   item.id === 'DS-03' ? { ...item, name: longReviewItemName } : item
 )
-const catalogOverride = new URLSearchParams(window.location.search).get('catalog') === 'long-review-item-name'
+const searchParams = new URLSearchParams(window.location.search)
+const harnessScenario = searchParams.get('scenario')
+const catalogOverride = searchParams.get('catalog') === 'long-review-item-name'
   ? longNameStressCatalog
   : undefined
+const pendingExecution = new Promise<never>(() => undefined)
 const materialFiles = {
   'requirement-sheet': {
     filePath: '/private/tmp/2026年第三季度电池管理系统产品开发需求评审与协议变更追踪矩阵最终确认版.xlsx',
@@ -32,6 +35,7 @@ const materialFiles = {
 const harnessApi: Pick<
   CodeReviewApi,
   | 'listTasks'
+  | 'getTodayTaskStats'
   | 'readTaskReport'
   | 'preflightTask'
   | 'executeTask'
@@ -47,6 +51,22 @@ const harnessApi: Pick<
   async listTasks() {
     return { data: [], count: 0 }
   },
+  async getTodayTaskStats() {
+    if (harnessScenario === 'stats-error') {
+      throw new Error('生产验收模拟：今日统计服务暂不可用')
+    }
+    return {
+      range: 'today',
+      total: 12,
+      success: 5,
+      running: 4,
+      failed_or_error: 3,
+      average_duration_seconds: 521,
+      by_status: { success: 5, running_codex: 4, failed: 3 },
+      reports_by_user: [],
+      trend: [{ label: '14:00', count: 12 }]
+    }
+  },
   async readTaskReport() {
     return ''
   },
@@ -54,9 +74,11 @@ const harnessApi: Pick<
     return { status: 'valid' }
   },
   async executeTask() {
+    if (harnessScenario === 'multi-task') return pendingExecution
     return { taskId: 'production-harness-task', status: 'created' }
   },
   async retryTask() {
+    if (harnessScenario === 'multi-task') return pendingExecution
     return { taskId: 'production-harness-task', status: 'created' }
   },
   async cancelTask() {

@@ -136,6 +136,26 @@ describe('preload codeReview API', () => {
     expect(invokeMock).toHaveBeenCalledWith('task:preflight', payload)
   })
 
+  it('通过只读 IPC 获取今日任务统计', async () => {
+    const stats = {
+      range: 'today',
+      total: 12,
+      success: 7,
+      running: 2,
+      failed_or_error: 3,
+      average_duration_seconds: null,
+      by_status: {},
+      reports_by_user: [],
+      trend: []
+    }
+    invokeMock.mockResolvedValueOnce(stats)
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+
+    await expect(api.getTodayTaskStats()).resolves.toEqual(stats)
+    expect(invokeMock).toHaveBeenCalledWith('task:stats')
+  })
+
   it('从头重试时通过类型化 IPC 原样传递 revision 和逐项输入', async () => {
     await import('./index')
     const api = exposeInMainWorldMock.mock.calls[0][1]

@@ -3,6 +3,33 @@ import { describe, expect, it } from 'vitest'
 import { createFixtureWorkbenchAdapter } from './fixture-adapter'
 
 describe('fixture workbench adapter', () => {
+  it('预览统计随 fixture 当前任务和报告数量更新', async () => {
+    const adapter = createFixtureWorkbenchAdapter()
+    const viewModel = adapter.getViewModel()
+
+    expect(viewModel.taskStats).toEqual({
+      status: 'ready',
+      range: 'today',
+      running: viewModel.tasks.filter((task) =>
+        ['checking_environment', 'preparing_workspace', 'running_review', 'uploading_report'].includes(task.stage)
+      ).length,
+      failedOrError: viewModel.tasks.filter((task) => task.stage === 'failed').length,
+      success: viewModel.reports.length
+    })
+
+    await adapter.commands.setScenario('empty')
+    await adapter.commands.createTask({
+      svnUrl: 'svn://fixture/stats',
+      oldRevision: '1',
+      newRevision: '2',
+      selection: { 'DS-03': { itemId: 'DS-03', extraRules: '', materials: {} } }
+    })
+    expect(adapter.getViewModel().taskStats).toMatchObject({ running: 1, success: 0 })
+
+    for (let index = 0; index < 4; index += 1) await adapter.commands.advanceTasks()
+    expect(adapter.getViewModel().taskStats).toMatchObject({ running: 0, success: 1 })
+  })
+
   it('原样展示 r0，不在平台层推断新版本全量模式', async () => {
     const adapter = createFixtureWorkbenchAdapter()
     const staticReport = adapter.getViewModel().reports.find((report) => report.taskId === 'CR-240806-009')

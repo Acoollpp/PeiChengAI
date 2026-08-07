@@ -376,8 +376,6 @@ export const retryReviewTask = async (
     : task.review_item_ids?.length
       ? resolveReviewItemInputs(task.review_item_ids.map((id) => ({ id })))
       : undefined
-  emitStage(onProgress, task.id, input.clientTaskId, 'created', '任务重新启动')
-
   return runExistingReviewTask({
     token: input.token,
     task,
@@ -385,6 +383,7 @@ export const retryReviewTask = async (
     oldRevision: input.oldRevision,
     newRevision: input.newRevision,
     requirementFilePath: reviewItems ? undefined : input.requirementFilePath,
+    restartMessage: '任务重新启动',
     clientTaskId: input.clientTaskId,
     signal: input.signal
   }, dependencies, onProgress)
@@ -399,6 +398,7 @@ const runExistingReviewTask = async (
     oldRevision?: string
     newRevision?: string
     requirementFilePath?: string
+    restartMessage?: string
     clientTaskId?: string
     signal?: AbortSignal
   },
@@ -415,16 +415,29 @@ const runExistingReviewTask = async (
       ? BMS_CODE_REVIEW_SKILL_NAME
       : resolveSkillName(input.skillName, task.skill_name)
 
-    emitStage(onProgress, task.id, input.clientTaskId, 'checking_environment', '检查本机环境')
     await updateStatus(dependencies, input.token, task.id, {
       status: 'checking_environment',
       error_message: null
     })
+    if (input.restartMessage) {
+      emitStage(
+        onProgress,
+        task.id,
+        input.clientTaskId,
+        'checking_environment',
+        input.restartMessage
+      )
+    }
+    emitStage(onProgress, task.id, input.clientTaskId, 'checking_environment', '检查本机环境')
 
     const environment = await dependencies.checkEnvironment()
     throwIfCancelled(input.signal)
 
     if (environment.status !== 'ready') {
+      await updateStatus(dependencies, input.token, task.id, {
+        status: 'environment_error',
+        error_message: environmentErrorMessages[environment.status]
+      })
       emitStage(
         onProgress,
         task.id,
@@ -432,10 +445,6 @@ const runExistingReviewTask = async (
         'environment_error',
         environmentErrorMessages[environment.status]
       )
-      await updateStatus(dependencies, input.token, task.id, {
-        status: 'environment_error',
-        error_message: environmentErrorMessages[environment.status]
-      })
 
       return { taskId: task.id, status: 'environment_error' }
     }
@@ -499,10 +508,10 @@ const runExistingReviewTask = async (
       throwIfCancelled(input.signal)
     }
 
-    emitStage(onProgress, task.id, input.clientTaskId, 'running_codex', '启动 Codex 执行审查 Skill')
     await updateStatus(dependencies, input.token, task.id, {
       status: 'running_codex'
     })
+    emitStage(onProgress, task.id, input.clientTaskId, 'running_codex', '启动 Codex 执行审查 Skill')
 
     const { requirementFilePath: _legacyWorkspaceRequirementFilePath, ...bmsWorkspace } = workspace
     await dependencies.runCodex({
@@ -522,10 +531,10 @@ const runExistingReviewTask = async (
     })
     throwIfCancelled(input.signal)
 
-    emitStage(onProgress, task.id, input.clientTaskId, 'uploading_report', '上传审查报告')
     await updateStatus(dependencies, input.token, task.id, {
       status: 'uploading_report'
     })
+    emitStage(onProgress, task.id, input.clientTaskId, 'uploading_report', '上传审查报告')
 
     const reportMarkdown = await dependencies.prepareReport(workspace.reportPath)
     throwIfCancelled(input.signal)

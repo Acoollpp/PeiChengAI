@@ -88,6 +88,29 @@ export interface ReviewTask {
   report_feedback_useful_issues_text?: string | null
 }
 
+export interface ReviewTaskReportUserStats {
+  user_name?: string | null
+  svn_username?: string | null
+  report_count: number
+}
+
+export interface ReviewTaskTrendPoint {
+  label: string
+  count: number
+}
+
+export interface ReviewTaskStats {
+  range: 'today' | 'yesterday' | 'this_week' | 'last_week' | 'all'
+  total: number
+  success: number
+  running: number
+  failed_or_error: number
+  average_duration_seconds?: number | null
+  by_status: Partial<Record<ReviewTaskStatus, number>>
+  reports_by_user: ReviewTaskReportUserStats[]
+  trend: ReviewTaskTrendPoint[]
+}
+
 export interface ReviewTaskIssue {
   id: string
   task_id: string

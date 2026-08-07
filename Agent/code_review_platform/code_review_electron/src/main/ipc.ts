@@ -964,6 +964,17 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     return taskApi.listTasks(tokens.access_token, { mine: true })
   })
 
+  ipcMain.handle('task:stats', async () => {
+    const tokens = await authStore.load()
+
+    if (!tokens) {
+      throw new Error('Not authenticated')
+    }
+
+    const taskApi = await createApiClient()
+    return taskApi.readTodayTaskStats(tokens.access_token)
+  })
+
   ipcMain.handle('task:report', async (_event, taskId: string): Promise<string> => {
     const tokens = await authStore.load()
 

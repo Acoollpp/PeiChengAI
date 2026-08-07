@@ -103,6 +103,17 @@ export interface SubmitFeedbackCommand {
   screenshots: FeedbackScreenshotView[]
 }
 
+export type WorkbenchTaskStats =
+  | { status: 'loading' }
+  | {
+      status: 'ready'
+      range: 'today'
+      running: number
+      failedOrError: number
+      success: number
+    }
+  | { status: 'error'; message: string }
+
 export interface WorkbenchViewModel {
   productName: string
   previewLabel: string
@@ -123,6 +134,7 @@ export interface WorkbenchViewModel {
   canCreateTask?: boolean
   taskCreationDisabledReason?: string
   requestedView?: { id: WorkbenchViewId; requestId: number }
+  taskStats?: WorkbenchTaskStats
 }
 
 export interface CreateTaskCommand {
@@ -142,6 +154,7 @@ export interface WorkbenchCommands {
   cancelTask(taskId: string): Promise<PreviewCommandResult>
   retryTask(taskId: string): Promise<PreviewCommandResult>
   advanceTasks(): Promise<PreviewCommandResult>
+  reloadTaskStats?(): Promise<PreviewCommandResult>
   openReport(reportId: string): Promise<PreviewCommandResult>
   closeReport(): Promise<PreviewCommandResult>
   viewPdfReport(reportId: string): Promise<PreviewCommandResult>
