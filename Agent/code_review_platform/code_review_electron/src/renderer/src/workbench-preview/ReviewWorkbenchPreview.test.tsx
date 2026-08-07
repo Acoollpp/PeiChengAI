@@ -78,7 +78,7 @@ describe('ReviewWorkbenchPreview', () => {
 
     await user.click(screen.getByRole('button', { name: '选择' }))
     await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
-    await user.click(screen.getByRole('button', { name: '确认选择（1）' }))
+    await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
     const selectionSection = screen.getByRole('heading', { name: '审查项' }).closest('section')
     expect(selectionSection).not.toBeNull()
     expect(within(selectionSection as HTMLElement).getByText('DS-03').closest('.wb-selected-item')).toHaveTextContent('状态机审核')

@@ -344,6 +344,83 @@ describe('executeReviewTask', () => {
     )
   })
 
+  it('DS-02 单选只向服务端发送 ID，并把原始 revision 和空材料输入交给 Codex', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-ds02-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, 'DS-02_审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    const ds02Request = {
+      svn_url: 'svn://repo/ds02',
+      old_revision: 'r0',
+      new_revision: 'R42',
+      review_items: [{
+        id: 'DS-02',
+        user_extra_rules: '只检查本次新增诊断代码'
+      }]
+    }
+    const serverTask = makeTask({
+      svn_url: ds02Request.svn_url,
+      old_revision: ds02Request.old_revision,
+      new_revision: ds02Request.new_revision,
+      review_item_ids: ['DS-02'],
+      skill_name: 'bms-code-reviewer'
+    })
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => serverTask),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      preflightSvn: vi.fn(),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      runCodex: vi.fn(async () => {
+        await writeFile(reportPath, '# DS-02 report\n')
+      }),
+      uploadReport: vi.fn()
+    })
+
+    await expect(
+      executeReviewTask({ token: 'token-123', request: ds02Request }, dependencies)
+    ).resolves.toMatchObject({
+      taskId: 'task-1',
+      status: 'success',
+      reportMarkdown: '# DS-02 report\n'
+    })
+
+    expect(dependencies.api.createTask).toHaveBeenCalledWith('token-123', {
+      svn_url: ds02Request.svn_url,
+      old_revision: 'r0',
+      new_revision: 'R42',
+      skill_name: 'bms-code-reviewer',
+      review_item_ids: ['DS-02']
+    })
+    expect(dependencies.preflightSvn).toHaveBeenCalledWith(expect.objectContaining({
+      oldRevision: 'r0',
+      newRevision: 'R42'
+    }))
+    expect(dependencies.prepareWorkspace).toHaveBeenCalledWith(expect.objectContaining({
+      oldRevision: 'r0',
+      newRevision: 'R42',
+      reviewItems: [{
+        id: 'DS-02',
+        name: '编码规范审核',
+        user_extra_rules: '只检查本次新增诊断代码',
+        materials: []
+      }]
+    }))
+    expect(dependencies.runCodex).toHaveBeenCalledWith(expect.objectContaining({
+      oldRevision: 'r0',
+      newRevision: 'R42',
+      reviewItems: [{
+        id: 'DS-02',
+        name: '编码规范审核',
+        user_extra_rules: '只检查本次新增诊断代码',
+        materials: []
+      }]
+    }))
+    expect(dependencies.uploadRequirementFile).not.toHaveBeenCalled()
+  })
+
   it('DS-01 只把工作区材料交给 Codex，服务端创建与旧需求表上传均不接收材料', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-ds01-'))
     tempDirs.push(cwd)

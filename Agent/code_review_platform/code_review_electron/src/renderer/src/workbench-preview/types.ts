@@ -1,4 +1,6 @@
-export type ReviewItemId = 'DS-01' | 'DS-02' | 'DS-03'
+import type { ReviewItemId } from '../../../shared/review-items'
+
+export type { ReviewItemId } from '../../../shared/review-items'
 
 export type MaterialMultiplicity = 'single' | 'multiple'
 

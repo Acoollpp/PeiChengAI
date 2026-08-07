@@ -1,6 +1,8 @@
-export const REVIEW_ITEM_CATALOG_VERSION = 2
+export const REVIEW_ITEM_CATALOG_VERSION = 3
 
 export const BMS_CODE_REVIEW_SKILL_NAME = 'bms-code-reviewer'
+
+export type ReviewItemId = 'DS-01' | 'DS-02' | 'DS-03'
 
 export interface ReviewItemMaterialFieldDefinition {
   id: string
@@ -12,7 +14,7 @@ export interface ReviewItemMaterialFieldDefinition {
 }
 
 export interface ReviewItemDefinition {
-  id: string
+  id: ReviewItemId
   category: {
     id: string
     name: string
@@ -92,6 +94,23 @@ export const REVIEW_ITEM_CATALOG: readonly ReviewItemDefinition[] = [
     ]
   },
   {
+    id: 'DS-02',
+    category: {
+      id: 'code-quality',
+      name: '代码质量'
+    },
+    name: '编码规范审核',
+    summary: '检查本次审查范围内影响可靠性、可维护性与一致性的编码质量问题。',
+    details: {
+      target: '以可定位的代码证据识别编码质量偏差，为修复与复核提供清晰依据。',
+      process: '读取任务公共输入和用户额外规则，由 Skill 确定审查范围、执行检查并形成结论。',
+      specification: '无需专项材料；具体审查规则、证据模式和失败策略由 bms-code-reviewer Skill 维护。'
+    },
+    sortOrder: 20,
+    enabled: true,
+    materialFields: []
+  },
+  {
     id: 'DS-03',
     category: {
       id: 'design-safety',
@@ -110,7 +129,9 @@ export const REVIEW_ITEM_CATALOG: readonly ReviewItemDefinition[] = [
   }
 ] as const
 
-const reviewItemsById = new Map(REVIEW_ITEM_CATALOG.map((item) => [item.id, item]))
+const reviewItemsById = new Map<string, ReviewItemDefinition>(
+  REVIEW_ITEM_CATALOG.map((item) => [item.id, item])
+)
 
 export const findReviewItem = (id: string): ReviewItemDefinition | undefined =>
   reviewItemsById.get(id)

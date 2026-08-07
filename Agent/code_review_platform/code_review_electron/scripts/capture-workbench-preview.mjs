@@ -7,9 +7,12 @@ import { chromium } from 'playwright'
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const screenshotDirectory = join(projectRoot, 'docs', 'issue-37', 'screenshots')
+const productionScreenshotDirectory = join(projectRoot, 'docs', 'issue-33', 'screenshots')
 const host = '127.0.0.1'
 const port = 4317
 const previewUrl = `http://${host}:${port}/preview.html`
+const productionHarnessUrl = `http://${host}:${port}/production-harness.html`
+const longReviewItemName = '状态机审核与故障恢复及跨模式安全降级边界条件完整性联合审查（超长名称视觉压力样例）'
 const viewports = [
   { width: 1440, height: 900 },
   { width: 1280, height: 800 },
@@ -158,7 +161,7 @@ const captureViewport = async (browser, viewport) => {
     await dialog.getByRole('button', { name: /^移除 PCH-BMS-SPEC/ }).click()
     await dialog
       .locator('.wb-selector-footer')
-      .getByRole('button', { name: /确认选择/ })
+      .getByRole('button', { name: /完成选择/ })
       .click()
     await page
       .getByLabel('SVN 地址')
@@ -333,7 +336,263 @@ const captureViewport = async (browser, viewport) => {
   }
 }
 
+const captureProductionSelectorViewport = async (browser, viewport) => {
+  const label = `${viewport.width}x${viewport.height}`
+  const page = await browser.newPage({ viewport })
+  const consoleErrors = []
+  page.on('console', (entry) => {
+    if (entry.type() === 'error') consoleErrors.push(entry.text())
+  })
+  page.on('pageerror', (error) => consoleErrors.push(error.message))
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+
+  try {
+    await page.goto(productionHarnessUrl, { waitUntil: 'networkidle' })
+    await page.getByRole('heading', { name: '创建审查任务', exact: true }).waitFor()
+    await assertNoDocumentOverflow(page, `${label} 生产工作台`)
+
+    const headerMetrics = await page.evaluate(() => {
+      const navigation = document.querySelector('.wb-preview-controls')?.getBoundingClientRect()
+      const user = document.querySelector('.wb-user')?.getBoundingClientRect()
+      const userName = document.querySelector('.wb-user strong')
+      const departmentName = document.querySelector('.wb-user > div span')
+      const userNameRect = userName?.getBoundingClientRect()
+      const departmentNameRect = departmentName?.getBoundingClientRect()
+      return {
+        userName: userName?.textContent ?? '',
+        departmentName: departmentName?.textContent ?? '',
+        userWithinViewport: Boolean(
+          user && user.left >= 0 && user.right <= innerWidth && user.top >= 0 && user.bottom <= innerHeight
+        ),
+        userClearsNavigation: Boolean(navigation && user && navigation.right <= user.left + 1),
+        namesWithinUser: Boolean(
+          user && userNameRect && departmentNameRect &&
+          userNameRect.left >= user.left && userNameRect.right <= user.right + 1 &&
+          departmentNameRect.left >= user.left && departmentNameRect.right <= user.right + 1
+        )
+      }
+    })
+    assert(headerMetrics.userName.length > 20, `${label}：生产验收长用户名未渲染。`)
+    assert(headerMetrics.departmentName.length > 15, `${label}：生产验收长部门名未渲染。`)
+    assert(headerMetrics.userWithinViewport, `${label}：长用户名或部门名超出视口。`)
+    assert(headerMetrics.userClearsNavigation, `${label}：长名称与顶部导航发生重叠。`)
+    assert(headerMetrics.namesWithinUser, `${label}：长名称超出用户区域。`)
+
+    const selectorTrigger = page.getByRole('button', { name: '选择', exact: true })
+    await selectorTrigger.click()
+    const dialog = page.getByRole('dialog', { name: '选择审查项', exact: true })
+    await dialog.waitFor()
+    const searchInput = dialog.getByPlaceholder('搜索 ID、名称或分类')
+    const searchHasFocus = await searchInput.evaluate((element) => element === document.activeElement)
+    const searchFocusStyle = await searchInput.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return { outlineStyle: style.outlineStyle, outlineWidth: Number.parseFloat(style.outlineWidth) }
+    })
+    assert(searchHasFocus, `${label}：打开生产选择器后搜索框未自动获得焦点。`)
+    assert(
+      searchFocusStyle.outlineStyle !== 'none' && searchFocusStyle.outlineWidth >= 2,
+      `${label}：生产选择器搜索框没有可见焦点样式。`
+    )
+
+    for (const itemLabel of [
+      '选择 DS-01 变更点审查',
+      '选择 DS-02 编码规范审核',
+      '选择 DS-03 状态机审核'
+    ]) {
+      assert(await dialog.getByLabel(itemLabel, { exact: true }).isVisible(), `${label}：生产目录缺少 ${itemLabel}。`)
+    }
+    for (const category of ['需求与变更', '代码质量', '设计与安全']) {
+      assert(await dialog.getByText(category, { exact: true }).isVisible(), `${label}：生产目录缺少 ${category} 分类。`)
+    }
+
+    await dialog.getByLabel('选择 DS-02 编码规范审核', { exact: true }).check()
+    await dialog.locator('.wb-catalog-item').filter({ hasText: 'DS-02' }).locator(':scope > button').click()
+    await dialog.getByRole('heading', { name: '编码规范审核', exact: true }).waitFor()
+    assert(
+      await dialog.getByText('此审查项不需要专项材料。', { exact: true }).isVisible(),
+      `${label}：DS-02 产生了不属于自身的材料字段。`
+    )
+    assert(
+      await dialog.getByText(/bms-code-reviewer Skill 维护/).isVisible(),
+      `${label}：DS-02 未显示正式输入约束。`
+    )
+    const ds02LongRules = 'DS-02 编码规范：重点核对命名一致性、整型溢出边界、资源释放与并发状态；'.repeat(50).slice(0, 1190)
+    const ds01LongRules = 'DS-01 需求追溯：重点核对协议变更、规格书第五章、异常恢复路径与影响范围；'.repeat(50).slice(0, 1190)
+    assert(ds01LongRules !== ds02LongRules, `${label}：DS-01 与 DS-02 压力规则不应相同。`)
+    await dialog.getByLabel('DS-02 额外规则', { exact: true }).fill(ds02LongRules)
+
+    await dialog.getByLabel('选择 DS-01 变更点审查', { exact: true }).check()
+    await dialog.locator('.wb-catalog-item').filter({ hasText: 'DS-01' }).locator(':scope > button').click()
+    await dialog.getByLabel('DS-01 额外规则', { exact: true }).fill(ds01LongRules)
+    for (const materialName of ['产品开发需求表', '产品规格书']) {
+      await dialog
+        .locator('.wb-material-field')
+        .filter({ hasText: materialName })
+        .getByRole('button', { name: '选择文件', exact: true })
+        .click()
+    }
+
+    await dialog.locator('.wb-catalog-item').filter({ hasText: 'DS-02' }).locator(':scope > button').click()
+    assert(
+      await dialog.getByLabel('DS-02 额外规则', { exact: true }).inputValue() === ds02LongRules,
+      `${label}：切换审查项后 DS-02 长额外规则丢失或串项。`
+    )
+    await dialog.locator('.wb-catalog-item').filter({ hasText: 'DS-01' }).locator(':scope > button').click()
+    assert(
+      await dialog.getByLabel('DS-01 额外规则', { exact: true }).inputValue() === ds01LongRules,
+      `${label}：切换审查项后 DS-01 长额外规则丢失或串项。`
+    )
+
+    await assertNoDocumentOverflow(page, `${label} 生产选择器`)
+    const selectorMetrics = await page.evaluate(() => {
+      const modal = document.querySelector('.wb-selector')
+      const catalog = document.querySelector('.wb-catalog-scroll')
+      const detail = document.querySelector('.wb-detail-scroll')
+      const textarea = document.querySelector('textarea[aria-label="DS-01 额外规则"]')
+      const modalRect = modal?.getBoundingClientRect()
+      const fileRows = [...document.querySelectorAll('.wb-file-row')]
+      const filesDoNotOverlap = fileRows.every((row) => {
+        const name = row.querySelector(':scope > span')?.getBoundingClientRect()
+        const size = row.querySelector(':scope > small')?.getBoundingClientRect()
+        const action = row.querySelector(':scope > button')?.getBoundingClientRect()
+        return Boolean(name && size && action && name.right <= size.left + 1 && size.right <= action.left + 1)
+      })
+      return {
+        modalWithinViewport: Boolean(
+          modalRect && modalRect.left >= 0 && modalRect.top >= 0 &&
+          modalRect.right <= innerWidth && modalRect.bottom <= innerHeight
+        ),
+        selectorHasNoHorizontalOverflow: Boolean(modal && modal.scrollWidth <= modal.clientWidth),
+        independentScrollContainers: Boolean(
+          catalog && detail && catalog !== detail &&
+          getComputedStyle(catalog).overflowY === 'auto' &&
+          getComputedStyle(detail).overflowY === 'auto'
+        ),
+        detailScrollable: Boolean(detail && detail.scrollHeight > detail.clientHeight),
+        textareaScrollable: Boolean(textarea && textarea.scrollHeight > textarea.clientHeight),
+        fileRowCount: fileRows.length,
+        longFileNames: fileRows.every((row) => (row.querySelector(':scope > span')?.textContent?.length ?? 0) > 40),
+        filesDoNotOverlap
+      }
+    })
+    assert(selectorMetrics.modalWithinViewport, `${label}：生产选择器超出视口。`)
+    assert(selectorMetrics.selectorHasNoHorizontalOverflow, `${label}：生产选择器内部横向溢出。`)
+    assert(selectorMetrics.independentScrollContainers, `${label}：生产选择器未形成左右独立滚动容器。`)
+    assert(selectorMetrics.detailScrollable, `${label}：生产选择器右侧长内容不可滚动。`)
+    assert(selectorMetrics.textareaScrollable, `${label}：生产长额外规则未在文本框内滚动。`)
+    assert(selectorMetrics.fileRowCount === 2, `${label}：DS-01 未显示两个生产材料文件。`)
+    assert(selectorMetrics.longFileNames, `${label}：生产验收长文件名未渲染。`)
+    assert(selectorMetrics.filesDoNotOverlap, `${label}：生产长文件名、大小或移除按钮发生重叠。`)
+
+    await page.screenshot({
+      path: join(productionScreenshotDirectory, `production-selector-${label}.png`),
+      animations: 'disabled'
+    })
+
+    await searchInput.focus()
+    await page.keyboard.press('Shift+Tab')
+    assert(
+      await dialog.evaluate((element) => element.contains(document.activeElement)),
+      `${label}：Shift+Tab 使焦点离开生产选择器。`
+    )
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'detached' })
+    assert(
+      await selectorTrigger.evaluate((element) => element === document.activeElement),
+      `${label}：Escape 关闭后焦点未返回生产选择器触发按钮。`
+    )
+    assert(consoleErrors.length === 0, `${label}：生产验收控制台错误：${consoleErrors.join('；')}`)
+
+    await page.goto(`${productionHarnessUrl}?catalog=long-review-item-name`, { waitUntil: 'networkidle' })
+    await page.getByRole('heading', { name: '创建审查任务', exact: true }).waitFor()
+    await page.getByRole('button', { name: '选择', exact: true }).click()
+    const stressDialog = page.getByRole('dialog', { name: '选择审查项', exact: true })
+    await stressDialog.waitFor()
+    await stressDialog.getByLabel(`选择 DS-03 ${longReviewItemName}`, { exact: true }).check()
+    await stressDialog.locator('.wb-catalog-item').filter({ hasText: longReviewItemName }).locator(':scope > button').click()
+    await stressDialog.getByRole('heading', { name: longReviewItemName, exact: true }).waitFor()
+    await assertNoDocumentOverflow(page, `${label} 长审查项名称选择器`)
+
+    const longNameSelectorMetrics = await page.evaluate((expectedName) => {
+      const item = [...document.querySelectorAll('.wb-catalog-item')]
+        .find((element) => element.textContent?.includes(expectedName))
+      const itemCopy = item?.querySelector('.wb-item-copy')
+      const itemName = itemCopy?.querySelector('strong')
+      const detailCopy = document.querySelector('.wb-detail-heading > div')
+      const detailName = detailCopy?.querySelector('h3')
+      const detailAction = document.querySelector('.wb-detail-heading > button')
+      const modal = document.querySelector('.wb-selector')
+      const itemCopyRect = itemCopy?.getBoundingClientRect()
+      const itemNameRect = itemName?.getBoundingClientRect()
+      const detailCopyRect = detailCopy?.getBoundingClientRect()
+      const detailNameRect = detailName?.getBoundingClientRect()
+      const detailActionRect = detailAction?.getBoundingClientRect()
+      return {
+        longNameLength: itemName?.textContent?.length ?? 0,
+        catalogNameWithinCopy: Boolean(
+          itemCopyRect && itemNameRect &&
+          itemNameRect.left >= itemCopyRect.left && itemNameRect.right <= itemCopyRect.right + 1 &&
+          itemNameRect.top >= itemCopyRect.top && itemNameRect.bottom <= itemCopyRect.bottom + 1
+        ),
+        catalogItemHasNoHorizontalOverflow: Boolean(item && item.scrollWidth <= item.clientWidth),
+        detailNameWithinCopy: Boolean(
+          detailCopyRect && detailNameRect &&
+          detailNameRect.left >= detailCopyRect.left && detailNameRect.right <= detailCopyRect.right + 1 &&
+          detailNameRect.top >= detailCopyRect.top && detailNameRect.bottom <= detailCopyRect.bottom + 1
+        ),
+        detailClearsAction: Boolean(
+          detailCopyRect && detailActionRect && detailCopyRect.right <= detailActionRect.left + 1
+        ),
+        modalHasNoHorizontalOverflow: Boolean(modal && modal.scrollWidth <= modal.clientWidth)
+      }
+    }, longReviewItemName)
+    assert(longNameSelectorMetrics.longNameLength > 30, `${label}：未渲染长审查项名称压力数据。`)
+    assert(longNameSelectorMetrics.catalogNameWithinCopy, `${label}：长审查项名称超出目录文本区。`)
+    assert(longNameSelectorMetrics.catalogItemHasNoHorizontalOverflow, `${label}：长审查项目录行水平溢出。`)
+    assert(longNameSelectorMetrics.detailNameWithinCopy, `${label}：长审查项名称超出详情标题区。`)
+    assert(longNameSelectorMetrics.detailClearsAction, `${label}：长详情标题与移除按钮重叠。`)
+    assert(longNameSelectorMetrics.modalHasNoHorizontalOverflow, `${label}：长审查项名称导致弹窗水平溢出。`)
+    await page.screenshot({
+      path: join(productionScreenshotDirectory, `production-long-name-selector-${label}.png`),
+      animations: 'disabled'
+    })
+
+    await stressDialog.getByRole('button', { name: '完成选择（1）', exact: true }).click()
+    await page.getByText(longReviewItemName, { exact: true }).waitFor()
+    await assertNoDocumentOverflow(page, `${label} 长审查项名称主表单`)
+    const longNameSummaryMetrics = await page.evaluate((expectedName) => {
+      const selectedItem = [...document.querySelectorAll('.wb-selected-item')]
+        .find((element) => element.textContent?.includes(expectedName))
+      const copy = selectedItem?.querySelector(':scope > div')
+      const name = copy?.querySelector('strong')
+      const copyRect = copy?.getBoundingClientRect()
+      const nameRect = name?.getBoundingClientRect()
+      return {
+        summaryNameWithinCopy: Boolean(
+          copyRect && nameRect &&
+          nameRect.left >= copyRect.left && nameRect.right <= copyRect.right + 1 &&
+          nameRect.top >= copyRect.top && nameRect.bottom <= copyRect.bottom + 1
+        ),
+        selectedItemHasNoHorizontalOverflow: Boolean(
+          selectedItem && selectedItem.scrollWidth <= selectedItem.clientWidth
+        )
+      }
+    }, longReviewItemName)
+    assert(longNameSummaryMetrics.summaryNameWithinCopy, `${label}：长审查项名称超出主表单摘要。`)
+    assert(longNameSummaryMetrics.selectedItemHasNoHorizontalOverflow, `${label}：长审查项主表单摘要水平溢出。`)
+    await page.screenshot({
+      path: join(productionScreenshotDirectory, `production-long-name-summary-${label}.png`),
+      animations: 'disabled'
+    })
+    assert(consoleErrors.length === 0, `${label}：生产长名称验收控制台错误：${consoleErrors.join('；')}`)
+    console.log(`${label} 生产选择器通过：正式 DS-02、长内容、长审查项名称、双栏滚动、焦点与溢出均符合断言。`)
+  } finally {
+    await page.close()
+  }
+}
+
 await mkdir(screenshotDirectory, { recursive: true })
+await mkdir(productionScreenshotDirectory, { recursive: true })
 let serverOutput = ''
 const viteEntry = join(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js')
 const server = spawn(
@@ -352,8 +611,12 @@ let browser
 try {
   await waitForServer(server, () => serverOutput)
   browser = await chromium.launch({ headless: true })
-  for (const viewport of viewports) await captureViewport(browser, viewport)
-  console.log(`截图已写入 ${screenshotDirectory}`)
+  for (const viewport of viewports) {
+    await captureViewport(browser, viewport)
+    await captureProductionSelectorViewport(browser, viewport)
+  }
+  console.log(`fixture 截图已写入 ${screenshotDirectory}`)
+  console.log(`生产选择器截图已写入 ${productionScreenshotDirectory}`)
 } finally {
   await browser?.close()
   await stopServer(server)

@@ -14,7 +14,7 @@ npx playwright install chromium
 npm run capture:workbench
 ```
 
-脚本会自行启动隔离的 Vite 预览，不访问生产 preload、服务端、SVN、Codex 或本地材料。截图输出到 `docs/issue-37/screenshots/`。
+脚本会自行启动隔离的 Vite 预览，不访问生产 preload、服务端、SVN、Codex 或本地材料。#37 fixture 截图输出到 `docs/issue-37/screenshots/`；脚本同时运行 #33 生产组件回归，详见 `docs/issue-33/visual-acceptance.md`。
 
 ## 自动检查
 
@@ -44,7 +44,7 @@ npm run capture:workbench
 - [ ] 选择器支持分类、搜索、多选、分类全选、仅看已选和清空
 - [ ] DS-01、DS-02、DS-03 详情切换时逐项规则不串项
 - [ ] 更换文件后文件名发生变化
-- [ ] 取消选择器丢弃草稿，确认选择统一回填
+- [ ] 取消选择器丢弃草稿，完成选择统一回填
 - [ ] Tab 和 Shift+Tab 不离开选择器，Escape 关闭后焦点回到触发按钮
 - [ ] 任务管理表格显示两个执行任务、连续等待序号、失败任务及取消/重试入口
 - [ ] 取消、从头重试和推进任务阶段均产生可见状态变化

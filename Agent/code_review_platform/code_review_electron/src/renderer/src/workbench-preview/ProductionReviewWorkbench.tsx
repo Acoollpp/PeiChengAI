@@ -36,31 +36,34 @@ interface ProductionReviewWorkbenchProps {
   onInstallCodex: () => Promise<void>
   onInstallSvn: () => Promise<void>
   onInstallSkill: () => Promise<void>
+  catalogOverride?: ReviewItemDefinition[]
 }
 
-const productionReviewItemIds = new Set<ReviewItemId>(['DS-01', 'DS-03'])
+export const PRODUCTION_REVIEW_ITEM_CATALOG: ReviewItemDefinition[] = REVIEW_ITEM_CATALOG
+  .filter((item) => item.enabled)
+  .sort((left, right) => left.sortOrder - right.sortOrder)
+  .map((item) => ({
+    id: item.id,
+    category: item.category.name,
+    name: item.name,
+    summary: item.summary,
+    goal: item.details.target,
+    process: [item.details.process],
+    specification: item.details.specification,
+    materialFields: item.materialFields.map((field) => ({
+      id: field.id,
+      label: field.name,
+      description: field.description,
+      required: field.required,
+      extensions: [...field.allowedExtensions],
+      multiplicity: field.multiple ? 'multiple' : 'single'
+    }))
+  }))
+const productionReviewItemIds = new Set<ReviewItemId>(
+  PRODUCTION_REVIEW_ITEM_CATALOG.map((item) => item.id)
+)
 const isProductionReviewItemId = (id: string): id is ReviewItemId =>
   productionReviewItemIds.has(id as ReviewItemId)
-
-const productionCatalog: ReviewItemDefinition[] = REVIEW_ITEM_CATALOG.filter(
-  (item) => item.enabled && isProductionReviewItemId(item.id)
-).map((item) => ({
-  id: item.id as ReviewItemId,
-  category: item.category.name,
-  name: item.name,
-  summary: item.summary,
-  goal: item.details.target,
-  process: [item.details.process],
-  specification: item.details.specification,
-  materialFields: item.materialFields.map((field) => ({
-    id: field.id,
-    label: field.name,
-    description: field.description,
-    required: field.required,
-    extensions: [...field.allowedExtensions],
-    multiplicity: field.multiple ? 'multiple' : 'single'
-  }))
-}))
 
 const phaseOrder: Array<Exclude<TaskStage, 'waiting' | 'failed' | 'cancelled'>> = [
   'checking_environment', 'preparing_workspace', 'running_review', 'uploading_report', 'completed'
@@ -110,7 +113,7 @@ const taskTitle = (task: TaskViewItem): string => {
   if (reportName) return reportName
   const ids = itemIds(task)
   if (ids.length === 1) {
-    const definition = productionCatalog.find((item) => item.id === ids[0])
+    const definition = PRODUCTION_REVIEW_ITEM_CATALOG.find((item) => item.id === ids[0])
     return definition ? `${definition.id} ${definition.name}` : `审查任务 ${task.id}`
   }
   return ids.length > 1 ? `${ids.join(' + ')} 审查` : `审查任务 ${task.id}`
@@ -162,8 +165,9 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
   const {
     currentUser, environment, isCheckingEnvironment, isInstallingSkillDuringCheck,
     isInstallingCodex, isInstallingSvn, onRefreshEnvironment, onInstallCodex,
-    onInstallSvn, onInstallSkill
+    onInstallSvn, onInstallSkill, catalogOverride
   } = props
+  const catalog = catalogOverride ?? PRODUCTION_REVIEW_ITEM_CATALOG
   const [notice, setNotice] = useState<string>()
   const [noticeAction, setNoticeAction] = useState<WorkbenchViewModel['noticeAction']>()
   const [selectedReportId, setSelectedReportId] = useState<string>()
@@ -497,7 +501,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
     productName: 'AI 代码审查', previewLabel: '2.0 工作台',
     userName: currentUser.full_name || currentUser.svn_username || '当前用户',
     departmentName: currentUser.department_name || '未命名部门',
-    scenarios: [], activeScenario: 'active', catalog: productionCatalog, sampleTask: emptySample,
+    scenarios: [], activeScenario: 'active', catalog, sampleTask: emptySample,
     tasks: queue.tasks.map(toTaskViewModel),
     reports: queue.tasks.filter((task) => task.status === 'success').map(toReportViewModel),
     selectedReportId, notice, noticeAction, activeFeedbackAnchorId, feedbackAnchorScrollRequest,
