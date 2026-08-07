@@ -7,7 +7,8 @@ import type {
   DepartmentsResponse,
   ReviewTask,
   ReviewTaskIssue,
-  ReviewTaskIssuesResponse
+  ReviewTaskIssuesResponse,
+  ReviewTaskStats
 } from '../shared/types'
 
 export interface TokenPair {
@@ -204,6 +205,13 @@ export class ApiClient {
   listTasks(token: string, options: ListTasksOptions = {}): Promise<ReviewTasksResponse> {
     const query = options.mine ? '?mine=true' : ''
     return this.request<ReviewTasksResponse>(`/api/v1/review-tasks${query}`, {
+      method: 'GET',
+      headers: this.authHeaders(token)
+    })
+  }
+
+  readTodayTaskStats(token: string): Promise<ReviewTaskStats> {
+    return this.request<ReviewTaskStats>('/api/v1/review-tasks/stats?range=today', {
       method: 'GET',
       headers: this.authHeaders(token)
     })

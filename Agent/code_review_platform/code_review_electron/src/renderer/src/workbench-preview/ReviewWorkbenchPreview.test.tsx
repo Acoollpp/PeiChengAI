@@ -31,6 +31,25 @@ describe('ReviewWorkbenchPreview', () => {
     expect(screen.getByRole('button', { name: /选择 DS-03、DS-02、DS-01/ })).toBeInTheDocument()
   })
 
+  it('旧 adapter 不提供统计字段时继续显示原有本地计数', () => {
+    const fixtureAdapter = createFixtureWorkbenchAdapter()
+    const adapter = {
+      ...fixtureAdapter,
+      getViewModel: () => {
+        const { taskStats: _taskStats, ...legacyViewModel } = fixtureAdapter.getViewModel()
+        return legacyViewModel
+      }
+    }
+
+    render(<ReviewWorkbenchPreview adapter={adapter} />)
+
+    const overview = screen.getByLabelText('任务总览')
+    expect(within(overview).getByText('正在执行').closest('div')).toHaveTextContent('2')
+    expect(within(overview).getByText('本机等待').closest('div')).toHaveTextContent('3')
+    expect(within(overview).getByText('需要处理').closest('div')).toHaveTextContent('1')
+    expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('3')
+  })
+
   it('从默认不可提交、校验失败切换到可提交，并创建可观察的预览任务', async () => {
     const user = userEvent.setup()
     const adapter = createFixtureWorkbenchAdapter()

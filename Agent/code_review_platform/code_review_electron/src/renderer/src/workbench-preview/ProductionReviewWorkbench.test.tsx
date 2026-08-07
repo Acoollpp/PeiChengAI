@@ -20,9 +20,46 @@ const reportMarkdown = `# DS-03 状态机审核报告
 **问题描述：** 恢复分支没有发送完成事件。
 `
 
+const createDeferred = <T,>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (reason?: unknown) => void
+} => {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+const taskStats = (running: number, failedOrError: number, success: number) => ({
+  range: 'today' as const,
+  total: running + failedOrError + success,
+  success,
+  running,
+  failed_or_error: failedOrError,
+  average_duration_seconds: null,
+  by_status: {},
+  reports_by_user: [],
+  trend: []
+})
+
 const setupCodeReviewApi = (): void => {
   window.codeReview = {
     listTasks: vi.fn(async () => ({ data: [], count: 0 })),
+    getTodayTaskStats: vi.fn(async () => ({
+      range: 'today' as const,
+      total: 0,
+      success: 0,
+      running: 0,
+      failed_or_error: 0,
+      average_duration_seconds: null,
+      by_status: {},
+      reports_by_user: [],
+      trend: []
+    })),
     readTaskReport: vi.fn(async () => reportMarkdown),
     preflightTask: vi.fn(async () => ({ status: 'valid' as const })),
     executeTask: vi.fn(async () => ({
@@ -90,12 +127,21 @@ const longNameStressCatalog: ReviewItemDefinition[] = [
 
 const submitMinimalDs03Task = async (svnUrl: string): Promise<void> => {
   const user = userEvent.setup()
-  await user.type(await screen.findByLabelText('SVN 地址'), svnUrl)
-  await user.type(screen.getByLabelText('旧 revision'), '0')
-  await user.type(screen.getByLabelText('新 revision'), '12')
-  await user.click(screen.getByRole('button', { name: '选择' }))
-  await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
-  await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
+  const svnInput = await screen.findByLabelText('SVN 地址')
+  const oldRevisionInput = screen.getByLabelText('旧 revision')
+  const newRevisionInput = screen.getByLabelText('新 revision')
+  await user.clear(svnInput)
+  await user.clear(oldRevisionInput)
+  await user.clear(newRevisionInput)
+  await user.type(svnInput, svnUrl)
+  await user.type(oldRevisionInput, '0')
+  await user.type(newRevisionInput, '12')
+  const selectButton = screen.queryByRole('button', { name: '选择' })
+  if (selectButton) {
+    await user.click(selectButton)
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
+    await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
+  }
   await user.click(screen.getByRole('button', { name: '创建审查任务' }))
 }
 
@@ -114,6 +160,247 @@ afterEach(() => {
 })
 
 describe('ProductionReviewWorkbench', () => {
+  it('总览使用今日服务端统计，但本机等待始终取自当前 renderer 队列', async () => {
+    const pendingRuns = [
+      new Promise<never>(() => undefined),
+      new Promise<never>(() => undefined),
+      new Promise<never>(() => undefined)
+    ]
+    vi.mocked(window.codeReview.executeTask).mockImplementation(
+      () => pendingRuns[vi.mocked(window.codeReview.executeTask).mock.calls.length - 1]
+    )
+    vi.mocked(window.codeReview.getTodayTaskStats).mockResolvedValueOnce({
+      range: 'today',
+      total: 23,
+      success: 11,
+      running: 8,
+      failed_or_error: 4,
+      average_duration_seconds: 321,
+      by_status: { success: 11, running_codex: 8, failed: 4 },
+      reports_by_user: [],
+      trend: [{ label: '14:00', count: 99 }]
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await submitMinimalDs03Task('svn://server/stats-queue-1')
+    await submitMinimalDs03Task('svn://server/stats-queue-2')
+    await submitMinimalDs03Task('svn://server/stats-queue-3')
+
+    const overview = await screen.findByLabelText('任务总览')
+    expect(within(overview).getByText('正在执行').closest('div')).toHaveTextContent('8')
+    expect(within(overview).getByText('本机等待').closest('div')).toHaveTextContent('1')
+    expect(within(overview).getByText('需要处理').closest('div')).toHaveTextContent('4')
+    expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('11')
+    expect(screen.queryByText(/321|99|预计|趋势|%/)).not.toBeInTheDocument()
+    expect(window.codeReview.executeTask).toHaveBeenCalledTimes(2)
+    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
+  })
+
+  it('统计加载失败时明确降级且不阻断任务创建，并可独立重试', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.executeTask).mockImplementation(() => new Promise<never>(() => undefined))
+    vi.mocked(window.codeReview.getTodayTaskStats)
+      .mockRejectedValueOnce(new Error('统计服务暂不可用'))
+      .mockResolvedValueOnce({
+        range: 'today', total: 6, success: 3, running: 2, failed_or_error: 1,
+        average_duration_seconds: null, by_status: {}, reports_by_user: [], trend: []
+      })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    const statsError = await screen.findByRole('alert')
+    expect(statsError).toHaveTextContent('今日任务统计加载失败')
+    expect(statsError).toHaveTextContent('任务创建与本机队列仍可使用')
+    expect(screen.queryByLabelText('本地环境状态')).not.toBeInTheDocument()
+
+    await submitMinimalDs03Task('svn://server/stats-fallback')
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(1))
+
+    await user.click(screen.getByRole('button', { name: '重新加载统计' }))
+    await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('今日服务端完成')).toBeInTheDocument()
+    expect(within(screen.getByLabelText('任务总览')).getByText('可查看报告').closest('div')).toHaveTextContent('3')
+  })
+
+  it('真实任务绑定和进入终态时后台刷新统计，日志与重复阶段不重复请求', async () => {
+    let progressListener: ((event: TaskProgressEvent) => void) | undefined
+    const backgroundRefresh = createDeferred<Awaited<ReturnType<CodeReviewApi['getTodayTaskStats']>>>()
+    vi.mocked(window.codeReview.executeTask).mockImplementation(() => new Promise<never>(() => undefined))
+    vi.mocked(window.codeReview.getTodayTaskStats)
+      .mockResolvedValueOnce(taskStats(2, 1, 5))
+      .mockImplementationOnce(() => backgroundRefresh.promise)
+      .mockResolvedValueOnce(taskStats(1, 1, 7))
+    vi.mocked(window.codeReview.onTaskProgress).mockImplementation((listener) => {
+      progressListener = listener
+      return vi.fn()
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    const overview = await screen.findByLabelText('任务总览')
+    await waitFor(() => expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('5'))
+    await submitMinimalDs03Task('svn://server/stats-refresh')
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(1))
+    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
+    const clientTaskId = vi.mocked(window.codeReview.executeTask).mock.calls[0][0].client_task_id
+    if (!clientTaskId) throw new Error('本地任务 ID 未生成')
+
+    act(() => progressListener?.({
+      taskId: 'server-stats-refresh', clientTaskId, type: 'stage', stage: 'created', message: '服务端任务已创建'
+    }))
+    await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
+    expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('5')
+    expect(screen.queryByText('正在加载今日服务端统计。')).not.toBeInTheDocument()
+
+    act(() => {
+      progressListener?.({
+        taskId: 'server-stats-refresh', clientTaskId, type: 'stage', stage: 'created', message: '重复创建阶段'
+      })
+      progressListener?.({
+        taskId: 'server-stats-refresh', clientTaskId, type: 'codex_output', stream: 'stdout', message: 'Codex 日志'
+      })
+      progressListener?.({
+        taskId: 'server-stats-refresh', clientTaskId, type: 'stage', stage: 'running_codex', message: '执行 Skill'
+      })
+    })
+    await waitFor(() => expect(screen.getAllByText('执行 Skill').length).toBeGreaterThan(0))
+    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      backgroundRefresh.resolve(taskStats(2, 1, 6))
+      await backgroundRefresh.promise
+    })
+    await waitFor(() => expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('6'))
+    act(() => progressListener?.({
+      taskId: 'server-stats-refresh', clientTaskId, type: 'stage', stage: 'success', message: '审查完成'
+    }))
+    await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('7'))
+
+    act(() => progressListener?.({
+      taskId: 'server-stats-refresh', clientTaskId, type: 'stage', stage: 'success', message: '重复完成事件'
+    }))
+    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(3)
+  })
+
+  it('后发统计请求先返回时忽略初始请求的陈旧响应', async () => {
+    let progressListener: ((event: TaskProgressEvent) => void) | undefined
+    const initialRequest = createDeferred<Awaited<ReturnType<CodeReviewApi['getTodayTaskStats']>>>()
+    vi.mocked(window.codeReview.executeTask).mockImplementation(() => new Promise<never>(() => undefined))
+    vi.mocked(window.codeReview.getTodayTaskStats)
+      .mockImplementationOnce(() => initialRequest.promise)
+      .mockResolvedValueOnce(taskStats(4, 2, 9))
+    vi.mocked(window.codeReview.onTaskProgress).mockImplementation((listener) => {
+      progressListener = listener
+      return vi.fn()
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    expect(await screen.findByText('正在加载今日服务端统计。')).toBeInTheDocument()
+    await submitMinimalDs03Task('svn://server/stats-race')
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(1))
+    const clientTaskId = vi.mocked(window.codeReview.executeTask).mock.calls[0][0].client_task_id
+    if (!clientTaskId) throw new Error('本地任务 ID 未生成')
+    act(() => progressListener?.({
+      taskId: 'server-stats-race', clientTaskId, type: 'stage', stage: 'created', message: '服务端任务已创建'
+    }))
+
+    await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
+    const overview = await screen.findByLabelText('任务总览')
+    await waitFor(() => expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('9'))
+    await act(async () => {
+      initialRequest.resolve(taskStats(1, 0, 1))
+      await initialRequest.promise
+    })
+    await waitFor(() => expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('9'))
+  })
+
+  it('真实任务事件依次映射环境检查、准备工作区、执行 Skill 和上传报告', async () => {
+    let progressListener: ((event: TaskProgressEvent) => void) | undefined
+    const execution = new Promise<never>(() => undefined)
+    vi.mocked(window.codeReview.executeTask).mockImplementation(() => execution)
+    vi.mocked(window.codeReview.onTaskProgress).mockImplementation((listener) => {
+      progressListener = listener
+      return vi.fn()
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await submitMinimalDs03Task('svn://server/stage-events')
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(1))
+    const clientTaskId = vi.mocked(window.codeReview.executeTask).mock.calls[0][0].client_task_id
+    if (!clientTaskId) throw new Error('本地任务 ID 未生成')
+
+    const assertStage = async (
+      stage: Extract<TaskProgressEvent, { type: 'stage' }>['stage'],
+      expectedLabel: string
+    ): Promise<void> => {
+      act(() => progressListener?.({
+        taskId: 'server-stage-task', clientTaskId, type: 'stage', stage, message: `事件：${expectedLabel}`
+      }))
+      const row = await screen.findByRole('article', { name: /server-stage-task/ })
+      expect(within(row).getByText(expectedLabel)).toBeInTheDocument()
+      expect(within(row).getByText(`事件：${expectedLabel}`)).toBeInTheDocument()
+    }
+
+    await assertStage('created', '环境检查')
+    await assertStage('checking_environment', '环境检查')
+    await assertStage('preparing_workspace', '准备工作区')
+    await assertStage('running_codex', '执行 Skill')
+    await assertStage('uploading_report', '上传报告')
+  })
+
+  it('真实队列和任务事件映射本机等待、完成、失败、环境异常和已取消', async () => {
+    let progressListener: ((event: TaskProgressEvent) => void) | undefined
+    vi.mocked(window.codeReview.executeTask).mockImplementation(() => new Promise<never>(() => undefined))
+    vi.mocked(window.codeReview.onTaskProgress).mockImplementation((listener) => {
+      progressListener = listener
+      return vi.fn()
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await submitMinimalDs03Task('svn://server/terminal-success')
+    await submitMinimalDs03Task('svn://server/terminal-failed')
+    await submitMinimalDs03Task('svn://server/terminal-cancelled')
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(2))
+    const firstClientTaskId = vi.mocked(window.codeReview.executeTask).mock.calls[0][0].client_task_id
+    const secondClientTaskId = vi.mocked(window.codeReview.executeTask).mock.calls[1][0].client_task_id
+    if (!firstClientTaskId || !secondClientTaskId) throw new Error('本地任务 ID 未生成')
+
+    const waitingRow = screen.getByText('svn://server/terminal-cancelled').closest('article')
+    expect(waitingRow).not.toBeNull()
+    expect(within(waitingRow as HTMLElement).getByText('本机等待')).toBeInTheDocument()
+    expect(within(waitingRow as HTMLElement).getByText('本机等待第 1 位')).toBeInTheDocument()
+    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
+    await userEvent.setup().click(within(waitingRow as HTMLElement).getByRole('button', { name: /取消任务/ }))
+    expect(within(waitingRow as HTMLElement).getByText('已取消')).toBeInTheDocument()
+    expect(window.codeReview.cancelTask).not.toHaveBeenCalled()
+    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
+
+    act(() => progressListener?.({
+      taskId: 'server-success', clientTaskId: firstClientTaskId,
+      type: 'stage', stage: 'success', message: '报告上传完成'
+    }))
+    expect(await screen.findByText(/server-success · DS-03/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '查看报告' })).toBeInTheDocument()
+
+    act(() => progressListener?.({
+      taskId: 'server-failed', clientTaskId: secondClientTaskId,
+      type: 'stage', stage: 'failed', message: 'Skill 执行失败'
+    }))
+    const failedRow = await screen.findByRole('article', { name: /server-failed/ })
+    expect(within(failedRow).getByText('失败')).toBeInTheDocument()
+    expect(within(failedRow).getByText('Skill 执行失败')).toBeInTheDocument()
+
+    await submitMinimalDs03Task('svn://server/terminal-environment-error')
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(3))
+    const thirdClientTaskId = vi.mocked(window.codeReview.executeTask).mock.calls[2][0].client_task_id
+    if (!thirdClientTaskId) throw new Error('本地任务 ID 未生成')
+    act(() => progressListener?.({
+      taskId: 'server-environment-error', clientTaskId: thirdClientTaskId,
+      type: 'stage', stage: 'environment_error', message: '环境检查失败'
+    }))
+    const environmentErrorRow = await screen.findByRole('article', { name: /server-environment-error/ })
+    expect(within(environmentErrorRow).getByText('失败')).toBeInTheDocument()
+    expect(within(environmentErrorRow).getByText('环境检查失败')).toBeInTheDocument()
+  })
+
   it('默认使用正式目录，只在显式注入时渲染长名称压力目录', async () => {
     const user = userEvent.setup()
     const firstRender = render(<ProductionReviewWorkbench {...productionProps} />)
@@ -691,6 +978,7 @@ describe('ProductionReviewWorkbench', () => {
 
   it('把生产任务取消和失败任务重试交给本地队列', async () => {
     const user = userEvent.setup()
+    const cancelRequest = createDeferred<Awaited<ReturnType<CodeReviewApi['cancelTask']>>>()
     vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
       data: [
         {
@@ -707,16 +995,24 @@ describe('ProductionReviewWorkbench', () => {
     vi.mocked(window.codeReview.retryTask).mockResolvedValueOnce({
       taskId: 'failed-1', status: 'success', reportMarkdown
     })
+    vi.mocked(window.codeReview.cancelTask).mockImplementationOnce(() => cancelRequest.promise)
     render(<ProductionReviewWorkbench {...productionProps} />)
 
     vi.mocked(window.codeReview.openTaskLog).mockResolvedValueOnce({ status: 'missing' })
     await user.click(await screen.findByRole('button', { name: '打开任务日志 failed-1' }))
     expect(window.codeReview.openTaskLog).toHaveBeenCalledWith('failed-1')
     expect(await screen.findByRole('status')).toHaveTextContent('未找到该任务的本地 Codex 执行日志。')
+    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
     await user.click(await screen.findByRole('button', { name: '取消任务 running-1' }))
     expect(window.codeReview.cancelTask).toHaveBeenCalledWith({
       client_task_id: 'running-1', task_id: 'running-1'
     })
+    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      cancelRequest.resolve({ status: 'cancelled' })
+      await cancelRequest.promise
+    })
+    await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
     await user.click(screen.getByRole('button', { name: '从头重试 failed-1' }))
     await waitFor(() => expect(window.codeReview.retryTask).toHaveBeenCalledWith({
       task_id: 'failed-1', client_task_id: 'failed-1',

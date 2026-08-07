@@ -21,6 +21,7 @@ import type {
   TaskStage,
   WorkbenchAdapter,
   WorkbenchCommands,
+  WorkbenchTaskStats,
   WorkbenchViewModel
 } from './types'
 import './workbench-preview.css'
@@ -70,12 +71,22 @@ const phaseOrder: Array<Exclude<TaskStage, 'waiting' | 'failed' | 'cancelled'>> 
 ]
 const phaseLabels: Record<(typeof phaseOrder)[number], string> = {
   checking_environment: '环境检查', preparing_workspace: '准备工作区',
-  running_review: '执行 Skill', uploading_report: '整理报告', completed: '完成'
+  running_review: '执行 Skill', uploading_report: '上传报告', completed: '完成'
 }
 const stageLabels: Record<TaskStage, string> = {
   waiting: '本机等待', checking_environment: '环境检查', preparing_workspace: '准备工作区',
-  running_review: '执行审查', uploading_report: '整理报告', completed: '已完成',
+  running_review: '执行 Skill', uploading_report: '上传报告', completed: '完成',
   failed: '失败', cancelled: '已取消'
+}
+
+type TaskStatsSemanticState = 'local' | 'active' | `terminal:${TaskViewItem['status']}`
+const taskStatsTerminalStatuses = new Set<TaskViewItem['status']>([
+  'success', 'failed', 'environment_error', 'cancelled'
+])
+const taskStatsSemanticState = (task: TaskViewItem): TaskStatsSemanticState => {
+  if (task.localQueueState === 'queued' || task.isLocalOnly === true) return 'local'
+  if (taskStatsTerminalStatuses.has(task.status)) return `terminal:${task.status}`
+  return 'active'
 }
 
 const taskStage = (task: TaskViewItem): TaskStage => {
@@ -174,8 +185,11 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
   const [activeFeedbackAnchorId, setActiveFeedbackAnchorId] = useState<string>()
   const [feedbackAnchorScrollRequest, setFeedbackAnchorScrollRequest] = useState<WorkbenchViewModel['feedbackAnchorScrollRequest']>()
   const [requestedView, setRequestedView] = useState<WorkbenchViewModel['requestedView']>()
+  const [taskStats, setTaskStats] = useState<WorkbenchTaskStats>({ status: 'loading' })
   const selectedReportIdRef = useRef<string | undefined>(undefined)
   const requestedViewSequenceRef = useRef(0)
+  const taskStatsRequestRef = useRef(0)
+  const observedTaskStatsStateRef = useRef(new Map<string, TaskStatsSemanticState>())
   const createTaskInFlightRef = useRef(false)
   const feedbackInFlightRef = useRef(false)
   const negativeFeedbackInFlightRef = useRef(new Set<string>())
@@ -220,6 +234,68 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
   })
   const tasksRef = useRef(queue.tasks)
   tasksRef.current = queue.tasks
+
+  const loadTaskStats = useCallback(async (
+    { showLoading = true }: { showLoading?: boolean } = {}
+  ): Promise<void> => {
+    taskStatsRequestRef.current += 1
+    const requestId = taskStatsRequestRef.current
+    if (showLoading) setTaskStats({ status: 'loading' })
+    try {
+      const stats = await window.codeReview.getTodayTaskStats()
+      if (taskStatsRequestRef.current !== requestId) return
+      setTaskStats({
+        status: 'ready',
+        range: 'today',
+        running: stats.running,
+        failedOrError: stats.failed_or_error,
+        success: stats.success
+      })
+    } catch (error) {
+      if (taskStatsRequestRef.current !== requestId) return
+      setTaskStats({
+        status: 'error',
+        message: error instanceof Error ? error.message : '统计服务暂不可用。'
+      })
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadTaskStats()
+    return () => {
+      taskStatsRequestRef.current += 1
+    }
+  }, [loadTaskStats])
+
+  useEffect(() => {
+    const observedStates = observedTaskStatsStateRef.current
+    const currentTaskIds = new Set<string>()
+    let shouldRefresh = false
+
+    queue.tasks.forEach((task) => {
+      const taskId = task.localTaskId
+      const nextState = taskStatsSemanticState(task)
+      const previousState = observedStates.get(taskId)
+      currentTaskIds.add(taskId)
+      observedStates.set(taskId, nextState)
+
+      if (previousState === undefined) {
+        // 本地任务可能在一次提交批次内已收到首个服务端事件；历史任务没有执行载荷。
+        if (nextState !== 'local' && task.executePayload !== undefined) shouldRefresh = true
+        return
+      }
+      if (previousState === nextState) return
+      if (previousState === 'local' && nextState === 'active') shouldRefresh = true
+      if (nextState.startsWith('terminal:') && nextState !== 'terminal:cancelled') {
+        shouldRefresh = true
+      }
+    })
+
+    observedStates.forEach((_state, taskId) => {
+      if (!currentTaskIds.has(taskId)) observedStates.delete(taskId)
+    })
+    if (shouldRefresh) void loadTaskStats({ showLoading: false })
+  }, [loadTaskStats, queue.tasks])
 
   useEffect(() => {
     let active = true
@@ -368,7 +444,10 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
     async cancelTask(taskId) {
       const task = findTask(taskId)
       if (!task) return commandResult('未找到任务。')
+      const shouldRefreshTaskStats =
+        task.localQueueState === 'starting' || task.localQueueState === 'running'
       await queue.cancelTask(task)
+      if (shouldRefreshTaskStats) await loadTaskStats({ showLoading: false })
       showNotice(`已取消任务 ${task.id}。`)
       return commandResult(`已取消任务 ${task.id}。`)
     },
@@ -380,6 +459,10 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
       return commandResult(`任务 ${task.id} 已加入本机重试队列。`)
     },
     async advanceTasks() { return commandResult('生产任务阶段由真实执行事件更新。') },
+    async reloadTaskStats() {
+      await loadTaskStats()
+      return commandResult('今日任务统计已重新加载。')
+    },
     async openReport(reportId) {
       const task = findTask(reportId)
       if (!task) return commandResult('未找到报告。')
@@ -495,7 +578,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
       setNotice(undefined)
       setNoticeAction(undefined)
     }
-  }), [createTask, findTask, queue.cancelTask, queue.retryTask, queue.updateTask, selectReport, showNotice])
+  }), [createTask, findTask, loadTaskStats, queue.cancelTask, queue.retryTask, queue.updateTask, selectReport, showNotice])
 
   const viewModel: WorkbenchViewModel = {
     productName: 'AI 代码审查', previewLabel: '2.0 工作台',
@@ -505,7 +588,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
     tasks: queue.tasks.map(toTaskViewModel),
     reports: queue.tasks.filter((task) => task.status === 'success').map(toReportViewModel),
     selectedReportId, notice, noticeAction, activeFeedbackAnchorId, feedbackAnchorScrollRequest,
-    mode: 'production', canCreateTask, requestedView,
+    mode: 'production', canCreateTask, requestedView, taskStats,
     ...(!canCreateTask ? { taskCreationDisabledReason: '本地环境就绪后才可发起审查。' } : {})
   }
   const viewModelRef = useRef(viewModel); viewModelRef.current = viewModel

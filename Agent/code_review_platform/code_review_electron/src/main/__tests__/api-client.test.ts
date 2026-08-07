@@ -240,6 +240,34 @@ describe('ApiClient', () => {
     )
   })
 
+  it('读取今日审查任务统计时使用固定范围和鉴权头', async () => {
+    const stats = {
+      range: 'today',
+      total: 12,
+      success: 7,
+      running: 2,
+      failed_or_error: 3,
+      average_duration_seconds: 480,
+      by_status: { success: 7, running_codex: 2, failed: 3 },
+      reports_by_user: [],
+      trend: [{ label: '10:00', count: 4 }]
+    }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(stats))
+    const client = new ApiClient('https://server.example/', fetchMock)
+
+    await expect(client.readTodayTaskStats('token-123')).resolves.toEqual(stats)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://server.example/api/v1/review-tasks/stats?range=today',
+      {
+        method: 'GET',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer token-123'
+        }
+      }
+    )
+  })
+
   it('reads current user with authorization header', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({

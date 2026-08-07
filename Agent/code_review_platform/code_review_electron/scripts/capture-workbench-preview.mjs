@@ -1,13 +1,14 @@
 import { spawn } from 'node:child_process'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { chromium } from 'playwright'
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)))
-const screenshotDirectory = join(projectRoot, 'docs', 'issue-37', 'screenshots')
-const productionScreenshotDirectory = join(projectRoot, 'docs', 'issue-33', 'screenshots')
+const screenshotDirectory = await mkdtemp(join(tmpdir(), 'issue-34-workbench-regression-'))
+const issue34ScreenshotDirectory = join(projectRoot, 'docs', 'issue-34', 'screenshots')
 const host = '127.0.0.1'
 const port = 4317
 const previewUrl = `http://${host}:${port}/preview.html`
@@ -485,7 +486,7 @@ const captureProductionSelectorViewport = async (browser, viewport) => {
     assert(selectorMetrics.filesDoNotOverlap, `${label}：生产长文件名、大小或移除按钮发生重叠。`)
 
     await page.screenshot({
-      path: join(productionScreenshotDirectory, `production-selector-${label}.png`),
+      path: join(screenshotDirectory, `production-selector-${label}.png`),
       animations: 'disabled'
     })
 
@@ -553,7 +554,7 @@ const captureProductionSelectorViewport = async (browser, viewport) => {
     assert(longNameSelectorMetrics.detailClearsAction, `${label}：长详情标题与移除按钮重叠。`)
     assert(longNameSelectorMetrics.modalHasNoHorizontalOverflow, `${label}：长审查项名称导致弹窗水平溢出。`)
     await page.screenshot({
-      path: join(productionScreenshotDirectory, `production-long-name-selector-${label}.png`),
+      path: join(screenshotDirectory, `production-long-name-selector-${label}.png`),
       animations: 'disabled'
     })
 
@@ -581,7 +582,7 @@ const captureProductionSelectorViewport = async (browser, viewport) => {
     assert(longNameSummaryMetrics.summaryNameWithinCopy, `${label}：长审查项名称超出主表单摘要。`)
     assert(longNameSummaryMetrics.selectedItemHasNoHorizontalOverflow, `${label}：长审查项主表单摘要水平溢出。`)
     await page.screenshot({
-      path: join(productionScreenshotDirectory, `production-long-name-summary-${label}.png`),
+      path: join(screenshotDirectory, `production-long-name-summary-${label}.png`),
       animations: 'disabled'
     })
     assert(consoleErrors.length === 0, `${label}：生产长名称验收控制台错误：${consoleErrors.join('；')}`)
@@ -591,8 +592,81 @@ const captureProductionSelectorViewport = async (browser, viewport) => {
   }
 }
 
+const captureProductionTaskStatesViewport = async (browser, viewport) => {
+  const label = `${viewport.width}x${viewport.height}`
+  const page = await browser.newPage({ viewport })
+  const consoleErrors = []
+  page.on('console', (entry) => {
+    if (entry.type() === 'error') consoleErrors.push(entry.text())
+  })
+  page.on('pageerror', (error) => consoleErrors.push(error.message))
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+
+  try {
+    await page.goto(`${productionHarnessUrl}?scenario=stats-error`, { waitUntil: 'networkidle' })
+    const statsError = page.getByRole('alert')
+    await statsError.waitFor()
+    assert(
+      (await statsError.textContent())?.includes('任务创建与本机队列仍可使用'),
+      `${label}：统计失败没有显示主流程可用的降级说明。`
+    )
+    assert(await page.getByRole('button', { name: '重新加载统计', exact: true }).isVisible(), `${label}：统计失败缺少重试入口。`)
+    assert(await page.getByText('暂无执行或等待任务', { exact: true }).isVisible(), `${label}：统计失败时空队列不可见。`)
+    await assertNoDocumentOverflow(page, `${label} 统计失败态`)
+    await page.screenshot({
+      path: join(issue34ScreenshotDirectory, `production-stats-error-${label}.png`),
+      animations: 'disabled'
+    })
+
+    await page.goto(`${productionHarnessUrl}?scenario=multi-task`, { waitUntil: 'networkidle' })
+    await page.getByRole('heading', { name: '创建审查任务', exact: true }).waitFor()
+    await page.getByRole('button', { name: '选择', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '选择审查项', exact: true })
+    await dialog.getByLabel('选择 DS-03 状态机审核', { exact: true }).check()
+    await dialog.getByRole('button', { name: '完成选择（1）', exact: true }).click()
+
+    for (let taskIndex = 1; taskIndex <= 3; taskIndex += 1) {
+      await page.getByLabel('SVN 地址', { exact: true }).fill(`svn://production-harness/queue-${taskIndex}`)
+      await page.getByLabel('旧 revision', { exact: true }).fill(String(taskIndex - 1))
+      await page.getByLabel('新 revision', { exact: true }).fill(String(taskIndex + 10))
+      await page.getByRole('button', { name: '创建审查任务', exact: true }).click()
+      await page.getByRole('button', { name: '创建审查任务', exact: true }).waitFor()
+    }
+
+    await page.getByText('本机等待第 1 位', { exact: true }).waitFor()
+    const queueMetrics = await page.evaluate(() => {
+      const overview = [...document.querySelectorAll('.wb-overview > div')]
+      const metricValue = (labelText) => overview
+        .find((item) => item.querySelector('span')?.textContent === labelText)
+        ?.querySelector('strong')?.textContent
+      return {
+        executingRows: document.querySelectorAll('.wb-task-table-row.is-running').length,
+        waitingRows: document.querySelectorAll('.wb-task-table-row.is-waiting').length,
+        serverRunning: metricValue('正在执行'),
+        localWaiting: metricValue('本机等待'),
+        failed: metricValue('需要处理'),
+        success: metricValue('可查看报告')
+      }
+    })
+    assert(queueMetrics.executingRows === 2, `${label}：生产组件未保持两个本地执行槽位。`)
+    assert(queueMetrics.waitingRows === 1, `${label}：第三个任务未进入本机等待。`)
+    assert(queueMetrics.serverRunning === '4', `${label}：正在执行未使用服务端今日统计。`)
+    assert(queueMetrics.localWaiting === '1', `${label}：本机等待未使用当前 renderer 队列。`)
+    assert(queueMetrics.failed === '3' && queueMetrics.success === '5', `${label}：服务端今日终态统计显示错误。`)
+    await assertNoDocumentOverflow(page, `${label} 多任务态`)
+    await page.screenshot({
+      path: join(issue34ScreenshotDirectory, `production-multi-task-${label}.png`),
+      animations: 'disabled'
+    })
+    assert(consoleErrors.length === 0, `${label}：生产任务状态验收控制台错误：${consoleErrors.join('；')}`)
+    console.log(`${label} 生产任务状态通过：统计降级、空队列、服务端计数与本机两槽队列均符合断言。`)
+  } finally {
+    await page.close()
+  }
+}
+
 await mkdir(screenshotDirectory, { recursive: true })
-await mkdir(productionScreenshotDirectory, { recursive: true })
+await mkdir(issue34ScreenshotDirectory, { recursive: true })
 let serverOutput = ''
 const viteEntry = join(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js')
 const server = spawn(
@@ -614,10 +688,12 @@ try {
   for (const viewport of viewports) {
     await captureViewport(browser, viewport)
     await captureProductionSelectorViewport(browser, viewport)
+    await captureProductionTaskStatesViewport(browser, viewport)
   }
-  console.log(`fixture 截图已写入 ${screenshotDirectory}`)
-  console.log(`生产选择器截图已写入 ${productionScreenshotDirectory}`)
+  console.log('既有工作台回归截图已在临时目录完成验证。')
+  console.log(`Issue #34 生产工作台截图已写入 ${issue34ScreenshotDirectory}`)
 } finally {
   await browser?.close()
   await stopServer(server)
+  await rm(screenshotDirectory, { recursive: true, force: true })
 }

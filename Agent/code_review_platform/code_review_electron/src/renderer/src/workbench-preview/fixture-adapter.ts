@@ -77,7 +77,7 @@ const phaseLabels: Record<(typeof phaseOrder)[number], string> = {
   checking_environment: '环境检查',
   preparing_workspace: '准备工作区',
   running_review: '执行 Skill',
-  uploading_report: '整理报告',
+  uploading_report: '上传报告',
   completed: '完成'
 }
 
@@ -85,9 +85,9 @@ const stageLabels: Record<TaskStage, string> = {
   waiting: '本机等待',
   checking_environment: '环境检查',
   preparing_workspace: '准备工作区',
-  running_review: '执行审查',
-  uploading_report: '整理报告',
-  completed: '已完成',
+  running_review: '执行 Skill',
+  uploading_report: '上传报告',
+  completed: '完成',
   failed: '失败',
   cancelled: '已取消'
 }
@@ -403,7 +403,10 @@ const makeState = (scenario: PreviewScenario): WorkbenchViewModel => ({
     }
   },
   tasks: scenario === 'active' ? clone(activeTasks) : [],
-  reports: scenario === 'active' ? clone(reports) : []
+  reports: scenario === 'active' ? clone(reports) : [],
+  taskStats: scenario === 'active'
+    ? { status: 'ready', range: 'today', running: 2, failedOrError: 1, success: 3 }
+    : { status: 'ready', range: 'today', running: 0, failedOrError: 0, success: 0 }
 })
 
 const nextStage: Partial<Record<TaskStage, TaskStage>> = {
@@ -417,7 +420,20 @@ export const createFixtureWorkbenchAdapter = (): WorkbenchAdapter => {
   let state = makeState('active')
   const listeners = new Set<(viewModel: WorkbenchViewModel) => void>()
 
+  const syncTaskStats = (): void => {
+    state.taskStats = {
+      status: 'ready',
+      range: 'today',
+      running: state.tasks.filter((value) =>
+        ['checking_environment', 'preparing_workspace', 'running_review', 'uploading_report'].includes(value.stage)
+      ).length,
+      failedOrError: state.tasks.filter((value) => value.stage === 'failed').length,
+      success: state.reports.length
+    }
+  }
+
   const publish = (): void => {
+    syncTaskStats()
     const snapshot = clone(state)
     listeners.forEach((listener) => listener(snapshot))
   }
@@ -467,7 +483,10 @@ export const createFixtureWorkbenchAdapter = (): WorkbenchAdapter => {
   }
 
   return {
-    getViewModel: () => clone(state),
+    getViewModel: () => {
+      syncTaskStats()
+      return clone(state)
+    },
     subscribe(listener) {
       listeners.add(listener)
       return () => {
@@ -563,6 +582,9 @@ export const createFixtureWorkbenchAdapter = (): WorkbenchAdapter => {
         })
         startWaitingTaskWhenPossible()
         return result('已推进一轮本地任务阶段。')
+      },
+      async reloadTaskStats() {
+        return result('预览统计已重新加载。')
       },
       async openReport(reportId) {
         state.selectedReportId = reportId

@@ -12,6 +12,7 @@ import type {
   CurrentUser,
   DepartmentsResponse,
   ReviewTask,
+  ReviewTaskStats,
   ReviewTaskStatus,
   SyncedSkill,
   TaskCompletionNotificationPayload,
@@ -21,7 +22,7 @@ import type {
 import type { TaskPreflightErrorField, TaskPreflightResult } from '../../shared/task-preflight'
 
 export type { ClientUpdatePolicy, EnvironmentProgressEvent, TaskProgressEvent }
-export type { CurrentUser, DepartmentsResponse }
+export type { CurrentUser, DepartmentsResponse, ReviewTaskStats }
 export type {
   TaskCompletionNotificationPayload,
   TaskCompletionNotificationResult
@@ -254,6 +255,7 @@ export interface CodeReviewApi {
   clearCredentials(): Promise<unknown>
   loadServerConfig(): Promise<{ server_url: string }>
   listTasks(): Promise<ReviewTasksResponse>
+  getTodayTaskStats(): Promise<ReviewTaskStats>
   readTaskReport(taskId: string): Promise<string>
   preflightTask(payload: TaskPreflightRequest): Promise<TaskPreflightResult>
   executeTask(payload: ExecuteTaskRequest): Promise<ExecuteTaskResult>

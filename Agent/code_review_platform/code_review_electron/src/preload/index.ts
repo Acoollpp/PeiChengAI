@@ -88,6 +88,8 @@ contextBridge.exposeInMainWorld('codeReview', {
   loadServerConfig: (): Promise<{ server_url: string }> =>
     ipcRenderer.invoke('server-config:load'),
   listTasks: (): Promise<ReviewTasksResponse> => ipcRenderer.invoke('task:list'),
+  getTodayTaskStats: (): ReturnType<CodeReviewApi['getTodayTaskStats']> =>
+    ipcRenderer.invoke('task:stats'),
   readTaskReport: (taskId: string): Promise<string> => ipcRenderer.invoke('task:report', taskId),
   preflightTask: (payload: Parameters<CodeReviewApi['preflightTask']>[0]) =>
     invoke('task:preflight', payload),
