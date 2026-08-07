@@ -161,6 +161,7 @@ afterEach(() => {
 
 describe('ProductionReviewWorkbench', () => {
   it('总览使用今日服务端统计，但本机等待始终取自当前 renderer 队列', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(199)
     const pendingRuns = [
       new Promise<never>(() => undefined),
       new Promise<never>(() => undefined),
@@ -191,7 +192,7 @@ describe('ProductionReviewWorkbench', () => {
     expect(within(overview).getByText('本机等待').closest('div')).toHaveTextContent('1')
     expect(within(overview).getByText('需要处理').closest('div')).toHaveTextContent('4')
     expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('11')
-    expect(screen.queryByText(/321|99|预计|趋势|%/)).not.toBeInTheDocument()
+    expect(within(overview).queryByText(/321|99|预计|趋势|%/)).not.toBeInTheDocument()
     expect(window.codeReview.executeTask).toHaveBeenCalledTimes(2)
     expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
   })
@@ -311,6 +312,46 @@ describe('ProductionReviewWorkbench', () => {
       await initialRequest.promise
     })
     await waitFor(() => expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('9'))
+  })
+
+  it('失败任务重试在服务端真实阶段事件到达后才刷新统计', async () => {
+    let progressListener: ((event: TaskProgressEvent) => void) | undefined
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [{
+        id: 'retry-stats', svn_url: 'svn://server/retry-stats', old_revision: '12', new_revision: '13',
+        review_item_ids: ['DS-03'], status: 'failed', error_message: '首次执行失败'
+      }],
+      count: 1
+    })
+    vi.mocked(window.codeReview.retryTask).mockImplementation(() => new Promise<never>(() => undefined))
+    vi.mocked(window.codeReview.onTaskProgress).mockImplementation((listener) => {
+      progressListener = listener
+      return vi.fn()
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await userEvent.setup().click(await screen.findByRole('button', { name: '从头重试 retry-stats' }))
+    await waitFor(() => expect(window.codeReview.retryTask).toHaveBeenCalledTimes(1))
+    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
+
+    act(() => progressListener?.({
+      taskId: 'retry-stats', clientTaskId: 'retry-stats',
+      type: 'stage', stage: 'checking_environment', message: '重试任务已进入环境检查'
+    }))
+    await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
+
+    act(() => {
+      progressListener?.({
+        taskId: 'retry-stats', clientTaskId: 'retry-stats',
+        type: 'stage', stage: 'checking_environment', message: '重复环境检查事件'
+      })
+      progressListener?.({
+        taskId: 'retry-stats', clientTaskId: 'retry-stats',
+        type: 'stage', stage: 'running_codex', message: '重试任务执行 Skill'
+      })
+    })
+    await waitFor(() => expect(screen.getByText('重试任务执行 Skill')).toBeInTheDocument())
+    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2)
   })
 
   it('真实任务事件依次映射环境检查、准备工作区、执行 Skill 和上传报告', async () => {

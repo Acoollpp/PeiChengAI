@@ -84,7 +84,11 @@ const taskStatsTerminalStatuses = new Set<TaskViewItem['status']>([
   'success', 'failed', 'environment_error', 'cancelled'
 ])
 const taskStatsSemanticState = (task: TaskViewItem): TaskStatsSemanticState => {
-  if (task.localQueueState === 'queued' || task.isLocalOnly === true) return 'local'
+  if (
+    task.localQueueState === 'queued' ||
+    task.isLocalOnly === true ||
+    (task.executeWith === 'retry' && task.localQueueState === 'starting')
+  ) return 'local'
   if (taskStatsTerminalStatuses.has(task.status)) return `terminal:${task.status}`
   return 'active'
 }
@@ -285,7 +289,11 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
         return
       }
       if (previousState === nextState) return
-      if (previousState === 'local' && nextState === 'active') shouldRefresh = true
+      if (
+        previousState !== 'active' &&
+        nextState === 'active' &&
+        task.localQueueState === 'running'
+      ) shouldRefresh = true
       if (nextState.startsWith('terminal:') && nextState !== 'terminal:cancelled') {
         shouldRefresh = true
       }

@@ -56,6 +56,8 @@
 
 文件：
 
+- `code_review_electron/src/main/task-agent.ts`
+- `code_review_electron/src/main/__tests__/task-agent.test.ts`
 - `code_review_electron/src/renderer/src/workbench-preview/ProductionReviewWorkbench.tsx`
 - `code_review_electron/src/renderer/src/workbench-preview/ProductionReviewWorkbench.test.tsx`
 
@@ -64,6 +66,8 @@
 1. 将上传阶段统一显示为“上传报告”。
 2. 穷举测试等待、环境检查、准备工作区、执行 Skill、上传报告、完成、失败、已取消。
 3. 断言提交、运行中取消、等待取消、失败后从头重试和日志入口调用现有生产 bridge。
+4. 失败任务重试的本地 `starting` 不刷新统计；服务端状态落库后的首个真实阶段事件只刷新一次。
+5. 服务端状态阶段事件统一在对应创建、PATCH 或报告上传操作完成后发出。
 
 ## Task 4：补齐本地队列和旧功能回归
 
