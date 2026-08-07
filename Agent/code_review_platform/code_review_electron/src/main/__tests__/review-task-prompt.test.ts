@@ -135,4 +135,42 @@ describe('buildBmsReviewTaskPrompt', () => {
     expect(ds03Section).not.toContain('只核对协议导入')
     expect(ds03Section).not.toContain('/materials/DS-01/')
   })
+
+  it('DS-02 与 DS-03 组合提示词保持原始 revision 和逐项规则且不产生材料', () => {
+    const prompt = buildBmsReviewTaskPrompt({
+      svnUrl: 'svn://example.com/bms/ds02-ds03',
+      oldRevision: 'r0',
+      newRevision: 'R240',
+      reviewItems: [
+        {
+          id: 'DS-02',
+          name: '编码规范审核',
+          user_extra_rules: '只检查本次新增诊断代码',
+          materials: []
+        },
+        {
+          id: 'DS-03',
+          name: '状态机审核',
+          user_extra_rules: '只检查故障恢复状态',
+          materials: []
+        }
+      ],
+      reportPath: '/runtime/workspaces/task-33/report.md'
+    })
+
+    const ds02Start = prompt.indexOf('### DS-02：编码规范审核')
+    const ds03Start = prompt.indexOf('### DS-03：状态机审核')
+    const itemBoundary = prompt.indexOf('\n\n每项用户额外规则', ds03Start)
+    const ds02Section = prompt.slice(ds02Start, ds03Start)
+    const ds03Section = prompt.slice(ds03Start, itemBoundary)
+
+    expect(prompt).toContain('旧 revision：r0')
+    expect(prompt).toContain('新 revision：R240')
+    expect(ds02Section).toContain('用户额外规则：只检查本次新增诊断代码')
+    expect(ds02Section).toContain('专项材料：无')
+    expect(ds02Section).not.toContain('只检查故障恢复状态')
+    expect(ds03Section).toContain('用户额外规则：只检查故障恢复状态')
+    expect(ds03Section).toContain('专项材料：无')
+    expect(ds03Section).not.toContain('只检查本次新增诊断代码')
+  })
 })

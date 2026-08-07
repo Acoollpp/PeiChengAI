@@ -426,7 +426,7 @@ export function ReviewItemSelector({
             <button className="wb-secondary-button" type="button" onClick={onCancel}>取消</button>
             <button className="wb-primary-button" type="button" onClick={confirm}>
               <Check aria-hidden="true" />
-              确认选择（{selectedIds.size}）
+              完成选择（{selectedIds.size}）
             </button>
           </div>
         </footer>

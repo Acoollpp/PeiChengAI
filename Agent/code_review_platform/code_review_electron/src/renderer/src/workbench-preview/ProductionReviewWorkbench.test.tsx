@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CodeReviewApi } from '../code-review-api'
 import type { TaskProgressEvent } from '../../../shared/types'
 import { ProductionReviewWorkbench } from './ProductionReviewWorkbench'
+import type { ReviewItemDefinition } from './types'
 
 const reportMarkdown = `# DS-03 状态机审核报告
 
@@ -74,6 +75,19 @@ const productionProps = {
   onInstallSkill: vi.fn()
 }
 
+const longNameStressCatalog: ReviewItemDefinition[] = [
+  {
+    id: 'DS-03',
+    category: '设计与安全',
+    name: '状态机审核与故障恢复及跨模式安全降级边界条件完整性联合审查（超长名称视觉压力样例）',
+    summary: '仅用于开发验收长名称布局，不改变正式目录。',
+    goal: '验证长审查项名称的布局。',
+    process: ['使用真实生产组件渲染'],
+    specification: '仅用于视觉验收。',
+    materialFields: []
+  }
+]
+
 const submitMinimalDs03Task = async (svnUrl: string): Promise<void> => {
   const user = userEvent.setup()
   await user.type(await screen.findByLabelText('SVN 地址'), svnUrl)
@@ -81,7 +95,7 @@ const submitMinimalDs03Task = async (svnUrl: string): Promise<void> => {
   await user.type(screen.getByLabelText('新 revision'), '12')
   await user.click(screen.getByRole('button', { name: '选择' }))
   await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
-  await user.click(screen.getByRole('button', { name: '确认选择（1）' }))
+  await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
   await user.click(screen.getByRole('button', { name: '创建审查任务' }))
 }
 
@@ -100,6 +114,30 @@ afterEach(() => {
 })
 
 describe('ProductionReviewWorkbench', () => {
+  it('默认使用正式目录，只在显式注入时渲染长名称压力目录', async () => {
+    const user = userEvent.setup()
+    const firstRender = render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await user.click(await screen.findByRole('button', { name: '选择' }))
+    expect(screen.getByRole('checkbox', { name: '选择 DS-02 编码规范审核' })).toBeInTheDocument()
+    expect(screen.queryByText(longNameStressCatalog[0].name)).not.toBeInTheDocument()
+
+    firstRender.unmount()
+    render(
+      <ProductionReviewWorkbench
+        {...productionProps}
+        catalogOverride={longNameStressCatalog}
+      />
+    )
+    await user.click(await screen.findByRole('button', { name: '选择' }))
+    expect(
+      screen.getByRole('checkbox', {
+        name: `选择 DS-03 ${longNameStressCatalog[0].name}`
+      })
+    ).toBeInTheDocument()
+    expect(screen.queryByText('编码规范审核')).not.toBeInTheDocument()
+  })
+
   it('从生产工作台原样提交 r0 和 DS-03 规则，并打开真实 Markdown、PDF 与逐问题反馈', async () => {
     const user = userEvent.setup()
     render(
@@ -116,11 +154,11 @@ describe('ProductionReviewWorkbench', () => {
     await user.click(screen.getByRole('button', { name: '选择' }))
     expect(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' })).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: '选择 DS-01 变更点审查' })).toBeInTheDocument()
-    expect(screen.queryByRole('checkbox', { name: /DS-02/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: '选择 DS-02 编码规范审核' })).toBeInTheDocument()
     await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
     await user.click(screen.getByRole('button', { name: /DS-03.*状态机审核/ }))
     await user.type(screen.getByLabelText('DS-03 额外规则'), '重点检查故障恢复路径')
-    await user.click(screen.getByRole('button', { name: '确认选择（1）' }))
+    await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
     await user.click(screen.getByRole('button', { name: '创建审查任务' }))
 
     await waitFor(() => {
@@ -160,6 +198,43 @@ describe('ProductionReviewWorkbench', () => {
     })
   })
 
+  it('从正式目录单独提交 DS-02，原样保留 revision 且不产生材料字段', async () => {
+    const user = userEvent.setup()
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await user.type(await screen.findByLabelText('SVN 地址'), 'svn://server/ds02-only')
+    await user.type(screen.getByLabelText('旧 revision'), 'r0')
+    await user.type(screen.getByLabelText('新 revision'), 'R42')
+    await user.click(screen.getByRole('button', { name: '选择' }))
+    await user.type(screen.getByPlaceholderText('搜索 ID、名称或分类'), '代码质量')
+    expect(screen.getByText('代码质量')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: '选择 DS-02 编码规范审核' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: '选择 DS-01 变更点审查' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-02 编码规范审核' }))
+    await user.click(screen.getByRole('button', { name: /DS-02.*编码规范审核/ }))
+    expect(screen.getByRole('article', { name: 'DS-02 编码规范审核 详情' })).toHaveTextContent(
+      '具体审查规则、证据模式和失败策略由 bms-code-reviewer Skill 维护'
+    )
+    expect(screen.getByText('此审查项不需要专项材料。')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '选择文件' })).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('DS-02 额外规则'), '仅检查本次新增的诊断模块')
+    await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
+
+    expect(screen.getByText('DS-02').closest('.wb-selected-item')).toHaveTextContent('无需专项材料')
+    await user.click(screen.getByRole('button', { name: '创建审查任务' }))
+
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        svn_url: 'svn://server/ds02-only',
+        old_revision: 'r0',
+        new_revision: 'R42',
+        skill_name: 'bms-code-reviewer',
+        review_items: [{ id: 'DS-02', user_extra_rules: '仅检查本次新增的诊断模块' }]
+      })
+    ))
+    expect(window.codeReview.selectReviewMaterialFile).not.toHaveBeenCalled()
+  })
+
   it('通过系统文件选择器提交 DS-01 的 Excel、PDF 和独立额外规则', async () => {
     const user = userEvent.setup()
     const longRequirementName = 'BMS_平台_V2.7_低压上下电与故障恢复产品开发需求表_最终评审修订版_20260806.xlsx'
@@ -188,7 +263,7 @@ describe('ProductionReviewWorkbench', () => {
     const longName = await screen.findByText(longRequirementName)
     expect(longName).toHaveAttribute('title', longRequirementName)
     await user.click(screen.getByRole('button', { name: '选择文件' }))
-    await user.click(screen.getByRole('button', { name: '确认选择（1）' }))
+    await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
     expect(screen.getByText('已选 1 项 · 2 个材料文件')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '创建审查任务' }))
 
@@ -242,7 +317,7 @@ describe('ProductionReviewWorkbench', () => {
     await user.click(screen.getByRole('button', { name: /DS-03.*状态机审核/ }))
     expect(screen.getByText('此审查项不需要专项材料。')).toBeInTheDocument()
     await user.type(screen.getByLabelText('DS-03 额外规则'), '只检查故障恢复状态')
-    await user.click(screen.getByRole('button', { name: '确认选择（2）' }))
+    await user.click(screen.getByRole('button', { name: '完成选择（2）' }))
 
     expect(screen.getByText('已选 2 项 · 2 个材料文件')).toBeInTheDocument()
     expect(screen.getByText('DS-01').closest('.wb-selected-item')).toHaveTextContent('2 个材料文件已就绪')
@@ -277,6 +352,172 @@ describe('ProductionReviewWorkbench', () => {
     ))
   })
 
+  it('提交 DS-01 + DS-02 时 Excel/PDF 只归属 DS-01', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.selectReviewMaterialFile)
+      .mockResolvedValueOnce({
+        status: 'selected',
+        filePath: '/local/materials/DS01-DS02-需求表.xlsx',
+        fileName: 'DS01-DS02-需求表.xlsx',
+        fileSize: 2048
+      })
+      .mockResolvedValueOnce({
+        status: 'selected',
+        filePath: '/local/materials/DS01-DS02-规格书.pdf',
+        fileName: 'DS01-DS02-规格书.pdf',
+        fileSize: 4096
+      })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await user.type(await screen.findByLabelText('SVN 地址'), 'svn://server/ds01-ds02')
+    await user.type(screen.getByLabelText('旧 revision'), '220')
+    await user.type(screen.getByLabelText('新 revision'), 'R230')
+    await user.click(screen.getByRole('button', { name: '选择' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-01 变更点审查' }))
+    await user.type(screen.getByLabelText('DS-01 额外规则'), '仅核对产品需求')
+    await user.click(screen.getAllByRole('button', { name: '选择文件' })[0])
+    await user.click(screen.getByRole('button', { name: '选择文件' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-02 编码规范审核' }))
+    await user.click(screen.getByRole('button', { name: /DS-02.*编码规范审核/ }))
+    await user.type(screen.getByLabelText('DS-02 额外规则'), '仅检查新增诊断代码')
+    await user.click(screen.getByRole('button', { name: '完成选择（2）' }))
+    await user.click(screen.getByRole('button', { name: '创建审查任务' }))
+
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        svn_url: 'svn://server/ds01-ds02',
+        old_revision: '220',
+        new_revision: 'R230',
+        review_items: [
+          {
+            id: 'DS-01',
+            user_extra_rules: '仅核对产品需求',
+            materials: [
+              {
+                field_id: 'requirement-sheet',
+                file_paths: ['/local/materials/DS01-DS02-需求表.xlsx']
+              },
+              {
+                field_id: 'product-spec',
+                file_paths: ['/local/materials/DS01-DS02-规格书.pdf']
+              }
+            ]
+          },
+          { id: 'DS-02', user_extra_rules: '仅检查新增诊断代码' }
+        ]
+      })
+    ))
+  })
+
+  it('提交 DS-02 + DS-03 时逐项额外规则隔离且均无材料', async () => {
+    const user = userEvent.setup()
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await user.type(await screen.findByLabelText('SVN 地址'), 'svn://server/ds02-ds03')
+    await user.type(screen.getByLabelText('旧 revision'), '0')
+    await user.type(screen.getByLabelText('新 revision'), 'R330')
+    await user.click(screen.getByRole('button', { name: '选择' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-02 编码规范审核' }))
+    await user.click(screen.getByRole('button', { name: /DS-02.*编码规范审核/ }))
+    await user.type(screen.getByLabelText('DS-02 额外规则'), '只检查命名一致性')
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
+    await user.click(screen.getByRole('button', { name: /DS-03.*状态机审核/ }))
+    await user.type(screen.getByLabelText('DS-03 额外规则'), '只检查故障恢复状态')
+    await user.click(screen.getByRole('button', { name: '完成选择（2）' }))
+    await user.click(screen.getByRole('button', { name: '创建审查任务' }))
+
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        svn_url: 'svn://server/ds02-ds03',
+        old_revision: '0',
+        new_revision: 'R330',
+        review_items: [
+          { id: 'DS-02', user_extra_rules: '只检查命名一致性' },
+          { id: 'DS-03', user_extra_rules: '只检查故障恢复状态' }
+        ]
+      })
+    ))
+    expect(window.codeReview.selectReviewMaterialFile).not.toHaveBeenCalled()
+  })
+
+  it('生产分类工具操作真实草稿，取消后不回填', async () => {
+    const user = userEvent.setup()
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await screen.findByRole('heading', { name: '创建审查任务' })
+    await user.click(screen.getByRole('button', { name: '选择' }))
+    await user.type(screen.getByPlaceholderText('搜索 ID、名称或分类'), '代码质量')
+    await user.click(screen.getByRole('checkbox', { name: '选择代码质量全部审查项' }))
+    expect(screen.getByRole('dialog').querySelector('.wb-selector-count')).toHaveTextContent('已选 1 项')
+    await user.clear(screen.getByPlaceholderText('搜索 ID、名称或分类'))
+    await user.click(screen.getByRole('checkbox', { name: '选择设计与安全全部审查项' }))
+    expect(screen.getByRole('dialog').querySelector('.wb-selector-count')).toHaveTextContent('已选 2 项')
+    await user.click(screen.getByRole('checkbox', { name: '仅看已选' }))
+    const catalogList = screen.getByLabelText('审查项列表')
+    expect(within(catalogList).getByText('编码规范审核')).toBeInTheDocument()
+    expect(within(catalogList).getByText('状态机审核')).toBeInTheDocument()
+    expect(within(catalogList).queryByText('变更点审查')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '清空选择' }))
+    expect(within(catalogList).getByText('没有匹配的审查项')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '取消' }))
+
+    expect(screen.getByText('尚未确定本次审查范围')).toBeInTheDocument()
+  })
+
+  it('只有完成选择回填；取消、关闭、Escape 和遮罩退出均恢复已确认草稿', async () => {
+    const user = userEvent.setup()
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await screen.findByRole('heading', { name: '创建审查任务' })
+    await user.click(screen.getByRole('button', { name: '选择' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-02 编码规范审核' }))
+    await user.click(screen.getByRole('button', { name: /DS-02.*编码规范审核/ }))
+    await user.type(screen.getByLabelText('DS-02 额外规则'), '上一次已确认规则')
+    await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
+    expect(screen.getByText('DS-02').closest('.wb-selected-item')).toHaveTextContent('已填写额外规则')
+
+    const assertConfirmedDraftRestored = async (): Promise<void> => {
+      expect(screen.getByLabelText('DS-02 额外规则')).toHaveValue('上一次已确认规则')
+      expect(screen.getByRole('checkbox', { name: '选择 DS-02 编码规范审核' })).toBeChecked()
+      expect(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' })).not.toBeChecked()
+    }
+    const changeDraft = async (): Promise<void> => {
+      await user.clear(screen.getByLabelText('DS-02 额外规则'))
+      await user.type(screen.getByLabelText('DS-02 额外规则'), '本轮未确认规则')
+      await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
+    }
+
+    let adjustButton = screen.getByRole('button', { name: '调整' })
+    await user.click(adjustButton)
+    await assertConfirmedDraftRestored()
+    await changeDraft()
+    await user.click(screen.getByRole('button', { name: '取消' }))
+
+    adjustButton = screen.getByRole('button', { name: '调整' })
+    await user.click(adjustButton)
+    await assertConfirmedDraftRestored()
+    await changeDraft()
+    await user.click(screen.getByRole('button', { name: '取消并关闭' }))
+
+    adjustButton = screen.getByRole('button', { name: '调整' })
+    await user.click(adjustButton)
+    await assertConfirmedDraftRestored()
+    await changeDraft()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(adjustButton).toHaveFocus())
+
+    adjustButton = screen.getByRole('button', { name: '调整' })
+    await user.click(adjustButton)
+    await assertConfirmedDraftRestored()
+    await changeDraft()
+    const backdrop = screen.getByRole('dialog').parentElement
+    if (!backdrop) throw new Error('选择器应存在遮罩层')
+    fireEvent.mouseDown(backdrop)
+
+    await user.click(screen.getByRole('button', { name: '调整' }))
+    await assertConfirmedDraftRestored()
+  })
+
   it('DS-01 一次显示缺失材料和错误扩展名', async () => {
     const user = userEvent.setup()
     vi.mocked(window.codeReview.selectReviewMaterialFile).mockResolvedValueOnce({
@@ -292,7 +533,7 @@ describe('ProductionReviewWorkbench', () => {
     await user.click(screen.getByRole('button', { name: '选择' }))
     await user.click(screen.getByRole('checkbox', { name: '选择 DS-01 变更点审查' }))
     await user.click(screen.getAllByRole('button', { name: '选择文件' })[0])
-    await user.click(screen.getByRole('button', { name: '确认选择（1）' }))
+    await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
 
     expect(screen.getByRole('alert')).toHaveTextContent('DS-01 产品开发需求表仅支持 .xlsx、.xls 文件')
     expect(screen.getByRole('alert')).toHaveTextContent('DS-01 产品规格书未选择')
@@ -391,7 +632,7 @@ describe('ProductionReviewWorkbench', () => {
     await user.type(screen.getByLabelText('新 revision'), 'R12')
     await user.click(screen.getByRole('button', { name: '选择' }))
     await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
-    await user.click(screen.getByRole('button', { name: '确认选择（1）' }))
+    await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
     await user.click(screen.getByRole('button', { name: '创建审查任务' }))
 
     await waitFor(() => expect(window.codeReview.preflightTask).toHaveBeenCalledWith({
@@ -628,7 +869,7 @@ describe('ProductionReviewWorkbench', () => {
     await user.type(screen.getByLabelText('新 revision'), '12')
     await user.click(screen.getByRole('button', { name: '选择' }))
     await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
-    await user.click(screen.getByRole('button', { name: '确认选择（1）' }))
+    await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
     const createButton = screen.getByRole('button', { name: '创建审查任务' })
     fireEvent.click(createButton)
     fireEvent.click(createButton)

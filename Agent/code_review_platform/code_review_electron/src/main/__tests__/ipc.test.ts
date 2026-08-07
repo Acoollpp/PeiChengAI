@@ -816,14 +816,14 @@ describe('registerIpcHandlers', () => {
     )
   })
 
-  it('通过 IPC 将 DS-01 与 DS-03 逐项数组和原始 revision 0 交给假 Codex 适配器', async () => {
+  it('通过 IPC 将三项逐项数组和原始 revision 0 交给假 Codex 适配器', async () => {
     const api = {
       createTask: vi.fn(async () => ({
         id: 'task-multi-items',
         svn_url: 'svn://repo/multi-items',
         old_revision: '0',
         new_revision: 'r12',
-        review_item_ids: ['DS-01', 'DS-03'],
+        review_item_ids: ['DS-01', 'DS-02', 'DS-03'],
         skill_name: 'bms-code-reviewer',
         status: 'created'
       })),
@@ -840,7 +840,7 @@ describe('registerIpcHandlers', () => {
     const reportPath = join(cwd, '组合审查报告.md')
     const imagesDir = join(cwd, 'images')
     const runCodex = vi.fn(async () => {
-      await writeFile(reportPath, '# DS-01 + DS-03 report\n')
+      await writeFile(reportPath, '# DS-01 + DS-02 + DS-03 report\n')
     })
     const { registerIpcHandlers } = await import('../ipc')
 
@@ -886,6 +886,7 @@ describe('registerIpcHandlers', () => {
           { field_id: 'product-spec', file_paths: ['/source/specification.pdf'] }
         ]
       },
+      { id: 'DS-02', user_extra_rules: '仅检查新增诊断代码' },
       { id: 'DS-03', user_extra_rules: '仅检查休眠唤醒状态' }
     ]
 
@@ -900,13 +901,13 @@ describe('registerIpcHandlers', () => {
     ).resolves.toMatchObject({
       taskId: 'task-multi-items',
       status: 'success',
-      reportMarkdown: '# DS-01 + DS-03 report\n'
+      reportMarkdown: '# DS-01 + DS-02 + DS-03 report\n'
     })
     expect(api.createTask).toHaveBeenCalledWith(
       'token-123',
       expect.objectContaining({
         old_revision: '0',
-        review_item_ids: ['DS-01', 'DS-03'],
+        review_item_ids: ['DS-01', 'DS-02', 'DS-03'],
         skill_name: 'bms-code-reviewer'
       })
     )
@@ -929,6 +930,12 @@ describe('registerIpcHandlers', () => {
               expect.objectContaining({ fieldId: 'product-spec' })
             ])
           }),
+          {
+            id: 'DS-02',
+            name: '编码规范审核',
+            user_extra_rules: '仅检查新增诊断代码',
+            materials: []
+          },
           {
             id: 'DS-03',
             name: '状态机审核',

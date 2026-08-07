@@ -153,6 +153,7 @@ describe('preload codeReview API', () => {
             { field_id: 'product-spec', file_paths: ['/source/specification.pdf'] }
           ]
         },
+        { id: 'DS-02', user_extra_rules: '只检查新增诊断代码' },
         { id: 'DS-03', user_extra_rules: '' }
       ]
     }

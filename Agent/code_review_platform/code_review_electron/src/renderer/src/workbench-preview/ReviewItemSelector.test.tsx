@@ -59,7 +59,7 @@ describe('ReviewItemSelector', () => {
     expect(screen.getAllByText(/二次评审修订版/).length).toBeGreaterThan(0)
     expect(onConfirm).not.toHaveBeenCalled()
 
-    await user.click(screen.getByRole('button', { name: '确认选择（1）' }))
+    await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
 
     expect(onConfirm).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -124,7 +124,7 @@ describe('ReviewItemSelector', () => {
     )
 
     const firstButton = screen.getByRole('button', { name: '取消并关闭' })
-    const lastButton = screen.getByRole('button', { name: '确认选择（0）' })
+    const lastButton = screen.getByRole('button', { name: '完成选择（0）' })
     lastButton.focus()
     await user.tab()
     expect(firstButton).toHaveFocus()
