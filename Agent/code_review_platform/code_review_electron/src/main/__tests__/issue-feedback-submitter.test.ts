@@ -13,6 +13,9 @@ import {
 import { extractReviewIssues } from '../../shared/review-issues'
 import type { ReviewTask, ReviewTaskIssue } from '../../shared/types'
 import {
+  bmsCodeReviewerHistoricalDs02ReportFixture,
+  bmsCodeReviewerHistoricalPcBmsReportFixture,
+  bmsCodeReviewerNoSeverityReportFixture,
   bmsDs03ReportFixture,
   templateOneReportFixture
 } from '../../shared/__tests__/fixtures/review-report-fixtures'
@@ -204,6 +207,92 @@ describe('submitIssueFeedback', () => {
       pdfReportName: 'DS-03_审查报告.pdf'
     })
     await expect(readFile(result.pdfPath, 'utf8')).resolves.toContain('DS-03 final feedback')
+  })
+
+  it.each([
+    {
+      name: 'PC-BMS 历史风险词',
+      markdown: bmsCodeReviewerHistoricalPcBmsReportFixture,
+      reviewItemIds: ['DS-01', 'DS-03'],
+      reportName: 'PC-BMS_历史审查报告.md',
+      headings: ['PC-BMS-001 [高]', 'PC-BMS-002 [高]'],
+      pdfMarker: 'PC-BMS historical feedback'
+    },
+    {
+      name: 'DS-02 历史编号',
+      markdown: bmsCodeReviewerHistoricalDs02ReportFixture,
+      reviewItemIds: ['DS-02'],
+      reportName: 'DS-02_历史审查报告.md',
+      headings: ['DS-02-001 [高]', 'DS-02-002 [中]', 'DS-02-003 [低]'],
+      pdfMarker: 'DS-02 historical feedback'
+    },
+    {
+      name: '最新无严重度',
+      markdown: bmsCodeReviewerNoSeverityReportFixture,
+      reviewItemIds: ['DS-01', 'DS-03'],
+      reportName: 'BMS_无严重度审查报告.md',
+      headings: ['STATE-17 休眠高风险路径', '编号-任意-42 建议路径'],
+      pdfMarker: 'BMS no severity feedback'
+    }
+  ])('$name 报告通过真实生成器写入逐项反馈版 PDF', async ({
+    markdown,
+    reviewItemIds,
+    reportName,
+    headings,
+    pdfMarker
+  }) => {
+    const { workspace, runtimePaths } = await createRuntime()
+    await mkdir(workspace, { recursive: true })
+    const issues = toServerIssues(markdown)
+    expect(issues).toHaveLength(headings.length)
+    const uploadPdfReport = vi.fn(async () =>
+      makeTask({
+        report_name: reportName,
+        feedback_submitted_at: '2026-08-09T12:00:00Z',
+        pdf_report_name: reportName.replace(/\.md$/, '.pdf')
+      })
+    )
+    let loadedHtml = ''
+    const printToPDF = vi.fn(async () => Buffer.from(`%PDF-1.4\n${pdfMarker}`))
+    const createWindow = vi.fn(() => ({
+      loadFile: vi.fn(async (path: string) => {
+        loadedHtml = await readFile(path, 'utf8')
+      }),
+      webContents: { printToPDF },
+      close: vi.fn()
+    }))
+    const generatePdf = vi.fn(
+      (reportPath: string, options?: GeneratePdfReportDependencies) =>
+        generatePdfReport(reportPath, { ...options, createWindow })
+    )
+
+    const result = await submitIssueFeedback({
+      api: {
+        readTask: vi.fn(async () =>
+          makeTask({ report_name: reportName, review_item_ids: reviewItemIds })
+        ),
+        readTaskReport: vi.fn(async () => markdown),
+        readTaskIssues: vi.fn(async () => ({
+          data: issues,
+          count: headings.length,
+          evaluated_count: headings.length,
+          feedback_submitted_at: null
+        })),
+        downloadReportAsset: vi.fn(),
+        uploadPdfReport
+      },
+      token: 'token-123',
+      taskId: 'task-1',
+      runtimePaths,
+      generatePdf
+    })
+
+    headings.forEach((heading) => expect(loadedHtml).toContain(heading))
+    expect(loadedHtml.match(/是否有效：/g)).toHaveLength(headings.length)
+    expect(loadedHtml.match(/用户反馈：/g)).toHaveLength(headings.length)
+    expect(printToPDF).toHaveBeenCalledWith({ printBackground: true, pageSize: 'A4' })
+    expect(uploadPdfReport).toHaveBeenCalledTimes(1)
+    await expect(readFile(result.pdfPath, 'utf8')).resolves.toContain(pdfMarker)
   })
 
   it('已有 BOM 报告可按服务端原偏移生成并提交最终 PDF', async () => {

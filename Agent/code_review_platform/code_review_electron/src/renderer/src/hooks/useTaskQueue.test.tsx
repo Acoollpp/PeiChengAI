@@ -406,6 +406,37 @@ describe('useTaskQueue', () => {
     )
   })
 
+  it('历史协议上传结果为 null 时不会误开逐问题反馈', async () => {
+    const deferred = createDeferred<ExecuteTaskResult>()
+    const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)
+
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
+
+    await act(async () => {
+      await result.current.submitTask(basePayload(8))
+    })
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      deferred.resolve({
+        taskId: 'task-8',
+        status: 'success',
+        reportMarkdown: '# invalid BMS report',
+        reportPath: '/tmp/invalid-bms.md',
+        feedbackProtocolVersion: null
+      })
+    })
+
+    await waitFor(() =>
+      expect(result.current.historyTasks[0]).toEqual(
+        expect.objectContaining({
+          id: 'task-8',
+          feedback_protocol_version: null
+        })
+      )
+    )
+  })
+
   it('进度事件只更新匹配 clientTaskId 的本地任务', async () => {
     const deferreds = [createDeferred<ExecuteTaskResult>(), createDeferred<ExecuteTaskResult>()]
     const executeTask = vi.fn((_: ExecuteTaskRequest) => {

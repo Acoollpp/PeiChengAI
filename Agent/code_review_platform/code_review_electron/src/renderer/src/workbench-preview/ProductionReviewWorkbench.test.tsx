@@ -17,7 +17,37 @@ const reportMarkdown = `# DS-03 状态机审核报告
 
 ### P01 [高风险] 状态恢复事件缺失
 
+**所属审查项：** DS-03 · 状态机审核
+**规则章节：** 故障恢复状态转换
+
+**涉及文件及行号：**
+
+| 文件 | 行号 | 位置说明 |
+|------|------|----------|
+| \`source/state.c\` | 42 | 状态恢复分支 |
+
 **问题描述：** 恢复分支没有发送完成事件。
+**影响风险：** 上层无法感知状态恢复完成。
+**整改建议：** 在恢复完成时发送对应事件。
+`
+
+const zeroIssueReportMarkdown = `# 代码审查报告
+
+**审查范围：**
+
+| 审查项 ID | 审查项名称 | SVN 证据模式 |
+|-----------|------------|---------------|
+| DS-03 | 状态机审核 | old_to_new_diff |
+
+## 一、审查问题
+
+本次未发现能够闭环的问题。
+
+## 二、审查覆盖
+
+### 覆盖摘要
+
+此标题不属于审查问题。
 `
 
 const createDeferred = <T,>(): {
@@ -980,7 +1010,7 @@ describe('ProductionReviewWorkbench', () => {
     expect(screen.getByText('正在准备真实工作区')).toBeInTheDocument()
   })
 
-  it('报告列表先展示真实元数据且只预读首份正文，多审查项显示 ID、名称并保留未知 ID', async () => {
+  it('同屏区分协议 1 无严重度摘要与历史严重度、历史未知摘要', async () => {
     const user = userEvent.setup()
     vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
       data: [
@@ -993,9 +1023,6 @@ describe('ProductionReviewWorkbench', () => {
           status: 'success',
           report_name: '多审查项真实报告.md',
           report_path: '/reports/multi-report.md',
-          feedback_protocol_version: 1,
-          issue_count: 1,
-          highest_issue_severity: 'high',
           finished_at: '2026-08-06T08:00:00Z'
         },
         {
@@ -1003,9 +1030,22 @@ describe('ProductionReviewWorkbench', () => {
           review_item_ids: ['DS-03'], status: 'success', report_name: '零问题报告.md',
           report_path: '/reports/zero-report.md',
           feedback_protocol_version: 1, issue_count: 0, highest_issue_severity: null
+        },
+        {
+          id: 'no-severity-report', svn_url: 'svn://server/no-severity',
+          old_revision: '121', new_revision: '122', review_item_ids: ['DS-01', 'DS-03'],
+          status: 'success', report_name: '无严重度报告.md',
+          report_path: '/reports/no-severity-report.md',
+          feedback_protocol_version: 1, issue_count: 2, highest_issue_severity: null
+        },
+        {
+          id: 'legacy-unknown-summary', svn_url: 'svn://server/legacy-unknown',
+          old_revision: '122', new_revision: '123', review_item_ids: ['DS-02'],
+          status: 'success', report_name: '历史未知摘要.md',
+          report_path: '/reports/legacy-unknown-summary.md'
         }
       ],
-      count: 2
+      count: 4
     })
 
     render(<ProductionReviewWorkbench {...productionProps} />)
@@ -1014,8 +1054,23 @@ describe('ProductionReviewWorkbench', () => {
     expect(screen.getAllByText(/DS-01 · 变更点审查/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/DS-02 · 编码规范审核/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/DS-FUTURE/).length).toBeGreaterThan(0)
-    expect(screen.getAllByText('1 个问题 · 高风险').length).toBeGreaterThan(0)
-    expect(screen.getByText('零问题报告')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getAllByText('1 个问题 · 高风险').length).toBeGreaterThan(0)
+    })
+    const zeroReportRow = screen.getByText('零问题报告').closest('article')
+    expect(zeroReportRow).not.toBeNull()
+    expect(within(zeroReportRow as HTMLElement).getByText('0 个问题')).toBeInTheDocument()
+    expect(zeroReportRow).not.toHaveTextContent('严重度未知')
+    expect(screen.queryByText(/无最高严重度/)).not.toBeInTheDocument()
+    const noSeverityReportRow = screen.getByText('无严重度报告').closest('article')
+    expect(noSeverityReportRow).not.toBeNull()
+    expect(within(noSeverityReportRow as HTMLElement).getByText('2 个问题')).toBeInTheDocument()
+    expect(noSeverityReportRow).not.toHaveTextContent('严重度未知')
+    const legacyUnknownRow = screen.getByText('历史未知摘要').closest('article')
+    expect(legacyUnknownRow).not.toBeNull()
+    expect(within(legacyUnknownRow as HTMLElement).getByText(
+      '问题数未记录 · 严重度未知'
+    )).toBeInTheDocument()
     await waitFor(() => expect(window.codeReview.readTaskReport).toHaveBeenCalledTimes(1))
     expect(window.codeReview.readTaskReport).toHaveBeenCalledWith('multi-report')
     expect(window.codeReview.readTaskReport).not.toHaveBeenCalledWith('zero-report')
@@ -1138,6 +1193,29 @@ describe('ProductionReviewWorkbench', () => {
     const parseError = await screen.findByRole('alert', { name: '报告结构解析失败' })
     expect(parseError).toHaveTextContent('不符合 bms-code-reviewer 固定模板')
     expect(screen.getByRole('heading', { name: '原始报告' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '反馈报告问题' })).toBeInTheDocument()
+  })
+
+  it('报告中心将带中文句号的固定零问题报告显示为 0 个问题', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [{
+        id: 'zero-report-punctuation', svn_url: 'svn://server/zero-punctuation',
+        old_revision: '1', new_revision: '2', review_item_ids: ['DS-03'],
+        status: 'success', feedback_protocol_version: 1, issue_count: 0,
+        highest_issue_severity: null, report_path: '/reports/zero-punctuation.md'
+      }],
+      count: 1
+    })
+    vi.mocked(window.codeReview.readTaskReport).mockResolvedValueOnce(zeroIssueReportMarkdown)
+
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: /查看报告/ }))
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/0 个问题/).length).toBeGreaterThan(0)
+    })
+    expect(screen.queryByRole('alert', { name: '报告结构解析失败' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '反馈报告问题' })).toBeInTheDocument()
   })
 

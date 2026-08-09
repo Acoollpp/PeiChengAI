@@ -14,17 +14,17 @@ vi.mock('electron', () => ({
         (contentType === 'image/png' &&
           content.length > 40 &&
           content.subarray(-8).equals(Buffer.from('49454e44ae426082', 'hex'))) ||
-          (contentType === 'image/jpeg' &&
-            content.length > 100 &&
-            content.subarray(-2).equals(Buffer.from('ffd9', 'hex'))) ||
-          (contentType === 'image/gif' && content.length > 20 && content.at(-1) === 0x3b) ||
-          (contentType === 'image/webp' &&
-            content.length > 20 &&
-            content.readUInt32LE(4) + 8 === content.length) ||
-          (contentType === 'image/svg+xml' &&
-            /<svg\b/i.test(content.toString('utf8')) &&
-            /<\/svg>/i.test(content.toString('utf8')) &&
-            !/<script\b/i.test(content.toString('utf8')))
+        (contentType === 'image/jpeg' &&
+          content.length > 100 &&
+          content.subarray(-2).equals(Buffer.from('ffd9', 'hex'))) ||
+        (contentType === 'image/gif' && content.length > 20 && content.at(-1) === 0x3b) ||
+        (contentType === 'image/webp' &&
+          content.length > 20 &&
+          content.readUInt32LE(4) + 8 === content.length) ||
+        (contentType === 'image/svg+xml' &&
+          /<svg\b/i.test(content.toString('utf8')) &&
+          /<\/svg>/i.test(content.toString('utf8')) &&
+          !/<script\b/i.test(content.toString('utf8')))
       return {
         getSize: () => (isDecodable ? { width: 1, height: 1 } : { width: 0, height: 0 }),
         isEmpty: () => !isDecodable
@@ -41,7 +41,14 @@ import {
   uploadRequirementFile,
   uploadReportFile
 } from '../report-uploader'
-import { templateOneReportFixture } from '../../shared/__tests__/fixtures/review-report-fixtures'
+import {
+  bmsCodeReviewerHistoricalDs02ReportFixture,
+  bmsCodeReviewerHistoricalPcBmsReportFixture,
+  bmsCodeReviewerNoSeverityReportFixture,
+  bmsCodeReviewerPcBmsReportFixture,
+  bmsCodeReviewerZeroIssuesFixture,
+  templateOneReportFixture
+} from '../../shared/__tests__/fixtures/review-report-fixtures'
 
 const VALID_PNG_BYTES = Buffer.from(
   '89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63f8cfc0000003010100c9fe92ef0000000049454e44ae426082',
@@ -120,6 +127,41 @@ describe('report uploader', () => {
     })
   })
 
+  it('上传带中文句号的 bms-code-reviewer 零问题报告并提交零问题快照', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-zero-issues-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, 'DS-03零问题报告.md')
+    const report = bmsCodeReviewerZeroIssuesFixture.replace(
+      '本次未发现能够闭环的问题',
+      '本次未发现能够闭环的问题。'
+    )
+    const api = {
+      uploadReport: vi.fn(async () => ({
+        feedback_protocol_version: 1,
+        issue_count: 0,
+        highest_issue_severity: null
+      }))
+    }
+    await writeFile(reportPath, report)
+
+    const uploaded = await uploadReportFile(api, 'token-123', 'task-zero', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-zero',
+      expect.objectContaining({
+        report_content: report,
+        feedback_protocol_version: 1,
+        issues: []
+      })
+    )
+    expect(uploaded).toEqual({
+      feedback_protocol_version: 1,
+      issue_count: 0,
+      highest_issue_severity: null
+    })
+  })
+
   it('发布新报告前只移除开头 UTF-8 BOM 并基于规范化正文计算偏移', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'report-uploader-bom-'))
     tempDirs.push(dir)
@@ -190,6 +232,168 @@ describe('report uploader', () => {
         ]
       })
     )
+  })
+
+  it('上传真实 PC-BMS 报告时提交三个有序问题快照', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-pc-bms-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, 'trunk_审查报告.md')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    await writeFile(reportPath, bmsCodeReviewerPcBmsReportFixture)
+
+    await uploadReportFile(api, 'token-123', 'task-pc-bms', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-pc-bms',
+      expect.objectContaining({
+        report_content: bmsCodeReviewerPcBmsReportFixture,
+        feedback_protocol_version: 1,
+        issues: [
+          expect.objectContaining({
+            issue_text:
+              'PC-BMS-001 [重要] 状态处理函数新增分支后圈复杂度继续超限并使文件平均复杂度超限',
+            description_text:
+              'BmsState_Handle 在 r2 中按公司编码规范口径计算的圈复杂度为 14，超过单函数不超过 9 的要求；文件平均复杂度约 5.33，也超过不超过 5 的要求。',
+            display_snapshot: expect.stringContaining(
+              '| `bms_state.c` | 12 | `BmsState_Handle` 状态处理入口 |'
+            ),
+            order: 0,
+            source: 'bms_code_reviewer_heading',
+            location: expect.objectContaining({
+              start_offset: bmsCodeReviewerPcBmsReportFixture.indexOf('### PC-BMS-001 [重要]')
+            })
+          }),
+          expect.objectContaining({
+            issue_text: 'PC-BMS-002 [一般] 新增分支未按 Allman 风格换行放置大括号',
+            order: 1
+          }),
+          expect.objectContaining({
+            issue_text: 'PC-BMS-003 [一般] 新增 SLEEP 状态判断缺少 else 分支',
+            order: 2
+          })
+        ],
+        assets: []
+      })
+    )
+  })
+
+  it('上传最新无严重度报告时提交任意标题的完整有序问题快照', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-no-severity-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '无严重度审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await writeFile(reportPath, bmsCodeReviewerNoSeverityReportFixture)
+
+    await uploadReportFile(api, 'token-123', 'task-no-severity', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-no-severity',
+      expect.objectContaining({
+        report_content: bmsCodeReviewerNoSeverityReportFixture,
+        feedback_protocol_version: 1,
+        issues: [
+          expect.objectContaining({
+            issue_text: 'STATE-17 休眠高风险路径仍可打开充电 MOS',
+            order: 0,
+            source: 'bms_code_reviewer_heading',
+            display_snapshot: expect.stringContaining('**材料或生成证据：**'),
+            location: expect.objectContaining({
+              start_offset: bmsCodeReviewerNoSeverityReportFixture.indexOf('### STATE-17')
+            })
+          }),
+          expect.objectContaining({
+            issue_text: '编号-任意-42 建议路径缺少故障恢复一致性校验',
+            order: 1
+          })
+        ]
+      })
+    )
+  })
+
+  it.each([
+    {
+      name: 'PC-BMS 历史风险词',
+      markdown: bmsCodeReviewerHistoricalPcBmsReportFixture,
+      expectedIssueTexts: [
+        'PC-BMS-001 [高] FAULT 分支将 RESET 判断写成赋值表达式，非 RESET 事件会隐式清除故障态',
+        'PC-BMS-002 [高] 充电超时保护只新增事件枚举，CHARGING 状态未在 1800 秒或 TIMEOUT 事件进入 FAULT'
+      ]
+    },
+    {
+      name: 'DS-02 历史编号',
+      markdown: bmsCodeReviewerHistoricalDs02ReportFixture,
+      expectedIssueTexts: [
+        'DS-02-001 [高] FAULT 分支条件由比较表达式误改为赋值表达式',
+        'DS-02-002 [中] 新增 SLEEP 状态分支的 if 缺少 else 分支',
+        'DS-02-003 [低] 新增控制语句未采用 Allman 大括号风格'
+      ]
+    }
+  ])('上传真实 $name 报告时建立完整有序问题快照', async ({ markdown, expectedIssueTexts }) => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-historical-bms-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '历史审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await writeFile(reportPath, markdown)
+
+    await uploadReportFile(api, 'token-123', 'task-historical', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-historical',
+      expect.objectContaining({
+        report_content: markdown,
+        issues: expectedIssueTexts.map((issueText, order) =>
+          expect.objectContaining({
+            issue_text: issueText,
+            order,
+            display_snapshot: expect.stringContaining(`### ${issueText}`),
+            location: expect.objectContaining({
+              start_offset: markdown.indexOf(`### ${issueText}`)
+            })
+          })
+        )
+      })
+    )
+  })
+
+  it.each([
+    {
+      name: '缺少问题描述',
+      markdown: bmsCodeReviewerNoSeverityReportFixture.replace(/^\*\*问题描述：\*\*.*\n/m, '')
+    },
+    {
+      name: '缺少代码位置表',
+      markdown: bmsCodeReviewerNoSeverityReportFixture.replace(
+        '**涉及文件及行号：**',
+        '**相关位置：**'
+      )
+    },
+    {
+      name: '混入普通三级标题',
+      markdown: bmsCodeReviewerNoSeverityReportFixture.replace(
+        '## 四、审查覆盖',
+        '### 普通说明\n\n这不是合法问题块。\n\n## 四、审查覆盖'
+      )
+    }
+  ])('结构无效 BMS 报告（$name）只上传 Markdown 且不声明反馈协议', async ({ markdown }) => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-invalid-pc-bms-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '无效历史审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    const invalidMarkdown = `${markdown}\n![不随历史上传提交](images/missing.png)\n`
+    await writeFile(reportPath, invalidMarkdown)
+
+    await uploadReportFile(api, 'token-123', 'task-invalid-pc-bms', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith('token-123', 'task-invalid-pc-bms', {
+      report_content: invalidMarkdown,
+      report_path: reportPath,
+      report_name: '无效历史审查报告.md'
+    })
   })
 
   it('按共享 CommonMark 语料识别图片并忽略转义与代码中的伪引用', async () => {
@@ -429,10 +633,7 @@ describe('report uploader', () => {
     await Promise.all(
       imagePaths.map((imagePath) => writeFile(join(dir, imagePath), VALID_PNG_BYTES))
     )
-    await writeFile(
-      reportPath,
-      imagePaths.map((imagePath) => `![证据](${imagePath})`).join('\n')
-    )
+    await writeFile(reportPath, imagePaths.map((imagePath) => `![证据](${imagePath})`).join('\n'))
 
     await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(
       '报告图片数量超过限制'

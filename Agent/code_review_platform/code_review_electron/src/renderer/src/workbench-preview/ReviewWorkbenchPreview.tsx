@@ -70,6 +70,12 @@ const severityLabels: Record<ReviewReportViewModel['highestSeverity'], string> =
 const formatIssueSummary = (report: ReviewReportViewModel): string => {
   if (report.contentStatus === 'parse_error') return '报告结构解析失败'
   if (report.issueCount === undefined) return `问题数未记录 · ${severityLabels[report.highestSeverity]}`
+  if (
+    report.feedbackProtocolVersion === 1 &&
+    (report.highestSeverity === 'none' || report.highestSeverity === 'unknown')
+  ) {
+    return `${report.issueCount} 个问题`
+  }
   return `${report.issueCount} 个问题 · ${severityLabels[report.highestSeverity]}`
 }
 

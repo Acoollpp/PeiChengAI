@@ -101,7 +101,7 @@ export interface ExecuteReviewTaskResult {
   pdfPath?: string
   pdfReportName?: string
   codexLogPath?: string
-  feedbackProtocolVersion?: number
+  feedbackProtocolVersion?: number | null
 }
 
 export interface TaskAgentApi {
@@ -143,6 +143,14 @@ const environmentErrorMessages: Record<Exclude<EnvironmentStatus, 'ready'>, stri
   missing_svn: '本机 SVN CLI 不可用，请联系管理员处理。',
   missing_skill: '本机代码审查 Skill 不可用，请联系管理员处理。',
   failed: '本机审查环境检查失败，请联系管理员处理。'
+}
+
+const feedbackProtocolVersionFromUpload = (result: unknown): number | null | undefined => {
+  if (typeof result !== 'object' || result === null || !('feedback_protocol_version' in result)) {
+    return undefined
+  }
+  const version = result.feedback_protocol_version
+  return typeof version === 'number' || version === null ? version : undefined
 }
 
 export const getEnvironmentErrorMessage = (status: Exclude<EnvironmentStatus, 'ready'>): string =>
@@ -538,12 +546,13 @@ const runExistingReviewTask = async (
 
     const reportMarkdown = await dependencies.prepareReport(workspace.reportPath)
     throwIfCancelled(input.signal)
-    await dependencies.uploadReport(
+    const uploadResult = await dependencies.uploadReport(
       input.token,
       task.id,
       workspace.reportPath,
       reportMarkdown
     )
+    const feedbackProtocolVersion = feedbackProtocolVersionFromUpload(uploadResult)
     throwIfCancelled(input.signal)
     emitStage(onProgress, task.id, input.clientTaskId, 'success', '审查完成')
     return {
@@ -552,7 +561,7 @@ const runExistingReviewTask = async (
       reportMarkdown,
       reportPath: workspace.reportPath,
       ...(workspace.codexLogPath ? { codexLogPath: workspace.codexLogPath } : {}),
-      feedbackProtocolVersion: 1
+      ...(feedbackProtocolVersion === undefined ? {} : { feedbackProtocolVersion })
     }
   } catch (error) {
     if (isCancelledError(error) || input.signal?.aborted) {

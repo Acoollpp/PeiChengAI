@@ -382,6 +382,9 @@ const renderInline = (value: string, imageDataUrls: Map<string, string>): string
 const isTableDivider = (line: string): boolean =>
   /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)
 
+const isThematicBreak = (line: string): boolean =>
+  /^[ ]{0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(line)
+
 const splitTableRow = (line: string): string[] => {
   const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '')
   const cells: string[] = []
@@ -440,6 +443,11 @@ const renderMarkdownToHtml = (markdown: string, imageDataUrls: Map<string, strin
   const lines = markdown.replaceAll('\r\n', '\n').split('\n')
   const html: string[] = []
   let index = 0
+  let lastContentIndex = lines.length - 1
+
+  while (lastContentIndex >= 0 && !lines[lastContentIndex].trim()) {
+    lastContentIndex -= 1
+  }
 
   while (index < lines.length) {
     const line = lines[index]
@@ -459,6 +467,14 @@ const renderMarkdownToHtml = (markdown: string, imageDataUrls: Map<string, strin
       }
       index += 1
       html.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`)
+      continue
+    }
+
+    if (isThematicBreak(line)) {
+      if (index < lastContentIndex) {
+        html.push('<hr>')
+      }
+      index += 1
       continue
     }
 

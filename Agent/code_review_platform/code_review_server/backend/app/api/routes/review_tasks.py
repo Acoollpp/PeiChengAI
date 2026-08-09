@@ -2,7 +2,10 @@ import json
 import logging
 import re
 import uuid
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
+from enum import Enum
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal
@@ -93,54 +96,124 @@ _FAILED_OR_ERROR_STATUSES = {
 }
 
 ReportFeedbackFilter = Literal["helpful", "not_helpful", "none"]
-_REVIEW_ISSUE_SEVERITY_RULES: tuple[
-    tuple[
-        ReviewIssueSeverity,
-        int,
-        tuple[str, ...],
-        tuple[str, ...],
-    ],
-    ...,
-] = (
-    (ReviewIssueSeverity.high, 4, ("高风险", "高"), ("高风险：", "高风险:")),
-    (ReviewIssueSeverity.medium, 3, ("中风险", "中"), ("中风险：", "中风险:")),
-    (ReviewIssueSeverity.low, 2, ("低风险", "低"), ("低风险：", "低风险:")),
-    (ReviewIssueSeverity.suggestion, 1, ("建议",), ("建议：", "建议:")),
+
+
+@dataclass(frozen=True)
+class _ReviewIssueSeverityRule:
+    severity: ReviewIssueSeverity
+    rank: int
+    canonical_label: str
+    historical_labels: tuple[str, ...]
+    legacy_prefixes: tuple[str, ...]
+
+
+class _ReviewIssueSourceConsistencyStatus(str, Enum):
+    valid = "valid"
+    invalid = "invalid"
+
+
+@dataclass(frozen=True)
+class _ReviewIssueSourceConsistencyState:
+    status: _ReviewIssueSourceConsistencyStatus
+
+    @property
+    def is_valid(self) -> bool:
+        return self.status == _ReviewIssueSourceConsistencyStatus.valid
+
+
+@dataclass(frozen=True)
+class _EffectiveReviewTaskIssues:
+    source_consistency_state: _ReviewIssueSourceConsistencyState
+    issues: tuple[ReviewTaskIssue, ...]
+
+
+_REVIEW_ISSUE_SEVERITY_RULES = (
+    _ReviewIssueSeverityRule(
+        severity=ReviewIssueSeverity.high,
+        rank=4,
+        canonical_label="严重",
+        historical_labels=("高风险", "高"),
+        legacy_prefixes=("高风险：", "高风险:"),
+    ),
+    _ReviewIssueSeverityRule(
+        severity=ReviewIssueSeverity.medium,
+        rank=3,
+        canonical_label="重要",
+        historical_labels=("中风险", "中"),
+        legacy_prefixes=("中风险：", "中风险:"),
+    ),
+    _ReviewIssueSeverityRule(
+        severity=ReviewIssueSeverity.low,
+        rank=2,
+        canonical_label="一般",
+        historical_labels=("低风险", "低"),
+        legacy_prefixes=("低风险：", "低风险:"),
+    ),
+    _ReviewIssueSeverityRule(
+        severity=ReviewIssueSeverity.suggestion,
+        rank=1,
+        canonical_label="建议",
+        historical_labels=("建议",),
+        legacy_prefixes=("建议：", "建议:"),
+    ),
 )
 
 
+def _unique_labels(labels: Sequence[str]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(labels))
+
+
 def _numbered_issue_severity_pattern(
-    labels: tuple[str, ...], *, postgres: bool
+    rule: _ReviewIssueSeverityRule,
+    *,
+    postgres: bool,
 ) -> str:
-    label_pattern = "|".join(re.escape(label) for label in labels)
+    historical_label_pattern = "|".join(
+        re.escape(label) for label in rule.historical_labels
+    )
+    pc_bms_label_pattern = "|".join(
+        re.escape(label)
+        for label in _unique_labels((rule.canonical_label, *rule.historical_labels))
+    )
     if postgres:
         return (
-            r"^(P[0-9]+|CR-[0-9]+)[[:space:]]+\[("
-            f"{label_pattern}"
-            r")\][[:space:]]+"
+            r"^(([0-9]+[.)、．]|[一二三四五六七八九十百]+[、.．)])"
+            r"[[:space:]]*)?((P[0-9]+|CR-[0-9]+)[[:space:]]+\[("
+            f"{historical_label_pattern}"
+            r")\]|PC-BMS-[0-9]+[[:space:]]+\[("
+            f"{pc_bms_label_pattern}"
+            r")\]|DS-02-[0-9]+[[:space:]]+\[("
+            f"{historical_label_pattern}"
+            r")\])[[:space:]]+[^[:space:]]"
         )
-    return rf"^(?:P\d+|CR-\d+)\s+\[(?:{label_pattern})\]\s+"
+    return (
+        r"^(?:(?:\d+[.)、．]|[一二三四五六七八九十百]+[、.．)])\s*)?"
+        rf"(?:(?:P\d+|CR-\d+)\s+\[(?:{historical_label_pattern})\]"
+        rf"|PC-BMS-\d+\s+\[(?:{pc_bms_label_pattern})\]"
+        rf"|DS-02-\d+\s+\[(?:{historical_label_pattern})\])\s+\S"
+    )
 
 
 def _review_issue_severity_sql_condition(
     issue_text: Any,
-    labels: tuple[str, ...],
-    legacy_prefixes: tuple[str, ...],
+    rule: _ReviewIssueSeverityRule,
 ) -> ColumnElement[bool]:
     return or_(
-        issue_text.op("~")(_numbered_issue_severity_pattern(labels, postgres=True)),
-        *(issue_text.startswith(prefix) for prefix in legacy_prefixes),
+        issue_text.op("~")(_numbered_issue_severity_pattern(rule, postgres=True)),
+        *(issue_text.startswith(prefix) for prefix in rule.legacy_prefixes),
     )
 
 
 def _review_issue_text_matches_severity(
     issue_text: str,
-    labels: tuple[str, ...],
-    legacy_prefixes: tuple[str, ...],
+    rule: _ReviewIssueSeverityRule,
 ) -> bool:
     return bool(
-        re.match(_numbered_issue_severity_pattern(labels, postgres=False), issue_text)
-    ) or issue_text.startswith(legacy_prefixes)
+        re.match(
+            _numbered_issue_severity_pattern(rule, postgres=False),
+            issue_text,
+        )
+    ) or issue_text.startswith(rule.legacy_prefixes)
 
 
 def _utcnow() -> datetime:
@@ -399,7 +472,12 @@ def _get_task_for_write_locked(
 
 
 def _get_task_for_issue_feedback_write_locked(
-    *, session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    invalid_source_status_code: int = 409,
+    invalid_source_detail: str = "issue_feedback_not_supported",
 ) -> ReviewTask:
     task = session.exec(
         select(ReviewTask)
@@ -413,6 +491,15 @@ def _get_task_for_issue_feedback_write_locked(
         raise HTTPException(status_code=403, detail="只有任务提交人可以填写问题反馈")
     if task.feedback_protocol_version != 1:
         raise HTTPException(status_code=409, detail="issue_feedback_not_supported")
+    source_consistency_state = _review_issue_source_consistency_states_by_task_ids(
+        session=session,
+        task_ids=[task.id],
+    )[task.id]
+    if not source_consistency_state.is_valid:
+        raise HTTPException(
+            status_code=invalid_source_status_code,
+            detail=invalid_source_detail,
+        )
     if task.feedback_submitted_at is not None:
         raise HTTPException(status_code=409, detail="issue_feedback_submitted")
     return task
@@ -481,18 +568,26 @@ def _issue_progress_by_task_ids(
 ) -> dict[uuid.UUID, tuple[int, int, bool, ReviewIssueSeverity | None]]:
     if not task_ids:
         return {}
+    source_consistency_states = _review_issue_source_consistency_states_by_task_ids(
+        session=session,
+        task_ids=task_ids,
+    )
+    valid_task_ids = [
+        task_id
+        for task_id, state in source_consistency_states.items()
+        if state.is_valid
+    ]
+    if not valid_task_ids:
+        return {}
+
     issue_text = col(ReviewTaskIssue.issue_text)
     severity_rank = case(
         *(
             (
-                _review_issue_severity_sql_condition(
-                    issue_text,
-                    labels,
-                    legacy_prefixes,
-                ),
-                rank,
+                _review_issue_severity_sql_condition(issue_text, rule),
+                rule.rank,
             )
-            for _severity, rank, labels, legacy_prefixes in _REVIEW_ISSUE_SEVERITY_RULES
+            for rule in _REVIEW_ISSUE_SEVERITY_RULES
         ),
         else_=0,
     )
@@ -505,7 +600,7 @@ def _issue_progress_by_task_ids(
             func.count(col(ReviewTaskIssue.feedback_text)),
             func.max(severity_rank),
         )
-        .where(col(ReviewTaskIssue.task_id).in_(task_ids))
+        .where(col(ReviewTaskIssue.task_id).in_(valid_task_ids))
         .group_by(col(ReviewTaskIssue.task_id))
     ).all()
     return {
@@ -515,40 +610,99 @@ def _issue_progress_by_task_ids(
             int(evaluated_issue_count) > 0 or int(feedback_text_count) > 0,
             _review_issue_severity_from_rank(int(highest_severity_rank)),
         )
-        for task_id,
-        issue_count,
-        evaluated_issue_count,
-        feedback_text_count,
-        highest_severity_rank in rows
+        for task_id, issue_count, evaluated_issue_count, feedback_text_count, highest_severity_rank in rows
     }
 
 
 def _review_issue_severity_from_rank(rank: int) -> ReviewIssueSeverity | None:
     return next(
-        (
-            severity
-            for severity, severity_rank, _labels, _legacy_prefixes in (
-                _REVIEW_ISSUE_SEVERITY_RULES
-            )
-            if severity_rank == rank
-        ),
+        (rule.severity for rule in _REVIEW_ISSUE_SEVERITY_RULES if rule.rank == rank),
         None,
+    )
+
+
+def _has_consistent_review_issue_sources(
+    sources: Sequence[str],
+) -> bool:
+    # Electron 负责解析 Markdown；服务端仅防止 BMS 与旧模板快照混存。
+    bms_issue_count = sum(source == "bms_code_reviewer_heading" for source in sources)
+    return bms_issue_count == 0 or bms_issue_count == len(sources)
+
+
+def _review_issue_source_consistency_states_by_task_ids(
+    *,
+    session: SessionDep,
+    task_ids: Sequence[uuid.UUID],
+) -> dict[uuid.UUID, _ReviewIssueSourceConsistencyState]:
+    unique_task_ids = list(dict.fromkeys(task_ids))
+    if not unique_task_ids:
+        return {}
+    sources_by_task_id: dict[uuid.UUID, list[str]] = {
+        task_id: [] for task_id in unique_task_ids
+    }
+    rows = session.exec(
+        select(
+            ReviewTaskIssue.task_id,
+            ReviewTaskIssue.source,
+            func.count(col(ReviewTaskIssue.id)),
+        )
+        .where(col(ReviewTaskIssue.task_id).in_(unique_task_ids))
+        .group_by(col(ReviewTaskIssue.task_id), col(ReviewTaskIssue.source))
+    ).all()
+    for task_id, source, _issue_count in rows:
+        sources_by_task_id[task_id].append(source)
+    return {
+        task_id: _ReviewIssueSourceConsistencyState(
+            status=(
+                _ReviewIssueSourceConsistencyStatus.valid
+                if _has_consistent_review_issue_sources(sources)
+                else _ReviewIssueSourceConsistencyStatus.invalid
+            )
+        )
+        for task_id, sources in sources_by_task_id.items()
+    }
+
+
+def _read_effective_review_task_issues(
+    *,
+    session: SessionDep,
+    task_id: uuid.UUID,
+) -> _EffectiveReviewTaskIssues:
+    source_consistency_state = _review_issue_source_consistency_states_by_task_ids(
+        session=session,
+        task_ids=[task_id],
+    )[task_id]
+    if not source_consistency_state.is_valid:
+        return _EffectiveReviewTaskIssues(
+            source_consistency_state=source_consistency_state,
+            issues=(),
+        )
+    issues = tuple(
+        session.exec(
+            select(ReviewTaskIssue)
+            .where(col(ReviewTaskIssue.task_id) == task_id)
+            .order_by(col(ReviewTaskIssue.order))
+        ).all()
+    )
+    return _EffectiveReviewTaskIssues(
+        source_consistency_state=source_consistency_state,
+        issues=issues,
     )
 
 
 def _highest_issue_severity(
     issues: list[ReviewTaskIssueSnapshotCreate],
 ) -> ReviewIssueSeverity | None:
-    for severity, _rank, labels, legacy_prefixes in _REVIEW_ISSUE_SEVERITY_RULES:
+    if not _has_consistent_review_issue_sources(
+        tuple(issue.source for issue in issues)
+    ):
+        return None
+    for rule in _REVIEW_ISSUE_SEVERITY_RULES:
         if any(
-            _review_issue_text_matches_severity(
-                issue.issue_text,
-                labels,
-                legacy_prefixes,
-            )
+            _review_issue_text_matches_severity(issue.issue_text, rule)
             for issue in issues
         ):
-            return severity
+            return rule.severity
     return None
 
 
@@ -646,7 +800,9 @@ def _parse_asset_paths(raw_asset_paths: str | None) -> list[str]:
 def create_review_task(
     *, session: SessionDep, current_user: CurrentUser, task_in: ReviewTaskCreate
 ) -> Any:
-    normalized_review_item_ids = [item_id.strip() for item_id in task_in.review_item_ids]
+    normalized_review_item_ids = [
+        item_id.strip() for item_id in task_in.review_item_ids
+    ]
     if any(not item_id or len(item_id) > 64 for item_id in normalized_review_item_ids):
         raise HTTPException(status_code=400, detail="审查项 ID 无效")
     if len(set(normalized_review_item_ids)) != len(normalized_review_item_ids):
@@ -775,20 +931,38 @@ def export_review_task_issue_feedback(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> StreamingResponse:
-    rows = session.exec(
-        select(ReviewTask, User, ReviewTaskIssue)
-        .join(User, ReviewTask.user_id == User.id)
-        .join(ReviewTaskIssue, ReviewTaskIssue.task_id == ReviewTask.id)
-        .where(
-            *_task_read_scope_filters(session=session, current_user=current_user),
-            ReviewTask.feedback_protocol_version == 1,
-        )
-        .order_by(
-            col(ReviewTask.created_at).desc(),
-            col(ReviewTask.id),
-            col(ReviewTaskIssue.order),
-        )
-    ).all()
+    task_filters = [
+        *_task_read_scope_filters(session=session, current_user=current_user),
+        ReviewTask.feedback_protocol_version == 1,
+    ]
+    task_ids = list(session.exec(select(ReviewTask.id).where(*task_filters)).all())
+    source_consistency_states = _review_issue_source_consistency_states_by_task_ids(
+        session=session,
+        task_ids=task_ids,
+    )
+    valid_task_ids = [
+        task_id
+        for task_id, state in source_consistency_states.items()
+        if state.is_valid
+    ]
+    rows = (
+        session.exec(
+            select(ReviewTask, User, ReviewTaskIssue)
+            .join(User, ReviewTask.user_id == User.id)
+            .join(ReviewTaskIssue, ReviewTaskIssue.task_id == ReviewTask.id)
+            .where(
+                *task_filters,
+                col(ReviewTask.id).in_(valid_task_ids),
+            )
+            .order_by(
+                col(ReviewTask.created_at).desc(),
+                col(ReviewTask.id),
+                col(ReviewTaskIssue.order),
+            )
+        ).all()
+        if valid_task_ids
+        else []
+    )
 
     workbook = Workbook()
     sheet = workbook.active
@@ -1008,10 +1182,13 @@ def read_review_task(
             ReviewTaskReportFeedback.task_id == task.id
         )
     ).first()
-    issue_count, evaluated_issue_count, has_issue_feedback_draft, highest_issue_severity = (
-        _issue_progress_by_task_ids(session=session, task_ids=[task.id]).get(
-            task.id, (0, 0, False, None)
-        )
+    (
+        issue_count,
+        evaluated_issue_count,
+        has_issue_feedback_draft,
+        highest_issue_severity,
+    ) = _issue_progress_by_task_ids(session=session, task_ids=[task.id]).get(
+        task.id, (0, 0, False, None)
     )
     return _task_public(
         task,
@@ -1140,6 +1317,9 @@ async def upload_review_task_report(
     issue_snapshots = _parse_issue_snapshots(issues) if issues is not None else []
     if feedback_protocol_version is not None and feedback_protocol_version != 1:
         raise HTTPException(status_code=400, detail="不支持的问题反馈协议版本")
+    has_consistent_issue_sources = _has_consistent_review_issue_sources(
+        tuple(issue.source for issue in issue_snapshots)
+    )
     if task.feedback_protocol_version is not None or (
         feedback_protocol_version is not None and task.report_path is not None
     ):
@@ -1207,7 +1387,7 @@ async def upload_review_task_report(
     return _task_public(
         task,
         session.get(User, task.user_id),
-        issue_count=len(issue_snapshots),
+        issue_count=len(issue_snapshots) if has_consistent_issue_sources else 0,
         highest_issue_severity=_highest_issue_severity(issue_snapshots),
     )
 
@@ -1219,13 +1399,11 @@ def read_review_task_issues(
     task = _get_task_for_read(
         session=session, current_user=current_user, task_id=task_id
     )
-    issues = list(
-        session.exec(
-            select(ReviewTaskIssue)
-            .where(col(ReviewTaskIssue.task_id) == task.id)
-            .order_by(col(ReviewTaskIssue.order))
-        ).all()
+    effective_issues = _read_effective_review_task_issues(
+        session=session,
+        task_id=task.id,
     )
+    issues = list(effective_issues.issues)
     return ReviewTaskIssuesPublic(
         data=issues,
         count=len(issues),
@@ -1250,6 +1428,8 @@ def update_review_task_issue_feedback_draft(
         session=session,
         current_user=current_user,
         task_id=task_id,
+        invalid_source_status_code=404,
+        invalid_source_detail="Review task issue not found",
     )
     issue = session.exec(
         select(ReviewTaskIssue)
@@ -1318,13 +1498,13 @@ async def upload_review_task_pdf_report(
         )
     )
     if is_issue_feedback_submission:
-        issues = list(
-            session.exec(
-                select(ReviewTaskIssue)
-                .where(col(ReviewTaskIssue.task_id) == task.id)
-                .order_by(col(ReviewTaskIssue.order))
-            ).all()
+        effective_issues = _read_effective_review_task_issues(
+            session=session,
+            task_id=task.id,
         )
+        if not effective_issues.source_consistency_state.is_valid:
+            raise HTTPException(status_code=409, detail="issue_feedback_not_supported")
+        issues = effective_issues.issues
         if any(issue.helpful is None for issue in issues):
             raise HTTPException(status_code=409, detail="issue_feedback_incomplete")
         if any(

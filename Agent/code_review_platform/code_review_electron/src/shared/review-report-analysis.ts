@@ -51,7 +51,11 @@ const severityFromIssueText = (issueText: string): ReviewIssueSeverity => {
 const highestSeverityFromIssues = (issues: ReviewIssueSnapshot[]): ReportSummarySeverity => {
   if (issues.length === 0) return 'none'
   return issues.reduce<ReviewIssueSeverity>((highest, issue) => {
-    const severity = issue.severity ?? severityFromIssueText(issue.issueText)
+    const severity = issue.severity ?? (
+      issue.source === 'bms_code_reviewer_heading'
+        ? 'unknown'
+        : severityFromIssueText(issue.issueText)
+    )
     return severityOrder[severity] > severityOrder[highest] ? severity : highest
   }, 'unknown')
 }
@@ -85,7 +89,7 @@ export const summarizeReviewReport = (
     issueCount: input.issueCount,
     highestSeverity,
     summary: highestSeverity === 'unknown'
-      ? `报告包含 ${input.issueCount} 个审查问题，最高严重度未记录。`
+      ? `报告包含 ${input.issueCount} 个审查问题。`
       : `报告包含 ${input.issueCount} 个审查问题，最高严重度为${severityLabels[highestSeverity]}。`
   }
 }
@@ -134,7 +138,7 @@ export const analyzeLoadedReviewReport = (
       issueCount: extraction.issues.length,
       highestSeverity,
       summary: highestSeverity === 'unknown'
-        ? `历史报告解析到 ${extraction.issues.length} 个问题，严重度未记录。`
+        ? `历史报告解析到 ${extraction.issues.length} 个问题。`
         : `历史报告解析到 ${extraction.issues.length} 个问题，最高严重度为${severityLabels[highestSeverity]}。`,
       status: 'ready',
       issues: extraction.issues
@@ -148,7 +152,7 @@ export const analyzeLoadedReviewReport = (
     summary: extraction.issues.length === 0
       ? '本次审查未发现能够闭环的问题。'
       : highestSeverity === 'unknown'
-        ? `报告包含 ${extraction.issues.length} 个审查问题，最高严重度未记录。`
+        ? `报告包含 ${extraction.issues.length} 个审查问题。`
         : `报告包含 ${extraction.issues.length} 个审查问题，最高严重度为${severityLabels[highestSeverity]}。`,
     status: 'ready',
     issues: extraction.issues

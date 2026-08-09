@@ -6,6 +6,21 @@ export const bmsDs03ReportFixture = readFileSync(
   'utf8'
 )
 
+export const bmsCodeReviewerPcBmsReportFixture = readFileSync(
+  fileURLToPath(new URL('./bms-code-reviewer-pc-bms-report.md', import.meta.url)),
+  'utf8'
+)
+
+export const bmsCodeReviewerHistoricalPcBmsReportFixture = readFileSync(
+  fileURLToPath(new URL('./bms-code-reviewer-historical-pc-bms-report.md', import.meta.url)),
+  'utf8'
+)
+
+export const bmsCodeReviewerHistoricalDs02ReportFixture = readFileSync(
+  fileURLToPath(new URL('./bms-code-reviewer-historical-ds02-report.md', import.meta.url)),
+  'utf8'
+)
+
 export const bmsCodeReviewerReportWithIssuesFixture = readFileSync(
   fileURLToPath(new URL('./bms-code-reviewer-report-with-issues.md', import.meta.url)),
   'utf8'
@@ -18,6 +33,16 @@ export const bmsCodeReviewerReportRealVariantsFixture = readFileSync(
 
 export const bmsCodeReviewerZeroIssuesFixture = readFileSync(
   fileURLToPath(new URL('./bms-code-reviewer-report-zero-issues.md', import.meta.url)),
+  'utf8'
+)
+
+export const bmsCodeReviewerNoSeverityReportFixture = readFileSync(
+  fileURLToPath(new URL('./bms-code-reviewer-no-severity-report.md', import.meta.url)),
+  'utf8'
+)
+
+export const bmsCodeReviewerNoSeverityZeroReportFixture = readFileSync(
+  fileURLToPath(new URL('./bms-code-reviewer-no-severity-zero-report.md', import.meta.url)),
   'utf8'
 )
 
