@@ -4,6 +4,7 @@ import { composeIssueFeedbackMarkdown } from '../issue-feedback-markdown'
 import { extractReviewIssues } from '../review-issues'
 import type { ReviewTaskIssue } from '../types'
 import {
+  bmsCodeReviewerPcBmsReportFixture,
   bmsCodeReviewerReportWithIssuesFixture,
   templateOneReportFixture,
   templateTwoConclusionReportFixture,
@@ -73,6 +74,35 @@ describe('composeIssueFeedbackMarkdown', () => {
     expect(secondFeedbackOffset).toBeGreaterThan(secondIssueOffset)
     expect(secondFeedbackOffset).toBeLessThan(coverageOffset)
     expect(composed.match(/> 是否有效：/g)).toHaveLength(2)
+  })
+
+  it('PC-BMS 问题快照可逐项插入反馈且保持固定报告边界', () => {
+    const original = bmsCodeReviewerPcBmsReportFixture
+    const issues = [
+      toServerIssue(original, 0, true, '复杂度问题已拆分'),
+      toServerIssue(original, 1, false, '该分支由格式化工具生成'),
+      toServerIssue(original, 2, true, '已补充显式 else')
+    ]
+
+    const composed = composeIssueFeedbackMarkdown(original, issues)
+    const feedbackOffsets = [
+      composed.indexOf('复杂度问题已拆分'),
+      composed.indexOf('该分支由格式化工具生成'),
+      composed.indexOf('已补充显式 else')
+    ]
+    const issueOffsets = [
+      composed.indexOf('### PC-BMS-001 [重要]'),
+      composed.indexOf('### PC-BMS-002 [一般]'),
+      composed.indexOf('### PC-BMS-003 [一般]')
+    ]
+
+    expect(feedbackOffsets[0]).toBeGreaterThan(issueOffsets[0])
+    expect(feedbackOffsets[0]).toBeLessThan(issueOffsets[1])
+    expect(feedbackOffsets[1]).toBeGreaterThan(issueOffsets[1])
+    expect(feedbackOffsets[1]).toBeLessThan(issueOffsets[2])
+    expect(feedbackOffsets[2]).toBeGreaterThan(issueOffsets[2])
+    expect(composed.match(/> 是否有效：/g)).toHaveLength(3)
+    expect(original).toBe(bmsCodeReviewerPcBmsReportFixture)
   })
 
   it('CRLF 报告保持问题快照定位并生成反馈 Markdown', () => {

@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { extractDetailedHeadingOptions, MarkdownPreview } from './MarkdownPreview'
+import bmsCodeReviewerPcBmsReportFixture from '../../../shared/__tests__/fixtures/bms-code-reviewer-pc-bms-report.md?raw'
 
 afterEach(() => {
   cleanup()
@@ -273,6 +274,29 @@ describe('MarkdownPreview', () => {
       'data-report-anchor-id',
       'report-option-4'
     )
+  })
+
+  it('为真实 PC-BMS 报告渲染三个逐问题反馈锚点', () => {
+    const options = extractDetailedHeadingOptions(bmsCodeReviewerPcBmsReportFixture)
+    expect(options.map((option) => option.text)).toEqual([
+      'PC-BMS-001 [重要] 状态处理函数新增分支后圈复杂度继续超限并使文件平均复杂度超限',
+      'PC-BMS-002 [一般] 新增分支未按 Allman 风格换行放置大括号',
+      'PC-BMS-003 [一般] 新增 SLEEP 状态判断缺少 else 分支'
+    ])
+
+    render(
+      <MarkdownPreview
+        markdown={bmsCodeReviewerPcBmsReportFixture}
+        activeFeedbackAnchorId={options[1]?.anchorId}
+      />
+    )
+
+    const headings = screen.getAllByRole('heading', { name: /PC-BMS-00[1-3]/ })
+    expect(headings).toHaveLength(3)
+    expect(headings.map((heading) => heading.getAttribute('data-report-anchor-id'))).toEqual(
+      options.map((option) => option.anchorId)
+    )
+    expect(headings[1]).toHaveClass('report-anchor-highlight')
   })
 
   it('模板一激活问题时连续高亮标题到问题边界内的全部内容', async () => {

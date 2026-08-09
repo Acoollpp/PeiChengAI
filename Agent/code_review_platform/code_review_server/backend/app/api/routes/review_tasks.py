@@ -99,47 +99,96 @@ _REVIEW_ISSUE_SEVERITY_RULES: tuple[
         int,
         tuple[str, ...],
         tuple[str, ...],
+        tuple[str, ...],
     ],
     ...,
 ] = (
-    (ReviewIssueSeverity.high, 4, ("高风险", "高"), ("高风险：", "高风险:")),
-    (ReviewIssueSeverity.medium, 3, ("中风险", "中"), ("中风险：", "中风险:")),
-    (ReviewIssueSeverity.low, 2, ("低风险", "低"), ("低风险：", "低风险:")),
-    (ReviewIssueSeverity.suggestion, 1, ("建议",), ("建议：", "建议:")),
+    (
+        ReviewIssueSeverity.high,
+        4,
+        ("高风险", "高"),
+        ("严重",),
+        ("高风险：", "高风险:"),
+    ),
+    (
+        ReviewIssueSeverity.medium,
+        3,
+        ("中风险", "中"),
+        ("重要",),
+        ("中风险：", "中风险:"),
+    ),
+    (
+        ReviewIssueSeverity.low,
+        2,
+        ("低风险", "低"),
+        ("一般",),
+        ("低风险：", "低风险:"),
+    ),
+    (
+        ReviewIssueSeverity.suggestion,
+        1,
+        ("建议",),
+        ("建议",),
+        ("建议：", "建议:"),
+    ),
 )
 
 
 def _numbered_issue_severity_pattern(
-    labels: tuple[str, ...], *, postgres: bool
+    existing_labels: tuple[str, ...],
+    pc_bms_labels: tuple[str, ...],
+    *,
+    postgres: bool,
 ) -> str:
-    label_pattern = "|".join(re.escape(label) for label in labels)
+    existing_label_pattern = "|".join(re.escape(label) for label in existing_labels)
+    pc_bms_label_pattern = "|".join(re.escape(label) for label in pc_bms_labels)
     if postgres:
         return (
-            r"^(P[0-9]+|CR-[0-9]+)[[:space:]]+\[("
-            f"{label_pattern}"
-            r")\][[:space:]]+"
+            r"^((P[0-9]+|CR-[0-9]+)[[:space:]]+\[("
+            f"{existing_label_pattern}"
+            r")\]|PC-BMS-[0-9]+[[:space:]]+\[("
+            f"{pc_bms_label_pattern}"
+            r")\])[[:space:]]+"
         )
-    return rf"^(?:P\d+|CR-\d+)\s+\[(?:{label_pattern})\]\s+"
+    return (
+        rf"^(?:(?:P\d+|CR-\d+)\s+\[(?:{existing_label_pattern})\]"
+        rf"|PC-BMS-\d+\s+\[(?:{pc_bms_label_pattern})\])\s+"
+    )
 
 
 def _review_issue_severity_sql_condition(
     issue_text: Any,
-    labels: tuple[str, ...],
+    existing_labels: tuple[str, ...],
+    pc_bms_labels: tuple[str, ...],
     legacy_prefixes: tuple[str, ...],
 ) -> ColumnElement[bool]:
     return or_(
-        issue_text.op("~")(_numbered_issue_severity_pattern(labels, postgres=True)),
+        issue_text.op("~")(
+            _numbered_issue_severity_pattern(
+                existing_labels,
+                pc_bms_labels,
+                postgres=True,
+            )
+        ),
         *(issue_text.startswith(prefix) for prefix in legacy_prefixes),
     )
 
 
 def _review_issue_text_matches_severity(
     issue_text: str,
-    labels: tuple[str, ...],
+    existing_labels: tuple[str, ...],
+    pc_bms_labels: tuple[str, ...],
     legacy_prefixes: tuple[str, ...],
 ) -> bool:
     return bool(
-        re.match(_numbered_issue_severity_pattern(labels, postgres=False), issue_text)
+        re.match(
+            _numbered_issue_severity_pattern(
+                existing_labels,
+                pc_bms_labels,
+                postgres=False,
+            ),
+            issue_text,
+        )
     ) or issue_text.startswith(legacy_prefixes)
 
 
@@ -487,12 +536,15 @@ def _issue_progress_by_task_ids(
             (
                 _review_issue_severity_sql_condition(
                     issue_text,
-                    labels,
+                    existing_labels,
+                    pc_bms_labels,
                     legacy_prefixes,
                 ),
                 rank,
             )
-            for _severity, rank, labels, legacy_prefixes in _REVIEW_ISSUE_SEVERITY_RULES
+            for _severity, rank, existing_labels, pc_bms_labels, legacy_prefixes in (
+                _REVIEW_ISSUE_SEVERITY_RULES
+            )
         ),
         else_=0,
     )
@@ -527,9 +579,13 @@ def _review_issue_severity_from_rank(rank: int) -> ReviewIssueSeverity | None:
     return next(
         (
             severity
-            for severity, severity_rank, _labels, _legacy_prefixes in (
-                _REVIEW_ISSUE_SEVERITY_RULES
-            )
+            for (
+                severity,
+                severity_rank,
+                _existing_labels,
+                _pc_bms_labels,
+                _legacy_prefixes,
+            ) in _REVIEW_ISSUE_SEVERITY_RULES
             if severity_rank == rank
         ),
         None,
@@ -539,11 +595,18 @@ def _review_issue_severity_from_rank(rank: int) -> ReviewIssueSeverity | None:
 def _highest_issue_severity(
     issues: list[ReviewTaskIssueSnapshotCreate],
 ) -> ReviewIssueSeverity | None:
-    for severity, _rank, labels, legacy_prefixes in _REVIEW_ISSUE_SEVERITY_RULES:
+    for (
+        severity,
+        _rank,
+        existing_labels,
+        pc_bms_labels,
+        legacy_prefixes,
+    ) in _REVIEW_ISSUE_SEVERITY_RULES:
         if any(
             _review_issue_text_matches_severity(
                 issue.issue_text,
-                labels,
+                existing_labels,
+                pc_bms_labels,
                 legacy_prefixes,
             )
             for issue in issues

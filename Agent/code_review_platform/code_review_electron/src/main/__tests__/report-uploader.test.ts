@@ -41,7 +41,10 @@ import {
   uploadRequirementFile,
   uploadReportFile
 } from '../report-uploader'
-import { templateOneReportFixture } from '../../shared/__tests__/fixtures/review-report-fixtures'
+import {
+  bmsCodeReviewerPcBmsReportFixture,
+  templateOneReportFixture
+} from '../../shared/__tests__/fixtures/review-report-fixtures'
 
 const VALID_PNG_BYTES = Buffer.from(
   '89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63f8cfc0000003010100c9fe92ef0000000049454e44ae426082',
@@ -188,6 +191,54 @@ describe('report uploader', () => {
             content_type: 'image/png'
           }
         ]
+      })
+    )
+  })
+
+  it('上传真实 PC-BMS 报告时提交三个有序问题快照', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-pc-bms-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, 'trunk_审查报告.md')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    await writeFile(reportPath, bmsCodeReviewerPcBmsReportFixture)
+
+    await uploadReportFile(api, 'token-123', 'task-pc-bms', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-pc-bms',
+      expect.objectContaining({
+        report_content: bmsCodeReviewerPcBmsReportFixture,
+        feedback_protocol_version: 1,
+        issues: [
+          expect.objectContaining({
+            issue_text:
+              'PC-BMS-001 [重要] 状态处理函数新增分支后圈复杂度继续超限并使文件平均复杂度超限',
+            description_text:
+              'BmsState_Handle 在 r2 中按公司编码规范口径计算的圈复杂度为 14，超过单函数不超过 9 的要求；文件平均复杂度约 5.33，也超过不超过 5 的要求。',
+            display_snapshot: expect.stringContaining(
+              '| `bms_state.c` | 12 | `BmsState_Handle` 状态处理入口 |'
+            ),
+            order: 0,
+            source: 'bms_code_reviewer_heading',
+            location: expect.objectContaining({
+              start_offset: bmsCodeReviewerPcBmsReportFixture.indexOf(
+                '### PC-BMS-001 [重要]'
+              )
+            })
+          }),
+          expect.objectContaining({
+            issue_text: 'PC-BMS-002 [一般] 新增分支未按 Allman 风格换行放置大括号',
+            order: 1
+          }),
+          expect.objectContaining({
+            issue_text: 'PC-BMS-003 [一般] 新增 SLEEP 状态判断缺少 else 分支',
+            order: 2
+          })
+        ],
+        assets: []
       })
     )
   })

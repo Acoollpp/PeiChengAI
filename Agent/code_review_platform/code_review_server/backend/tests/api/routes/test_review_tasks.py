@@ -799,6 +799,13 @@ def test_新协议上传后返回有序问题快照和反馈进度(
         ("CR-004 [中] 真实服务端固定模板问题", "medium"),
         ("CR-007 [低] 真实服务端固定模板问题", "low"),
         ("CR-004 [中] 枚举值 [高] 未处理", "medium"),
+        ("PC-BMS-001 [严重] 当前 Skill 固定模板问题", "high"),
+        ("PC-BMS-002 [重要] 当前 Skill 固定模板问题", "medium"),
+        ("PC-BMS-003 [一般] 当前 Skill 固定模板问题", "low"),
+        ("PC-BMS-004 [建议] 当前 Skill 固定模板问题", "suggestion"),
+        ("P01 [重要] 错误交叉组合", None),
+        ("CR-001 [严重] 错误交叉组合", None),
+        ("PC-BMS-001 [高] 错误交叉组合", None),
         ("高风险：旧模板问题", "high"),
         ("中风险：旧模板问题", "medium"),
         ("中风险：正文提到高风险：但标题仍为中风险", "medium"),
@@ -812,7 +819,7 @@ def test_列表和详情聚合新协议问题快照的最高严重度(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     issue_text: str,
-    expected_severity: str,
+    expected_severity: str | None,
 ) -> None:
     monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
     task = _create_review_task(client, normal_user_token_headers)

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { extractReviewIssues, inspectReviewIssues } from '../review-issues'
 import { REVIEW_TEMPLATE_PREVIEWS } from '../review-template-previews'
 import {
+  bmsCodeReviewerPcBmsReportFixture,
   bmsCodeReviewerReportRealVariantsFixture,
   bmsCodeReviewerReportWithIssuesFixture,
   bmsCodeReviewerZeroIssuesFixture,
@@ -74,6 +75,76 @@ describe('extractReviewIssues', () => {
       )
     )
     expect(lowSeverityIssues[1]?.severity).toBe('low')
+  })
+
+  it('按真实 PC-BMS 报告结构提取三个问题并完整保留顺序、描述、位置和快照', () => {
+    const issues = extractReviewIssues(bmsCodeReviewerPcBmsReportFixture)
+
+    expect(issues).toHaveLength(3)
+    expect(issues.map(({ issueText, order, severity }) => ({ issueText, order, severity }))).toEqual([
+      {
+        issueText:
+          'PC-BMS-001 [重要] 状态处理函数新增分支后圈复杂度继续超限并使文件平均复杂度超限',
+        order: 0,
+        severity: 'medium'
+      },
+      {
+        issueText: 'PC-BMS-002 [一般] 新增分支未按 Allman 风格换行放置大括号',
+        order: 1,
+        severity: 'low'
+      },
+      {
+        issueText: 'PC-BMS-003 [一般] 新增 SLEEP 状态判断缺少 else 分支',
+        order: 2,
+        severity: 'low'
+      }
+    ])
+    expect(issues[0]).toMatchObject({
+      descriptionText:
+        'BmsState_Handle 在 r2 中按公司编码规范口径计算的圈复杂度为 14，超过单函数不超过 9 的要求；文件平均复杂度约 5.33，也超过不超过 5 的要求。',
+      source: 'bms_code_reviewer_heading',
+      codeLocations: [
+        { file: 'bms_state.c', line: '12', description: 'BmsState_Handle 状态处理入口' },
+        { file: 'bms_state.c', line: '30', description: '本次新增的 BMS_STATE_SLEEP 状态分支' }
+      ]
+    })
+    expect(issues[0]?.location.startOffset).toBe(
+      bmsCodeReviewerPcBmsReportFixture.indexOf('### PC-BMS-001 [重要]')
+    )
+    expect(issues[0]?.displaySnapshot).toContain('**整改建议：** 将状态处理拆分')
+    expect(issues[0]?.displaySnapshot).not.toContain('### PC-BMS-002 [一般]')
+    expect(issues[2]?.displaySnapshot).not.toContain('\n---')
+  })
+
+  it.each([
+    ['严重', 'high'],
+    ['重要', 'medium'],
+    ['一般', 'low'],
+    ['建议', 'suggestion']
+  ] as const)('将 PC-BMS 的“%s”级别映射为 %s', (label, severity) => {
+    const report = bmsCodeReviewerPcBmsReportFixture.replace(
+      'PC-BMS-001 [重要]',
+      `PC-BMS-001 [${label}]`
+    )
+
+    expect(extractReviewIssues(report)[0]?.severity).toBe(severity)
+  })
+
+  it.each([
+    ['缺少编号', '### [重要] 状态处理函数复杂度超限'],
+    ['缺少风险级别', '### PC-BMS-001 状态处理函数复杂度超限'],
+    ['风险级别未知', '### PC-BMS-001 [紧急] 状态处理函数复杂度超限']
+  ])('拒绝 PC-BMS 固定标题%s的三级标题', (_case, replacement) => {
+    const malformed = bmsCodeReviewerPcBmsReportFixture.replace(
+      /^### PC-BMS-001 \[重要\].*$/m,
+      replacement
+    )
+
+    expect(inspectReviewIssues(malformed)).toMatchObject({
+      format: 'bms_code_reviewer',
+      status: 'invalid',
+      message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。'
+    })
   })
 
   it('只识别审查问题章节，排除审查覆盖及其他章节的三级标题', () => {

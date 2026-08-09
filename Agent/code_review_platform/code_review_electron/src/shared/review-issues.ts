@@ -63,8 +63,10 @@ const descriptionFieldPattern =
   /^\s*(?:[-*+]\s*)?(?:\*\*|__)?(?:问题描述|缺陷描述(?:\s*\(Root Cause\))?|不合规现象描述)\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/i
 const codeLocationFieldPattern =
   /^\s*(?:[-*+]\s*)?(?:\*\*|__)?涉及文件及行号\s*[：:](?:\*\*|__)?\s*$/
-const bmsIssueHeadingPattern =
+const existingBmsIssueHeadingPattern =
   /^(?:P\d+|CR-\d+)\s+\[(高风险|高|中风险|中|低风险|低|建议)\]\s+\S.*$/
+const pcBmsIssueHeadingPattern =
+  /^PC-BMS-\d+\s+\[(严重|重要|一般|建议)\]\s+\S.*$/
 
 const stripMarkerListPrefix = (value: string): string =>
   value
@@ -77,7 +79,7 @@ const stripMarkdownInline = (value: string): string =>
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/__([^_]+)__/g, '$1')
     .replace(/\*([^*]+)\*/g, '$1')
-    .replace(/_([^_]+)_/g, '$1')
+    .replace(/(^|[^\w])_([^_]+)_(?!\w)/g, '$1$2')
     .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .trim()
@@ -149,11 +151,21 @@ const getHeaderIndex = (headers: string[], names: string[]): number =>
 const severityByLabel: Record<string, ReviewIssueSeverity> = {
   高风险: 'high',
   高: 'high',
+  严重: 'high',
   中风险: 'medium',
   中: 'medium',
+  重要: 'medium',
   低风险: 'low',
   低: 'low',
+  一般: 'low',
   建议: 'suggestion'
+}
+
+const severityFromBmsIssueHeading = (heading: string): ReviewIssueSeverity | undefined => {
+  const severityLabel =
+    existingBmsIssueHeadingPattern.exec(heading)?.[1] ??
+    pcBmsIssueHeadingPattern.exec(heading)?.[1]
+  return severityLabel ? severityByLabel[severityLabel] : undefined
 }
 
 const splitMarkdownLines = (markdown: string): MarkdownLine[] => {
@@ -303,7 +315,7 @@ const extractBmsCodeReviewerIssues = (
   )
   const directHeadings = candidates.filter((heading) => heading.level === 3)
   const issueHeadings = directHeadings.filter(
-    (heading) => heading.level === 3 && bmsIssueHeadingPattern.test(heading.text)
+    (heading) => severityFromBmsIssueHeading(heading.text) !== undefined
   )
 
   const issues = issueHeadings.flatMap((heading) => {
@@ -313,7 +325,8 @@ const extractBmsCodeReviewerIssues = (
     const issueLines = lines.slice(heading.line.index + 1, boundary?.index)
     const descriptionText = findDescriptionText(issueLines)
     if (!descriptionText) return []
-    const severityLabel = bmsIssueHeadingPattern.exec(heading.text)?.[1] ?? ''
+    const severity = severityFromBmsIssueHeading(heading.text)
+    if (severity === undefined) return []
     const anchorId = `report-option-${heading.line.index}`
     return [{
       id: `review-issue-${heading.line.index}`,
@@ -323,7 +336,7 @@ const extractBmsCodeReviewerIssues = (
       descriptionText,
       displayText: heading.text,
       displaySnapshot: markdown.slice(heading.line.startOffset, endOffset).trimEnd(),
-      severity: severityByLabel[severityLabel] ?? 'unknown',
+      severity,
       codeLocations: findCodeLocations(issueLines),
       anchorId,
       location: {

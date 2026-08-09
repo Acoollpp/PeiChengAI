@@ -6,6 +6,11 @@ export const bmsDs03ReportFixture = readFileSync(
   'utf8'
 )
 
+export const bmsCodeReviewerPcBmsReportFixture = readFileSync(
+  fileURLToPath(new URL('./bms-code-reviewer-pc-bms-report.md', import.meta.url)),
+  'utf8'
+)
+
 export const bmsCodeReviewerReportWithIssuesFixture = readFileSync(
   fileURLToPath(new URL('./bms-code-reviewer-report-with-issues.md', import.meta.url)),
   'utf8'
