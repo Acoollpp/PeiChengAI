@@ -5,7 +5,7 @@ import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 
 import type { ApiClient } from './api-client'
-import { extractReviewIssues } from '../shared/review-issues'
+import { inspectReviewIssues } from '../shared/review-issues'
 import { stripReviewReportOutputMetadata } from '../shared/review-report-metadata'
 
 export interface ReportUploadApi {
@@ -548,7 +548,8 @@ export const uploadReportFile = async (
   if (Buffer.byteLength(reportContent, 'utf8') > MAX_REPORT_MARKDOWN_BYTES) {
     throw new Error(`审查报告超过大小限制：${reportPath}`)
   }
-  const issues = extractReviewIssues(reportContent).map((issue) => ({
+  const extraction = inspectReviewIssues(reportContent)
+  const issues = (extraction.status === 'parsed' ? extraction.issues : []).map((issue) => ({
     issue_text: issue.issueText,
     description_text: issue.descriptionText,
     display_snapshot: issue.displaySnapshot,

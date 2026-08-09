@@ -4,6 +4,8 @@ import { composeIssueFeedbackMarkdown } from '../issue-feedback-markdown'
 import { extractReviewIssues } from '../review-issues'
 import type { ReviewTaskIssue } from '../types'
 import {
+  bmsCodeReviewerHistoricalDs02ReportFixture,
+  bmsCodeReviewerHistoricalPcBmsReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
   bmsCodeReviewerReportWithIssuesFixture,
   templateOneReportFixture,
@@ -103,6 +105,29 @@ describe('composeIssueFeedbackMarkdown', () => {
     expect(feedbackOffsets[2]).toBeGreaterThan(issueOffsets[2])
     expect(composed.match(/> 是否有效：/g)).toHaveLength(3)
     expect(original).toBe(bmsCodeReviewerPcBmsReportFixture)
+  })
+
+  it.each([
+    ['PC-BMS 历史风险词', bmsCodeReviewerHistoricalPcBmsReportFixture, 2],
+    ['DS-02 历史编号', bmsCodeReviewerHistoricalDs02ReportFixture, 3]
+  ] as const)('%s 报告可按原始快照逐项插入反馈', (_name, original, issueCount) => {
+    const issues = Array.from({ length: issueCount }, (_, order) =>
+      toServerIssue(original, order, order % 2 === 0, `历史问题 ${order + 1} 已核对`)
+    )
+
+    const composed = composeIssueFeedbackMarkdown(original, issues)
+
+    expect(composed.match(/> 是否有效：/g)).toHaveLength(issueCount)
+    issues.forEach((issue, order) => {
+      const issueOffset = composed.indexOf(`### ${issue.issue_text}`)
+      const feedbackOffset = composed.indexOf(`历史问题 ${order + 1} 已核对`)
+      const nextIssueOffset = issues[order + 1]
+        ? composed.indexOf(`### ${issues[order + 1].issue_text}`)
+        : composed.length
+      expect(feedbackOffset).toBeGreaterThan(issueOffset)
+      expect(feedbackOffset).toBeLessThan(nextIssueOffset)
+    })
+    expect(original).not.toContain('是否有效：')
   })
 
   it('CRLF 报告保持问题快照定位并生成反馈 Markdown', () => {

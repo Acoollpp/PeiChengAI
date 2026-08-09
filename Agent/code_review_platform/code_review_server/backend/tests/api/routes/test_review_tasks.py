@@ -803,9 +803,24 @@ def test_新协议上传后返回有序问题快照和反馈进度(
         ("PC-BMS-002 [重要] 当前 Skill 固定模板问题", "medium"),
         ("PC-BMS-003 [一般] 当前 Skill 固定模板问题", "low"),
         ("PC-BMS-004 [建议] 当前 Skill 固定模板问题", "suggestion"),
+        ("PC-BMS-005 [高风险] 历史风险词问题", "high"),
+        ("PC-BMS-006 [高] 历史风险词问题", "high"),
+        ("PC-BMS-007 [中风险] 历史风险词问题", "medium"),
+        ("PC-BMS-008 [中] 历史风险词问题", "medium"),
+        ("PC-BMS-009 [低风险] 历史风险词问题", "low"),
+        ("PC-BMS-010 [低] 历史风险词问题", "low"),
+        ("DS-02-001 [高风险] 历史审查项编号问题", "high"),
+        ("DS-02-002 [高] 历史审查项编号问题", "high"),
+        ("DS-02-003 [中风险] 历史审查项编号问题", "medium"),
+        ("DS-02-004 [中] 历史审查项编号问题", "medium"),
+        ("DS-02-005 [低风险] 历史审查项编号问题", "low"),
+        ("DS-02-006 [低] 历史审查项编号问题", "low"),
+        ("DS-02-007 [建议] 历史审查项编号问题", "suggestion"),
         ("P01 [重要] 错误交叉组合", None),
         ("CR-001 [严重] 错误交叉组合", None),
-        ("PC-BMS-001 [高] 错误交叉组合", None),
+        ("DS-02-008 [严重] 错误交叉组合", None),
+        ("DS-03-001 [高] 其他审查项编号", None),
+        ("PC-BMS-01 [高] 合同固定前的非三位编号", "high"),
         ("高风险：旧模板问题", "high"),
         ("中风险：旧模板问题", "medium"),
         ("中风险：正文提到高风险：但标题仍为中风险", "medium"),
@@ -854,6 +869,359 @@ def test_列表和详情聚合新协议问题快照的最高严重度(
         item for item in list_response.json()["data"] if item["id"] == task["id"]
     )
     assert listed_task["highest_issue_severity"] == expected_severity
+
+
+def test_历史编号问题的列表详情与反馈进度保持同步(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    issue_texts = [
+        "DS-02-001 [高] FAULT 分支条件由比较表达式误改为赋值表达式",
+        "DS-02-002 [中] 新增 SLEEP 状态分支的 if 缺少 else 分支",
+        "DS-02-003 [低] 新增控制语句未采用 Allman 大括号风格",
+    ]
+    issues = []
+    for order, issue_text in enumerate(issue_texts):
+        issue = _valid_issue_snapshot(order)
+        issue["issue_text"] = issue_text
+        issues.append(issue)
+
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": json.dumps(issues, ensure_ascii=False),
+        },
+        files={"upload": ("report.md", b"# Review\n", "text/markdown")},
+    )
+    assert upload_response.status_code == 200
+    assert upload_response.json()["highest_issue_severity"] == "high"
+
+    issues_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/issues",
+        headers=normal_user_token_headers,
+    )
+    assert issues_response.status_code == 200
+    stored_issues = issues_response.json()["data"]
+    assert [issue["issue_text"] for issue in stored_issues] == issue_texts
+
+    draft_response = client.put(
+        (
+            f"{settings.API_V1_STR}/review-tasks/{task['id']}"
+            f"/issues/{stored_issues[1]['id']}/feedback-draft"
+        ),
+        headers=normal_user_token_headers,
+        json={"helpful": True, "feedback_text": "已核对中风险问题"},
+    )
+    assert draft_response.status_code == 200
+
+    detail_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+    assert detail_response.status_code == 200
+    assert detail_response.json()["issue_count"] == 3
+    assert detail_response.json()["evaluated_issue_count"] == 1
+    assert detail_response.json()["has_issue_feedback_draft"] is True
+    assert detail_response.json()["highest_issue_severity"] == "high"
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+    )
+    assert list_response.status_code == 200
+    listed_task = next(
+        item for item in list_response.json()["data"] if item["id"] == task["id"]
+    )
+    assert listed_task["issue_count"] == 3
+    assert listed_task["evaluated_issue_count"] == 1
+    assert listed_task["has_issue_feedback_draft"] is True
+    assert listed_task["highest_issue_severity"] == "high"
+
+
+@pytest.mark.parametrize(
+    "issue_texts",
+    [
+        [
+            "PC-BMS-001 [高] 历史高风险问题",
+            "PC-BMS-2 [高] 混入非三位编号",
+        ],
+        [
+            "PC-BMS-001 [严重] canonical 高风险问题",
+            "PC-BMS-002 [高] 混入历史风险词",
+        ],
+        [
+            "PC-BMS-1 [重要] 非三位 canonical 问题",
+            "PC-BMS-2 [建议] 共享建议词问题",
+        ],
+        [
+            "PC-BMS-001 [高] 历史高风险问题",
+            "PC-BMS-003 [建议] 三位编号发生跳号",
+        ],
+        ["PC-BMS-001 [紧急] 未知严重度词"],
+        ["DS-03-001 [高] 未支持的历史编号族"],
+    ],
+)
+def test_无效_PC_BMS_快照不阻断报告上传且即时列表详情均不计数(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    issue_texts: list[str],
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    issues = []
+    for order, issue_text in enumerate(issue_texts):
+        issue = _valid_issue_snapshot(order)
+        issue["issue_text"] = issue_text
+        issue["source"] = "bms_code_reviewer_heading"
+        issues.append(issue)
+
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": json.dumps(issues, ensure_ascii=False),
+        },
+        files={"upload": ("report.md", b"# Review\n", "text/markdown")},
+    )
+
+    assert upload_response.status_code == 200
+    assert upload_response.json()["issue_count"] == 0
+    assert upload_response.json()["highest_issue_severity"] is None
+    assert (tmp_path / f"{task['id']}.md").exists()
+
+    issues_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/issues",
+        headers=normal_user_token_headers,
+    )
+    assert issues_response.status_code == 200
+    assert issues_response.json()["count"] == 0
+
+    detail_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+    assert detail_response.status_code == 200
+    assert detail_response.json()["issue_count"] == 0
+    assert detail_response.json()["highest_issue_severity"] is None
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+    )
+    assert list_response.status_code == 200
+    listed_task = next(
+        item for item in list_response.json()["data"] if item["id"] == task["id"]
+    )
+    assert listed_task["issue_count"] == 0
+    assert listed_task["evaluated_issue_count"] == 0
+    assert listed_task["has_issue_feedback_draft"] is False
+    assert listed_task["highest_issue_severity"] is None
+
+
+@pytest.mark.parametrize(
+    "issue_texts",
+    [
+        [
+            "PC-BMS-001 [严重] canonical 高风险问题",
+            "PC-BMS-002 [建议] canonical 共享建议词问题",
+        ],
+        [
+            "PC-BMS-001 [高] 历史高风险问题",
+            "PC-BMS-002 [建议] 历史共享建议词问题",
+        ],
+    ],
+)
+def test_PC_BMS_共享建议词保持整报告合同有效(issue_texts: list[str]) -> None:
+    issues = []
+    for order, issue_text in enumerate(issue_texts):
+        issue = _valid_issue_snapshot(order)
+        issue["issue_text"] = issue_text
+        issue["source"] = "bms_code_reviewer_heading"
+        issues.append(ReviewTaskIssueSnapshotCreate.model_validate(issue))
+
+    assert review_tasks_route._has_valid_bms_report_issue_contract(issues) is True
+
+
+@pytest.mark.parametrize(
+    "issue_texts",
+    [
+        ["P01 [高风险] 历史 P 编号问题", "CR-002 [建议] 历史 CR 编号建议"],
+        ["DS-02-001 [高] 历史 DS-02 问题", "DS-02-002 [低] 历史低风险问题"],
+        ["PC-BMS-001 [严重] canonical 问题", "PC-BMS-002 [一般] canonical 一般问题"],
+    ],
+)
+def test_BMS_受支持标题族保持整报告合同有效(issue_texts: list[str]) -> None:
+    issues = []
+    for order, issue_text in enumerate(issue_texts):
+        issue = _valid_issue_snapshot(order)
+        issue["issue_text"] = issue_text
+        issue["source"] = "bms_code_reviewer_heading"
+        issues.append(ReviewTaskIssueSnapshotCreate.model_validate(issue))
+
+    assert review_tasks_route._has_valid_bms_report_issue_contract(issues) is True
+
+
+def test_数据库历史无效_PC_BMS_快照在列表和详情聚合中归零(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    task_id = UUID(task["id"])
+    task_record = db.get(ReviewTask, task_id)
+    assert task_record is not None
+    task_record.feedback_protocol_version = 1
+    db.add(task_record)
+    issue_texts = [
+        "PC-BMS-001 [严重] canonical 高风险问题",
+        "PC-BMS-002 [高] 混入历史风险词",
+    ]
+    for order, issue_text in enumerate(issue_texts):
+        snapshot = _valid_issue_snapshot(order)
+        db.add(
+            ReviewTaskIssue(
+                task_id=task_id,
+                issue_text=issue_text,
+                description_text=str(snapshot["description_text"]),
+                display_snapshot=str(snapshot["display_snapshot"]),
+                order=order,
+                source="bms_code_reviewer_heading",
+                location=snapshot["location"],
+                helpful=True if order == 0 else None,
+                feedback_text="历史反馈草稿" if order == 0 else None,
+            )
+        )
+    db.commit()
+
+    detail_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+    assert detail_response.status_code == 200
+    assert detail_response.json()["issue_count"] == 0
+    assert detail_response.json()["evaluated_issue_count"] == 0
+    assert detail_response.json()["has_issue_feedback_draft"] is False
+    assert detail_response.json()["highest_issue_severity"] is None
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+    )
+    assert list_response.status_code == 200
+    listed_task = next(
+        item for item in list_response.json()["data"] if item["id"] == task["id"]
+    )
+    assert listed_task["issue_count"] == 0
+    assert listed_task["evaluated_issue_count"] == 0
+    assert listed_task["has_issue_feedback_draft"] is False
+    assert listed_task["highest_issue_severity"] is None
+
+    issues_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/issues",
+        headers=normal_user_token_headers,
+    )
+    assert issues_response.status_code == 200
+    assert issues_response.json() == {
+        "data": [],
+        "count": 0,
+        "evaluated_count": 0,
+        "feedback_submitted_at": None,
+    }
+
+    stored_issues = db.exec(
+        select(ReviewTaskIssue)
+        .where(ReviewTaskIssue.task_id == task_id)
+        .order_by(ReviewTaskIssue.order)
+    ).all()
+    assert len(stored_issues) == 2
+    task_record.feedback_submitted_at = datetime.now(timezone.utc)
+    db.add(task_record)
+    db.commit()
+
+    draft_response = client.put(
+        (
+            f"{settings.API_V1_STR}/review-tasks/{task['id']}"
+            f"/issues/{stored_issues[0].id}/feedback-draft"
+        ),
+        headers=normal_user_token_headers,
+        json={"helpful": False, "feedback_text": "不得编辑无效历史快照"},
+    )
+    assert draft_response.status_code == 404
+    assert draft_response.json()["detail"] == "Review task issue not found"
+
+    pdf_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf-report",
+        headers=normal_user_token_headers,
+        files={"upload": ("无效历史反馈.pdf", b"%PDF-1.4\ninvalid-history", "application/pdf")},
+    )
+    assert pdf_response.status_code == 409
+    assert pdf_response.json()["detail"] == "issue_feedback_not_supported"
+    assert not (tmp_path / f"{task['id']}.pdf").exists()
+
+    export_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/issue-feedback/export",
+        headers=normal_user_token_headers,
+    )
+    assert export_response.status_code == 200
+    workbook = load_workbook(BytesIO(export_response.content))
+    rows = list(workbook["问题反馈明细"].iter_rows(values_only=True))
+    workbook.close()
+    exported_issue_texts = {str(row[5]) for row in rows[1:]}
+    assert exported_issue_texts.isdisjoint(issue_texts)
+
+    db.expire_all()
+    preserved_issues = db.exec(
+        select(ReviewTaskIssue)
+        .where(ReviewTaskIssue.task_id == task_id)
+        .order_by(ReviewTaskIssue.order)
+    ).all()
+    assert len(preserved_issues) == 2
+    assert preserved_issues[0].feedback_text == "历史反馈草稿"
+
+
+def test_有效零问题新协议仍可读取空列表并提交最终_PDF(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={"feedback_protocol_version": "1", "issues": "[]"},
+        files={"upload": ("report.md", b"# Review\n", "text/markdown")},
+    )
+    assert upload_response.status_code == 200
+
+    issues_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/issues",
+        headers=normal_user_token_headers,
+    )
+    assert issues_response.status_code == 200
+    assert issues_response.json()["count"] == 0
+
+    pdf_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/pdf-report",
+        headers=normal_user_token_headers,
+        files={"upload": ("零问题报告.pdf", b"%PDF-1.4\nzero-issues", "application/pdf")},
+    )
+    assert pdf_response.status_code == 200
+    assert pdf_response.json()["feedback_submitted_at"] is not None
+    assert (tmp_path / f"{task['id']}.pdf").exists()
 
 
 @pytest.mark.parametrize(

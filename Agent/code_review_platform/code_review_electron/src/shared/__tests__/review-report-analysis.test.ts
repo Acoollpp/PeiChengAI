@@ -5,6 +5,8 @@ import {
   summarizeReviewReport
 } from '../review-report-analysis'
 import {
+  bmsCodeReviewerHistoricalDs02ReportFixture,
+  bmsCodeReviewerHistoricalPcBmsReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
   bmsCodeReviewerReportRealVariantsFixture,
   bmsCodeReviewerReportWithIssuesFixture,
@@ -88,6 +90,16 @@ describe('报告摘要分析', () => {
       issueCount: 3,
       highestIssueSeverity: 'medium'
     })).toMatchObject({ status: 'ready', issueCount: 3, highestSeverity: 'medium' })
+    expect(analyzeLoadedReviewReport(bmsCodeReviewerHistoricalPcBmsReportFixture, {
+      feedbackProtocolVersion: 1,
+      issueCount: 2,
+      highestIssueSeverity: 'high'
+    })).toMatchObject({ status: 'ready', issueCount: 2, highestSeverity: 'high' })
+    expect(analyzeLoadedReviewReport(bmsCodeReviewerHistoricalDs02ReportFixture, {
+      feedbackProtocolVersion: 1,
+      issueCount: 3,
+      highestIssueSeverity: 'high'
+    })).toMatchObject({ status: 'ready', issueCount: 3, highestSeverity: 'high' })
     expect(analyzeLoadedReviewReport(templateOneReportFixture, {
       feedbackProtocolVersion: null,
       issueCount: 0,

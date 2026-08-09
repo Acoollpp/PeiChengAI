@@ -63,10 +63,51 @@ const descriptionFieldPattern =
   /^\s*(?:[-*+]\s*)?(?:\*\*|__)?(?:问题描述|缺陷描述(?:\s*\(Root Cause\))?|不合规现象描述)\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/i
 const codeLocationFieldPattern =
   /^\s*(?:[-*+]\s*)?(?:\*\*|__)?涉及文件及行号\s*[：:](?:\*\*|__)?\s*$/
-const existingBmsIssueHeadingPattern =
-  /^(?:P\d+|CR-\d+)\s+\[(高风险|高|中风险|中|低风险|低|建议)\]\s+\S.*$/
-const pcBmsIssueHeadingPattern =
-  /^PC-BMS-\d+\s+\[(严重|重要|一般|建议)\]\s+\S.*$/
+type BmsReportSeverity = Exclude<ReviewIssueSeverity, 'unknown'>
+type BmsReportSeverityRule = {
+  canonicalLabel: string
+  historicalLabels: readonly string[]
+}
+
+const BMS_REPORT_SEVERITY_RULES = {
+  high: { canonicalLabel: '严重', historicalLabels: ['高风险', '高'] },
+  medium: { canonicalLabel: '重要', historicalLabels: ['中风险', '中'] },
+  low: { canonicalLabel: '一般', historicalLabels: ['低风险', '低'] },
+  suggestion: { canonicalLabel: '建议', historicalLabels: ['建议'] }
+} as const satisfies Record<BmsReportSeverity, BmsReportSeverityRule>
+const bmsReportSeverityEntries = Object.entries(BMS_REPORT_SEVERITY_RULES) as [
+  BmsReportSeverity,
+  BmsReportSeverityRule
+][]
+const canonicalPcBmsSeverityLabels = bmsReportSeverityEntries.map(
+  ([, rule]) => rule.canonicalLabel
+)
+const historicalRiskSeverityLabels = bmsReportSeverityEntries.flatMap(
+  ([, rule]) => rule.historicalLabels
+)
+const pcBmsSeverityLabels = [
+  ...new Set([...canonicalPcBmsSeverityLabels, ...historicalRiskSeverityLabels])
+]
+export const BMS_CANONICAL_ISSUE_HEADING_TEMPLATE =
+  `### PC-BMS-NNN [${canonicalPcBmsSeverityLabels.join('|')}] <问题标题>`
+export const BMS_CANONICAL_SEVERITY_MAPPING_TEXT = bmsReportSeverityEntries
+  .map(([severity, rule]) => `${rule.canonicalLabel}->${severity}`)
+  .join('、')
+const existingBmsIssueHeadingPattern = new RegExp(
+  `^(?:P\\d+|CR-\\d+)\\s+\\[(${historicalRiskSeverityLabels.join('|')})\\]\\s+\\S.*$`
+)
+const pcBmsIssueHeadingPattern = new RegExp(
+  `^PC-BMS-\\d+\\s+\\[(${pcBmsSeverityLabels.join('|')})\\]\\s+\\S.*$`
+)
+const pcBmsIssueNumberPattern = /^PC-BMS-(\d+)\s+/
+const historicalDs02IssueHeadingPattern = new RegExp(
+  `^DS-02-\\d+\\s+\\[(${historicalRiskSeverityLabels.join('|')})\\]\\s+\\S.*$`
+)
+const bmsIssueHeadingPatterns = [
+  existingBmsIssueHeadingPattern,
+  pcBmsIssueHeadingPattern,
+  historicalDs02IssueHeadingPattern
+] as const
 
 const stripMarkerListPrefix = (value: string): string =>
   value
@@ -148,24 +189,50 @@ const splitTableRow = (line: string): string[] => {
 const getHeaderIndex = (headers: string[], names: string[]): number =>
   headers.findIndex((header) => names.some((name) => header.includes(name)))
 
-const severityByLabel: Record<string, ReviewIssueSeverity> = {
-  高风险: 'high',
-  高: 'high',
-  严重: 'high',
-  中风险: 'medium',
-  中: 'medium',
-  重要: 'medium',
-  低风险: 'low',
-  低: 'low',
-  一般: 'low',
-  建议: 'suggestion'
-}
+const severityByLabel = Object.fromEntries(
+  bmsReportSeverityEntries.flatMap(([severity, rule]) =>
+    [...new Set([rule.canonicalLabel, ...rule.historicalLabels])].map(
+      (label) => [label, severity]
+    )
+  )
+) as Record<string, BmsReportSeverity>
 
 const severityFromBmsIssueHeading = (heading: string): ReviewIssueSeverity | undefined => {
-  const severityLabel =
-    existingBmsIssueHeadingPattern.exec(heading)?.[1] ??
-    pcBmsIssueHeadingPattern.exec(heading)?.[1]
+  const severityLabel = bmsIssueHeadingPatterns
+    .map((pattern) => pattern.exec(heading)?.[1])
+    .find((label) => label !== undefined)
   return severityLabel ? severityByLabel[severityLabel] : undefined
+}
+
+const hasValidPcBmsReportContract = (headings: MarkdownHeading[]): boolean => {
+  const pcBmsHeadings = headings.flatMap((heading) => {
+    const number = pcBmsIssueNumberPattern.exec(heading.text)?.[1]
+    const label = pcBmsIssueHeadingPattern.exec(heading.text)?.[1]
+    return number === undefined || label === undefined ? [] : [{ number, label }]
+  })
+  if (pcBmsHeadings.length === 0) return true
+  if (pcBmsHeadings.length !== headings.length) return false
+
+  const allThreeDigit = pcBmsHeadings.every(({ number }) => number.length === 3)
+  const allNonThreeDigit = pcBmsHeadings.every(({ number }) => number.length !== 3)
+  if (!allThreeDigit && !allNonThreeDigit) return false
+
+  const canonicalLabels = new Set(canonicalPcBmsSeverityLabels)
+  const historicalLabels = new Set(historicalRiskSeverityLabels)
+  const hasCanonicalOnlyLabel = pcBmsHeadings.some(
+    ({ label }) => canonicalLabels.has(label) && !historicalLabels.has(label)
+  )
+  const hasHistoricalOnlyLabel = pcBmsHeadings.some(
+    ({ label }) => historicalLabels.has(label) && !canonicalLabels.has(label)
+  )
+  if (hasCanonicalOnlyLabel && hasHistoricalOnlyLabel) return false
+  if (allNonThreeDigit && hasCanonicalOnlyLabel) return false
+
+  // 合同固定前的历史报告仅兼容全量非三位编号；三位编号必须严格连续。
+  if (allNonThreeDigit) return true
+  return pcBmsHeadings.every(
+    ({ number }, index) => number === String(index + 1).padStart(3, '0')
+  )
 }
 
 const splitMarkdownLines = (markdown: string): MarkdownLine[] => {
@@ -358,13 +425,14 @@ const extractBmsCodeReviewerIssues = (
   const valid =
     (directHeadings.length > 0 &&
       directHeadings.length === issueHeadings.length &&
-      issues.length === issueHeadings.length) ||
+      issues.length === issueHeadings.length &&
+      hasValidPcBmsReportContract(issueHeadings)) ||
     (directHeadings.length === 0 && hasZeroIssueStatement)
 
   return {
     format: 'bms_code_reviewer',
     status: valid ? 'parsed' : 'invalid',
-    issues,
+    issues: valid ? issues : [],
     ...(!valid ? { message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。' } : {})
   }
 }

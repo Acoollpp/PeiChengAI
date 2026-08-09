@@ -2,10 +2,13 @@ import json
 import logging
 import re
 import uuid
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
+from enum import Enum
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -93,103 +96,165 @@ _FAILED_OR_ERROR_STATUSES = {
 }
 
 ReportFeedbackFilter = Literal["helpful", "not_helpful", "none"]
-_REVIEW_ISSUE_SEVERITY_RULES: tuple[
-    tuple[
-        ReviewIssueSeverity,
-        int,
-        tuple[str, ...],
-        tuple[str, ...],
-        tuple[str, ...],
-    ],
-    ...,
-] = (
-    (
-        ReviewIssueSeverity.high,
-        4,
-        ("高风险", "高"),
-        ("严重",),
-        ("高风险：", "高风险:"),
+
+
+@dataclass(frozen=True)
+class _ReviewIssueSeverityRule:
+    severity: ReviewIssueSeverity
+    rank: int
+    canonical_label: str
+    historical_labels: tuple[str, ...]
+    legacy_prefixes: tuple[str, ...]
+
+
+class _ReviewIssueContractItem(Protocol):
+    order: int
+    source: str
+    issue_text: str
+
+
+@dataclass(frozen=True)
+class _ReviewIssueContractProjection:
+    task_id: uuid.UUID
+    order: int
+    source: str
+    issue_text: str
+
+
+class _ReviewIssueContractStatus(str, Enum):
+    valid = "valid"
+    invalid = "invalid"
+
+
+@dataclass(frozen=True)
+class _ReviewIssueContractState:
+    status: _ReviewIssueContractStatus
+
+    @property
+    def is_valid(self) -> bool:
+        return self.status == _ReviewIssueContractStatus.valid
+
+
+@dataclass(frozen=True)
+class _EffectiveReviewTaskIssues:
+    contract_state: _ReviewIssueContractState
+    issues: tuple[ReviewTaskIssue, ...]
+
+
+_REVIEW_ISSUE_SEVERITY_RULES = (
+    _ReviewIssueSeverityRule(
+        severity=ReviewIssueSeverity.high,
+        rank=4,
+        canonical_label="严重",
+        historical_labels=("高风险", "高"),
+        legacy_prefixes=("高风险：", "高风险:"),
     ),
-    (
-        ReviewIssueSeverity.medium,
-        3,
-        ("中风险", "中"),
-        ("重要",),
-        ("中风险：", "中风险:"),
+    _ReviewIssueSeverityRule(
+        severity=ReviewIssueSeverity.medium,
+        rank=3,
+        canonical_label="重要",
+        historical_labels=("中风险", "中"),
+        legacy_prefixes=("中风险：", "中风险:"),
     ),
-    (
-        ReviewIssueSeverity.low,
-        2,
-        ("低风险", "低"),
-        ("一般",),
-        ("低风险：", "低风险:"),
+    _ReviewIssueSeverityRule(
+        severity=ReviewIssueSeverity.low,
+        rank=2,
+        canonical_label="一般",
+        historical_labels=("低风险", "低"),
+        legacy_prefixes=("低风险：", "低风险:"),
     ),
-    (
-        ReviewIssueSeverity.suggestion,
-        1,
-        ("建议",),
-        ("建议",),
-        ("建议：", "建议:"),
+    _ReviewIssueSeverityRule(
+        severity=ReviewIssueSeverity.suggestion,
+        rank=1,
+        canonical_label="建议",
+        historical_labels=("建议",),
+        legacy_prefixes=("建议：", "建议:"),
     ),
 )
 
 
+def _unique_labels(labels: Sequence[str]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(labels))
+
+
+_CANONICAL_PC_BMS_LABELS = tuple(
+    rule.canonical_label for rule in _REVIEW_ISSUE_SEVERITY_RULES
+)
+_HISTORICAL_RISK_LABELS = _unique_labels(
+    tuple(
+        label
+        for rule in _REVIEW_ISSUE_SEVERITY_RULES
+        for label in rule.historical_labels
+    )
+)
+_ALL_PC_BMS_LABELS = _unique_labels(
+    (*_CANONICAL_PC_BMS_LABELS, *_HISTORICAL_RISK_LABELS)
+)
+_PC_BMS_ISSUE_HEADING_RE = re.compile(
+    r"^PC-BMS-(?P<number>\d+)\s+\[(?P<label>"
+    + "|".join(re.escape(label) for label in _ALL_PC_BMS_LABELS)
+    + r")\]\s+\S.*$"
+)
+_HISTORICAL_BMS_ISSUE_HEADING_RE = re.compile(
+    r"^(?:(?:P\d+|CR-\d+)|DS-02-\d+)\s+\[(?:"
+    + "|".join(re.escape(label) for label in _HISTORICAL_RISK_LABELS)
+    + r")\]\s+\S.*$"
+)
+
+
 def _numbered_issue_severity_pattern(
-    existing_labels: tuple[str, ...],
-    pc_bms_labels: tuple[str, ...],
+    rule: _ReviewIssueSeverityRule,
     *,
     postgres: bool,
 ) -> str:
-    existing_label_pattern = "|".join(re.escape(label) for label in existing_labels)
-    pc_bms_label_pattern = "|".join(re.escape(label) for label in pc_bms_labels)
+    historical_label_pattern = "|".join(
+        re.escape(label) for label in rule.historical_labels
+    )
+    pc_bms_label_pattern = "|".join(
+        re.escape(label)
+        for label in _unique_labels(
+            (rule.canonical_label, *rule.historical_labels)
+        )
+    )
     if postgres:
         return (
             r"^((P[0-9]+|CR-[0-9]+)[[:space:]]+\[("
-            f"{existing_label_pattern}"
+            f"{historical_label_pattern}"
             r")\]|PC-BMS-[0-9]+[[:space:]]+\[("
             f"{pc_bms_label_pattern}"
+            r")\]|DS-02-[0-9]+[[:space:]]+\[("
+            f"{historical_label_pattern}"
             r")\])[[:space:]]+"
         )
     return (
-        rf"^(?:(?:P\d+|CR-\d+)\s+\[(?:{existing_label_pattern})\]"
-        rf"|PC-BMS-\d+\s+\[(?:{pc_bms_label_pattern})\])\s+"
+        rf"^(?:(?:P\d+|CR-\d+)\s+\[(?:{historical_label_pattern})\]"
+        rf"|PC-BMS-\d+\s+\[(?:{pc_bms_label_pattern})\]"
+        rf"|DS-02-\d+\s+\[(?:{historical_label_pattern})\])\s+"
     )
 
 
 def _review_issue_severity_sql_condition(
     issue_text: Any,
-    existing_labels: tuple[str, ...],
-    pc_bms_labels: tuple[str, ...],
-    legacy_prefixes: tuple[str, ...],
+    rule: _ReviewIssueSeverityRule,
 ) -> ColumnElement[bool]:
     return or_(
         issue_text.op("~")(
-            _numbered_issue_severity_pattern(
-                existing_labels,
-                pc_bms_labels,
-                postgres=True,
-            )
+            _numbered_issue_severity_pattern(rule, postgres=True)
         ),
-        *(issue_text.startswith(prefix) for prefix in legacy_prefixes),
+        *(issue_text.startswith(prefix) for prefix in rule.legacy_prefixes),
     )
 
 
 def _review_issue_text_matches_severity(
     issue_text: str,
-    existing_labels: tuple[str, ...],
-    pc_bms_labels: tuple[str, ...],
-    legacy_prefixes: tuple[str, ...],
+    rule: _ReviewIssueSeverityRule,
 ) -> bool:
     return bool(
         re.match(
-            _numbered_issue_severity_pattern(
-                existing_labels,
-                pc_bms_labels,
-                postgres=False,
-            ),
+            _numbered_issue_severity_pattern(rule, postgres=False),
             issue_text,
         )
-    ) or issue_text.startswith(legacy_prefixes)
+    ) or issue_text.startswith(rule.legacy_prefixes)
 
 
 def _utcnow() -> datetime:
@@ -448,7 +513,12 @@ def _get_task_for_write_locked(
 
 
 def _get_task_for_issue_feedback_write_locked(
-    *, session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    invalid_contract_status_code: int = 409,
+    invalid_contract_detail: str = "issue_feedback_not_supported",
 ) -> ReviewTask:
     task = session.exec(
         select(ReviewTask)
@@ -462,6 +532,15 @@ def _get_task_for_issue_feedback_write_locked(
         raise HTTPException(status_code=403, detail="只有任务提交人可以填写问题反馈")
     if task.feedback_protocol_version != 1:
         raise HTTPException(status_code=409, detail="issue_feedback_not_supported")
+    contract_state = _review_issue_contract_states_by_task_ids(
+        session=session,
+        task_ids=[task.id],
+    )[task.id]
+    if not contract_state.is_valid:
+        raise HTTPException(
+            status_code=invalid_contract_status_code,
+            detail=invalid_contract_detail,
+        )
     if task.feedback_submitted_at is not None:
         raise HTTPException(status_code=409, detail="issue_feedback_submitted")
     return task
@@ -530,21 +609,24 @@ def _issue_progress_by_task_ids(
 ) -> dict[uuid.UUID, tuple[int, int, bool, ReviewIssueSeverity | None]]:
     if not task_ids:
         return {}
+    contract_states = _review_issue_contract_states_by_task_ids(
+        session=session,
+        task_ids=task_ids,
+    )
+    valid_task_ids = [
+        task_id for task_id, state in contract_states.items() if state.is_valid
+    ]
+    if not valid_task_ids:
+        return {}
+
     issue_text = col(ReviewTaskIssue.issue_text)
     severity_rank = case(
         *(
             (
-                _review_issue_severity_sql_condition(
-                    issue_text,
-                    existing_labels,
-                    pc_bms_labels,
-                    legacy_prefixes,
-                ),
-                rank,
+                _review_issue_severity_sql_condition(issue_text, rule),
+                rule.rank,
             )
-            for _severity, rank, existing_labels, pc_bms_labels, legacy_prefixes in (
-                _REVIEW_ISSUE_SEVERITY_RULES
-            )
+            for rule in _REVIEW_ISSUE_SEVERITY_RULES
         ),
         else_=0,
     )
@@ -557,7 +639,7 @@ def _issue_progress_by_task_ids(
             func.count(col(ReviewTaskIssue.feedback_text)),
             func.max(severity_rank),
         )
-        .where(col(ReviewTaskIssue.task_id).in_(task_ids))
+        .where(col(ReviewTaskIssue.task_id).in_(valid_task_ids))
         .group_by(col(ReviewTaskIssue.task_id))
     ).all()
     return {
@@ -578,40 +660,143 @@ def _issue_progress_by_task_ids(
 def _review_issue_severity_from_rank(rank: int) -> ReviewIssueSeverity | None:
     return next(
         (
-            severity
-            for (
-                severity,
-                severity_rank,
-                _existing_labels,
-                _pc_bms_labels,
-                _legacy_prefixes,
-            ) in _REVIEW_ISSUE_SEVERITY_RULES
-            if severity_rank == rank
+            rule.severity
+            for rule in _REVIEW_ISSUE_SEVERITY_RULES
+            if rule.rank == rank
         ),
         None,
     )
 
 
+def _has_valid_bms_report_issue_contract(
+    issues: Sequence[_ReviewIssueContractItem],
+) -> bool:
+    bms_issues = [
+        issue for issue in issues if issue.source == "bms_code_reviewer_heading"
+    ]
+    if not bms_issues:
+        return True
+    if len(bms_issues) != len(issues):
+        return False
+    has_pc_bms_candidate = any(
+        issue.issue_text.startswith("PC-BMS") for issue in bms_issues
+    )
+    if not has_pc_bms_candidate:
+        return all(
+            _HISTORICAL_BMS_ISSUE_HEADING_RE.fullmatch(issue.issue_text)
+            is not None
+            for issue in bms_issues
+        )
+    pc_bms_matches = [
+        (issue, match)
+        for issue in bms_issues
+        if (match := _PC_BMS_ISSUE_HEADING_RE.fullmatch(issue.issue_text)) is not None
+    ]
+    if len(pc_bms_matches) != len(bms_issues):
+        return False
+
+    ordered_matches = sorted(pc_bms_matches, key=lambda item: item[0].order)
+    numbers = [match.group("number") for _, match in ordered_matches]
+    labels = [match.group("label") for _, match in ordered_matches]
+    all_three_digit = all(len(number) == 3 for number in numbers)
+    all_non_three_digit = all(len(number) != 3 for number in numbers)
+    if not all_three_digit and not all_non_three_digit:
+        return False
+
+    canonical_labels = set(_CANONICAL_PC_BMS_LABELS)
+    historical_labels = set(_HISTORICAL_RISK_LABELS)
+    has_canonical_only_label = any(
+        label in canonical_labels and label not in historical_labels for label in labels
+    )
+    has_historical_only_label = any(
+        label in historical_labels and label not in canonical_labels for label in labels
+    )
+    if has_canonical_only_label and has_historical_only_label:
+        return False
+    if all_non_three_digit and has_canonical_only_label:
+        return False
+    if all_non_three_digit:
+        return True
+    return all(
+        number == str(index).zfill(3)
+        for index, number in enumerate(numbers, start=1)
+    )
+
+
+def _review_issue_contract_states_by_task_ids(
+    *,
+    session: SessionDep,
+    task_ids: Sequence[uuid.UUID],
+) -> dict[uuid.UUID, _ReviewIssueContractState]:
+    unique_task_ids = list(dict.fromkeys(task_ids))
+    if not unique_task_ids:
+        return {}
+    projections_by_task_id: dict[
+        uuid.UUID, list[_ReviewIssueContractProjection]
+    ] = {task_id: [] for task_id in unique_task_ids}
+    rows = session.exec(
+        select(
+            ReviewTaskIssue.task_id,
+            ReviewTaskIssue.order,
+            ReviewTaskIssue.source,
+            ReviewTaskIssue.issue_text,
+        )
+        .where(col(ReviewTaskIssue.task_id).in_(unique_task_ids))
+        .order_by(col(ReviewTaskIssue.task_id), col(ReviewTaskIssue.order))
+    ).all()
+    for task_id, order, source, issue_text in rows:
+        projections_by_task_id[task_id].append(
+            _ReviewIssueContractProjection(
+                task_id=task_id,
+                order=order,
+                source=source,
+                issue_text=issue_text,
+            )
+        )
+    return {
+        task_id: _ReviewIssueContractState(
+            status=(
+                _ReviewIssueContractStatus.valid
+                if _has_valid_bms_report_issue_contract(projections)
+                else _ReviewIssueContractStatus.invalid
+            )
+        )
+        for task_id, projections in projections_by_task_id.items()
+    }
+
+
+def _read_effective_review_task_issues(
+    *,
+    session: SessionDep,
+    task_id: uuid.UUID,
+) -> _EffectiveReviewTaskIssues:
+    contract_state = _review_issue_contract_states_by_task_ids(
+        session=session,
+        task_ids=[task_id],
+    )[task_id]
+    if not contract_state.is_valid:
+        return _EffectiveReviewTaskIssues(contract_state=contract_state, issues=())
+    issues = tuple(
+        session.exec(
+            select(ReviewTaskIssue)
+            .where(col(ReviewTaskIssue.task_id) == task_id)
+            .order_by(col(ReviewTaskIssue.order))
+        ).all()
+    )
+    return _EffectiveReviewTaskIssues(contract_state=contract_state, issues=issues)
+
+
 def _highest_issue_severity(
     issues: list[ReviewTaskIssueSnapshotCreate],
 ) -> ReviewIssueSeverity | None:
-    for (
-        severity,
-        _rank,
-        existing_labels,
-        pc_bms_labels,
-        legacy_prefixes,
-    ) in _REVIEW_ISSUE_SEVERITY_RULES:
+    if not _has_valid_bms_report_issue_contract(issues):
+        return None
+    for rule in _REVIEW_ISSUE_SEVERITY_RULES:
         if any(
-            _review_issue_text_matches_severity(
-                issue.issue_text,
-                existing_labels,
-                pc_bms_labels,
-                legacy_prefixes,
-            )
+            _review_issue_text_matches_severity(issue.issue_text, rule)
             for issue in issues
         ):
-            return severity
+            return rule.severity
     return None
 
 
@@ -838,20 +1023,40 @@ def export_review_task_issue_feedback(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> StreamingResponse:
-    rows = session.exec(
-        select(ReviewTask, User, ReviewTaskIssue)
-        .join(User, ReviewTask.user_id == User.id)
-        .join(ReviewTaskIssue, ReviewTaskIssue.task_id == ReviewTask.id)
-        .where(
-            *_task_read_scope_filters(session=session, current_user=current_user),
-            ReviewTask.feedback_protocol_version == 1,
-        )
-        .order_by(
-            col(ReviewTask.created_at).desc(),
-            col(ReviewTask.id),
-            col(ReviewTaskIssue.order),
-        )
-    ).all()
+    task_filters = [
+        *_task_read_scope_filters(session=session, current_user=current_user),
+        ReviewTask.feedback_protocol_version == 1,
+    ]
+    task_ids = list(
+        session.exec(
+            select(ReviewTask.id).where(*task_filters)
+        ).all()
+    )
+    contract_states = _review_issue_contract_states_by_task_ids(
+        session=session,
+        task_ids=task_ids,
+    )
+    valid_task_ids = [
+        task_id for task_id, state in contract_states.items() if state.is_valid
+    ]
+    rows = (
+        session.exec(
+            select(ReviewTask, User, ReviewTaskIssue)
+            .join(User, ReviewTask.user_id == User.id)
+            .join(ReviewTaskIssue, ReviewTaskIssue.task_id == ReviewTask.id)
+            .where(
+                *task_filters,
+                col(ReviewTask.id).in_(valid_task_ids),
+            )
+            .order_by(
+                col(ReviewTask.created_at).desc(),
+                col(ReviewTask.id),
+                col(ReviewTaskIssue.order),
+            )
+        ).all()
+        if valid_task_ids
+        else []
+    )
 
     workbook = Workbook()
     sheet = workbook.active
@@ -1203,6 +1408,8 @@ async def upload_review_task_report(
     issue_snapshots = _parse_issue_snapshots(issues) if issues is not None else []
     if feedback_protocol_version is not None and feedback_protocol_version != 1:
         raise HTTPException(status_code=400, detail="不支持的问题反馈协议版本")
+    if not _has_valid_bms_report_issue_contract(issue_snapshots):
+        issue_snapshots = []
     if task.feedback_protocol_version is not None or (
         feedback_protocol_version is not None and task.report_path is not None
     ):
@@ -1282,13 +1489,11 @@ def read_review_task_issues(
     task = _get_task_for_read(
         session=session, current_user=current_user, task_id=task_id
     )
-    issues = list(
-        session.exec(
-            select(ReviewTaskIssue)
-            .where(col(ReviewTaskIssue.task_id) == task.id)
-            .order_by(col(ReviewTaskIssue.order))
-        ).all()
+    effective_issues = _read_effective_review_task_issues(
+        session=session,
+        task_id=task.id,
     )
+    issues = list(effective_issues.issues)
     return ReviewTaskIssuesPublic(
         data=issues,
         count=len(issues),
@@ -1313,6 +1518,8 @@ def update_review_task_issue_feedback_draft(
         session=session,
         current_user=current_user,
         task_id=task_id,
+        invalid_contract_status_code=404,
+        invalid_contract_detail="Review task issue not found",
     )
     issue = session.exec(
         select(ReviewTaskIssue)
@@ -1381,13 +1588,13 @@ async def upload_review_task_pdf_report(
         )
     )
     if is_issue_feedback_submission:
-        issues = list(
-            session.exec(
-                select(ReviewTaskIssue)
-                .where(col(ReviewTaskIssue.task_id) == task.id)
-                .order_by(col(ReviewTaskIssue.order))
-            ).all()
+        effective_issues = _read_effective_review_task_issues(
+            session=session,
+            task_id=task.id,
         )
+        if not effective_issues.contract_state.is_valid:
+            raise HTTPException(status_code=409, detail="issue_feedback_not_supported")
+        issues = effective_issues.issues
         if any(issue.helpful is None for issue in issues):
             raise HTTPException(status_code=409, detail="issue_feedback_incomplete")
         if any(

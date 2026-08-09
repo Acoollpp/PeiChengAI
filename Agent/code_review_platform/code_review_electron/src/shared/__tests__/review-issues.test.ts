@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { extractReviewIssues, inspectReviewIssues } from '../review-issues'
 import { REVIEW_TEMPLATE_PREVIEWS } from '../review-template-previews'
 import {
+  bmsCodeReviewerHistoricalDs02ReportFixture,
+  bmsCodeReviewerHistoricalPcBmsReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
   bmsCodeReviewerReportRealVariantsFixture,
   bmsCodeReviewerReportWithIssuesFixture,
@@ -116,6 +118,84 @@ describe('extractReviewIssues', () => {
     expect(issues[2]?.displaySnapshot).not.toContain('\n---')
   })
 
+  it('解析合同固定前的真实 PC-BMS 风险词报告并保留两个问题的完整快照', () => {
+    const issues = extractReviewIssues(bmsCodeReviewerHistoricalPcBmsReportFixture)
+
+    expect(issues.map(({ issueText, order, severity, anchorId }) => ({
+      issueText,
+      order,
+      severity,
+      anchorId
+    }))).toEqual([
+      {
+        issueText:
+          'PC-BMS-001 [高] FAULT 分支将 RESET 判断写成赋值表达式，非 RESET 事件会隐式清除故障态',
+        order: 0,
+        severity: 'high',
+        anchorId: expect.stringMatching(/^report-option-\d+$/)
+      },
+      {
+        issueText:
+          'PC-BMS-002 [高] 充电超时保护只新增事件枚举，CHARGING 状态未在 1800 秒或 TIMEOUT 事件进入 FAULT',
+        order: 1,
+        severity: 'high',
+        anchorId: expect.stringMatching(/^report-option-\d+$/)
+      }
+    ])
+    expect(issues[0]).toMatchObject({
+      descriptionText: expect.stringContaining('if (event = BMS_EVENT_RESET)'),
+      codeLocations: [
+        { file: 'bms_state.c', line: '36', description: 'BMS_STATE_FAULT 分支入口' },
+        { file: 'bms_state.c', line: '37', description: '将复位判断写为 event = BMS_EVENT_RESET' },
+        { file: 'bms_state.c', line: '38', description: '条件成立后将 current_state 设置为 BMS_STATE_IDLE' },
+        { file: 'bms_state.h', line: '18', description: expect.stringContaining('BMS_EVENT_TIMEOUT') }
+      ]
+    })
+    expect(issues[0]?.displaySnapshot).toContain('**整改建议：** 将条件恢复为')
+    expect(issues[0]?.displaySnapshot).not.toContain('### PC-BMS-002 [高]')
+    expect(issues[1]?.displaySnapshot).not.toContain('## 四、审查覆盖')
+    expect(issues[0]?.location.startOffset).toBe(
+      bmsCodeReviewerHistoricalPcBmsReportFixture.indexOf('### PC-BMS-001 [高]')
+    )
+  })
+
+  it('解析合同固定前的真实 DS-02 编号报告并保留描述、位置、顺序和锚点', () => {
+    const issues = extractReviewIssues(bmsCodeReviewerHistoricalDs02ReportFixture)
+
+    expect(issues.map(({ issueText, order, severity }) => ({ issueText, order, severity }))).toEqual([
+      {
+        issueText: 'DS-02-001 [高] FAULT 分支条件由比较表达式误改为赋值表达式',
+        order: 0,
+        severity: 'high'
+      },
+      {
+        issueText: 'DS-02-002 [中] 新增 SLEEP 状态分支的 if 缺少 else 分支',
+        order: 1,
+        severity: 'medium'
+      },
+      {
+        issueText: 'DS-02-003 [低] 新增控制语句未采用 Allman 大括号风格',
+        order: 2,
+        severity: 'low'
+      }
+    ])
+    expect(issues[0]).toMatchObject({
+      descriptionText: expect.stringContaining('if (event = BMS_EVENT_RESET)'),
+      codeLocations: [
+        { file: 'bms_state.c', line: '37', description: expect.stringContaining('BMS_STATE_FAULT') },
+        { file: 'bms_state.h', line: '19', description: 'BMS_EVENT_RESET 枚举值定义' }
+      ]
+    })
+    expect(issues.map((issue) => issue.anchorId)).toEqual([
+      expect.stringMatching(/^report-option-\d+$/),
+      expect.stringMatching(/^report-option-\d+$/),
+      expect.stringMatching(/^report-option-\d+$/)
+    ])
+    expect(new Set(issues.map((issue) => issue.anchorId)).size).toBe(3)
+    expect(issues[1]?.displaySnapshot).not.toContain('### DS-02-003 [低]')
+    expect(issues[2]?.displaySnapshot).not.toContain('\n---')
+  })
+
   it.each([
     ['严重', 'high'],
     ['重要', 'medium'],
@@ -131,6 +211,114 @@ describe('extractReviewIssues', () => {
   })
 
   it.each([
+    ['高风险', 'high'],
+    ['高', 'high'],
+    ['中风险', 'medium'],
+    ['中', 'medium'],
+    ['低风险', 'low'],
+    ['低', 'low'],
+    ['建议', 'suggestion']
+  ] as const)('有界兼容 PC-BMS 和 DS-02 历史“%s”级别', (label, severity) => {
+    const pcBmsReport = bmsCodeReviewerHistoricalPcBmsReportFixture.replace(
+      'PC-BMS-001 [高]',
+      `PC-BMS-001 [${label}]`
+    )
+    const ds02Report = bmsCodeReviewerHistoricalDs02ReportFixture.replace(
+      'DS-02-001 [高]',
+      `DS-02-001 [${label}]`
+    )
+
+    expect(extractReviewIssues(pcBmsReport)[0]?.severity).toBe(severity)
+    expect(extractReviewIssues(ds02Report)[0]?.severity).toBe(severity)
+  })
+
+  it('兼容合同固定前的非三位 PC-BMS 编号', () => {
+    const report = bmsCodeReviewerHistoricalPcBmsReportFixture
+      .replace('PC-BMS-001 [高]', 'PC-BMS-1 [高]')
+      .replace('PC-BMS-002 [高]', 'PC-BMS-2 [高]')
+
+    expect(inspectReviewIssues(report)).toMatchObject({
+      format: 'bms_code_reviewer',
+      status: 'parsed'
+    })
+    expect(extractReviewIssues(report).map((issue) => issue.issueText)).toEqual([
+      expect.stringContaining('PC-BMS-1 [高]'),
+      expect.stringContaining('PC-BMS-2 [高]')
+    ])
+  })
+
+  it.each([
+    [
+      '三位与非三位编号混合',
+      bmsCodeReviewerHistoricalPcBmsReportFixture.replace('PC-BMS-002', 'PC-BMS-2')
+    ],
+    [
+      'canonical 与历史严重度词混用',
+      bmsCodeReviewerHistoricalPcBmsReportFixture.replace(
+        'PC-BMS-001 [高]',
+        'PC-BMS-001 [严重]'
+      )
+    ],
+    [
+      '非三位编号使用 canonical 严重度词',
+      bmsCodeReviewerPcBmsReportFixture
+        .replace('PC-BMS-001', 'PC-BMS-1')
+        .replace('PC-BMS-002', 'PC-BMS-2')
+        .replace('PC-BMS-003', 'PC-BMS-3')
+    ]
+  ])('拒绝整份 PC-BMS 报告%s', (_case, malformed) => {
+    expect(inspectReviewIssues(malformed)).toEqual({
+      format: 'bms_code_reviewer',
+      status: 'invalid',
+      issues: [],
+      message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。'
+    })
+    expect(extractReviewIssues(malformed)).toEqual([])
+  })
+
+  it.each([
+    [
+      'canonical',
+      bmsCodeReviewerPcBmsReportFixture.replace(
+        'PC-BMS-002 [一般]',
+        'PC-BMS-002 [建议]'
+      )
+    ],
+    [
+      '历史',
+      bmsCodeReviewerHistoricalPcBmsReportFixture.replace(
+        'PC-BMS-002 [高]',
+        'PC-BMS-002 [建议]'
+      )
+    ]
+  ])('“建议”作为共享词不破坏 %s PC-BMS 报告词表一致性', (_case, report) => {
+    expect(inspectReviewIssues(report)).toMatchObject({
+      format: 'bms_code_reviewer',
+      status: 'parsed'
+    })
+  })
+
+  it.each([
+    ['零编号', ['PC-BMS-000', 'PC-BMS-002']],
+    ['跳号', ['PC-BMS-001', 'PC-BMS-003']],
+    ['重复编号', ['PC-BMS-001', 'PC-BMS-001']],
+    ['倒序编号', ['PC-BMS-002', 'PC-BMS-001']]
+  ] as const)('拒绝三位 PC-BMS %s', (_case, [firstNumber, secondNumber]) => {
+    const malformed = bmsCodeReviewerHistoricalPcBmsReportFixture
+      .replace('PC-BMS-001', 'PC-BMS-FIRST')
+      .replace('PC-BMS-002', 'PC-BMS-SECOND')
+      .replace('PC-BMS-FIRST', firstNumber)
+      .replace('PC-BMS-SECOND', secondNumber)
+
+    expect(inspectReviewIssues(malformed)).toMatchObject({
+      format: 'bms_code_reviewer',
+      status: 'invalid',
+      issues: [],
+      message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。'
+    })
+  })
+
+  it.each([
     ['缺少编号', '### [重要] 状态处理函数复杂度超限'],
     ['缺少风险级别', '### PC-BMS-001 状态处理函数复杂度超限'],
     ['风险级别未知', '### PC-BMS-001 [紧急] 状态处理函数复杂度超限']
@@ -138,6 +326,24 @@ describe('extractReviewIssues', () => {
     const malformed = bmsCodeReviewerPcBmsReportFixture.replace(
       /^### PC-BMS-001 \[重要\].*$/m,
       replacement
+    )
+
+    expect(inspectReviewIssues(malformed)).toMatchObject({
+      format: 'bms_code_reviewer',
+      status: 'invalid',
+      message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。'
+    })
+  })
+
+  it.each([
+    ['P 编号使用 canonical 词', 'P01 [重要]'],
+    ['CR 编号使用 canonical 词', 'CR-001 [严重]'],
+    ['DS-02 使用 canonical 词', 'DS-02-001 [一般]'],
+    ['其他 DS 前缀', 'DS-03-001 [高]']
+  ])('拒绝编号族与严重度词表越界：%s', (_case, headingPrefix) => {
+    const malformed = bmsCodeReviewerHistoricalPcBmsReportFixture.replace(
+      'PC-BMS-001 [高]',
+      headingPrefix
     )
 
     expect(inspectReviewIssues(malformed)).toMatchObject({

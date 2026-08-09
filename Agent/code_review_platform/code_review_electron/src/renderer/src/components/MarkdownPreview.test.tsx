@@ -6,6 +6,8 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { extractDetailedHeadingOptions, MarkdownPreview } from './MarkdownPreview'
+import bmsCodeReviewerHistoricalDs02ReportFixture from '../../../shared/__tests__/fixtures/bms-code-reviewer-historical-ds02-report.md?raw'
+import bmsCodeReviewerHistoricalPcBmsReportFixture from '../../../shared/__tests__/fixtures/bms-code-reviewer-historical-pc-bms-report.md?raw'
 import bmsCodeReviewerPcBmsReportFixture from '../../../shared/__tests__/fixtures/bms-code-reviewer-pc-bms-report.md?raw'
 
 afterEach(() => {
@@ -297,6 +299,33 @@ describe('MarkdownPreview', () => {
       options.map((option) => option.anchorId)
     )
     expect(headings[1]).toHaveClass('report-anchor-highlight')
+  })
+
+  it.each([
+    ['PC-BMS 历史风险词', bmsCodeReviewerHistoricalPcBmsReportFixture, /PC-BMS-00[1-2]/, 2],
+    ['DS-02 历史编号', bmsCodeReviewerHistoricalDs02ReportFixture, /DS-02-00[1-3]/, 3]
+  ] as const)('为真实%s报告渲染可定位的逐问题反馈锚点', (
+    _name,
+    markdown,
+    headingPattern,
+    issueCount
+  ) => {
+    const options = extractDetailedHeadingOptions(markdown)
+    expect(options).toHaveLength(issueCount)
+
+    render(
+      <MarkdownPreview
+        markdown={markdown}
+        activeFeedbackAnchorId={options.at(-1)?.anchorId}
+      />
+    )
+
+    const headings = screen.getAllByRole('heading', { name: headingPattern })
+    expect(headings).toHaveLength(issueCount)
+    expect(headings.map((heading) => heading.getAttribute('data-report-anchor-id'))).toEqual(
+      options.map((option) => option.anchorId)
+    )
+    expect(headings.at(-1)).toHaveClass('report-anchor-highlight')
   })
 
   it('模板一激活问题时连续高亮标题到问题边界内的全部内容', async () => {

@@ -42,6 +42,8 @@ import {
   uploadReportFile
 } from '../report-uploader'
 import {
+  bmsCodeReviewerHistoricalDs02ReportFixture,
+  bmsCodeReviewerHistoricalPcBmsReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
   templateOneReportFixture
 } from '../../shared/__tests__/fixtures/review-report-fixtures'
@@ -239,6 +241,94 @@ describe('report uploader', () => {
           })
         ],
         assets: []
+      })
+    )
+  })
+
+  it.each([
+    {
+      name: 'PC-BMS 历史风险词',
+      markdown: bmsCodeReviewerHistoricalPcBmsReportFixture,
+      expectedIssueTexts: [
+        'PC-BMS-001 [高] FAULT 分支将 RESET 判断写成赋值表达式，非 RESET 事件会隐式清除故障态',
+        'PC-BMS-002 [高] 充电超时保护只新增事件枚举，CHARGING 状态未在 1800 秒或 TIMEOUT 事件进入 FAULT'
+      ]
+    },
+    {
+      name: 'DS-02 历史编号',
+      markdown: bmsCodeReviewerHistoricalDs02ReportFixture,
+      expectedIssueTexts: [
+        'DS-02-001 [高] FAULT 分支条件由比较表达式误改为赋值表达式',
+        'DS-02-002 [中] 新增 SLEEP 状态分支的 if 缺少 else 分支',
+        'DS-02-003 [低] 新增控制语句未采用 Allman 大括号风格'
+      ]
+    }
+  ])('上传真实 $name 报告时建立完整有序问题快照', async ({ markdown, expectedIssueTexts }) => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-historical-bms-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '历史审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await writeFile(reportPath, markdown)
+
+    await uploadReportFile(api, 'token-123', 'task-historical', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-historical',
+      expect.objectContaining({
+        report_content: markdown,
+        issues: expectedIssueTexts.map((issueText, order) =>
+          expect.objectContaining({
+            issue_text: issueText,
+            order,
+            display_snapshot: expect.stringContaining(`### ${issueText}`),
+            location: expect.objectContaining({
+              start_offset: markdown.indexOf(`### ${issueText}`)
+            })
+          })
+        )
+      })
+    )
+  })
+
+  it.each([
+    {
+      name: '三位与非三位编号混合',
+      markdown: bmsCodeReviewerHistoricalPcBmsReportFixture.replace(
+        'PC-BMS-002',
+        'PC-BMS-2'
+      )
+    },
+    {
+      name: 'canonical 与历史严重度词混用',
+      markdown: bmsCodeReviewerHistoricalPcBmsReportFixture.replace(
+        'PC-BMS-001 [高]',
+        'PC-BMS-001 [严重]'
+      )
+    },
+    {
+      name: '非三位编号使用 canonical 严重度词',
+      markdown: bmsCodeReviewerPcBmsReportFixture
+        .replace('PC-BMS-001', 'PC-BMS-1')
+        .replace('PC-BMS-002', 'PC-BMS-2')
+        .replace('PC-BMS-003', 'PC-BMS-3')
+    }
+  ])('无效 PC-BMS 报告（$name）继续上传 Markdown 但不建立问题快照', async ({ markdown }) => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-invalid-pc-bms-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '无效历史审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await writeFile(reportPath, markdown)
+
+    await uploadReportFile(api, 'token-123', 'task-invalid-pc-bms', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-invalid-pc-bms',
+      expect.objectContaining({
+        report_content: markdown,
+        feedback_protocol_version: 1,
+        issues: []
       })
     )
   })

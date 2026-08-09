@@ -4,6 +4,10 @@ import {
   BMS_CODE_REVIEW_SKILL_NAME,
   type ResolvedReviewItemInput
 } from '../shared/review-items'
+import {
+  BMS_CANONICAL_ISSUE_HEADING_TEMPLATE,
+  BMS_CANONICAL_SEVERITY_MAPPING_TEXT
+} from '../shared/review-issues'
 
 export interface BmsReviewTaskPromptInput {
   svnUrl: string
@@ -78,6 +82,7 @@ export const buildBmsReviewTaskPrompt = ({
     '',
     '## 报告输出',
     `- Markdown 报告完整路径：${reportPath}`,
+    `- 新报告正式问题标题合同：\`${BMS_CANONICAL_ISSUE_HEADING_TEMPLATE}\`；NNN 从 001 开始连续递增；严重度映射：${BMS_CANONICAL_SEVERITY_MAPPING_TEXT}。不得使用 P/CR、审查项 ID、候选问题编号或高/中/低风险词生成新报告。`,
     '',
     '只生成 Markdown 审查报告并写入上述完整路径。报告内容、问题格式和最终错误标记均按 bms-code-reviewer Skill 自身约定执行。报告正文不得包含报告输出路径或其他本机内部路径。'
   ].join('\n')
