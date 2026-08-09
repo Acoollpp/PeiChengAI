@@ -165,6 +165,60 @@ describe('ReviewWorkbenchPreview', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('已推进一轮本地任务阶段')
   })
 
+  it('报告列表刷新失败时保留错误重试入口和已有报告操作', async () => {
+    const user = userEvent.setup()
+    const fixtureAdapter = createFixtureWorkbenchAdapter()
+    const adapter = {
+      ...fixtureAdapter,
+      getViewModel: () => ({
+        ...fixtureAdapter.getViewModel(),
+        reportListState: {
+          status: 'error' as const,
+          message: '服务端暂时无法刷新报告列表。'
+        }
+      }),
+      commands: {
+        ...fixtureAdapter.commands,
+        reloadReportList: async () => ({ message: '正在重新加载报告列表。' })
+      }
+    }
+
+    render(<ReviewWorkbenchPreview adapter={adapter} />)
+
+    const errorState = screen.getByRole('alert', { name: '报告列表加载失败' })
+    expect(errorState).toHaveTextContent('服务端暂时无法刷新报告列表。')
+    expect(within(errorState).getByRole('button', { name: '重新加载报告列表' })).toBeInTheDocument()
+
+    const reportRow = screen.getByText('低压上下电状态机复核').closest('.wb-management-report-row')
+    expect(reportRow).not.toBeNull()
+    await user.click(within(reportRow as HTMLElement).getByRole('button', { name: '查看报告' }))
+
+    expect(screen.getByRole('heading', { name: '报告中心' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '低压上下电状态机复核' })).toBeInTheDocument()
+  })
+
+  it('报告列表刷新中保留加载提示和已有报告操作', async () => {
+    const user = userEvent.setup()
+    const fixtureAdapter = createFixtureWorkbenchAdapter()
+    const adapter = {
+      ...fixtureAdapter,
+      getViewModel: () => ({
+        ...fixtureAdapter.getViewModel(),
+        reportListState: { status: 'loading' as const }
+      })
+    }
+
+    render(<ReviewWorkbenchPreview adapter={adapter} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('正在加载可查看报告。')
+    const reportRow = screen.getByText('低压上下电状态机复核').closest('.wb-management-report-row')
+    expect(reportRow).not.toBeNull()
+    await user.click(within(reportRow as HTMLElement).getByRole('button', { name: '查看报告' }))
+
+    expect(screen.getByRole('heading', { name: '报告中心' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '低压上下电状态机复核' })).toBeInTheDocument()
+  })
+
   it('在报告中心选择真实 Markdown 报告并触发 PDF 预览命令', async () => {
     const user = userEvent.setup()
     const adapter = createFixtureWorkbenchAdapter()

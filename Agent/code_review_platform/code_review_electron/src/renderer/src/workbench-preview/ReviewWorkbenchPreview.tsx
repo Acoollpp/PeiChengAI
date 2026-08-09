@@ -254,6 +254,7 @@ function TaskManagementView({
   const serviceSuccess = taskStats === undefined
     ? viewModel.reports.length
     : taskStats.status === 'ready' ? taskStats.success : '—'
+  const reportListState = viewModel.reportListState
 
   return (
     <section className="wb-workspace wb-task-management" aria-labelledby="workbench-title">
@@ -315,20 +316,22 @@ function TaskManagementView({
         <div className="wb-table-head wb-report-table-head" aria-hidden="true">
           <span>任务 / 报告</span><span>审查范围</span><span>问题</span><span>完成时间</span><span>操作</span>
         </div>
-        {viewModel.reportListState?.status === 'loading' ? (
-          <div className="wb-report-state" role="status">正在加载可查看报告。</div>
-        ) : viewModel.reportListState?.status === 'error' ? (
+        {reportListState?.status === 'error' && (
           <div className="wb-report-state is-error" role="alert" aria-label="报告列表加载失败">
-            <div><strong>报告列表加载失败</strong><span>{viewModel.reportListState.message}</span></div>
+            <div><strong>报告列表加载失败</strong><span>{reportListState.message}</span></div>
             {adapter.commands.reloadReportList && (
               <button type="button" onClick={() => void adapter.commands.reloadReportList?.()}>
                 <RefreshCw aria-hidden="true" />重新加载报告列表
               </button>
             )}
           </div>
-        ) : viewModel.reports.length === 0 ? (
+        )}
+        {reportListState?.status === 'loading' && (
+          <div className="wb-report-state" role="status">正在加载可查看报告。</div>
+        )}
+        {viewModel.reports.length === 0 && reportListState?.status !== 'loading' && reportListState?.status !== 'error' ? (
           <div className="wb-empty-band"><FileText aria-hidden="true" /><div><strong>暂无可查看报告</strong><span>任务完成后，报告会出现在这里。</span></div></div>
-        ) : (
+        ) : viewModel.reports.length > 0 ? (
           <div className="wb-management-report-list">
             {viewModel.reports.map((report) => (
               <article className="wb-management-report-row" key={report.id}>
@@ -344,7 +347,7 @@ function TaskManagementView({
               </article>
             ))}
           </div>
-        )}
+        ) : null}
       </section>
     </section>
   )
