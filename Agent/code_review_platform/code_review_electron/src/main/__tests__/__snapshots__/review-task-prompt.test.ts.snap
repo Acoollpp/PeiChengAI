@@ -1,0 +1,146 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildBmsReviewTaskPrompt > DS-01 只输出工作区副本路径且材料与额外规则保持逐项归属 1`] = `
+"请强制使用本机 Codex 已安装的 Skill：bms-code-reviewer
+
+请读取并严格按照该 Skill 的 SKILL.md 执行本次审查。平台只传递任务输入，不解释或覆盖 Skill 内部的审查规则、证据模式、编排策略和失败策略。
+
+## 任务公共输入
+- SVN 地址：svn://example.com/bms/trunk
+- 旧 revision：120
+- 新 revision：130
+- 所属部门：BMS 软件部
+
+旧 revision 是用户原始输入，必须原样交给 Skill。不得由平台提示词把 0 或 r0 解释为整单的全量审查模式；每个审查项的证据模式只由 Skill 决定。
+
+## 已选审查项
+### DS-01：变更点审查
+- 用户额外规则：仅核对本次协议变更
+- 专项材料：
+  - 产品开发需求表（requirement-sheet）：
+    - /runtime/workspaces/task-31/materials/DS-01/requirement-sheet/需求表.xlsx
+  - 产品规格书（product-spec）：
+    - /runtime/workspaces/task-31/materials/DS-01/product-spec/规格书.pdf
+
+每项用户额外规则只属于紧邻的该审查项，不得应用到其他审查项或扩展为未选择的审查方向。
+
+## 报告输出
+- Markdown 报告完整路径：/runtime/workspaces/task-31/report.md
+
+只生成 Markdown 审查报告并写入上述完整路径。报告内容、问题格式和最终错误标记均按 bms-code-reviewer Skill 自身约定执行。报告正文不得包含报告输出路径或其他本机内部路径。"
+`;
+
+exports[`buildBmsReviewTaskPrompt > 同一材料字段的多个工作区路径完整保留且不泄露源路径 1`] = `
+"请强制使用本机 Codex 已安装的 Skill：bms-code-reviewer
+
+请读取并严格按照该 Skill 的 SKILL.md 执行本次审查。平台只传递任务输入，不解释或覆盖 Skill 内部的审查规则、证据模式、编排策略和失败策略。
+
+## 任务公共输入
+- SVN 地址：svn://example.com/bms/multiple-materials
+- 旧 revision：r210
+- 新 revision：r220
+- 所属部门：BMS 软件部
+
+旧 revision 是用户原始输入，必须原样交给 Skill。不得由平台提示词把 0 或 r0 解释为整单的全量审查模式；每个审查项的证据模式只由 Skill 决定。
+
+## 已选审查项
+### DS-01：变更点审查
+- 用户额外规则：无
+- 专项材料：
+  - 产品开发需求表（requirement-sheet）：
+    - /runtime/workspaces/task-multiple/materials/DS-01/requirement-sheet/主需求表.xlsx
+    - /runtime/workspaces/task-multiple/materials/DS-01/requirement-sheet/补充需求表.xls
+
+每项用户额外规则只属于紧邻的该审查项，不得应用到其他审查项或扩展为未选择的审查方向。
+
+## 报告输出
+- Markdown 报告完整路径：/runtime/workspaces/task-multiple/report.md
+
+只生成 Markdown 审查报告并写入上述完整路径。报告内容、问题格式和最终错误标记均按 bms-code-reviewer Skill 自身约定执行。报告正文不得包含报告输出路径或其他本机内部路径。"
+`;
+
+exports[`buildBmsReviewTaskPrompt > 生成 DS-03 新 Skill 提示词并保持 old revision 0 原样 1`] = `
+"请强制使用本机 Codex 已安装的 Skill：bms-code-reviewer
+
+请读取并严格按照该 Skill 的 SKILL.md 执行本次审查。平台只传递任务输入，不解释或覆盖 Skill 内部的审查规则、证据模式、编排策略和失败策略。
+
+## 任务公共输入
+- SVN 地址：svn://example.com/bms/trunk
+- 旧 revision：0
+- 新 revision：r130
+- 所属部门：软件开发部
+
+旧 revision 是用户原始输入，必须原样交给 Skill。不得由平台提示词把 0 或 r0 解释为整单的全量审查模式；每个审查项的证据模式只由 Skill 决定。
+
+## 已选审查项
+### DS-03：状态机审核
+- 用户额外规则：重点检查休眠唤醒状态转换
+- 专项材料：无
+
+每项用户额外规则只属于紧邻的该审查项，不得应用到其他审查项或扩展为未选择的审查方向。
+
+## 报告输出
+- Markdown 报告完整路径：/runtime/workspaces/task-30/report.md
+
+只生成 Markdown 审查报告并写入上述完整路径。报告内容、问题格式和最终错误标记均按 bms-code-reviewer Skill 自身约定执行。报告正文不得包含报告输出路径或其他本机内部路径。"
+`;
+
+exports[`buildBmsReviewTaskPrompt > 空额外规则显示为无且拒绝相对报告路径 1`] = `
+"请强制使用本机 Codex 已安装的 Skill：bms-code-reviewer
+
+请读取并严格按照该 Skill 的 SKILL.md 执行本次审查。平台只传递任务输入，不解释或覆盖 Skill 内部的审查规则、证据模式、编排策略和失败策略。
+
+## 任务公共输入
+- SVN 地址：svn://example.com/bms/trunk
+- 旧 revision：12
+- 新 revision：14
+- 所属部门：未设置
+
+旧 revision 是用户原始输入，必须原样交给 Skill。不得由平台提示词把 0 或 r0 解释为整单的全量审查模式；每个审查项的证据模式只由 Skill 决定。
+
+## 已选审查项
+### DS-03：状态机审核
+- 用户额外规则：无
+- 专项材料：无
+
+每项用户额外规则只属于紧邻的该审查项，不得应用到其他审查项或扩展为未选择的审查方向。
+
+## 报告输出
+- Markdown 报告完整路径：/runtime/workspaces/task-empty-rule/report.md
+
+只生成 Markdown 审查报告并写入上述完整路径。报告内容、问题格式和最终错误标记均按 bms-code-reviewer Skill 自身约定执行。报告正文不得包含报告输出路径或其他本机内部路径。"
+`;
+
+exports[`buildBmsReviewTaskPrompt > 组合提示词逐项隔离规则和材料，并保持 r0 与新 revision 原样 1`] = `
+"请强制使用本机 Codex 已安装的 Skill：bms-code-reviewer
+
+请读取并严格按照该 Skill 的 SKILL.md 执行本次审查。平台只传递任务输入，不解释或覆盖 Skill 内部的审查规则、证据模式、编排策略和失败策略。
+
+## 任务公共输入
+- SVN 地址：svn://example.com/bms/trunk
+- 旧 revision：r0
+- 新 revision：R130
+- 所属部门：BMS 软件部
+
+旧 revision 是用户原始输入，必须原样交给 Skill。不得由平台提示词把 0 或 r0 解释为整单的全量审查模式；每个审查项的证据模式只由 Skill 决定。
+
+## 已选审查项
+### DS-01：变更点审查
+- 用户额外规则：只核对协议导入
+- 专项材料：
+  - 产品开发需求表（requirement-sheet）：
+    - /runtime/workspaces/task-32/materials/DS-01/requirement-sheet/需求表.xlsx
+  - 产品规格书（product-spec）：
+    - /runtime/workspaces/task-32/materials/DS-01/product-spec/规格书.pdf
+
+### DS-03：状态机审核
+- 用户额外规则：无
+- 专项材料：无
+
+每项用户额外规则只属于紧邻的该审查项，不得应用到其他审查项或扩展为未选择的审查方向。
+
+## 报告输出
+- Markdown 报告完整路径：/runtime/workspaces/task-32/report.md
+
+只生成 Markdown 审查报告并写入上述完整路径。报告内容、问题格式和最终错误标记均按 bms-code-reviewer Skill 自身约定执行。报告正文不得包含报告输出路径或其他本机内部路径。"
+`;

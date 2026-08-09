@@ -17,9 +17,10 @@ describe('buildBmsReviewTaskPrompt', () => {
           materials: []
         }
       ],
-      reportPath: '/tmp/task-30/BMS_V2_审查报告.md'
+      reportPath: '/runtime/workspaces/task-30/report.md'
     })
 
+    expect(prompt).toMatchSnapshot()
     expect(prompt).toContain('Skill：bms-code-reviewer')
     expect(prompt).toContain('SVN 地址：svn://example.com/bms/trunk')
     expect(prompt).toContain('旧 revision：0')
@@ -31,7 +32,7 @@ describe('buildBmsReviewTaskPrompt', () => {
     expect(prompt).toContain('### DS-03：状态机审核')
     expect(prompt).toContain('用户额外规则：重点检查休眠唤醒状态转换')
     expect(prompt).toContain('专项材料：无')
-    expect(prompt).toContain('Markdown 报告完整路径：/tmp/task-30/BMS_V2_审查报告.md')
+    expect(prompt).toContain('Markdown 报告完整路径：/runtime/workspaces/task-30/report.md')
     expect(prompt).not.toContain('产品开发需求表')
     expect(prompt).not.toContain('重点审查方向')
   })
@@ -49,6 +50,14 @@ describe('buildBmsReviewTaskPrompt', () => {
     expect(
       buildBmsReviewTaskPrompt({ ...input, reportPath: 'C:\\review\\report.md' })
     ).toContain('用户额外规则：无')
+
+    const prompt = buildBmsReviewTaskPrompt({
+      ...input,
+      reportPath: '/runtime/workspaces/task-empty-rule/report.md'
+    })
+
+    expect(prompt).toMatchSnapshot()
+    expect(prompt).toContain('用户额外规则：无')
   })
 
   it('DS-01 只输出工作区副本路径且材料与额外规则保持逐项归属', () => {
@@ -77,6 +86,7 @@ describe('buildBmsReviewTaskPrompt', () => {
       reportPath: '/runtime/workspaces/task-31/report.md'
     })
 
+    expect(prompt).toMatchSnapshot()
     expect(prompt).toContain('### DS-01：变更点审查')
     expect(prompt).toContain('用户额外规则：仅核对本次协议变更')
     expect(prompt).toContain('产品开发需求表（requirement-sheet）')
@@ -125,8 +135,11 @@ describe('buildBmsReviewTaskPrompt', () => {
     const ds01Section = prompt.slice(ds01Start, ds03Start)
     const ds03Section = prompt.slice(ds03Start, itemBoundary)
 
+    expect(prompt).toMatchSnapshot()
     expect(prompt).toContain('旧 revision：r0')
     expect(prompt).toContain('新 revision：R130')
+    expect(prompt).not.toContain('平台全量审查占位')
+    expect(prompt).not.toContain('svn diff -r 0')
     expect(ds01Section).toContain('用户额外规则：只核对协议导入')
     expect(ds01Section).toContain(requirementPath)
     expect(ds01Section).toContain(specificationPath)
@@ -134,6 +147,40 @@ describe('buildBmsReviewTaskPrompt', () => {
     expect(ds03Section).toContain('专项材料：无')
     expect(ds03Section).not.toContain('只核对协议导入')
     expect(ds03Section).not.toContain('/materials/DS-01/')
+  })
+
+  it('同一材料字段的多个工作区路径完整保留且不泄露源路径', () => {
+    const prompt = buildBmsReviewTaskPrompt({
+      svnUrl: 'svn://example.com/bms/multiple-materials',
+      oldRevision: 'r210',
+      newRevision: 'r220',
+      departmentName: 'BMS 软件部',
+      reviewItems: [
+        {
+          id: 'DS-01',
+          name: '变更点审查',
+          materials: [
+            {
+              fieldId: 'requirement-sheet',
+              name: '产品开发需求表',
+              required: true,
+              multiple: true,
+              allowedExtensions: ['.xlsx', '.xls'],
+              filePaths: [
+                '/runtime/workspaces/task-multiple/materials/DS-01/requirement-sheet/主需求表.xlsx',
+                '/runtime/workspaces/task-multiple/materials/DS-01/requirement-sheet/补充需求表.xls'
+              ]
+            }
+          ]
+        }
+      ],
+      reportPath: '/runtime/workspaces/task-multiple/report.md'
+    })
+
+    expect(prompt).toMatchSnapshot()
+    expect(prompt).toContain('/requirement-sheet/主需求表.xlsx')
+    expect(prompt).toContain('/requirement-sheet/补充需求表.xls')
+    expect(prompt).not.toContain('/Users/source')
   })
 
   it('DS-02 与 DS-03 组合提示词保持原始 revision 和逐项规则且不产生材料', () => {
