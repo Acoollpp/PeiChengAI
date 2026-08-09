@@ -82,6 +82,50 @@ describe('report pdf generator', () => {
     expect(loadedHtml).toContain('<code>已完成修复</code>')
   })
 
+  it('将正文中的 Markdown 分隔线渲染为水平线', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-pdf-thematic-break-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    await writeFile(reportPath, '# 审查报告\n\n第一部分\n\n---\n\n第二部分\n')
+    let loadedHtml = ''
+    const createWindow = vi.fn(() => ({
+      loadFile: vi.fn(async (path: string) => {
+        loadedHtml = await readFile(path, 'utf8')
+      }),
+      webContents: {
+        printToPDF: vi.fn(async () => Buffer.from('pdf-bytes'))
+      },
+      close: vi.fn()
+    }))
+
+    await generatePdfReport(reportPath, { createWindow })
+
+    expect(loadedHtml).toContain('<hr>')
+    expect(loadedHtml).not.toContain('<p>---</p>')
+  })
+
+  it('忽略报告末尾没有后续内容的 Markdown 分隔线', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-pdf-trailing-break-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    await writeFile(reportPath, '# 审查报告\n\n正文内容\n\n---\n\n')
+    let loadedHtml = ''
+    const createWindow = vi.fn(() => ({
+      loadFile: vi.fn(async (path: string) => {
+        loadedHtml = await readFile(path, 'utf8')
+      }),
+      webContents: {
+        printToPDF: vi.fn(async () => Buffer.from('pdf-bytes'))
+      },
+      close: vi.fn()
+    }))
+
+    await generatePdfReport(reportPath, { createWindow })
+
+    expect(loadedHtml).not.toContain('<hr>')
+    expect(loadedHtml).not.toContain('<p>---</p>')
+  })
+
   it('allows existing relative image references', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'report-pdf-image-'))
     tempDirs.push(dir)
