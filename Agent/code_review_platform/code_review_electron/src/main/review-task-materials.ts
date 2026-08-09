@@ -16,6 +16,21 @@ export interface PrepareReviewMaterialsDependencies {
 const formatExtensions = (extensions: readonly string[]): string =>
   extensions.join('、')
 
+const reserveDestinationName = (sourcePath: string, reservedNames: Set<string>): string => {
+  const sourceName = basename(sourcePath)
+  const extension = extname(sourceName)
+  const stem = basename(sourceName, extension)
+  let candidate = sourceName
+  let suffix = 2
+
+  while (reservedNames.has(candidate.toLocaleLowerCase('en-US'))) {
+    candidate = `${stem}-${suffix}${extension}`
+    suffix += 1
+  }
+  reservedNames.add(candidate.toLocaleLowerCase('en-US'))
+  return candidate
+}
+
 const validateMaterial = async (
   itemId: string,
   material: ResolvedReviewItemMaterialInput,
@@ -101,9 +116,14 @@ export const prepareReviewTaskMaterials = async (
       }
 
       const copiedPaths: string[] = []
+      const reservedNames = new Set<string>()
       for (const sourcePath of material.filePaths) {
-        const targetPath = join(destinationDir, basename(sourcePath.trim()))
-        await resolvedDependencies.copyFile(sourcePath.trim(), targetPath).catch(() => {
+        const trimmedSourcePath = sourcePath.trim()
+        const targetPath = join(
+          destinationDir,
+          reserveDestinationName(trimmedSourcePath, reservedNames)
+        )
+        await resolvedDependencies.copyFile(trimmedSourcePath, targetPath).catch(() => {
           throw new Error(`审查材料复制失败：${item.id} ${material.name}复制失败，请检查文件权限后重试。`)
         })
         copiedPaths.push(targetPath)

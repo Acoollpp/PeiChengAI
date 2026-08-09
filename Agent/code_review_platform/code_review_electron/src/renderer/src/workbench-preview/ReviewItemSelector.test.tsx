@@ -8,7 +8,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createFixtureWorkbenchAdapter } from './fixture-adapter'
 import { ReviewItemSelector } from './ReviewItemSelector'
-import type { ReviewSelection } from './types'
+import type {
+  MaterialFileView,
+  ReviewItemDefinition,
+  ReviewSelection,
+  WorkbenchCommands
+} from './types'
 
 afterEach(cleanup)
 
@@ -105,6 +110,82 @@ describe('ReviewItemSelector', () => {
     expect(within(screen.getByLabelText('审查项列表')).getByText('没有匹配的审查项')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '显示全部' }))
     expect(screen.getByText('状态机审核')).toBeInTheDocument()
+  })
+
+  it('synthetic 多文件字段支持按顺序多选、移除并补选材料', async () => {
+    const user = userEvent.setup()
+    const firstFile: MaterialFileView = {
+      id: '/source/第一份证据.pdf',
+      name: '第一份证据.pdf',
+      sizeLabel: '1 KB'
+    }
+    const secondFile: MaterialFileView = {
+      id: '/source/第二份证据.pdf',
+      name: '第二份证据.pdf',
+      sizeLabel: '2 KB'
+    }
+    const replacementFile: MaterialFileView = {
+      id: '/source/补选证据.pdf',
+      name: '补选证据.pdf',
+      sizeLabel: '3 KB'
+    }
+    const catalog: ReviewItemDefinition[] = [{
+      id: 'DS-01',
+      category: '测试目录',
+      name: '多材料审查',
+      summary: '仅用于验证 renderer 多文件交互，不改变生产目录。',
+      goal: '验证多文件材料选择。',
+      process: ['选择并管理多份材料'],
+      specification: 'synthetic 测试定义。',
+      materialFields: [{
+        id: 'evidence',
+        label: '审查证据',
+        description: '可选择多份 PDF 证据。',
+        required: true,
+        extensions: ['.pdf'],
+        multiplicity: 'multiple'
+      }]
+    }]
+    const chooseMaterial = vi.fn<WorkbenchCommands['chooseMaterial']>()
+      .mockResolvedValueOnce(firstFile)
+      .mockResolvedValueOnce(secondFile)
+      .mockResolvedValueOnce(replacementFile)
+    const onConfirm = vi.fn<(selection: ReviewSelection) => void>()
+
+    render(
+      <ReviewItemSelector
+        catalog={catalog}
+        initialSelection={{}}
+        commands={{ chooseMaterial }}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+      />
+    )
+
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-01 多材料审查' }))
+    await user.click(screen.getByRole('button', { name: '选择文件' }))
+    await user.click(screen.getByRole('button', { name: '选择文件' }))
+
+    expect(chooseMaterial).toHaveBeenNthCalledWith(1, 'DS-01', 'evidence', [])
+    expect(chooseMaterial).toHaveBeenNthCalledWith(2, 'DS-01', 'evidence', [firstFile.id])
+    expect(screen.getByText(firstFile.name)).toBeInTheDocument()
+    expect(screen.getByText(secondFile.name)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: `移除 ${firstFile.name}` }))
+    expect(screen.queryByText(firstFile.name)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '选择文件' }))
+
+    expect(chooseMaterial).toHaveBeenNthCalledWith(3, 'DS-01', 'evidence', [secondFile.id])
+    expect(screen.getByText(replacementFile.name)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
+
+    expect(onConfirm).toHaveBeenCalledWith({
+      'DS-01': {
+        itemId: 'DS-01',
+        extraRules: '',
+        materials: { evidence: [secondFile, replacementFile] }
+      }
+    })
   })
 
   it('将 Tab 限制在弹窗内，并支持 Escape 取消', async () => {
