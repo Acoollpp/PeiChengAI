@@ -15,6 +15,7 @@ import type { ReviewTask, ReviewTaskIssue } from '../../shared/types'
 import {
   bmsCodeReviewerHistoricalDs02ReportFixture,
   bmsCodeReviewerHistoricalPcBmsReportFixture,
+  bmsCodeReviewerNoSeverityReportFixture,
   bmsDs03ReportFixture,
   templateOneReportFixture
 } from '../../shared/__tests__/fixtures/review-report-fixtures'
@@ -224,6 +225,14 @@ describe('submitIssueFeedback', () => {
       reportName: 'DS-02_历史审查报告.md',
       headings: ['DS-02-001 [高]', 'DS-02-002 [中]', 'DS-02-003 [低]'],
       pdfMarker: 'DS-02 historical feedback'
+    },
+    {
+      name: '最新无严重度',
+      markdown: bmsCodeReviewerNoSeverityReportFixture,
+      reviewItemIds: ['DS-01', 'DS-03'],
+      reportName: 'BMS_无严重度审查报告.md',
+      headings: ['STATE-17 休眠高风险路径', '编号-任意-42 建议路径'],
+      pdfMarker: 'BMS no severity feedback'
     }
   ])('$name 报告通过真实生成器写入逐项反馈版 PDF', async ({
     markdown,

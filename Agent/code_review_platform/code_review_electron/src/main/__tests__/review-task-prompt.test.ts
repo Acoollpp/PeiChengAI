@@ -32,11 +32,10 @@ describe('buildBmsReviewTaskPrompt', () => {
     expect(prompt).toContain('用户额外规则：重点检查休眠唤醒状态转换')
     expect(prompt).toContain('专项材料：无')
     expect(prompt).toContain('Markdown 报告完整路径：/tmp/task-30/BMS_V2_审查报告.md')
-    expect(prompt).toContain(
-      '新报告正式问题标题合同：`### PC-BMS-NNN [严重|重要|一般|建议] <问题标题>`；NNN 从 001 开始连续递增；严重度映射：严重->high、重要->medium、一般->low、建议->suggestion。'
-    )
+    expect(prompt).not.toContain('新报告正式问题标题合同')
+    expect(prompt).not.toContain('PC-BMS-NNN')
+    expect(prompt).not.toContain('严重度映射')
     expect(prompt).not.toContain('依次映射')
-    expect(prompt).toContain('不得使用 P/CR、审查项 ID、候选问题编号或高/中/低风险词生成新报告。')
     expect(prompt).not.toContain('产品开发需求表')
     expect(prompt).not.toContain('重点审查方向')
   })

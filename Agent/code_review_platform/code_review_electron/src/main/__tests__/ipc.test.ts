@@ -765,7 +765,7 @@ describe('registerIpcHandlers', () => {
     const imagesDir = join(cwd, 'images')
     const sender = { send: vi.fn() }
     const prepareReport = vi.fn(async () => '# cleaned report\n')
-    const uploadReport = vi.fn(async () => undefined)
+    const uploadReport = vi.fn(async () => ({ feedback_protocol_version: null }))
     const { registerIpcHandlers } = await import('../ipc')
 
     registerIpcHandlers({
@@ -784,13 +784,19 @@ describe('registerIpcHandlers', () => {
 
     const executeHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:execute')?.[1]
 
-    await executeHandler({ sender }, {
+    const result = await executeHandler({ sender }, {
       client_task_id: 'local-task-1',
       svn_url: 'svn://repo/project',
       old_revision: '1',
       new_revision: '2',
       template_key: 'template_1',
       skill_name: '通用-代码审查-模版一'
+    })
+
+    expect(result).toMatchObject({
+      taskId: 'task-1',
+      status: 'success',
+      feedbackProtocolVersion: null
     })
 
     expect(api.createTask).toHaveBeenCalledWith('token-123', {

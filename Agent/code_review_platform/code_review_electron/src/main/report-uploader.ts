@@ -549,7 +549,16 @@ export const uploadReportFile = async (
     throw new Error(`审查报告超过大小限制：${reportPath}`)
   }
   const extraction = inspectReviewIssues(reportContent)
-  const issues = (extraction.status === 'parsed' ? extraction.issues : []).map((issue) => ({
+  const reportPayload = {
+    report_content: reportContent,
+    report_path: reportPath,
+    report_name: basename(reportPath)
+  }
+  if (extraction.status === 'invalid') {
+    return api.uploadReport(token, taskId, reportPayload)
+  }
+
+  const issues = extraction.issues.map((issue) => ({
     issue_text: issue.issueText,
     description_text: issue.descriptionText,
     display_snapshot: issue.displaySnapshot,
@@ -567,9 +576,7 @@ export const uploadReportFile = async (
   const assets = await readReportAssets(reportPath, reportContent)
 
   return api.uploadReport(token, taskId, {
-    report_content: reportContent,
-    report_path: reportPath,
-    report_name: basename(reportPath),
+    ...reportPayload,
     feedback_protocol_version: 1,
     issues,
     assets

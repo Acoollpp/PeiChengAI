@@ -7,6 +7,8 @@ import {
 import {
   bmsCodeReviewerHistoricalDs02ReportFixture,
   bmsCodeReviewerHistoricalPcBmsReportFixture,
+  bmsCodeReviewerNoSeverityReportFixture,
+  bmsCodeReviewerNoSeverityZeroReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
   bmsCodeReviewerReportRealVariantsFixture,
   bmsCodeReviewerReportWithIssuesFixture,
@@ -54,7 +56,11 @@ describe('报告摘要分析', () => {
       feedbackProtocolVersion: 1,
       issueCount: 1,
       highestIssueSeverity: null
-    }).highestSeverity).toBe('unknown')
+    })).toEqual({
+      issueCount: 1,
+      highestSeverity: 'unknown',
+      summary: '报告包含 1 个审查问题。'
+    })
   })
 
   it('历史任务忽略服务端默认零值并显示问题数未记录', () => {
@@ -76,6 +82,21 @@ describe('报告摘要分析', () => {
       highestIssueSeverity: 'high'
     })).toMatchObject({ status: 'ready', issueCount: 2, highestSeverity: 'high' })
     expect(analyzeLoadedReviewReport(bmsCodeReviewerZeroIssuesFixture, {
+      feedbackProtocolVersion: 1,
+      issueCount: 0,
+      highestIssueSeverity: null
+    })).toMatchObject({ status: 'ready', issueCount: 0, highestSeverity: 'none' })
+    expect(analyzeLoadedReviewReport(bmsCodeReviewerNoSeverityReportFixture, {
+      feedbackProtocolVersion: 1,
+      issueCount: 2,
+      highestIssueSeverity: null
+    })).toMatchObject({
+      status: 'ready',
+      issueCount: 2,
+      highestSeverity: 'unknown',
+      summary: '报告包含 2 个审查问题。'
+    })
+    expect(analyzeLoadedReviewReport(bmsCodeReviewerNoSeverityZeroReportFixture, {
       feedbackProtocolVersion: 1,
       issueCount: 0,
       highestIssueSeverity: null

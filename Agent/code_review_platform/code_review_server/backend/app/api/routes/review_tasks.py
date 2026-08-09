@@ -8,7 +8,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from enum import Enum
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -107,37 +107,23 @@ class _ReviewIssueSeverityRule:
     legacy_prefixes: tuple[str, ...]
 
 
-class _ReviewIssueContractItem(Protocol):
-    order: int
-    source: str
-    issue_text: str
-
-
-@dataclass(frozen=True)
-class _ReviewIssueContractProjection:
-    task_id: uuid.UUID
-    order: int
-    source: str
-    issue_text: str
-
-
-class _ReviewIssueContractStatus(str, Enum):
+class _ReviewIssueSourceConsistencyStatus(str, Enum):
     valid = "valid"
     invalid = "invalid"
 
 
 @dataclass(frozen=True)
-class _ReviewIssueContractState:
-    status: _ReviewIssueContractStatus
+class _ReviewIssueSourceConsistencyState:
+    status: _ReviewIssueSourceConsistencyStatus
 
     @property
     def is_valid(self) -> bool:
-        return self.status == _ReviewIssueContractStatus.valid
+        return self.status == _ReviewIssueSourceConsistencyStatus.valid
 
 
 @dataclass(frozen=True)
 class _EffectiveReviewTaskIssues:
-    contract_state: _ReviewIssueContractState
+    source_consistency_state: _ReviewIssueSourceConsistencyState
     issues: tuple[ReviewTaskIssue, ...]
 
 
@@ -177,31 +163,6 @@ def _unique_labels(labels: Sequence[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(labels))
 
 
-_CANONICAL_PC_BMS_LABELS = tuple(
-    rule.canonical_label for rule in _REVIEW_ISSUE_SEVERITY_RULES
-)
-_HISTORICAL_RISK_LABELS = _unique_labels(
-    tuple(
-        label
-        for rule in _REVIEW_ISSUE_SEVERITY_RULES
-        for label in rule.historical_labels
-    )
-)
-_ALL_PC_BMS_LABELS = _unique_labels(
-    (*_CANONICAL_PC_BMS_LABELS, *_HISTORICAL_RISK_LABELS)
-)
-_PC_BMS_ISSUE_HEADING_RE = re.compile(
-    r"^PC-BMS-(?P<number>\d+)\s+\[(?P<label>"
-    + "|".join(re.escape(label) for label in _ALL_PC_BMS_LABELS)
-    + r")\]\s+\S.*$"
-)
-_HISTORICAL_BMS_ISSUE_HEADING_RE = re.compile(
-    r"^(?:(?:P\d+|CR-\d+)|DS-02-\d+)\s+\[(?:"
-    + "|".join(re.escape(label) for label in _HISTORICAL_RISK_LABELS)
-    + r")\]\s+\S.*$"
-)
-
-
 def _numbered_issue_severity_pattern(
     rule: _ReviewIssueSeverityRule,
     *,
@@ -212,24 +173,24 @@ def _numbered_issue_severity_pattern(
     )
     pc_bms_label_pattern = "|".join(
         re.escape(label)
-        for label in _unique_labels(
-            (rule.canonical_label, *rule.historical_labels)
-        )
+        for label in _unique_labels((rule.canonical_label, *rule.historical_labels))
     )
     if postgres:
         return (
-            r"^((P[0-9]+|CR-[0-9]+)[[:space:]]+\[("
+            r"^(([0-9]+[.)、．]|[一二三四五六七八九十百]+[、.．)])"
+            r"[[:space:]]*)?((P[0-9]+|CR-[0-9]+)[[:space:]]+\[("
             f"{historical_label_pattern}"
             r")\]|PC-BMS-[0-9]+[[:space:]]+\[("
             f"{pc_bms_label_pattern}"
             r")\]|DS-02-[0-9]+[[:space:]]+\[("
             f"{historical_label_pattern}"
-            r")\])[[:space:]]+"
+            r")\])[[:space:]]+[^[:space:]]"
         )
     return (
-        rf"^(?:(?:P\d+|CR-\d+)\s+\[(?:{historical_label_pattern})\]"
+        r"^(?:(?:\d+[.)、．]|[一二三四五六七八九十百]+[、.．)])\s*)?"
+        rf"(?:(?:P\d+|CR-\d+)\s+\[(?:{historical_label_pattern})\]"
         rf"|PC-BMS-\d+\s+\[(?:{pc_bms_label_pattern})\]"
-        rf"|DS-02-\d+\s+\[(?:{historical_label_pattern})\])\s+"
+        rf"|DS-02-\d+\s+\[(?:{historical_label_pattern})\])\s+\S"
     )
 
 
@@ -238,9 +199,7 @@ def _review_issue_severity_sql_condition(
     rule: _ReviewIssueSeverityRule,
 ) -> ColumnElement[bool]:
     return or_(
-        issue_text.op("~")(
-            _numbered_issue_severity_pattern(rule, postgres=True)
-        ),
+        issue_text.op("~")(_numbered_issue_severity_pattern(rule, postgres=True)),
         *(issue_text.startswith(prefix) for prefix in rule.legacy_prefixes),
     )
 
@@ -517,8 +476,8 @@ def _get_task_for_issue_feedback_write_locked(
     session: SessionDep,
     current_user: CurrentUser,
     task_id: uuid.UUID,
-    invalid_contract_status_code: int = 409,
-    invalid_contract_detail: str = "issue_feedback_not_supported",
+    invalid_source_status_code: int = 409,
+    invalid_source_detail: str = "issue_feedback_not_supported",
 ) -> ReviewTask:
     task = session.exec(
         select(ReviewTask)
@@ -532,14 +491,14 @@ def _get_task_for_issue_feedback_write_locked(
         raise HTTPException(status_code=403, detail="只有任务提交人可以填写问题反馈")
     if task.feedback_protocol_version != 1:
         raise HTTPException(status_code=409, detail="issue_feedback_not_supported")
-    contract_state = _review_issue_contract_states_by_task_ids(
+    source_consistency_state = _review_issue_source_consistency_states_by_task_ids(
         session=session,
         task_ids=[task.id],
     )[task.id]
-    if not contract_state.is_valid:
+    if not source_consistency_state.is_valid:
         raise HTTPException(
-            status_code=invalid_contract_status_code,
-            detail=invalid_contract_detail,
+            status_code=invalid_source_status_code,
+            detail=invalid_source_detail,
         )
     if task.feedback_submitted_at is not None:
         raise HTTPException(status_code=409, detail="issue_feedback_submitted")
@@ -609,12 +568,14 @@ def _issue_progress_by_task_ids(
 ) -> dict[uuid.UUID, tuple[int, int, bool, ReviewIssueSeverity | None]]:
     if not task_ids:
         return {}
-    contract_states = _review_issue_contract_states_by_task_ids(
+    source_consistency_states = _review_issue_source_consistency_states_by_task_ids(
         session=session,
         task_ids=task_ids,
     )
     valid_task_ids = [
-        task_id for task_id, state in contract_states.items() if state.is_valid
+        task_id
+        for task_id, state in source_consistency_states.items()
+        if state.is_valid
     ]
     if not valid_task_ids:
         return {}
@@ -649,119 +610,56 @@ def _issue_progress_by_task_ids(
             int(evaluated_issue_count) > 0 or int(feedback_text_count) > 0,
             _review_issue_severity_from_rank(int(highest_severity_rank)),
         )
-        for task_id,
-        issue_count,
-        evaluated_issue_count,
-        feedback_text_count,
-        highest_severity_rank in rows
+        for task_id, issue_count, evaluated_issue_count, feedback_text_count, highest_severity_rank in rows
     }
 
 
 def _review_issue_severity_from_rank(rank: int) -> ReviewIssueSeverity | None:
     return next(
-        (
-            rule.severity
-            for rule in _REVIEW_ISSUE_SEVERITY_RULES
-            if rule.rank == rank
-        ),
+        (rule.severity for rule in _REVIEW_ISSUE_SEVERITY_RULES if rule.rank == rank),
         None,
     )
 
 
-def _has_valid_bms_report_issue_contract(
-    issues: Sequence[_ReviewIssueContractItem],
+def _has_consistent_review_issue_sources(
+    sources: Sequence[str],
 ) -> bool:
-    bms_issues = [
-        issue for issue in issues if issue.source == "bms_code_reviewer_heading"
-    ]
-    if not bms_issues:
-        return True
-    if len(bms_issues) != len(issues):
-        return False
-    has_pc_bms_candidate = any(
-        issue.issue_text.startswith("PC-BMS") for issue in bms_issues
-    )
-    if not has_pc_bms_candidate:
-        return all(
-            _HISTORICAL_BMS_ISSUE_HEADING_RE.fullmatch(issue.issue_text)
-            is not None
-            for issue in bms_issues
-        )
-    pc_bms_matches = [
-        (issue, match)
-        for issue in bms_issues
-        if (match := _PC_BMS_ISSUE_HEADING_RE.fullmatch(issue.issue_text)) is not None
-    ]
-    if len(pc_bms_matches) != len(bms_issues):
-        return False
-
-    ordered_matches = sorted(pc_bms_matches, key=lambda item: item[0].order)
-    numbers = [match.group("number") for _, match in ordered_matches]
-    labels = [match.group("label") for _, match in ordered_matches]
-    all_three_digit = all(len(number) == 3 for number in numbers)
-    all_non_three_digit = all(len(number) != 3 for number in numbers)
-    if not all_three_digit and not all_non_three_digit:
-        return False
-
-    canonical_labels = set(_CANONICAL_PC_BMS_LABELS)
-    historical_labels = set(_HISTORICAL_RISK_LABELS)
-    has_canonical_only_label = any(
-        label in canonical_labels and label not in historical_labels for label in labels
-    )
-    has_historical_only_label = any(
-        label in historical_labels and label not in canonical_labels for label in labels
-    )
-    if has_canonical_only_label and has_historical_only_label:
-        return False
-    if all_non_three_digit and has_canonical_only_label:
-        return False
-    if all_non_three_digit:
-        return True
-    return all(
-        number == str(index).zfill(3)
-        for index, number in enumerate(numbers, start=1)
-    )
+    # Electron 负责解析 Markdown；服务端仅防止 BMS 与旧模板快照混存。
+    bms_issue_count = sum(source == "bms_code_reviewer_heading" for source in sources)
+    return bms_issue_count == 0 or bms_issue_count == len(sources)
 
 
-def _review_issue_contract_states_by_task_ids(
+def _review_issue_source_consistency_states_by_task_ids(
     *,
     session: SessionDep,
     task_ids: Sequence[uuid.UUID],
-) -> dict[uuid.UUID, _ReviewIssueContractState]:
+) -> dict[uuid.UUID, _ReviewIssueSourceConsistencyState]:
     unique_task_ids = list(dict.fromkeys(task_ids))
     if not unique_task_ids:
         return {}
-    projections_by_task_id: dict[
-        uuid.UUID, list[_ReviewIssueContractProjection]
-    ] = {task_id: [] for task_id in unique_task_ids}
+    sources_by_task_id: dict[uuid.UUID, list[str]] = {
+        task_id: [] for task_id in unique_task_ids
+    }
     rows = session.exec(
         select(
             ReviewTaskIssue.task_id,
-            ReviewTaskIssue.order,
             ReviewTaskIssue.source,
-            ReviewTaskIssue.issue_text,
+            func.count(col(ReviewTaskIssue.id)),
         )
         .where(col(ReviewTaskIssue.task_id).in_(unique_task_ids))
-        .order_by(col(ReviewTaskIssue.task_id), col(ReviewTaskIssue.order))
+        .group_by(col(ReviewTaskIssue.task_id), col(ReviewTaskIssue.source))
     ).all()
-    for task_id, order, source, issue_text in rows:
-        projections_by_task_id[task_id].append(
-            _ReviewIssueContractProjection(
-                task_id=task_id,
-                order=order,
-                source=source,
-                issue_text=issue_text,
-            )
-        )
+    for task_id, source, _issue_count in rows:
+        sources_by_task_id[task_id].append(source)
     return {
-        task_id: _ReviewIssueContractState(
+        task_id: _ReviewIssueSourceConsistencyState(
             status=(
-                _ReviewIssueContractStatus.valid
-                if _has_valid_bms_report_issue_contract(projections)
-                else _ReviewIssueContractStatus.invalid
+                _ReviewIssueSourceConsistencyStatus.valid
+                if _has_consistent_review_issue_sources(sources)
+                else _ReviewIssueSourceConsistencyStatus.invalid
             )
         )
-        for task_id, projections in projections_by_task_id.items()
+        for task_id, sources in sources_by_task_id.items()
     }
 
 
@@ -770,12 +668,15 @@ def _read_effective_review_task_issues(
     session: SessionDep,
     task_id: uuid.UUID,
 ) -> _EffectiveReviewTaskIssues:
-    contract_state = _review_issue_contract_states_by_task_ids(
+    source_consistency_state = _review_issue_source_consistency_states_by_task_ids(
         session=session,
         task_ids=[task_id],
     )[task_id]
-    if not contract_state.is_valid:
-        return _EffectiveReviewTaskIssues(contract_state=contract_state, issues=())
+    if not source_consistency_state.is_valid:
+        return _EffectiveReviewTaskIssues(
+            source_consistency_state=source_consistency_state,
+            issues=(),
+        )
     issues = tuple(
         session.exec(
             select(ReviewTaskIssue)
@@ -783,13 +684,18 @@ def _read_effective_review_task_issues(
             .order_by(col(ReviewTaskIssue.order))
         ).all()
     )
-    return _EffectiveReviewTaskIssues(contract_state=contract_state, issues=issues)
+    return _EffectiveReviewTaskIssues(
+        source_consistency_state=source_consistency_state,
+        issues=issues,
+    )
 
 
 def _highest_issue_severity(
     issues: list[ReviewTaskIssueSnapshotCreate],
 ) -> ReviewIssueSeverity | None:
-    if not _has_valid_bms_report_issue_contract(issues):
+    if not _has_consistent_review_issue_sources(
+        tuple(issue.source for issue in issues)
+    ):
         return None
     for rule in _REVIEW_ISSUE_SEVERITY_RULES:
         if any(
@@ -894,7 +800,9 @@ def _parse_asset_paths(raw_asset_paths: str | None) -> list[str]:
 def create_review_task(
     *, session: SessionDep, current_user: CurrentUser, task_in: ReviewTaskCreate
 ) -> Any:
-    normalized_review_item_ids = [item_id.strip() for item_id in task_in.review_item_ids]
+    normalized_review_item_ids = [
+        item_id.strip() for item_id in task_in.review_item_ids
+    ]
     if any(not item_id or len(item_id) > 64 for item_id in normalized_review_item_ids):
         raise HTTPException(status_code=400, detail="审查项 ID 无效")
     if len(set(normalized_review_item_ids)) != len(normalized_review_item_ids):
@@ -1027,17 +935,15 @@ def export_review_task_issue_feedback(
         *_task_read_scope_filters(session=session, current_user=current_user),
         ReviewTask.feedback_protocol_version == 1,
     ]
-    task_ids = list(
-        session.exec(
-            select(ReviewTask.id).where(*task_filters)
-        ).all()
-    )
-    contract_states = _review_issue_contract_states_by_task_ids(
+    task_ids = list(session.exec(select(ReviewTask.id).where(*task_filters)).all())
+    source_consistency_states = _review_issue_source_consistency_states_by_task_ids(
         session=session,
         task_ids=task_ids,
     )
     valid_task_ids = [
-        task_id for task_id, state in contract_states.items() if state.is_valid
+        task_id
+        for task_id, state in source_consistency_states.items()
+        if state.is_valid
     ]
     rows = (
         session.exec(
@@ -1276,10 +1182,13 @@ def read_review_task(
             ReviewTaskReportFeedback.task_id == task.id
         )
     ).first()
-    issue_count, evaluated_issue_count, has_issue_feedback_draft, highest_issue_severity = (
-        _issue_progress_by_task_ids(session=session, task_ids=[task.id]).get(
-            task.id, (0, 0, False, None)
-        )
+    (
+        issue_count,
+        evaluated_issue_count,
+        has_issue_feedback_draft,
+        highest_issue_severity,
+    ) = _issue_progress_by_task_ids(session=session, task_ids=[task.id]).get(
+        task.id, (0, 0, False, None)
     )
     return _task_public(
         task,
@@ -1408,8 +1317,9 @@ async def upload_review_task_report(
     issue_snapshots = _parse_issue_snapshots(issues) if issues is not None else []
     if feedback_protocol_version is not None and feedback_protocol_version != 1:
         raise HTTPException(status_code=400, detail="不支持的问题反馈协议版本")
-    if not _has_valid_bms_report_issue_contract(issue_snapshots):
-        issue_snapshots = []
+    has_consistent_issue_sources = _has_consistent_review_issue_sources(
+        tuple(issue.source for issue in issue_snapshots)
+    )
     if task.feedback_protocol_version is not None or (
         feedback_protocol_version is not None and task.report_path is not None
     ):
@@ -1477,7 +1387,7 @@ async def upload_review_task_report(
     return _task_public(
         task,
         session.get(User, task.user_id),
-        issue_count=len(issue_snapshots),
+        issue_count=len(issue_snapshots) if has_consistent_issue_sources else 0,
         highest_issue_severity=_highest_issue_severity(issue_snapshots),
     )
 
@@ -1518,8 +1428,8 @@ def update_review_task_issue_feedback_draft(
         session=session,
         current_user=current_user,
         task_id=task_id,
-        invalid_contract_status_code=404,
-        invalid_contract_detail="Review task issue not found",
+        invalid_source_status_code=404,
+        invalid_source_detail="Review task issue not found",
     )
     issue = session.exec(
         select(ReviewTaskIssue)
@@ -1592,7 +1502,7 @@ async def upload_review_task_pdf_report(
             session=session,
             task_id=task.id,
         )
-        if not effective_issues.contract_state.is_valid:
+        if not effective_issues.source_consistency_state.is_valid:
             raise HTTPException(status_code=409, detail="issue_feedback_not_supported")
         issues = effective_issues.issues
         if any(issue.helpful is None for issue in issues):

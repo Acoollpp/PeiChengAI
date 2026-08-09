@@ -17,7 +17,18 @@ const reportMarkdown = `# DS-03 状态机审核报告
 
 ### P01 [高风险] 状态恢复事件缺失
 
+**所属审查项：** DS-03 · 状态机审核
+**规则章节：** 故障恢复状态转换
+
+**涉及文件及行号：**
+
+| 文件 | 行号 | 位置说明 |
+|------|------|----------|
+| \`source/state.c\` | 42 | 状态恢复分支 |
+
 **问题描述：** 恢复分支没有发送完成事件。
+**影响风险：** 上层无法感知状态恢复完成。
+**整改建议：** 在恢复完成时发送对应事件。
 `
 
 const createDeferred = <T,>(): {
@@ -1003,9 +1014,16 @@ describe('ProductionReviewWorkbench', () => {
           review_item_ids: ['DS-03'], status: 'success', report_name: '零问题报告.md',
           report_path: '/reports/zero-report.md',
           feedback_protocol_version: 1, issue_count: 0, highest_issue_severity: null
+        },
+        {
+          id: 'no-severity-report', svn_url: 'svn://server/no-severity',
+          old_revision: '121', new_revision: '122', review_item_ids: ['DS-01', 'DS-03'],
+          status: 'success', report_name: '无严重度报告.md',
+          report_path: '/reports/no-severity-report.md',
+          feedback_protocol_version: 1, issue_count: 2, highest_issue_severity: null
         }
       ],
-      count: 2
+      count: 3
     })
 
     render(<ProductionReviewWorkbench {...productionProps} />)
@@ -1016,6 +1034,9 @@ describe('ProductionReviewWorkbench', () => {
     expect(screen.getAllByText(/DS-FUTURE/).length).toBeGreaterThan(0)
     expect(screen.getAllByText('1 个问题 · 高风险').length).toBeGreaterThan(0)
     expect(screen.getByText('零问题报告')).toBeInTheDocument()
+    expect(screen.getByText('无严重度报告')).toBeInTheDocument()
+    expect(screen.getAllByText('2 个问题').length).toBeGreaterThan(0)
+    expect(screen.queryByText('严重度未知')).not.toBeInTheDocument()
     await waitFor(() => expect(window.codeReview.readTaskReport).toHaveBeenCalledTimes(1))
     expect(window.codeReview.readTaskReport).toHaveBeenCalledWith('multi-report')
     expect(window.codeReview.readTaskReport).not.toHaveBeenCalledWith('zero-report')

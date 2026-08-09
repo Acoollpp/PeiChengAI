@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { extractDetailedHeadingOptions, MarkdownPreview } from './MarkdownPreview'
 import bmsCodeReviewerHistoricalDs02ReportFixture from '../../../shared/__tests__/fixtures/bms-code-reviewer-historical-ds02-report.md?raw'
 import bmsCodeReviewerHistoricalPcBmsReportFixture from '../../../shared/__tests__/fixtures/bms-code-reviewer-historical-pc-bms-report.md?raw'
+import bmsCodeReviewerNoSeverityReportFixture from '../../../shared/__tests__/fixtures/bms-code-reviewer-no-severity-report.md?raw'
 import bmsCodeReviewerPcBmsReportFixture from '../../../shared/__tests__/fixtures/bms-code-reviewer-pc-bms-report.md?raw'
 
 afterEach(() => {
@@ -299,6 +300,34 @@ describe('MarkdownPreview', () => {
       options.map((option) => option.anchorId)
     )
     expect(headings[1]).toHaveClass('report-anchor-highlight')
+  })
+
+  it('为无严重度报告只渲染审查问题章节内的反馈锚点', () => {
+    const options = extractDetailedHeadingOptions(bmsCodeReviewerNoSeverityReportFixture)
+    expect(options.map((option) => option.text)).toEqual([
+      'STATE-17 休眠高风险路径仍可打开充电 MOS',
+      '编号-任意-42 建议路径缺少故障恢复一致性校验'
+    ])
+
+    render(
+      <MarkdownPreview
+        markdown={bmsCodeReviewerNoSeverityReportFixture}
+        activeFeedbackAnchorId={options[0]?.anchorId}
+      />
+    )
+
+    const firstHeading = screen.getByRole('heading', {
+      name: 'STATE-17 休眠高风险路径仍可打开充电 MOS'
+    })
+    const secondHeading = screen.getByRole('heading', {
+      name: '编号-任意-42 建议路径缺少故障恢复一致性校验'
+    })
+    expect(firstHeading).toHaveAttribute('data-report-anchor-id', options[0]?.anchorId)
+    expect(secondHeading).toHaveAttribute('data-report-anchor-id', options[1]?.anchorId)
+    expect(firstHeading).toHaveClass('report-anchor-highlight')
+    expect(screen.getByRole('heading', { name: '范围与材料覆盖' })).not.toHaveAttribute(
+      'data-report-anchor-id'
+    )
   })
 
   it.each([

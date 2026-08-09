@@ -160,7 +160,7 @@ describe('executeReviewTask', () => {
     ])
   })
 
-  it('环境就绪后只上传原始Markdown并等待反馈后再生成PDF', async () => {
+  it('环境就绪后只上传原始Markdown并透传服务端反馈协议', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-'))
     tempDirs.push(cwd)
     const reportPath = join(cwd, '代码审查报告.md')
@@ -207,6 +207,7 @@ describe('executeReviewTask', () => {
       }),
       uploadReport: vi.fn(async () => {
         calls.push('uploadReport')
+        return { feedback_protocol_version: 1 }
       }),
       uploadPdfReport: vi.fn(async () => {
         calls.push('uploadPdfReport')
@@ -273,6 +274,17 @@ describe('executeReviewTask', () => {
         report_path: reportPath
       })
     )
+
+    vi.mocked(dependencies.uploadReport).mockResolvedValueOnce({
+      feedback_protocol_version: null
+    })
+    await expect(
+      executeReviewTask({ token: 'token-123', request }, dependencies)
+    ).resolves.toMatchObject({
+      taskId: 'task-1',
+      status: 'success',
+      feedbackProtocolVersion: null
+    })
   })
 
   it('DS-03 结构化任务贯通创建、预检、Codex 和报告上传且原样透传 0', async () => {

@@ -14,17 +14,17 @@ vi.mock('electron', () => ({
         (contentType === 'image/png' &&
           content.length > 40 &&
           content.subarray(-8).equals(Buffer.from('49454e44ae426082', 'hex'))) ||
-          (contentType === 'image/jpeg' &&
-            content.length > 100 &&
-            content.subarray(-2).equals(Buffer.from('ffd9', 'hex'))) ||
-          (contentType === 'image/gif' && content.length > 20 && content.at(-1) === 0x3b) ||
-          (contentType === 'image/webp' &&
-            content.length > 20 &&
-            content.readUInt32LE(4) + 8 === content.length) ||
-          (contentType === 'image/svg+xml' &&
-            /<svg\b/i.test(content.toString('utf8')) &&
-            /<\/svg>/i.test(content.toString('utf8')) &&
-            !/<script\b/i.test(content.toString('utf8')))
+        (contentType === 'image/jpeg' &&
+          content.length > 100 &&
+          content.subarray(-2).equals(Buffer.from('ffd9', 'hex'))) ||
+        (contentType === 'image/gif' && content.length > 20 && content.at(-1) === 0x3b) ||
+        (contentType === 'image/webp' &&
+          content.length > 20 &&
+          content.readUInt32LE(4) + 8 === content.length) ||
+        (contentType === 'image/svg+xml' &&
+          /<svg\b/i.test(content.toString('utf8')) &&
+          /<\/svg>/i.test(content.toString('utf8')) &&
+          !/<script\b/i.test(content.toString('utf8')))
       return {
         getSize: () => (isDecodable ? { width: 1, height: 1 } : { width: 0, height: 0 }),
         isEmpty: () => !isDecodable
@@ -44,6 +44,7 @@ import {
 import {
   bmsCodeReviewerHistoricalDs02ReportFixture,
   bmsCodeReviewerHistoricalPcBmsReportFixture,
+  bmsCodeReviewerNoSeverityReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
   templateOneReportFixture
 } from '../../shared/__tests__/fixtures/review-report-fixtures'
@@ -226,9 +227,7 @@ describe('report uploader', () => {
             order: 0,
             source: 'bms_code_reviewer_heading',
             location: expect.objectContaining({
-              start_offset: bmsCodeReviewerPcBmsReportFixture.indexOf(
-                '### PC-BMS-001 [重要]'
-              )
+              start_offset: bmsCodeReviewerPcBmsReportFixture.indexOf('### PC-BMS-001 [重要]')
             })
           }),
           expect.objectContaining({
@@ -241,6 +240,40 @@ describe('report uploader', () => {
           })
         ],
         assets: []
+      })
+    )
+  })
+
+  it('上传最新无严重度报告时提交任意标题的完整有序问题快照', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-no-severity-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '无严重度审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await writeFile(reportPath, bmsCodeReviewerNoSeverityReportFixture)
+
+    await uploadReportFile(api, 'token-123', 'task-no-severity', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-no-severity',
+      expect.objectContaining({
+        report_content: bmsCodeReviewerNoSeverityReportFixture,
+        feedback_protocol_version: 1,
+        issues: [
+          expect.objectContaining({
+            issue_text: 'STATE-17 休眠高风险路径仍可打开充电 MOS',
+            order: 0,
+            source: 'bms_code_reviewer_heading',
+            display_snapshot: expect.stringContaining('**材料或生成证据：**'),
+            location: expect.objectContaining({
+              start_offset: bmsCodeReviewerNoSeverityReportFixture.indexOf('### STATE-17')
+            })
+          }),
+          expect.objectContaining({
+            issue_text: '编号-任意-42 建议路径缺少故障恢复一致性校验',
+            order: 1
+          })
+        ]
       })
     )
   })
@@ -293,44 +326,38 @@ describe('report uploader', () => {
 
   it.each([
     {
-      name: '三位与非三位编号混合',
-      markdown: bmsCodeReviewerHistoricalPcBmsReportFixture.replace(
-        'PC-BMS-002',
-        'PC-BMS-2'
+      name: '缺少问题描述',
+      markdown: bmsCodeReviewerNoSeverityReportFixture.replace(/^\*\*问题描述：\*\*.*\n/m, '')
+    },
+    {
+      name: '缺少代码位置表',
+      markdown: bmsCodeReviewerNoSeverityReportFixture.replace(
+        '**涉及文件及行号：**',
+        '**相关位置：**'
       )
     },
     {
-      name: 'canonical 与历史严重度词混用',
-      markdown: bmsCodeReviewerHistoricalPcBmsReportFixture.replace(
-        'PC-BMS-001 [高]',
-        'PC-BMS-001 [严重]'
+      name: '混入普通三级标题',
+      markdown: bmsCodeReviewerNoSeverityReportFixture.replace(
+        '## 四、审查覆盖',
+        '### 普通说明\n\n这不是合法问题块。\n\n## 四、审查覆盖'
       )
-    },
-    {
-      name: '非三位编号使用 canonical 严重度词',
-      markdown: bmsCodeReviewerPcBmsReportFixture
-        .replace('PC-BMS-001', 'PC-BMS-1')
-        .replace('PC-BMS-002', 'PC-BMS-2')
-        .replace('PC-BMS-003', 'PC-BMS-3')
     }
-  ])('无效 PC-BMS 报告（$name）继续上传 Markdown 但不建立问题快照', async ({ markdown }) => {
+  ])('结构无效 BMS 报告（$name）只上传 Markdown 且不声明反馈协议', async ({ markdown }) => {
     const dir = await mkdtemp(join(tmpdir(), 'report-uploader-invalid-pc-bms-'))
     tempDirs.push(dir)
     const reportPath = join(dir, '无效历史审查报告.md')
     const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
-    await writeFile(reportPath, markdown)
+    const invalidMarkdown = `${markdown}\n![不随历史上传提交](images/missing.png)\n`
+    await writeFile(reportPath, invalidMarkdown)
 
     await uploadReportFile(api, 'token-123', 'task-invalid-pc-bms', reportPath)
 
-    expect(api.uploadReport).toHaveBeenCalledWith(
-      'token-123',
-      'task-invalid-pc-bms',
-      expect.objectContaining({
-        report_content: markdown,
-        feedback_protocol_version: 1,
-        issues: []
-      })
-    )
+    expect(api.uploadReport).toHaveBeenCalledWith('token-123', 'task-invalid-pc-bms', {
+      report_content: invalidMarkdown,
+      report_path: reportPath,
+      report_name: '无效历史审查报告.md'
+    })
   })
 
   it('按共享 CommonMark 语料识别图片并忽略转义与代码中的伪引用', async () => {
@@ -570,10 +597,7 @@ describe('report uploader', () => {
     await Promise.all(
       imagePaths.map((imagePath) => writeFile(join(dir, imagePath), VALID_PNG_BYTES))
     )
-    await writeFile(
-      reportPath,
-      imagePaths.map((imagePath) => `![证据](${imagePath})`).join('\n')
-    )
+    await writeFile(reportPath, imagePaths.map((imagePath) => `![证据](${imagePath})`).join('\n'))
 
     await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(
       '报告图片数量超过限制'

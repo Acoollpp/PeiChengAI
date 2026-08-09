@@ -36,6 +36,16 @@ export const bmsCodeReviewerZeroIssuesFixture = readFileSync(
   'utf8'
 )
 
+export const bmsCodeReviewerNoSeverityReportFixture = readFileSync(
+  fileURLToPath(new URL('./bms-code-reviewer-no-severity-report.md', import.meta.url)),
+  'utf8'
+)
+
+export const bmsCodeReviewerNoSeverityZeroReportFixture = readFileSync(
+  fileURLToPath(new URL('./bms-code-reviewer-no-severity-zero-report.md', import.meta.url)),
+  'utf8'
+)
+
 export const templateOneReportFixture = `# 代码审查报告-模版一
 
 ## 五、代码质量问题

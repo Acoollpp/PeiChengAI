@@ -5,6 +5,8 @@ import { REVIEW_TEMPLATE_PREVIEWS } from '../review-template-previews'
 import {
   bmsCodeReviewerHistoricalDs02ReportFixture,
   bmsCodeReviewerHistoricalPcBmsReportFixture,
+  bmsCodeReviewerNoSeverityReportFixture,
+  bmsCodeReviewerNoSeverityZeroReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
   bmsCodeReviewerReportRealVariantsFixture,
   bmsCodeReviewerReportWithIssuesFixture,
@@ -16,18 +18,134 @@ import {
 } from './fixtures/review-report-fixtures'
 
 describe('extractReviewIssues', () => {
+  it('按最新无严重度合同提取任意编号问题并排除审查覆盖三级标题', () => {
+    const result = inspectReviewIssues(bmsCodeReviewerNoSeverityReportFixture)
+
+    expect(result).toMatchObject({
+      format: 'bms_code_reviewer',
+      status: 'parsed'
+    })
+    expect(
+      result.issues.map(({ issueText, order, severity }) => ({
+        issueText,
+        order,
+        severity
+      }))
+    ).toEqual([
+      {
+        issueText: 'STATE-17 休眠高风险路径仍可打开充电 MOS',
+        order: 0,
+        severity: undefined
+      },
+      {
+        issueText: '编号-任意-42 建议路径缺少故障恢复一致性校验',
+        order: 1,
+        severity: undefined
+      }
+    ])
+    expect(result.issues[0]).toMatchObject({
+      descriptionText: expect.stringContaining('BmsState_Handle'),
+      codeLocations: [
+        { file: 'source/bms_state.c', line: '128-141', description: '休眠状态分支的守卫条件' },
+        { file: 'source/bms_output.c', line: '76', description: '充电 MOS 最终输出动作' }
+      ]
+    })
+    expect(result.issues[0]?.displaySnapshot).toContain('**材料或生成证据：**')
+    expect(result.issues[0]?.displaySnapshot).not.toContain('### 编号-任意-42')
+    expect(result.issues[1]?.displaySnapshot).not.toContain('### 范围与材料覆盖')
+    expect(result.issues.map((issue) => issue.issueText)).not.toContain('范围与材料覆盖')
+    expect(result.issues.map((issue) => issue.issueText)).not.toContain('枚举与判定覆盖')
+    expect(result.issues[0]?.location.startOffset).toBe(
+      bmsCodeReviewerNoSeverityReportFixture.indexOf('### STATE-17')
+    )
+    expect(result.issues[0]?.location.feedbackInsertionOffset).toBeLessThan(
+      bmsCodeReviewerNoSeverityReportFixture.indexOf('### 编号-任意-42')
+    )
+    expect(result.issues[1]?.location.feedbackInsertionOffset).toBeLessThan(
+      bmsCodeReviewerNoSeverityReportFixture.indexOf('## 四、审查覆盖')
+    )
+  })
+
+  it('无严重度 BMS 问题快照保留数字与中文章节式任意编号', () => {
+    const numberedReport = bmsCodeReviewerNoSeverityReportFixture
+      .replace(
+        '### STATE-17 休眠高风险路径仍可打开充电 MOS',
+        '### 17. 休眠高风险路径仍可打开充电 MOS'
+      )
+      .replace(
+        '### 编号-任意-42 建议路径缺少故障恢复一致性校验',
+        '### 一、建议路径缺少故障恢复一致性校验'
+      )
+
+    expect(extractReviewIssues(numberedReport).map((issue) => issue.issueText)).toEqual([
+      '17. 休眠高风险路径仍可打开充电 MOS',
+      '一、建议路径缺少故障恢复一致性校验'
+    ])
+  })
+
+  it('历史标题保留外层章节序号且按归一化标题识别严重度', () => {
+    const numberedReport = bmsCodeReviewerReportWithIssuesFixture
+      .replace(
+        '### P01 [高风险] 休眠状态仍可打开充电 MOS',
+        '### 1. P01 [高风险] 休眠状态仍可打开充电 MOS'
+      )
+      .replace(
+        '### P02 [建议] 补充休眠恢复路径的往返测试',
+        '### 一、CR-001 [中] 补充休眠恢复路径的往返测试'
+      )
+
+    expect(
+      extractReviewIssues(numberedReport).map(({ issueText, severity }) => ({
+        issueText,
+        severity
+      }))
+    ).toEqual([
+      {
+        issueText: '1. P01 [高风险] 休眠状态仍可打开充电 MOS',
+        severity: 'high'
+      },
+      {
+        issueText: '一、CR-001 [中] 补充休眠恢复路径的往返测试',
+        severity: 'medium'
+      }
+    ])
+  })
+
+  it.each([
+    'P01 [高风险]',
+    'CR-001 [中]',
+    'PC-BMS-001 [严重]',
+    'DS-02-001 [低]',
+    '1. P01 [高风险]',
+    '一、CR-001 [中]'
+  ])('历史编号与严重度后缺少问题标题时整节无效：%s', (incompleteHeading) => {
+    const malformed = bmsCodeReviewerReportWithIssuesFixture.replace(
+      'P01 [高风险] 休眠状态仍可打开充电 MOS',
+      incompleteHeading
+    )
+
+    expect(inspectReviewIssues(malformed)).toMatchObject({
+      format: 'bms_code_reviewer',
+      status: 'invalid',
+      issues: []
+    })
+  })
+
   it('按 bms-code-reviewer 固定模板提取问题标题、描述、严重度和代码位置', () => {
     const issues = extractReviewIssues(bmsCodeReviewerReportWithIssuesFixture)
 
     expect(issues).toHaveLength(2)
     expect(issues[0]).toMatchObject({
       issueText: 'P01 [高风险] 休眠状态仍可打开充电 MOS',
-      descriptionText:
-        '休眠状态分支未阻断充电 MOS 开启路径，满足远程唤醒条件时会绕过休眠保护。',
+      descriptionText: '休眠状态分支未阻断充电 MOS 开启路径，满足远程唤醒条件时会绕过休眠保护。',
       source: 'bms_code_reviewer_heading',
       severity: 'high',
       codeLocations: [
-        { file: 'source/control.c', line: '88', description: 'ApplyChargeMos 中的充电 MOS 输出动作' },
+        {
+          file: 'source/control.c',
+          line: '88',
+          description: 'ApplyChargeMos 中的充电 MOS 输出动作'
+        },
         { file: 'source/state.c', line: '120-135', description: '休眠状态的守卫条件' }
       ]
     })
@@ -46,12 +164,15 @@ describe('extractReviewIssues', () => {
     expect(issues).toHaveLength(2)
     expect(issues[0]).toMatchObject({
       issueText: 'CR-001 [高] 休眠状态仍可打开充电 MOS',
-      descriptionText:
-        '休眠状态分支未阻断充电 MOS 开启路径，满足远程唤醒条件时会绕过休眠保护。',
+      descriptionText: '休眠状态分支未阻断充电 MOS 开启路径，满足远程唤醒条件时会绕过休眠保护。',
       source: 'bms_code_reviewer_heading',
       severity: 'high',
       codeLocations: [
-        { file: 'source/control.c', line: '88', description: 'ApplyChargeMos 中的充电 MOS 输出动作' },
+        {
+          file: 'source/control.c',
+          line: '88',
+          description: 'ApplyChargeMos 中的充电 MOS 输出动作'
+        },
         { file: 'source/state.c', line: '120-135', description: '休眠状态的守卫条件' }
       ]
     })
@@ -83,10 +204,11 @@ describe('extractReviewIssues', () => {
     const issues = extractReviewIssues(bmsCodeReviewerPcBmsReportFixture)
 
     expect(issues).toHaveLength(3)
-    expect(issues.map(({ issueText, order, severity }) => ({ issueText, order, severity }))).toEqual([
+    expect(
+      issues.map(({ issueText, order, severity }) => ({ issueText, order, severity }))
+    ).toEqual([
       {
-        issueText:
-          'PC-BMS-001 [重要] 状态处理函数新增分支后圈复杂度继续超限并使文件平均复杂度超限',
+        issueText: 'PC-BMS-001 [重要] 状态处理函数新增分支后圈复杂度继续超限并使文件平均复杂度超限',
         order: 0,
         severity: 'medium'
       },
@@ -121,12 +243,14 @@ describe('extractReviewIssues', () => {
   it('解析合同固定前的真实 PC-BMS 风险词报告并保留两个问题的完整快照', () => {
     const issues = extractReviewIssues(bmsCodeReviewerHistoricalPcBmsReportFixture)
 
-    expect(issues.map(({ issueText, order, severity, anchorId }) => ({
-      issueText,
-      order,
-      severity,
-      anchorId
-    }))).toEqual([
+    expect(
+      issues.map(({ issueText, order, severity, anchorId }) => ({
+        issueText,
+        order,
+        severity,
+        anchorId
+      }))
+    ).toEqual([
       {
         issueText:
           'PC-BMS-001 [高] FAULT 分支将 RESET 判断写成赋值表达式，非 RESET 事件会隐式清除故障态',
@@ -147,8 +271,16 @@ describe('extractReviewIssues', () => {
       codeLocations: [
         { file: 'bms_state.c', line: '36', description: 'BMS_STATE_FAULT 分支入口' },
         { file: 'bms_state.c', line: '37', description: '将复位判断写为 event = BMS_EVENT_RESET' },
-        { file: 'bms_state.c', line: '38', description: '条件成立后将 current_state 设置为 BMS_STATE_IDLE' },
-        { file: 'bms_state.h', line: '18', description: expect.stringContaining('BMS_EVENT_TIMEOUT') }
+        {
+          file: 'bms_state.c',
+          line: '38',
+          description: '条件成立后将 current_state 设置为 BMS_STATE_IDLE'
+        },
+        {
+          file: 'bms_state.h',
+          line: '18',
+          description: expect.stringContaining('BMS_EVENT_TIMEOUT')
+        }
       ]
     })
     expect(issues[0]?.displaySnapshot).toContain('**整改建议：** 将条件恢复为')
@@ -162,7 +294,9 @@ describe('extractReviewIssues', () => {
   it('解析合同固定前的真实 DS-02 编号报告并保留描述、位置、顺序和锚点', () => {
     const issues = extractReviewIssues(bmsCodeReviewerHistoricalDs02ReportFixture)
 
-    expect(issues.map(({ issueText, order, severity }) => ({ issueText, order, severity }))).toEqual([
+    expect(
+      issues.map(({ issueText, order, severity }) => ({ issueText, order, severity }))
+    ).toEqual([
       {
         issueText: 'DS-02-001 [高] FAULT 分支条件由比较表达式误改为赋值表达式',
         order: 0,
@@ -182,7 +316,11 @@ describe('extractReviewIssues', () => {
     expect(issues[0]).toMatchObject({
       descriptionText: expect.stringContaining('if (event = BMS_EVENT_RESET)'),
       codeLocations: [
-        { file: 'bms_state.c', line: '37', description: expect.stringContaining('BMS_STATE_FAULT') },
+        {
+          file: 'bms_state.c',
+          line: '37',
+          description: expect.stringContaining('BMS_STATE_FAULT')
+        },
         { file: 'bms_state.h', line: '19', description: 'BMS_EVENT_RESET 枚举值定义' }
       ]
     })
@@ -248,108 +386,99 @@ describe('extractReviewIssues', () => {
   })
 
   it.each([
+    ['缺少所属审查项', (report: string) => report.replace(/^\*\*所属审查项：\*\*.*\n/m, '')],
+    ['缺少规则章节', (report: string) => report.replace(/^\*\*规则章节：\*\*.*\n/m, '')],
+    ['缺少问题描述', (report: string) => report.replace(/^\*\*问题描述：\*\*.*\n/m, '')],
+    ['缺少影响风险', (report: string) => report.replace(/^\*\*影响风险：\*\*.*\n/m, '')],
+    ['缺少整改建议', (report: string) => report.replace(/^\*\*整改建议：\*\*.*\n/m, '')],
+    ['缺少位置表', (report: string) => report.replace('**涉及文件及行号：**', '**相关位置：**')],
     [
-      '三位与非三位编号混合',
-      bmsCodeReviewerHistoricalPcBmsReportFixture.replace('PC-BMS-002', 'PC-BMS-2')
+      '位置说明为空',
+      (report: string) =>
+        report.replace(
+          '| `source/bms_state.c` | 128-141 | 休眠状态分支的守卫条件 |',
+          '| `source/bms_state.c` | 128-141 | |'
+        )
     ],
     [
-      'canonical 与历史严重度词混用',
-      bmsCodeReviewerHistoricalPcBmsReportFixture.replace(
-        'PC-BMS-001 [高]',
-        'PC-BMS-001 [严重]'
-      )
+      '位置说明为占位值',
+      (report: string) =>
+        report.replace(
+          '休眠状态分支的守卫条件',
+          '<该位置在本问题中的角色，如状态判断、状态写入、输出动作、调用入口>'
+        )
     ],
     [
-      '非三位编号使用 canonical 严重度词',
-      bmsCodeReviewerPcBmsReportFixture
-        .replace('PC-BMS-001', 'PC-BMS-1')
-        .replace('PC-BMS-002', 'PC-BMS-2')
-        .replace('PC-BMS-003', 'PC-BMS-3')
+      '第二个位置行无效',
+      (report: string) =>
+        report.replace(
+          '| `source/bms_output.c` | 76 | 充电 MOS 最终输出动作 |',
+          '| `<file>` | `<line>` | 充电 MOS 最终输出动作 |'
+        )
+    ],
+    [
+      '文件为空',
+      (report: string) =>
+        report.replace(
+          '| `source/bms_state.c` | 128-141 | 休眠状态分支的守卫条件 |',
+          '| | 128-141 | 休眠状态分支的守卫条件 |'
+        )
+    ],
+    [
+      '行号为空',
+      (report: string) =>
+        report.replace(
+          '| `source/bms_state.c` | 128-141 | 休眠状态分支的守卫条件 |',
+          '| `source/bms_state.c` | | 休眠状态分支的守卫条件 |'
+        )
+    ],
+    [
+      '文件为占位值',
+      (report: string) =>
+        report.replace(
+          '| `source/bms_state.c` | 128-141 | 休眠状态分支的守卫条件 |',
+          '| `<file>` | 128-141 | 休眠状态分支的守卫条件 |'
+        )
+    ],
+    [
+      '行号为占位值',
+      (report: string) =>
+        report.replace(
+          '| `source/bms_state.c` | 128-141 | 休眠状态分支的守卫条件 |',
+          '| `source/bms_state.c` | `<line>` | 休眠状态分支的守卫条件 |'
+        )
+    ],
+    [
+      '标题缺少编号',
+      (report: string) =>
+        report.replace('### STATE-17 休眠高风险路径仍可打开充电 MOS', '### 普通说明')
+    ],
+    [
+      '占位标题',
+      (report: string) =>
+        report.replace('### STATE-17 休眠高风险路径仍可打开充电 MOS', '### <问题编号> <问题标题>')
     ]
-  ])('拒绝整份 PC-BMS 报告%s', (_case, malformed) => {
+  ])('任一问题块%s时整节无效且不返回部分快照', (_case, mutate) => {
+    const malformed = mutate(bmsCodeReviewerNoSeverityReportFixture)
+
     expect(inspectReviewIssues(malformed)).toEqual({
       format: 'bms_code_reviewer',
       status: 'invalid',
       issues: [],
       message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。'
     })
-    expect(extractReviewIssues(malformed)).toEqual([])
   })
 
-  it.each([
-    [
-      'canonical',
-      bmsCodeReviewerPcBmsReportFixture.replace(
-        'PC-BMS-002 [一般]',
-        'PC-BMS-002 [建议]'
-      )
-    ],
-    [
-      '历史',
-      bmsCodeReviewerHistoricalPcBmsReportFixture.replace(
-        'PC-BMS-002 [高]',
-        'PC-BMS-002 [建议]'
-      )
-    ]
-  ])('“建议”作为共享词不破坏 %s PC-BMS 报告词表一致性', (_case, report) => {
-    expect(inspectReviewIssues(report)).toMatchObject({
-      format: 'bms_code_reviewer',
-      status: 'parsed'
-    })
-  })
-
-  it.each([
-    ['零编号', ['PC-BMS-000', 'PC-BMS-002']],
-    ['跳号', ['PC-BMS-001', 'PC-BMS-003']],
-    ['重复编号', ['PC-BMS-001', 'PC-BMS-001']],
-    ['倒序编号', ['PC-BMS-002', 'PC-BMS-001']]
-  ] as const)('拒绝三位 PC-BMS %s', (_case, [firstNumber, secondNumber]) => {
-    const malformed = bmsCodeReviewerHistoricalPcBmsReportFixture
-      .replace('PC-BMS-001', 'PC-BMS-FIRST')
-      .replace('PC-BMS-002', 'PC-BMS-SECOND')
-      .replace('PC-BMS-FIRST', firstNumber)
-      .replace('PC-BMS-SECOND', secondNumber)
-
-    expect(inspectReviewIssues(malformed)).toMatchObject({
-      format: 'bms_code_reviewer',
-      status: 'invalid',
-      issues: [],
-      message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。'
-    })
-  })
-
-  it.each([
-    ['缺少编号', '### [重要] 状态处理函数复杂度超限'],
-    ['缺少风险级别', '### PC-BMS-001 状态处理函数复杂度超限'],
-    ['风险级别未知', '### PC-BMS-001 [紧急] 状态处理函数复杂度超限']
-  ])('拒绝 PC-BMS 固定标题%s的三级标题', (_case, replacement) => {
-    const malformed = bmsCodeReviewerPcBmsReportFixture.replace(
-      /^### PC-BMS-001 \[重要\].*$/m,
-      replacement
+  it('审查问题章节混入普通三级标题时整节无效', () => {
+    const malformed = bmsCodeReviewerNoSeverityReportFixture.replace(
+      '## 四、审查覆盖',
+      '### 普通说明\n\n这不是合法问题块。\n\n## 四、审查覆盖'
     )
 
     expect(inspectReviewIssues(malformed)).toMatchObject({
       format: 'bms_code_reviewer',
       status: 'invalid',
-      message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。'
-    })
-  })
-
-  it.each([
-    ['P 编号使用 canonical 词', 'P01 [重要]'],
-    ['CR 编号使用 canonical 词', 'CR-001 [严重]'],
-    ['DS-02 使用 canonical 词', 'DS-02-001 [一般]'],
-    ['其他 DS 前缀', 'DS-03-001 [高]']
-  ])('拒绝编号族与严重度词表越界：%s', (_case, headingPrefix) => {
-    const malformed = bmsCodeReviewerHistoricalPcBmsReportFixture.replace(
-      'PC-BMS-001 [高]',
-      headingPrefix
-    )
-
-    expect(inspectReviewIssues(malformed)).toMatchObject({
-      format: 'bms_code_reviewer',
-      status: 'invalid',
-      message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。'
+      issues: []
     })
   })
 
@@ -374,6 +503,23 @@ describe('extractReviewIssues', () => {
 
   it('按固定模板的无问题原文返回零个问题', () => {
     expect(extractReviewIssues(bmsCodeReviewerZeroIssuesFixture)).toEqual([])
+    expect(inspectReviewIssues(bmsCodeReviewerNoSeverityZeroReportFixture)).toEqual({
+      format: 'bms_code_reviewer',
+      status: 'parsed',
+      issues: []
+    })
+    expect(
+      inspectReviewIssues(
+        bmsCodeReviewerNoSeverityZeroReportFixture.replace(
+          '本次未发现能够闭环的问题',
+          '本次未发现问题'
+        )
+      )
+    ).toMatchObject({
+      format: 'bms_code_reviewer',
+      status: 'invalid',
+      issues: []
+    })
   })
 
   it('明确报告固定模板结构损坏且不影响历史模板兜底', () => {
@@ -399,8 +545,7 @@ describe('extractReviewIssues', () => {
     expect(issues).toHaveLength(1)
     expect(issues[0]).toMatchObject({
       issueText: 'P01 [高风险] 休眠状态仍可打开充电 MOS',
-      descriptionText:
-        '休眠状态分支未阻断充电 MOS 开启路径，满足远程唤醒条件时会绕过休眠保护。',
+      descriptionText: '休眠状态分支未阻断充电 MOS 开启路径，满足远程唤醒条件时会绕过休眠保护。',
       source: 'bms_code_reviewer_heading'
     })
     expect(issues[0].displaySnapshot).toContain(
@@ -580,9 +725,7 @@ describe('extractReviewIssues', () => {
       ].join('\n')
     )
 
-    expect(templateOneIssues.map((issue) => issue.issueText)).toEqual([
-      '填写设备编号后页面崩溃'
-    ])
+    expect(templateOneIssues.map((issue) => issue.issueText)).toEqual(['填写设备编号后页面崩溃'])
     expect(templateTwoIssues.map((issue) => issue.descriptionText)).toEqual([
       '填写设备编号后页面崩溃。',
       '风险级别错误显示高风险/中风险/低风险/建议，用户无法选择。'

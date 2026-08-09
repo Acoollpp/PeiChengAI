@@ -6,6 +6,7 @@ import type { ReviewTaskIssue } from '../types'
 import {
   bmsCodeReviewerHistoricalDs02ReportFixture,
   bmsCodeReviewerHistoricalPcBmsReportFixture,
+  bmsCodeReviewerNoSeverityReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
   bmsCodeReviewerReportWithIssuesFixture,
   templateOneReportFixture,
@@ -105,6 +106,27 @@ describe('composeIssueFeedbackMarkdown', () => {
     expect(feedbackOffsets[2]).toBeGreaterThan(issueOffsets[2])
     expect(composed.match(/> 是否有效：/g)).toHaveLength(3)
     expect(original).toBe(bmsCodeReviewerPcBmsReportFixture)
+  })
+
+  it('无严重度问题按结构快照插入反馈且不会落入审查覆盖章节', () => {
+    const original = bmsCodeReviewerNoSeverityReportFixture
+    const issues = [
+      toServerIssue(original, 0, false, '休眠路径问题已确认'),
+      toServerIssue(original, 1, true, '恢复校验已补充')
+    ]
+
+    const composed = composeIssueFeedbackMarkdown(original, issues)
+    const firstFeedbackOffset = composed.indexOf('休眠路径问题已确认')
+    const secondHeadingOffset = composed.indexOf('### 编号-任意-42')
+    const secondFeedbackOffset = composed.indexOf('恢复校验已补充')
+    const coverageOffset = composed.indexOf('## 四、审查覆盖')
+
+    expect(firstFeedbackOffset).toBeGreaterThan(composed.indexOf('### STATE-17'))
+    expect(firstFeedbackOffset).toBeLessThan(secondHeadingOffset)
+    expect(secondFeedbackOffset).toBeGreaterThan(secondHeadingOffset)
+    expect(secondFeedbackOffset).toBeLessThan(coverageOffset)
+    expect(composed.match(/> 是否有效：/g)).toHaveLength(2)
+    expect(composed.indexOf('**材料或生成证据：**')).toBeLessThan(firstFeedbackOffset)
   })
 
   it.each([

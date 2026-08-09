@@ -63,6 +63,14 @@ const descriptionFieldPattern =
   /^\s*(?:[-*+]\s*)?(?:\*\*|__)?(?:问题描述|缺陷描述(?:\s*\(Root Cause\))?|不合规现象描述)\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/i
 const codeLocationFieldPattern =
   /^\s*(?:[-*+]\s*)?(?:\*\*|__)?涉及文件及行号\s*[：:](?:\*\*|__)?\s*$/
+const reviewItemFieldPattern =
+  /^\s*(?:[-*+]\s*)?(?:\*\*|__)?所属审查项\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/
+const ruleSectionFieldPattern =
+  /^\s*(?:[-*+]\s*)?(?:\*\*|__)?规则章节\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/
+const impactRiskFieldPattern =
+  /^\s*(?:[-*+]\s*)?(?:\*\*|__)?影响风险\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/
+const remediationFieldPattern =
+  /^\s*(?:[-*+]\s*)?(?:\*\*|__)?整改建议\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/
 type BmsReportSeverity = Exclude<ReviewIssueSeverity, 'unknown'>
 type BmsReportSeverityRule = {
   canonicalLabel: string
@@ -79,27 +87,19 @@ const bmsReportSeverityEntries = Object.entries(BMS_REPORT_SEVERITY_RULES) as [
   BmsReportSeverity,
   BmsReportSeverityRule
 ][]
-const canonicalPcBmsSeverityLabels = bmsReportSeverityEntries.map(
-  ([, rule]) => rule.canonicalLabel
-)
+const canonicalPcBmsSeverityLabels = bmsReportSeverityEntries.map(([, rule]) => rule.canonicalLabel)
 const historicalRiskSeverityLabels = bmsReportSeverityEntries.flatMap(
   ([, rule]) => rule.historicalLabels
 )
 const pcBmsSeverityLabels = [
   ...new Set([...canonicalPcBmsSeverityLabels, ...historicalRiskSeverityLabels])
 ]
-export const BMS_CANONICAL_ISSUE_HEADING_TEMPLATE =
-  `### PC-BMS-NNN [${canonicalPcBmsSeverityLabels.join('|')}] <问题标题>`
-export const BMS_CANONICAL_SEVERITY_MAPPING_TEXT = bmsReportSeverityEntries
-  .map(([severity, rule]) => `${rule.canonicalLabel}->${severity}`)
-  .join('、')
 const existingBmsIssueHeadingPattern = new RegExp(
   `^(?:P\\d+|CR-\\d+)\\s+\\[(${historicalRiskSeverityLabels.join('|')})\\]\\s+\\S.*$`
 )
 const pcBmsIssueHeadingPattern = new RegExp(
   `^PC-BMS-\\d+\\s+\\[(${pcBmsSeverityLabels.join('|')})\\]\\s+\\S.*$`
 )
-const pcBmsIssueNumberPattern = /^PC-BMS-(\d+)\s+/
 const historicalDs02IssueHeadingPattern = new RegExp(
   `^DS-02-\\d+\\s+\\[(${historicalRiskSeverityLabels.join('|')})\\]\\s+\\S.*$`
 )
@@ -110,9 +110,7 @@ const bmsIssueHeadingPatterns = [
 ] as const
 
 const stripMarkerListPrefix = (value: string): string =>
-  value
-    .replace(/^\s*(?:\d+[\.)、]|[一二三四五六七八九十]+[、.．\)])\s*/, '')
-    .trim()
+  value.replace(/^\s*(?:\d+[\.)、]|[一二三四五六七八九十]+[、.．\)])\s*/, '').trim()
 
 const stripMarkdownInline = (value: string): string =>
   value
@@ -191,9 +189,7 @@ const getHeaderIndex = (headers: string[], names: string[]): number =>
 
 const severityByLabel = Object.fromEntries(
   bmsReportSeverityEntries.flatMap(([severity, rule]) =>
-    [...new Set([rule.canonicalLabel, ...rule.historicalLabels])].map(
-      (label) => [label, severity]
-    )
+    [...new Set([rule.canonicalLabel, ...rule.historicalLabels])].map((label) => [label, severity])
   )
 ) as Record<string, BmsReportSeverity>
 
@@ -202,37 +198,6 @@ const severityFromBmsIssueHeading = (heading: string): ReviewIssueSeverity | und
     .map((pattern) => pattern.exec(heading)?.[1])
     .find((label) => label !== undefined)
   return severityLabel ? severityByLabel[severityLabel] : undefined
-}
-
-const hasValidPcBmsReportContract = (headings: MarkdownHeading[]): boolean => {
-  const pcBmsHeadings = headings.flatMap((heading) => {
-    const number = pcBmsIssueNumberPattern.exec(heading.text)?.[1]
-    const label = pcBmsIssueHeadingPattern.exec(heading.text)?.[1]
-    return number === undefined || label === undefined ? [] : [{ number, label }]
-  })
-  if (pcBmsHeadings.length === 0) return true
-  if (pcBmsHeadings.length !== headings.length) return false
-
-  const allThreeDigit = pcBmsHeadings.every(({ number }) => number.length === 3)
-  const allNonThreeDigit = pcBmsHeadings.every(({ number }) => number.length !== 3)
-  if (!allThreeDigit && !allNonThreeDigit) return false
-
-  const canonicalLabels = new Set(canonicalPcBmsSeverityLabels)
-  const historicalLabels = new Set(historicalRiskSeverityLabels)
-  const hasCanonicalOnlyLabel = pcBmsHeadings.some(
-    ({ label }) => canonicalLabels.has(label) && !historicalLabels.has(label)
-  )
-  const hasHistoricalOnlyLabel = pcBmsHeadings.some(
-    ({ label }) => historicalLabels.has(label) && !canonicalLabels.has(label)
-  )
-  if (hasCanonicalOnlyLabel && hasHistoricalOnlyLabel) return false
-  if (allNonThreeDigit && hasCanonicalOnlyLabel) return false
-
-  // 合同固定前的历史报告仅兼容全量非三位编号；三位编号必须严格连续。
-  if (allNonThreeDigit) return true
-  return pcBmsHeadings.every(
-    ({ number }, index) => number === String(index + 1).padStart(3, '0')
-  )
 }
 
 const splitMarkdownLines = (markdown: string): MarkdownLine[] => {
@@ -305,22 +270,56 @@ const findDescriptionText = (lines: MarkdownLine[]): string => {
   return ''
 }
 
-const findCodeLocations = (lines: MarkdownLine[]): ReviewIssueCodeLocation[] => {
+const findFieldText = (lines: MarkdownLine[], pattern: RegExp): string => {
+  for (const line of lines) {
+    if (line.inCodeBlock) continue
+    const match = pattern.exec(line.text)
+    if (match) return stripMarkdownInline(match[1])
+  }
+  return ''
+}
+
+const isBmsPlaceholderValue = (value: string): boolean => {
+  const normalized = normalizeCellText(value)
+  return (
+    isPlaceholderText(normalized) ||
+    /^<[^>]+>$/.test(normalized) ||
+    /<问题(?:编号|标题)>/.test(normalized)
+  )
+}
+
+const hasBmsIssueHeadingShape = (heading: string): boolean =>
+  /^\S+\s+\S/.test(heading) ||
+  /^(?:\d+[.)、．]|[一二三四五六七八九十百]+[、.．)])\s*\S/.test(heading)
+
+const incompleteHistoricalBmsIssueHeadingPattern =
+  /^(?:P\d+|CR-\d+|PC-BMS-\d+|DS-02-\d+)\s+\[[^\]]+\]$/
+
+type CodeLocationExtraction = {
+  locations: ReviewIssueCodeLocation[]
+  valid: boolean
+}
+
+const invalidCodeLocations = (): CodeLocationExtraction => ({ locations: [], valid: false })
+
+const findCodeLocations = (lines: MarkdownLine[]): CodeLocationExtraction => {
   const fieldIndex = lines.findIndex(
     (line) => !line.inCodeBlock && codeLocationFieldPattern.test(line.text)
   )
-  if (fieldIndex === -1) return []
+  if (fieldIndex === -1) return invalidCodeLocations()
 
   const tableLines = lines.slice(fieldIndex + 1)
   const headerLineIndex = tableLines.findIndex(
     (line) => !line.inCodeBlock && line.text.trim().startsWith('|')
   )
-  if (headerLineIndex === -1) return []
+  if (headerLineIndex === -1) return invalidCodeLocations()
   const headers = splitTableRow(tableLines[headerLineIndex].text)
   const fileIndex = getHeaderIndex(headers, ['文件'])
   const lineIndex = getHeaderIndex(headers, ['行号'])
   const descriptionIndex = getHeaderIndex(headers, ['位置说明'])
-  if (fileIndex === -1 || lineIndex === -1 || descriptionIndex === -1) return []
+  if (fileIndex === -1 || lineIndex === -1 || descriptionIndex === -1) {
+    return invalidCodeLocations()
+  }
 
   const locations: ReviewIssueCodeLocation[] = []
   for (const line of tableLines.slice(headerLineIndex + 1)) {
@@ -330,9 +329,12 @@ const findCodeLocations = (lines: MarkdownLine[]): ReviewIssueCodeLocation[] => 
     const file = cells[fileIndex] ?? ''
     const codeLine = cells[lineIndex] ?? ''
     const description = cells[descriptionIndex] ?? ''
-    if (file && codeLine) locations.push({ file, line: codeLine, description })
+    if ([file, codeLine, description].some(isBmsPlaceholderValue)) {
+      return invalidCodeLocations()
+    }
+    locations.push({ file, line: codeLine, description })
   }
-  return locations
+  return { locations, valid: locations.length > 0 }
 }
 
 const findTemplateOneBoundary = (
@@ -357,10 +359,8 @@ const findTemplateOneBoundary = (
   return horizontalRule.index < nextHeading.index ? horizontalRule : nextHeading
 }
 
-const reviewCoverageSectionPattern =
-  /^(?:(?:[一二三四五六七八九十百]+|\d+)[、.．:：\s]+)?审查覆盖$/
-const reviewIssuesSectionPattern =
-  /^(?:(?:[一二三四五六七八九十百]+|\d+)[、.．:：\s]+)?审查问题$/
+const reviewCoverageSectionPattern = /^(?:(?:[一二三四五六七八九十百]+|\d+)[、.．:：\s]+)?审查覆盖$/
+const reviewIssuesSectionPattern = /^(?:(?:[一二三四五六七八九十百]+|\d+)[、.．:：\s]+)?审查问题$/
 
 const extractBmsCodeReviewerIssues = (
   markdown: string,
@@ -381,52 +381,64 @@ const extractBmsCodeReviewerIssues = (
     nextSection ? headings.indexOf(nextSection) : headings.length
   )
   const directHeadings = candidates.filter((heading) => heading.level === 3)
-  const issueHeadings = directHeadings.filter(
-    (heading) => severityFromBmsIssueHeading(heading.text) !== undefined
-  )
 
-  const issues = issueHeadings.flatMap((heading) => {
-    const headingIndex = headings.indexOf(heading)
-    const boundary = findTemplateOneBoundary(lines, headings, headingIndex)
-    const endOffset = boundary?.startOffset ?? markdown.length
-    const issueLines = lines.slice(heading.line.index + 1, boundary?.index)
-    const descriptionText = findDescriptionText(issueLines)
-    if (!descriptionText) return []
-    const severity = severityFromBmsIssueHeading(heading.text)
-    if (severity === undefined) return []
-    const anchorId = `report-option-${heading.line.index}`
-    return [{
-      id: `review-issue-${heading.line.index}`,
-      order: 0,
-      source: 'bms_code_reviewer_heading' as const,
-      issueText: heading.text,
-      descriptionText,
-      displayText: heading.text,
-      displaySnapshot: markdown.slice(heading.line.startOffset, endOffset).trimEnd(),
-      severity,
-      codeLocations: findCodeLocations(issueLines),
-      anchorId,
-      location: {
-        startOffset: heading.line.startOffset,
-        endOffset,
-        feedbackInsertionOffset: endOffset,
-        anchorLine: heading.line.index,
-        headingLevel: heading.level
+  const issues = directHeadings
+    .flatMap((heading) => {
+      const headingIndex = headings.indexOf(heading)
+      const boundary = findTemplateOneBoundary(lines, headings, headingIndex)
+      const endOffset = boundary?.startOffset ?? markdown.length
+      const issueLines = lines.slice(heading.line.index + 1, boundary?.index)
+      const rawHeadingText = headingLinePattern.exec(heading.line.text)?.[2] ?? heading.text
+      const issueText = stripMarkdownInline(rawHeadingText)
+      const descriptionText = findDescriptionText(issueLines)
+      const codeLocationExtraction = findCodeLocations(issueLines)
+      const hasRequiredFields = [
+        findFieldText(issueLines, reviewItemFieldPattern),
+        findFieldText(issueLines, ruleSectionFieldPattern),
+        descriptionText,
+        findFieldText(issueLines, impactRiskFieldPattern),
+        findFieldText(issueLines, remediationFieldPattern)
+      ].every((value) => !isBmsPlaceholderValue(value))
+      if (
+        isBmsPlaceholderValue(issueText) ||
+        !hasBmsIssueHeadingShape(issueText) ||
+        incompleteHistoricalBmsIssueHeadingPattern.test(heading.text) ||
+        !hasRequiredFields ||
+        !codeLocationExtraction.valid
+      ) {
+        return []
       }
-    }]
-  }).map((issue, order) => ({ ...issue, order }))
-  const sectionLines = lines.slice(
-    section.line.index + 1,
-    nextSection?.line.index
-  )
+      const severity = severityFromBmsIssueHeading(heading.text)
+      const anchorId = `report-option-${heading.line.index}`
+      return [
+        {
+          id: `review-issue-${heading.line.index}`,
+          order: 0,
+          source: 'bms_code_reviewer_heading' as const,
+          issueText,
+          descriptionText,
+          displayText: issueText,
+          displaySnapshot: markdown.slice(heading.line.startOffset, endOffset).trimEnd(),
+          ...(severity === undefined ? {} : { severity }),
+          codeLocations: codeLocationExtraction.locations,
+          anchorId,
+          location: {
+            startOffset: heading.line.startOffset,
+            endOffset,
+            feedbackInsertionOffset: endOffset,
+            anchorLine: heading.line.index,
+            headingLevel: heading.level
+          }
+        }
+      ]
+    })
+    .map((issue, order) => ({ ...issue, order }))
+  const sectionLines = lines.slice(section.line.index + 1, nextSection?.line.index)
   const hasZeroIssueStatement = sectionLines.some(
     (line) => !line.inCodeBlock && line.text.trim() === '本次未发现能够闭环的问题'
   )
   const valid =
-    (directHeadings.length > 0 &&
-      directHeadings.length === issueHeadings.length &&
-      issues.length === issueHeadings.length &&
-      hasValidPcBmsReportContract(issueHeadings)) ||
+    (directHeadings.length > 0 && issues.length === directHeadings.length) ||
     (directHeadings.length === 0 && hasZeroIssueStatement)
 
   return {
@@ -437,13 +449,17 @@ const extractBmsCodeReviewerIssues = (
   }
 }
 
-const extractTemplateOneIssues = (markdown: string, lines: MarkdownLine[]): ReviewIssueSnapshot[] => {
+const extractTemplateOneIssues = (
+  markdown: string,
+  lines: MarkdownLine[]
+): ReviewIssueSnapshot[] => {
   const headings = collectHeadings(lines)
   const leafHeadings = headings.filter((heading, index) => {
-    const boundary = headings
-      .slice(index + 1)
-      .find((candidate) => candidate.level <= heading.level)
-    const children = headings.slice(index + 1, boundary ? headings.indexOf(boundary) : headings.length)
+    const boundary = headings.slice(index + 1).find((candidate) => candidate.level <= heading.level)
+    const children = headings.slice(
+      index + 1,
+      boundary ? headings.indexOf(boundary) : headings.length
+    )
     return children.length === 0
   })
   const issueHeadings = leafHeadings.filter((heading) => {
@@ -520,25 +536,17 @@ const extractTemplateTwoTableIssues = (
     }
 
     const risk = cells[getHeaderIndex(currentHeaders, ['风险级别'])] ?? ''
-    const direction =
-      cells[getHeaderIndex(currentHeaders, ['专项检查方向', '规范违反条目'])] ?? ''
+    const direction = cells[getHeaderIndex(currentHeaders, ['专项检查方向', '规范违反条目'])] ?? ''
     const description =
-      cells[
-        getHeaderIndex(currentHeaders, [
-          '触发规则/缺陷描述',
-          '缺陷描述',
-          '不合规现象描述'
-        ])
-      ] ?? ''
+      cells[getHeaderIndex(currentHeaders, ['触发规则/缺陷描述', '缺陷描述', '不合规现象描述'])] ??
+      ''
 
     if (isPlaceholderText(risk) || isPlaceholderText(description)) {
       continue
     }
 
     const issueContext = isPlaceholderText(direction) ? currentSection : direction
-    const issueText = [risk, issueContext]
-      .filter((part) => !isPlaceholderText(part))
-      .join(' · ')
+    const issueText = [risk, issueContext].filter((part) => !isPlaceholderText(part)).join(' · ')
     if (!issueText) {
       continue
     }
@@ -645,9 +653,8 @@ export const inspectReviewIssues = (markdown: string): ReviewIssueExtractionResu
     return {
       format: 'legacy',
       status: 'parsed',
-      issues: tableIssues.length > 0
-        ? tableIssues
-        : extractTemplateTwoConclusionIssues(markdown, lines)
+      issues:
+        tableIssues.length > 0 ? tableIssues : extractTemplateTwoConclusionIssues(markdown, lines)
     }
   }
   return {
