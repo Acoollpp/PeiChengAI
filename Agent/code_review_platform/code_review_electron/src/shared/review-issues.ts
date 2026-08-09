@@ -65,6 +65,7 @@ const codeLocationFieldPattern =
   /^\s*(?:[-*+]\s*)?(?:\*\*|__)?涉及文件及行号\s*[：:](?:\*\*|__)?\s*$/
 const bmsIssueHeadingPattern =
   /^(?:P\d+|CR-\d+)\s+\[(高风险|高|中风险|中|低风险|低|建议)\]\s+\S.*$/
+const bmsZeroIssueStatementPattern = /^本次未发现能够闭环的问题[。.]?$/
 
 const stripMarkerListPrefix = (value: string): string =>
   value
@@ -340,7 +341,7 @@ const extractBmsCodeReviewerIssues = (
     nextSection?.line.index
   )
   const hasZeroIssueStatement = sectionLines.some(
-    (line) => !line.inCodeBlock && line.text.trim() === '本次未发现能够闭环的问题'
+    (line) => !line.inCodeBlock && bmsZeroIssueStatementPattern.test(line.text.trim())
   )
   const valid =
     (directHeadings.length > 0 &&

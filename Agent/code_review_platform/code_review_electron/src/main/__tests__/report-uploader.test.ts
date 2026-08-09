@@ -41,7 +41,10 @@ import {
   uploadRequirementFile,
   uploadReportFile
 } from '../report-uploader'
-import { templateOneReportFixture } from '../../shared/__tests__/fixtures/review-report-fixtures'
+import {
+  bmsCodeReviewerZeroIssuesFixture,
+  templateOneReportFixture
+} from '../../shared/__tests__/fixtures/review-report-fixtures'
 
 const VALID_PNG_BYTES = Buffer.from(
   '89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63f8cfc0000003010100c9fe92ef0000000049454e44ae426082',
@@ -117,6 +120,41 @@ describe('report uploader', () => {
       feedback_protocol_version: 1,
       issues: [],
       assets: []
+    })
+  })
+
+  it('上传带中文句号的 bms-code-reviewer 零问题报告并提交零问题快照', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-zero-issues-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, 'DS-03零问题报告.md')
+    const report = bmsCodeReviewerZeroIssuesFixture.replace(
+      '本次未发现能够闭环的问题',
+      '本次未发现能够闭环的问题。'
+    )
+    const api = {
+      uploadReport: vi.fn(async () => ({
+        feedback_protocol_version: 1,
+        issue_count: 0,
+        highest_issue_severity: null
+      }))
+    }
+    await writeFile(reportPath, report)
+
+    const uploaded = await uploadReportFile(api, 'token-123', 'task-zero', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-zero',
+      expect.objectContaining({
+        report_content: report,
+        feedback_protocol_version: 1,
+        issues: []
+      })
+    )
+    expect(uploaded).toEqual({
+      feedback_protocol_version: 1,
+      issue_count: 0,
+      highest_issue_severity: null
     })
   })
 

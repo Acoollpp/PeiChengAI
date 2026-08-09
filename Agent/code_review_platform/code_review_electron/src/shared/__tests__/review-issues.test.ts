@@ -95,8 +95,38 @@ describe('extractReviewIssues', () => {
     expect(issueTexts).not.toContain('风险分级口径')
   })
 
-  it('按固定模板的无问题原文返回零个问题', () => {
-    expect(extractReviewIssues(bmsCodeReviewerZeroIssuesFixture)).toEqual([])
+  it.each([
+    ['无句号', ''],
+    ['中文句号', '。'],
+    ['英文句号', '.']
+  ])('按固定模板的零问题原文兼容%s', (_label, punctuation) => {
+    const report = bmsCodeReviewerZeroIssuesFixture.replace(
+      '本次未发现能够闭环的问题',
+      `本次未发现能够闭环的问题${punctuation}`
+    )
+
+    expect(inspectReviewIssues(report)).toMatchObject({
+      format: 'bms_code_reviewer',
+      status: 'parsed',
+      issues: []
+    })
+    expect(extractReviewIssues(report)).toEqual([])
+  })
+
+  it.each([
+    '本次未发现能够闭环的问题！',
+    '本次未发现能够闭环的问题，已覆盖全部路径。',
+    '本次未发现问题。'
+  ])('零问题固定句不接受边界外文本：%s', (zeroIssueText) => {
+    const report = bmsCodeReviewerZeroIssuesFixture.replace(
+      '本次未发现能够闭环的问题',
+      zeroIssueText
+    )
+
+    expect(inspectReviewIssues(report)).toMatchObject({
+      format: 'bms_code_reviewer',
+      status: 'invalid'
+    })
   })
 
   it('明确报告固定模板结构损坏且不影响历史模板兜底', () => {
