@@ -1,6 +1,7 @@
 import type { ReviewTaskIssue } from './types'
 
 const supportedSources = new Set<ReviewTaskIssue['source']>([
+  'bms_code_reviewer_heading',
   'template_1_heading',
   'template_2_table_row',
   'template_2_conclusion_item'

@@ -14,7 +14,9 @@ from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from pydantic import ValidationError
+from sqlalchemy import case, or_
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import col, delete, func, select
 
 from app.api.deps import (
@@ -25,6 +27,7 @@ from app.api.deps import (
 )
 from app.models import (
     Department,
+    ReviewIssueSeverity,
     ReviewTask,
     ReviewTaskCreate,
     ReviewTaskIssue,
@@ -90,6 +93,54 @@ _FAILED_OR_ERROR_STATUSES = {
 }
 
 ReportFeedbackFilter = Literal["helpful", "not_helpful", "none"]
+_REVIEW_ISSUE_SEVERITY_RULES: tuple[
+    tuple[
+        ReviewIssueSeverity,
+        int,
+        tuple[str, ...],
+        tuple[str, ...],
+    ],
+    ...,
+] = (
+    (ReviewIssueSeverity.high, 4, ("高风险", "高"), ("高风险：", "高风险:")),
+    (ReviewIssueSeverity.medium, 3, ("中风险", "中"), ("中风险：", "中风险:")),
+    (ReviewIssueSeverity.low, 2, ("低风险", "低"), ("低风险：", "低风险:")),
+    (ReviewIssueSeverity.suggestion, 1, ("建议",), ("建议：", "建议:")),
+)
+
+
+def _numbered_issue_severity_pattern(
+    labels: tuple[str, ...], *, postgres: bool
+) -> str:
+    label_pattern = "|".join(re.escape(label) for label in labels)
+    if postgres:
+        return (
+            r"^(P[0-9]+|CR-[0-9]+)[[:space:]]+\[("
+            f"{label_pattern}"
+            r")\][[:space:]]+"
+        )
+    return rf"^(?:P\d+|CR-\d+)\s+\[(?:{label_pattern})\]\s+"
+
+
+def _review_issue_severity_sql_condition(
+    issue_text: Any,
+    labels: tuple[str, ...],
+    legacy_prefixes: tuple[str, ...],
+) -> ColumnElement[bool]:
+    return or_(
+        issue_text.op("~")(_numbered_issue_severity_pattern(labels, postgres=True)),
+        *(issue_text.startswith(prefix) for prefix in legacy_prefixes),
+    )
+
+
+def _review_issue_text_matches_severity(
+    issue_text: str,
+    labels: tuple[str, ...],
+    legacy_prefixes: tuple[str, ...],
+) -> bool:
+    return bool(
+        re.match(_numbered_issue_severity_pattern(labels, postgres=False), issue_text)
+    ) or issue_text.startswith(legacy_prefixes)
 
 
 def _utcnow() -> datetime:
@@ -404,6 +455,7 @@ def _task_public(
     issue_count: int = 0,
     evaluated_issue_count: int = 0,
     has_issue_feedback_draft: bool = False,
+    highest_issue_severity: ReviewIssueSeverity | None = None,
 ) -> ReviewTaskPublic:
     return ReviewTaskPublic.model_validate(
         task,
@@ -419,21 +471,39 @@ def _task_public(
             "issue_count": issue_count,
             "evaluated_issue_count": evaluated_issue_count,
             "has_issue_feedback_draft": has_issue_feedback_draft,
+            "highest_issue_severity": highest_issue_severity,
         },
     )
 
 
 def _issue_progress_by_task_ids(
     *, session: SessionDep, task_ids: list[uuid.UUID]
-) -> dict[uuid.UUID, tuple[int, int, bool]]:
+) -> dict[uuid.UUID, tuple[int, int, bool, ReviewIssueSeverity | None]]:
     if not task_ids:
         return {}
+    issue_text = col(ReviewTaskIssue.issue_text)
+    severity_rank = case(
+        *(
+            (
+                _review_issue_severity_sql_condition(
+                    issue_text,
+                    labels,
+                    legacy_prefixes,
+                ),
+                rank,
+            )
+            for _severity, rank, labels, legacy_prefixes in _REVIEW_ISSUE_SEVERITY_RULES
+        ),
+        else_=0,
+    )
     rows = session.exec(
-        select(
+        # SQLModel stubs only cover up to four selected columns.
+        select(  # type: ignore[call-overload]
             ReviewTaskIssue.task_id,
             func.count(col(ReviewTaskIssue.id)),
             func.count(col(ReviewTaskIssue.helpful)),
             func.count(col(ReviewTaskIssue.feedback_text)),
+            func.max(severity_rank),
         )
         .where(col(ReviewTaskIssue.task_id).in_(task_ids))
         .group_by(col(ReviewTaskIssue.task_id))
@@ -443,9 +513,43 @@ def _issue_progress_by_task_ids(
             int(issue_count),
             int(evaluated_issue_count),
             int(evaluated_issue_count) > 0 or int(feedback_text_count) > 0,
+            _review_issue_severity_from_rank(int(highest_severity_rank)),
         )
-        for task_id, issue_count, evaluated_issue_count, feedback_text_count in rows
+        for task_id,
+        issue_count,
+        evaluated_issue_count,
+        feedback_text_count,
+        highest_severity_rank in rows
     }
+
+
+def _review_issue_severity_from_rank(rank: int) -> ReviewIssueSeverity | None:
+    return next(
+        (
+            severity
+            for severity, severity_rank, _labels, _legacy_prefixes in (
+                _REVIEW_ISSUE_SEVERITY_RULES
+            )
+            if severity_rank == rank
+        ),
+        None,
+    )
+
+
+def _highest_issue_severity(
+    issues: list[ReviewTaskIssueSnapshotCreate],
+) -> ReviewIssueSeverity | None:
+    for severity, _rank, labels, legacy_prefixes in _REVIEW_ISSUE_SEVERITY_RULES:
+        if any(
+            _review_issue_text_matches_severity(
+                issue.issue_text,
+                labels,
+                legacy_prefixes,
+            )
+            for issue in issues
+        ):
+            return severity
+    return None
 
 
 def _parse_issue_snapshots(raw_issues: str) -> list[ReviewTaskIssueSnapshotCreate]:
@@ -649,7 +753,7 @@ def read_review_tasks(
                 task,
                 user,
                 report_feedback,
-                *issue_progress.get(task.id, (0, 0, False)),
+                *issue_progress.get(task.id, (0, 0, False, None)),
             )
             for task, user, report_feedback in rows
         ],
@@ -904,9 +1008,9 @@ def read_review_task(
             ReviewTaskReportFeedback.task_id == task.id
         )
     ).first()
-    issue_count, evaluated_issue_count, has_issue_feedback_draft = (
+    issue_count, evaluated_issue_count, has_issue_feedback_draft, highest_issue_severity = (
         _issue_progress_by_task_ids(session=session, task_ids=[task.id]).get(
-            task.id, (0, 0, False)
+            task.id, (0, 0, False, None)
         )
     )
     return _task_public(
@@ -916,6 +1020,7 @@ def read_review_task(
         issue_count,
         evaluated_issue_count,
         has_issue_feedback_draft,
+        highest_issue_severity,
     )
 
 
@@ -1103,6 +1208,7 @@ async def upload_review_task_report(
         task,
         session.get(User, task.user_id),
         issue_count=len(issue_snapshots),
+        highest_issue_severity=_highest_issue_severity(issue_snapshots),
     )
 
 

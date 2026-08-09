@@ -1969,7 +1969,56 @@ input[type="checkbox"] {
 
 .wb-management-report-row > strong.is-high { color: var(--wb-danger); }
 .wb-management-report-row > strong.is-medium { color: var(--wb-waiting); }
+.wb-management-report-row > strong.is-low { color: #71b9d0; }
+.wb-management-report-row > strong.is-suggestion { color: var(--wb-text-soft); }
 .wb-management-report-row > strong.is-none { color: var(--wb-accent); }
+.wb-management-report-row > strong.is-unknown { color: var(--wb-muted); }
+
+.wb-report-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  padding: 12px 14px;
+  color: var(--wb-muted);
+  font-size: 11px;
+}
+
+.wb-report-state.is-error {
+  color: #f2a09b;
+  background: rgb(197 75 69 / 8%);
+}
+
+.wb-report-state > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.wb-report-state span {
+  overflow-wrap: anywhere;
+}
+
+.wb-report-state button,
+.wb-report-parse-warning button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  width: auto;
+  gap: 5px;
+  padding: 6px 8px;
+  border: 1px solid var(--wb-line-strong);
+  color: var(--wb-text-soft);
+  background: transparent;
+  font-size: 10px;
+}
+
+.wb-report-state button svg,
+.wb-report-parse-warning button svg {
+  width: 13px;
+  height: 13px;
+}
 
 .wb-link-button {
   display: inline-flex;
@@ -2098,13 +2147,86 @@ input[type="checkbox"] {
 
 .wb-report-index-meta strong.is-high { color: var(--wb-danger); }
 .wb-report-index-meta strong.is-medium { color: var(--wb-waiting); }
+.wb-report-index-meta strong.is-low { color: #71b9d0; }
+.wb-report-index-meta strong.is-suggestion { color: var(--wb-text-soft); }
 .wb-report-index-meta strong.is-none { color: var(--wb-accent); }
+.wb-report-index-meta strong.is-unknown { color: var(--wb-muted); }
 
 .wb-markdown-panel {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: #121719;
+}
+
+.wb-markdown-panel.has-parse-warning {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.wb-report-content-state {
+  display: flex;
+  align-self: center;
+  justify-self: center;
+  align-items: center;
+  gap: 10px;
+  max-width: min(460px, calc(100% - 40px));
+  color: var(--wb-muted);
+}
+
+.wb-report-content-state > svg {
+  width: 20px;
+  height: 20px;
+}
+
+.wb-report-content-state > div {
+  display: grid;
+  gap: 5px;
+}
+
+.wb-report-content-state span {
+  color: var(--wb-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.wb-report-content-state.is-error > svg,
+.wb-report-content-state.is-error strong {
+  color: #f2a09b;
+}
+
+.wb-report-parse-warning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 14px;
+  border-bottom: 1px solid #69413e;
+  color: #f2a09b;
+  background: #231a1a;
+}
+
+.wb-report-parse-warning > svg {
+  flex: 0 0 16px;
+  width: 16px;
+}
+
+.wb-report-parse-warning > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.wb-report-parse-warning span {
+  overflow: hidden;
+  color: #cfaaa7;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-report-parse-warning button {
+  margin-left: auto;
 }
 
 .wb-markdown-panel > .preview-scroll {

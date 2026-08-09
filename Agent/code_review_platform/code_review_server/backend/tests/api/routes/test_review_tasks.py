@@ -742,6 +742,7 @@ def test_新协议上传后返回有序问题快照和反馈进度(
     assert uploaded["issue_count"] == 2
     assert uploaded["evaluated_issue_count"] == 0
     assert uploaded["has_issue_feedback_draft"] is False
+    assert uploaded["highest_issue_severity"] == "high"
 
     issues_response = client.get(
         f"{settings.API_V1_STR}/review-tasks/{task['id']}/issues",
@@ -770,6 +771,7 @@ def test_新协议上传后返回有序问题快照和反馈进度(
     assert detail_response.json()["issue_count"] == 2
     assert detail_response.json()["evaluated_issue_count"] == 0
     assert detail_response.json()["has_issue_feedback_draft"] is False
+    assert detail_response.json()["highest_issue_severity"] == "high"
 
     list_response = client.get(
         f"{settings.API_V1_STR}/review-tasks",
@@ -783,6 +785,68 @@ def test_新协议上传后返回有序问题快照和反馈进度(
     assert listed_task["issue_count"] == 2
     assert listed_task["evaluated_issue_count"] == 0
     assert listed_task["has_issue_feedback_draft"] is False
+    assert listed_task["highest_issue_severity"] == "high"
+
+
+@pytest.mark.parametrize(
+    ("issue_text", "expected_severity"),
+    [
+        ("P01 [高风险] 固定模板问题", "high"),
+        ("P01 [中风险] 固定模板问题", "medium"),
+        ("P01 [低风险] 固定模板问题", "low"),
+        ("P01 [建议] 固定模板问题", "suggestion"),
+        ("CR-001 [高] 真实服务端固定模板问题", "high"),
+        ("CR-004 [中] 真实服务端固定模板问题", "medium"),
+        ("CR-007 [低] 真实服务端固定模板问题", "low"),
+        ("CR-004 [中] 枚举值 [高] 未处理", "medium"),
+        ("高风险：旧模板问题", "high"),
+        ("中风险：旧模板问题", "medium"),
+        ("中风险：正文提到高风险：但标题仍为中风险", "medium"),
+        ("低风险：旧模板问题", "low"),
+        ("建议：旧模板问题", "suggestion"),
+    ],
+)
+def test_列表和详情聚合新协议问题快照的最高严重度(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    issue_text: str,
+    expected_severity: str,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    issue = _valid_issue_snapshot()
+    issue["issue_text"] = issue_text
+
+    upload_response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": json.dumps([issue], ensure_ascii=False),
+        },
+        files={"upload": ("report.md", b"# Review\n", "text/markdown")},
+    )
+    assert upload_response.status_code == 200
+    assert upload_response.json()["highest_issue_severity"] == expected_severity
+
+    detail_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}",
+        headers=normal_user_token_headers,
+    )
+    assert detail_response.status_code == 200
+    assert detail_response.json()["highest_issue_severity"] == expected_severity
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+    )
+    assert list_response.status_code == 200
+    listed_task = next(
+        item for item in list_response.json()["data"] if item["id"] == task["id"]
+    )
+    assert listed_task["highest_issue_severity"] == expected_severity
 
 
 @pytest.mark.parametrize(
@@ -1766,6 +1830,7 @@ def test_零问题报告仍标记为新协议且不创建虚假问题(
     assert upload_response.status_code == 200
     assert upload_response.json()["feedback_protocol_version"] == 1
     assert upload_response.json()["issue_count"] == 0
+    assert upload_response.json()["highest_issue_severity"] is None
     issues_response = client.get(
         f"{settings.API_V1_STR}/review-tasks/{task['id']}/issues",
         headers=normal_user_token_headers,
@@ -1799,6 +1864,7 @@ def test_旧客户端上传保持历史报告流程兼容(
     assert content["feedback_protocol_version"] is None
     assert content["issue_count"] == 0
     assert content["evaluated_issue_count"] == 0
+    assert content["highest_issue_severity"] is None
     read_response = client.get(
         f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
         headers=normal_user_token_headers,
@@ -1811,6 +1877,89 @@ def test_旧客户端上传保持历史报告流程兼容(
     )
     assert download_response.status_code == 200
     assert download_response.content == b"# Legacy\n"
+
+
+def test_新旧报告混合列表详情和统计保持兼容(
+    client: TestClient,
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    _, api_key = create_key_user(db)
+    user_headers = authentication_token_from_key(
+        client=client,
+        key=api_key.key,
+        db=db,
+    )
+    legacy_task = _create_review_task(
+        client,
+        user_headers,
+        old_revision="501",
+    )
+    legacy_upload = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{legacy_task['id']}/report",
+        headers=user_headers,
+        files={"upload": ("legacy.md", b"# Legacy\n", "text/markdown")},
+    )
+    assert legacy_upload.status_code == 200
+
+    modern_task = _create_review_task(
+        client,
+        user_headers,
+        old_revision="502",
+    )
+    modern_issue = _valid_issue_snapshot()
+    modern_issue["issue_text"] = "P01 [高风险] 固定模板问题"
+    modern_upload = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{modern_task['id']}/report",
+        headers=user_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": json.dumps([modern_issue], ensure_ascii=False),
+        },
+        files={"upload": ("modern.md", b"# Modern\n", "text/markdown")},
+    )
+    assert modern_upload.status_code == 200
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=user_headers,
+        params={"mine": True},
+    )
+    assert list_response.status_code == 200
+    listed_by_id = {task["id"]: task for task in list_response.json()["data"]}
+    assert listed_by_id[legacy_task["id"]]["feedback_protocol_version"] is None
+    assert listed_by_id[legacy_task["id"]]["issue_count"] == 0
+    assert listed_by_id[legacy_task["id"]]["highest_issue_severity"] is None
+    assert listed_by_id[modern_task["id"]]["feedback_protocol_version"] == 1
+    assert listed_by_id[modern_task["id"]]["issue_count"] == 1
+    assert listed_by_id[modern_task["id"]]["highest_issue_severity"] == "high"
+
+    for task_id, expected_protocol, expected_count, expected_severity in (
+        (legacy_task["id"], None, 0, None),
+        (modern_task["id"], 1, 1, "high"),
+    ):
+        detail_response = client.get(
+            f"{settings.API_V1_STR}/review-tasks/{task_id}",
+            headers=user_headers,
+        )
+        assert detail_response.status_code == 200
+        detail = detail_response.json()
+        assert detail["feedback_protocol_version"] == expected_protocol
+        assert detail["issue_count"] == expected_count
+        assert detail["highest_issue_severity"] == expected_severity
+
+    stats_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=user_headers,
+        params={"range": "all"},
+    )
+    assert stats_response.status_code == 200
+    stats = stats_response.json()
+    assert stats["total"] == 2
+    assert stats["success"] == 2
+    assert stats["failed_or_error"] == 0
 
 
 def test_历史报告不能通过新协议重新解析或覆盖(

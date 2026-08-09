@@ -3,7 +3,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { act } from 'react'
+import { act, StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { CodeReviewApi } from '../code-review-api'
@@ -418,8 +418,8 @@ describe('ProductionReviewWorkbench', () => {
       taskId: 'server-success', clientTaskId: firstClientTaskId,
       type: 'stage', stage: 'success', message: '报告上传完成'
     }))
-    expect(await screen.findByText(/server-success · DS-03/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '查看报告' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '查看报告' })).not.toBeInTheDocument()
+    expect(window.codeReview.readTaskReport).not.toHaveBeenCalled()
 
     act(() => progressListener?.({
       taskId: 'server-failed', clientTaskId: secondClientTaskId,
@@ -515,7 +515,7 @@ describe('ProductionReviewWorkbench', () => {
     expect(await screen.findByRole('heading', { name: '报告中心' })).toBeInTheDocument()
     const preview = screen.getByRole('article', { name: 'Markdown 报告预览' })
     expect(within(preview).getByRole('heading', { name: 'DS-03 状态机审核报告' })).toBeInTheDocument()
-    expect(screen.getAllByText(/1 个问题.*严重度未知/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('1 个问题 · 高风险').length).toBeGreaterThan(0)
 
     expect(screen.queryByRole('button', { name: '查看PDF报告' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '反馈报告问题' }))
@@ -890,6 +890,31 @@ describe('ProductionReviewWorkbench', () => {
   })
 
   it.each([
+    ['前台', true],
+    ['后台', false]
+  ])('执行器返回成功但无 Markdown 路径时在%s不产生可查看报告通知', async (_label, foreground) => {
+    mockRendererForeground(foreground)
+    vi.mocked(window.codeReview.executeTask).mockResolvedValueOnce({
+      taskId: 'success-without-report-path',
+      status: 'success'
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await submitMinimalDs03Task('svn://server/success-without-report-path')
+    await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
+
+    expect(await screen.findByText(
+      '任务已完成，但未生成可查看的 Markdown 报告。'
+    )).toBeInTheDocument()
+    expect(screen.getByText('0 执行 · 0 等待 · 0 失败 · 1 无报告')).toBeInTheDocument()
+    expect(window.codeReview.showTaskCompletionNotification).not.toHaveBeenCalled()
+    expect(screen.queryByText(
+      '任务 success-without-report-path 已完成，可查看报告。'
+    )).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '查看报告' })).not.toBeInTheDocument()
+  })
+
+  it.each([
     ['系统不支持', async () => ({ status: 'unsupported' as const })],
     ['系统调用失败', async () => { throw new Error('系统通知失败') }]
   ])('后台%s时降级为可操作的应用内完成提醒', async (_label, notificationResult) => {
@@ -918,6 +943,7 @@ describe('ProductionReviewWorkbench', () => {
           old_revision: '0',
           new_revision: '12',
           status: 'success',
+          report_path: '/reports/legacy-success.md',
           finished_at: '2026-08-06T08:00:00Z'
         },
         {
@@ -938,10 +964,12 @@ describe('ProductionReviewWorkbench', () => {
 
     render(<ProductionReviewWorkbench {...productionProps} />)
 
-    expect(await screen.findByText('审查任务 legacy-success')).toBeInTheDocument()
+    expect(await screen.findByText('legacy · r0 → r12')).toBeInTheDocument()
     expect(screen.getByText('r0 → r12')).toBeInTheDocument()
-    expect(screen.getByText(/1 个.*严重度未知/)).toBeInTheDocument()
-    expect(screen.getByText(/严重度未知/)).toBeInTheDocument()
+    expect(screen.getAllByText(/历史任务未记录审查项/).length).toBeGreaterThan(0)
+    await waitFor(() => {
+      expect(screen.getAllByText('1 个问题 · 高风险').length).toBeGreaterThan(0)
+    })
     progressListener?.({
       taskId: 'running-1',
       type: 'stage',
@@ -950,6 +978,167 @@ describe('ProductionReviewWorkbench', () => {
     })
     expect(await screen.findByText('准备工作区')).toBeInTheDocument()
     expect(screen.getByText('正在准备真实工作区')).toBeInTheDocument()
+  })
+
+  it('报告列表先展示真实元数据且只预读首份正文，多审查项显示 ID、名称并保留未知 ID', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'multi-report',
+          svn_url: 'svn://server/platform/very-long-project-name',
+          old_revision: '100',
+          new_revision: '120',
+          review_item_ids: ['DS-01', 'DS-02', 'DS-FUTURE'],
+          status: 'success',
+          report_name: '多审查项真实报告.md',
+          report_path: '/reports/multi-report.md',
+          feedback_protocol_version: 1,
+          issue_count: 1,
+          highest_issue_severity: 'high',
+          finished_at: '2026-08-06T08:00:00Z'
+        },
+        {
+          id: 'zero-report', svn_url: 'svn://server/zero', old_revision: '120', new_revision: '121',
+          review_item_ids: ['DS-03'], status: 'success', report_name: '零问题报告.md',
+          report_path: '/reports/zero-report.md',
+          feedback_protocol_version: 1, issue_count: 0, highest_issue_severity: null
+        }
+      ],
+      count: 2
+    })
+
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    expect(await screen.findByText('多审查项真实报告')).toBeInTheDocument()
+    expect(screen.getAllByText(/DS-01 · 变更点审查/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/DS-02 · 编码规范审核/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/DS-FUTURE/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('1 个问题 · 高风险').length).toBeGreaterThan(0)
+    expect(screen.getByText('零问题报告')).toBeInTheDocument()
+    await waitFor(() => expect(window.codeReview.readTaskReport).toHaveBeenCalledTimes(1))
+    expect(window.codeReview.readTaskReport).toHaveBeenCalledWith('multi-report')
+    expect(window.codeReview.readTaskReport).not.toHaveBeenCalledWith('zero-report')
+
+    await user.click(screen.getAllByRole('button', { name: /查看报告/ })[0])
+    await waitFor(() => expect(window.codeReview.readTaskReport).toHaveBeenCalledWith('multi-report'))
+    expect(await screen.findByRole('heading', { name: 'DS-03 状态机审核报告' })).toBeInTheDocument()
+  })
+
+  it('新旧混合列表只纳入成功且有 Markdown 路径的任务，并跳过无报告任务选择首份', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'success-without-report', svn_url: 'svn://server/no-report',
+          old_revision: '1', new_revision: '2', status: 'success', report_name: '仅有报告名.md'
+        },
+        {
+          id: 'legacy-with-report', svn_url: 'svn://server/legacy-report',
+          old_revision: '2', new_revision: '3', status: 'success',
+          report_path: '/reports/legacy-report.md'
+        },
+        {
+          id: 'modern-with-report', svn_url: 'svn://server/modern-report',
+          old_revision: '3', new_revision: '4', status: 'success',
+          report_name: '新版真实报告.md', report_path: '/reports/modern-report.md',
+          review_item_ids: ['DS-03'], feedback_protocol_version: 1,
+          issue_count: 1, highest_issue_severity: 'high'
+        }
+      ],
+      count: 3
+    })
+
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    expect(await screen.findAllByRole('button', { name: /查看报告/ })).toHaveLength(2)
+    await waitFor(() => expect(window.codeReview.readTaskReport).toHaveBeenCalledTimes(1))
+    expect(window.codeReview.readTaskReport).toHaveBeenCalledWith('legacy-with-report')
+    expect(window.codeReview.readTaskReport).not.toHaveBeenCalledWith('success-without-report')
+
+    await user.click(screen.getByRole('button', { name: '报告中心' }))
+    const reportIndex = screen.getByLabelText('任务和报告列表')
+    expect(within(reportIndex).queryByText('仅有报告名')).not.toBeInTheDocument()
+    expect(within(reportIndex).getByText('legacy-report · r2 → r3')).toBeInTheDocument()
+    expect(within(reportIndex).getByText('新版真实报告')).toBeInTheDocument()
+  })
+
+  it('React StrictMode 重建 effect 后仍接收报告列表响应', async () => {
+    vi.mocked(window.codeReview.listTasks).mockResolvedValue({
+      data: [{
+        id: 'strict-report', svn_url: 'svn://server/strict', old_revision: '1', new_revision: '2',
+        status: 'success', report_name: 'StrictMode 报告.md', report_path: '/reports/strict.md'
+      }],
+      count: 1
+    })
+
+    render(<StrictMode><ProductionReviewWorkbench {...productionProps} /></StrictMode>)
+
+    expect(await screen.findByText('StrictMode 报告')).toBeInTheDocument()
+  })
+
+  it('报告列表失败不阻断任务创建并可独立重试', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks)
+      .mockRejectedValueOnce(new Error('报告服务暂不可用'))
+      .mockResolvedValueOnce({ data: [], count: 0 })
+
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    const reportError = await screen.findByRole('alert', { name: '报告列表加载失败' })
+    expect(reportError).toHaveTextContent('报告服务暂不可用')
+    expect(screen.getByRole('button', { name: '创建审查任务' })).toBeDisabled()
+    await user.click(within(reportError).getByRole('button', { name: '重新加载报告列表' }))
+    await waitFor(() => expect(window.codeReview.listTasks).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('暂无可查看报告')).toBeInTheDocument()
+  })
+
+  it('单份报告读取失败只影响当前预览并可重试', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [{
+        id: 'retry-report', svn_url: 'svn://server/retry', old_revision: '1', new_revision: '2',
+        review_item_ids: ['DS-03'], status: 'success', feedback_protocol_version: 1,
+        issue_count: 1, highest_issue_severity: 'high', report_path: '/reports/retry.md'
+      }],
+      count: 1
+    })
+    vi.mocked(window.codeReview.readTaskReport)
+      .mockRejectedValueOnce(new Error('Markdown 下载失败'))
+      .mockResolvedValueOnce(reportMarkdown)
+
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: /查看报告/ }))
+
+    const reportError = await screen.findByRole('alert', { name: '报告加载失败' })
+    expect(reportError).toHaveTextContent('Markdown 下载失败')
+    expect(screen.getByRole('button', { name: '反馈报告问题' })).toBeInTheDocument()
+    await user.click(within(reportError).getByRole('button', { name: '重新加载此报告' }))
+    expect(await screen.findByRole('heading', { name: 'DS-03 状态机审核报告' })).toBeInTheDocument()
+    expect(window.codeReview.readTaskReport).toHaveBeenCalledTimes(2)
+  })
+
+  it('新版报告结构解析失败时显示明确状态但仍呈现原始 Markdown', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [{
+        id: 'invalid-report', svn_url: 'svn://server/invalid', old_revision: '1', new_revision: '2',
+        review_item_ids: ['DS-03'], status: 'success', feedback_protocol_version: 1,
+        issue_count: 1, highest_issue_severity: 'high', report_path: '/reports/invalid.md'
+      }],
+      count: 1
+    })
+    vi.mocked(window.codeReview.readTaskReport).mockResolvedValueOnce(
+      '# 原始报告\n\n## 三、审查问题\n\n### 覆盖摘要\n\n正文仍然可查看。'
+    )
+
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: /查看报告/ }))
+
+    const parseError = await screen.findByRole('alert', { name: '报告结构解析失败' })
+    expect(parseError).toHaveTextContent('不符合 bms-code-reviewer 固定模板')
+    expect(screen.getByRole('heading', { name: '原始报告' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '反馈报告问题' })).toBeInTheDocument()
   })
 
   it('revision 接受可选 r 前缀，展示保持单个 r 且提交保留用户输入', async () => {
@@ -1000,14 +1189,21 @@ describe('ProductionReviewWorkbench', () => {
     let resolveReportB: ((value: string) => void) | undefined
     vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
       data: [
-        { id: 'task-a', svn_url: 'svn://server/a', old_revision: '1', new_revision: '2', status: 'success' },
-        { id: 'task-b', svn_url: 'svn://server/b', old_revision: '2', new_revision: '3', status: 'success' }
+        {
+          id: 'task-a', svn_url: 'svn://server/a', old_revision: '1', new_revision: '2',
+          status: 'success', report_path: '/reports/a.md'
+        },
+        {
+          id: 'task-b', svn_url: 'svn://server/b', old_revision: '2', new_revision: '3',
+          status: 'success', report_path: '/reports/b.md'
+        }
       ],
       count: 2
     })
-    vi.mocked(window.codeReview.readTaskReport)
-      .mockResolvedValueOnce('# 报告 A')
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveReportB = resolve }))
+    vi.mocked(window.codeReview.readTaskReport).mockImplementation((taskId) => {
+      if (taskId === 'task-a') return Promise.resolve('# 报告 A')
+      return new Promise((resolve) => { resolveReportB = resolve })
+    })
     render(<ProductionReviewWorkbench {...productionProps} />)
     await user.click((await screen.findAllByRole('button', { name: /查看报告/ }))[1])
     await user.click(screen.getByRole('button', { name: /task-a/ }))
@@ -1091,7 +1287,7 @@ describe('ProductionReviewWorkbench', () => {
       data: [{
         id: 'feedback-task', svn_url: 'svn://server/feedback', old_revision: '1', new_revision: '2',
         review_item_ids: ['DS-03'], status: 'success', feedback_protocol_version: 1,
-        pdf_report_name: '原始报告.pdf'
+        report_path: '/reports/feedback-task.md', pdf_report_name: '原始报告.pdf'
       }],
       count: 1
     })
@@ -1130,8 +1326,14 @@ describe('ProductionReviewWorkbench', () => {
     let focusAnchorListener: Parameters<CodeReviewApi['onReportFeedbackFocusAnchor']>[0] | undefined
     vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
       data: [
-        { id: 'anchor-a', svn_url: 'svn://server/a', old_revision: '1', new_revision: '2', status: 'success', feedback_protocol_version: 1 },
-        { id: 'anchor-b', svn_url: 'svn://server/b', old_revision: '2', new_revision: '3', status: 'success', feedback_protocol_version: 1 }
+        {
+          id: 'anchor-a', svn_url: 'svn://server/a', old_revision: '1', new_revision: '2',
+          status: 'success', feedback_protocol_version: 1, report_path: '/reports/anchor-a.md'
+        },
+        {
+          id: 'anchor-b', svn_url: 'svn://server/b', old_revision: '2', new_revision: '3',
+          status: 'success', feedback_protocol_version: 1, report_path: '/reports/anchor-b.md'
+        }
       ],
       count: 2
     })
@@ -1141,18 +1343,21 @@ describe('ProductionReviewWorkbench', () => {
     })
     render(<ProductionReviewWorkbench {...productionProps} />)
     await user.click((await screen.findAllByRole('button', { name: /查看报告/ }))[0])
+    await screen.findByRole('heading', { name: 'DS-03 状态机审核报告' })
     const previewScroll = document.querySelector('.preview-scroll') as HTMLDivElement
     previewScroll.scrollTo = vi.fn()
-    const issueBlock = document.querySelector('[data-report-issue-anchor-id="report-option-4"]')
-    expect(issueBlock).not.toHaveClass('report-issue-block-active')
+    const issueHeading = document.querySelector<HTMLElement>('[data-report-anchor-id]')
+    const issueAnchorId = issueHeading?.dataset.reportAnchorId
+    if (!issueAnchorId) throw new Error('新版问题标题应提供反馈锚点')
+    expect(issueHeading).not.toHaveClass('report-anchor-highlight')
 
-    act(() => focusAnchorListener?.({ taskId: 'anchor-b', anchorId: 'report-option-4' }))
-    expect(issueBlock).not.toHaveClass('report-issue-block-active')
-    act(() => focusAnchorListener?.({ taskId: 'anchor-a', anchorId: 'report-option-4' }))
-    expect(issueBlock).toHaveClass('report-issue-block-active')
+    act(() => focusAnchorListener?.({ taskId: 'anchor-b', anchorId: issueAnchorId }))
+    expect(issueHeading).not.toHaveClass('report-anchor-highlight')
+    act(() => focusAnchorListener?.({ taskId: 'anchor-a', anchorId: issueAnchorId }))
+    await waitFor(() => expect(document.querySelector(`[data-report-anchor-id="${issueAnchorId}"]`)).toHaveClass('report-anchor-highlight'))
 
     await user.click(screen.getByRole('button', { name: /anchor-b/ }))
-    await waitFor(() => expect(document.querySelector('.report-issue-block-active')).not.toBeInTheDocument())
+    await waitFor(() => expect(document.querySelector('.report-anchor-highlight')).not.toBeInTheDocument())
   })
 
   it('旧协议只由当前报告的反馈提交事件自动打开 PDF', async () => {
@@ -1161,7 +1366,8 @@ describe('ProductionReviewWorkbench', () => {
     vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
       data: [{
         id: 'legacy-feedback', svn_url: 'svn://server/legacy-feedback', old_revision: '1', new_revision: '2',
-        review_item_ids: ['DS-03'], status: 'success', report_feedback_helpful: null
+        review_item_ids: ['DS-03'], status: 'success', report_feedback_helpful: null,
+        report_path: '/reports/legacy-feedback.md'
       }],
       count: 1
     })

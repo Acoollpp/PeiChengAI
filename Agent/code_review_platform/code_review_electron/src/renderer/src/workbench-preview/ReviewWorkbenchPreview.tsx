@@ -58,6 +58,32 @@ const activeStages = [
   'uploading_report'
 ]
 
+const severityLabels: Record<ReviewReportViewModel['highestSeverity'], string> = {
+  high: '高风险',
+  medium: '中风险',
+  low: '低风险',
+  suggestion: '建议',
+  none: '无最高严重度',
+  unknown: '严重度未知'
+}
+
+const formatIssueSummary = (report: ReviewReportViewModel): string => {
+  if (report.contentStatus === 'parse_error') return '报告结构解析失败'
+  if (report.issueCount === undefined) return `问题数未记录 · ${severityLabels[report.highestSeverity]}`
+  return `${report.issueCount} 个问题 · ${severityLabels[report.highestSeverity]}`
+}
+
+const formatReviewItemScope = (
+  reviewItemIds: string[],
+  catalog: ReviewItemDefinition[]
+): string => {
+  if (reviewItemIds.length === 0) return '历史任务未记录审查项'
+  return reviewItemIds.map((id) => {
+    const item = catalog.find((candidate) => candidate.id === id)
+    return item ? `${id} · ${item.name}` : id
+  }).join(' / ')
+}
+
 const cloneSelection = (selection: ReviewSelection): ReviewSelection => structuredClone(selection)
 
 const validateForm = (
@@ -130,16 +156,18 @@ const taskStageClass = (task: ReviewTaskViewModel): string => {
 
 const TaskTableRow = ({
   task,
-  adapter
+  adapter,
+  catalog
 }: {
   task: ReviewTaskViewModel
   adapter: WorkbenchAdapter
+  catalog: ReviewItemDefinition[]
 }): React.JSX.Element => (
   <article className={`wb-task-table-row ${taskStageClass(task)}`} aria-label={`${task.id} ${task.title}`}>
     <div className="wb-task-identity">
       <strong title={task.title}>{task.title}</strong>
       <span className="wb-row-svn" title={task.svnUrl}>{task.svnUrl}</span>
-      <span className="wb-row-meta">{task.id} · {formatRevisionLabel(task.oldRevision)} → {formatRevisionLabel(task.newRevision)} · {task.reviewItemIds.join(' / ')}</span>
+      <span className="wb-row-meta">{task.id} · {formatRevisionLabel(task.oldRevision)} → {formatRevisionLabel(task.newRevision)} · {formatReviewItemScope(task.reviewItemIds, catalog)}</span>
     </div>
     <span className="wb-status-label">{task.stageLabel}</span>
     <div className="wb-task-progress">
@@ -208,10 +236,14 @@ function TaskManagementView({
     if (task.stage === 'waiting') return 2
     return 3
   }
+  const reportTaskIds = new Set(viewModel.reports.map((report) => report.taskId))
   const managedTasks = viewModel.tasks
-    .filter((task) => task.stage !== 'completed')
+    .filter((task) => task.stage !== 'completed' || !reportTaskIds.has(task.id))
     .sort((left, right) => taskPriority(left) - taskPriority(right))
   const failedCount = managedTasks.filter((task) => task.stage === 'failed').length
+  const completedWithoutReportCount = managedTasks.filter(
+    (task) => task.stage === 'completed'
+  ).length
   const taskStats = viewModel.taskStats
   const serviceRunning = taskStats === undefined
     ? runningTasks.length
@@ -222,6 +254,7 @@ function TaskManagementView({
   const serviceSuccess = taskStats === undefined
     ? viewModel.reports.length
     : taskStats.status === 'ready' ? taskStats.success : '—'
+  const reportListState = viewModel.reportListState
 
   return (
     <section className="wb-workspace wb-task-management" aria-labelledby="workbench-title">
@@ -259,7 +292,10 @@ function TaskManagementView({
       <section className="wb-task-section wb-execution-section" aria-labelledby="execution-heading">
         <div className="wb-band-heading">
           <div><h3 id="execution-heading">执行与等待</h3><span>当前阶段与本机排队状态</span></div>
-          <span>{runningTasks.length} 执行 · {waitingTasks.length} 等待 · {failedCount} 失败</span>
+          <span>
+            {runningTasks.length} 执行 · {waitingTasks.length} 等待 · {failedCount} 失败
+            {completedWithoutReportCount > 0 ? ` · ${completedWithoutReportCount} 无报告` : ''}
+          </span>
         </div>
         <div className="wb-table-head wb-task-table-head" aria-hidden="true">
           <span>任务</span><span>状态</span><span>当前进度</span><span>更新</span><span>操作</span>
@@ -269,7 +305,7 @@ function TaskManagementView({
         ) : (
           <div className="wb-task-table-body">
             {managedTasks.map((task) => (
-              <TaskTableRow key={task.id} task={task} adapter={adapter} />
+              <TaskTableRow key={task.id} task={task} adapter={adapter} catalog={viewModel.catalog} />
             ))}
           </div>
         )}
@@ -280,25 +316,38 @@ function TaskManagementView({
         <div className="wb-table-head wb-report-table-head" aria-hidden="true">
           <span>任务 / 报告</span><span>审查范围</span><span>问题</span><span>完成时间</span><span>操作</span>
         </div>
-        {viewModel.reports.length === 0 ? (
+        {reportListState?.status === 'error' && (
+          <div className="wb-report-state is-error" role="alert" aria-label="报告列表加载失败">
+            <div><strong>报告列表加载失败</strong><span>{reportListState.message}</span></div>
+            {adapter.commands.reloadReportList && (
+              <button type="button" onClick={() => void adapter.commands.reloadReportList?.()}>
+                <RefreshCw aria-hidden="true" />重新加载报告列表
+              </button>
+            )}
+          </div>
+        )}
+        {reportListState?.status === 'loading' && (
+          <div className="wb-report-state" role="status">正在加载可查看报告。</div>
+        )}
+        {viewModel.reports.length === 0 && reportListState?.status !== 'loading' && reportListState?.status !== 'error' ? (
           <div className="wb-empty-band"><FileText aria-hidden="true" /><div><strong>暂无可查看报告</strong><span>任务完成后，报告会出现在这里。</span></div></div>
-        ) : (
+        ) : viewModel.reports.length > 0 ? (
           <div className="wb-management-report-list">
             {viewModel.reports.map((report) => (
               <article className="wb-management-report-row" key={report.id}>
                 <div>
                   <strong title={report.title}>{report.title}</strong>
                   <span className="wb-row-svn" title={report.svnUrl}>{report.svnUrl}</span>
-                  <span className="wb-row-meta">{report.taskId} · {report.reviewItemIds.join(' / ')}</span>
+                  <span className="wb-row-meta">{report.taskId} · {formatReviewItemScope(report.reviewItemIds, viewModel.catalog)}</span>
                 </div>
                 <span>{report.revisionRange}</span>
-                <strong className={report.highestSeverity ? `is-${report.highestSeverity}` : undefined}>{report.issueCount === undefined ? `问题数未知${report.highestSeverity ? '' : ' · 严重度未知'}` : `${report.issueCount === 0 ? '无问题' : `${report.issueCount} 个`}${report.highestSeverity ? '' : ' · 严重度未知'}`}</strong>
+                <strong className={`is-${report.highestSeverity}`}>{formatIssueSummary(report)}</strong>
                 <time>{report.completedAt}</time>
                 <button className="wb-link-button" type="button" onClick={() => onOpenReport(report.id)}>查看报告<ArrowRight aria-hidden="true" /></button>
               </article>
             ))}
           </div>
-        )}
+        ) : null}
       </section>
     </section>
   )
@@ -308,12 +357,14 @@ function ReportCenterView({
   reports,
   selectedReport,
   onSelect,
-  adapter
+  adapter,
+  viewModel
 }: {
   reports: ReviewReportViewModel[]
   selectedReport?: ReviewReportViewModel
   onSelect: (reportId: string) => void
   adapter: WorkbenchAdapter
+  viewModel: WorkbenchViewModel
 }): React.JSX.Element {
   const feedbackSubmitted = Boolean(
     selectedReport?.feedbackProtocolVersion === 1
@@ -360,28 +411,67 @@ function ReportCenterView({
         <aside className="wb-report-index" aria-label="任务和报告列表">
           <header><strong>任务 / 报告</strong><span>{reports.length} 份</span></header>
           <div>
-            {reports.map((report) => (
+            {viewModel.reportListState?.status === 'loading' && (
+              <div className="wb-report-state" role="status">正在加载报告列表。</div>
+            )}
+            {viewModel.reportListState?.status === 'error' && (
+              <div className="wb-report-state is-error" role="alert" aria-label="报告列表加载失败">
+                <div><strong>报告列表加载失败</strong><span>{viewModel.reportListState.message}</span></div>
+                {adapter.commands.reloadReportList && (
+                  <button type="button" onClick={() => void adapter.commands.reloadReportList?.()}>
+                    <RefreshCw aria-hidden="true" />重新加载报告列表
+                  </button>
+                )}
+              </div>
+            )}
+            {viewModel.reportListState?.status !== 'loading' && viewModel.reportListState?.status !== 'error' && reports.map((report) => (
               <button className={selectedReport?.id === report.id ? 'is-active' : ''} type="button" aria-current={selectedReport?.id === report.id ? 'page' : undefined} key={report.id} onClick={() => onSelect(report.id)}>
                 <span className="wb-report-index-title"><FileText aria-hidden="true" /><strong title={report.title}>{report.title}</strong></span>
                 <span className="wb-report-index-svn" title={report.svnUrl}>{report.svnUrl}</span>
                 <small>{report.taskId} · {report.revisionRange}</small>
-                <span className="wb-report-index-meta"><span>{report.completedAt}</span><strong className={report.highestSeverity ? `is-${report.highestSeverity}` : undefined}>{report.issueCount === undefined ? `问题数未知${report.highestSeverity ? '' : ' · 严重度未知'}` : `${report.issueCount === 0 ? '无问题' : `${report.issueCount} 个问题`}${report.highestSeverity ? '' : ' · 严重度未知'}`}</strong></span>
+                <small title={formatReviewItemScope(report.reviewItemIds, viewModel.catalog)}>{formatReviewItemScope(report.reviewItemIds, viewModel.catalog)}</small>
+                <span className="wb-report-index-meta"><span>{report.completedAt}</span><strong className={`is-${report.highestSeverity}`}>{formatIssueSummary(report)}</strong></span>
               </button>
             ))}
           </div>
         </aside>
-        <article className="wb-markdown-panel" aria-label="Markdown 报告预览">
-          {selectedReport ? (
-            adapter.getViewModel().mode === 'production'
-              ? <MarkdownPreview
-                  markdown={selectedReport.markdown}
-                  reportPath={selectedReport.reportPath}
-                  activeFeedbackAnchorId={adapter.getViewModel().activeFeedbackAnchorId}
-                  feedbackAnchorScrollRequest={adapter.getViewModel().feedbackAnchorScrollRequest}
-                />
-              : <div className="wb-markdown-scroll"><ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedReport.markdown}</ReactMarkdown></div>
+        <article className={`wb-markdown-panel${selectedReport?.contentStatus === 'parse_error' ? ' has-parse-warning' : ''}`} aria-label="Markdown 报告预览">
+          {selectedReport?.contentStatus === 'loading' ? (
+            <div className="wb-report-content-state" role="status"><RefreshCw aria-hidden="true" /><strong>正在加载报告正文</strong></div>
+          ) : selectedReport?.contentStatus === 'error' ? (
+            <div className="wb-report-content-state is-error" role="alert" aria-label="报告加载失败">
+              <CircleAlert aria-hidden="true" />
+              <div><strong>报告加载失败</strong><span>{selectedReport.contentMessage}</span></div>
+              {adapter.commands.retryReport && (
+                <button className="wb-secondary-button" type="button" onClick={() => void adapter.commands.retryReport?.(selectedReport.id)}>
+                  <RefreshCw aria-hidden="true" />重新加载此报告
+                </button>
+              )}
+            </div>
+          ) : selectedReport ? (
+            <>
+              {selectedReport.contentStatus === 'parse_error' && (
+                <div className="wb-report-parse-warning" role="alert" aria-label="报告结构解析失败">
+                  <CircleAlert aria-hidden="true" />
+                  <div><strong>报告结构解析失败</strong><span>{selectedReport.contentMessage}</span></div>
+                  {adapter.commands.retryReport && (
+                    <button type="button" onClick={() => void adapter.commands.retryReport?.(selectedReport.id)}>
+                      <RefreshCw aria-hidden="true" />重新加载此报告
+                    </button>
+                  )}
+                </div>
+              )}
+              {adapter.getViewModel().mode === 'production'
+                ? <MarkdownPreview
+                    markdown={selectedReport.markdown}
+                    reportPath={selectedReport.reportPath}
+                    activeFeedbackAnchorId={adapter.getViewModel().activeFeedbackAnchorId}
+                    feedbackAnchorScrollRequest={adapter.getViewModel().feedbackAnchorScrollRequest}
+                  />
+                : <div className="wb-markdown-scroll"><ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedReport.markdown}</ReactMarkdown></div>}
+            </>
           ) : (
-            <div className="wb-empty-band"><FileText aria-hidden="true" /><div><strong>暂无可预览报告</strong><span>任务完成后可在此查看 Markdown 报告。</span></div></div>
+            <div className="wb-empty-band"><FileText aria-hidden="true" /><div><strong>{reports.length > 0 ? '请选择一份报告' : '暂无可预览报告'}</strong><span>{reports.length > 0 ? '从左侧列表选择报告后按需加载正文。' : '任务完成后可在此查看 Markdown 报告。'}</span></div></div>
           )}
         </article>
       </div>
@@ -557,7 +647,8 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
   const runningTasks = viewModel.tasks.filter((task) => activeStages.includes(task.stage))
   const waitingTasks = viewModel.tasks.filter((task) => task.stage === 'waiting')
   const selectedReport =
-    viewModel.reports.find((report) => report.id === viewModel.selectedReportId) ?? viewModel.reports[0]
+    viewModel.reports.find((report) => report.id === viewModel.selectedReportId) ??
+    (viewModel.mode === 'production' ? undefined : viewModel.reports[0])
 
   const resetForm = (): void => {
     setDraft({ svnUrl: '', oldRevision: '', newRevision: '' })
@@ -774,7 +865,7 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
           <TaskManagementView viewModel={viewModel} adapter={adapter} runningTasks={runningTasks} waitingTasks={waitingTasks} onOpenReport={openReport} />
         )}
         {activeView === 'report-center' && (
-          <ReportCenterView reports={viewModel.reports} selectedReport={selectedReport} onSelect={(reportId) => void adapter.commands.openReport(reportId)} adapter={adapter} />
+          <ReportCenterView reports={viewModel.reports} selectedReport={selectedReport} onSelect={(reportId) => void adapter.commands.openReport(reportId)} adapter={adapter} viewModel={viewModel} />
         )}
         {activeView === 'feedback' && <FeedbackView adapter={adapter} />}
       </div>

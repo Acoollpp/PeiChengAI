@@ -299,6 +299,8 @@ export type ReviewFocusDirectionUsageStatsPublic = {
     count: number;
 };
 
+export type ReviewIssueSeverity = 'high' | 'medium' | 'low' | 'suggestion';
+
 export type ReviewTaskCreate = {
     svn_url: string;
     old_revision: string;
@@ -373,6 +375,7 @@ export type ReviewTaskPublic = {
     feedback_protocol_version?: (number | null);
     feedback_submitted_at?: (string | null);
     issue_count?: number;
+    highest_issue_severity?: (ReviewIssueSeverity | null);
     evaluated_issue_count?: number;
     has_issue_feedback_draft?: boolean;
     report_feedback_helpful?: (boolean | null);

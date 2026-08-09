@@ -52,6 +52,8 @@ export type ReviewTaskStatus =
   | 'environment_error'
   | 'cancelled'
 
+export type ReviewIssueSeverity = 'high' | 'medium' | 'low' | 'suggestion'
+
 export interface ReviewTask {
   id: string
   user_id?: string | null
@@ -77,6 +79,7 @@ export interface ReviewTask {
   feedback_protocol_version?: number | null
   feedback_submitted_at?: string | null
   issue_count?: number
+  highest_issue_severity?: ReviewIssueSeverity | null
   evaluated_issue_count?: number
   started_at?: string | null
   finished_at?: string | null

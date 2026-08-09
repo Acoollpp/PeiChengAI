@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { BMS_CODE_REVIEW_SKILL_NAME, REVIEW_ITEM_CATALOG } from '../../../shared/review-items'
-import { extractReviewIssues } from '../../../shared/review-issues'
+import {
+  analyzeLoadedReviewReport,
+  summarizeReviewReport
+} from '../../../shared/review-report-analysis'
 import type { CurrentUser } from '../../../shared/types'
 import type { EnvironmentCheckResult } from '../code-review-api'
 import { EnvironmentStatus } from '../components/EnvironmentStatus'
@@ -21,6 +24,7 @@ import type {
   TaskStage,
   WorkbenchAdapter,
   WorkbenchCommands,
+  WorkbenchReportListState,
   WorkbenchTaskStats,
   WorkbenchViewModel
 } from './types'
@@ -121,51 +125,70 @@ const formatTime = (task: TaskViewItem): string => {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
   })
 }
-const itemIds = (task: TaskViewItem): ReviewItemId[] =>
-  (task.review_item_ids ?? []).filter(isProductionReviewItemId)
+const itemIds = (task: TaskViewItem): string[] =>
+  (task.review_item_ids ?? []).filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+const repositoryName = (svnUrl: string): string => {
+  const segments = svnUrl.replace(/[?#].*$/, '').split('/').filter(Boolean)
+  return segments.at(-1) ?? svnUrl
+}
 const taskTitle = (task: TaskViewItem): string => {
   const reportName = task.report_name?.replace(/\.(md|markdown)$/i, '').trim()
   if (reportName) return reportName
-  const ids = itemIds(task)
-  if (ids.length === 1) {
-    const definition = PRODUCTION_REVIEW_ITEM_CATALOG.find((item) => item.id === ids[0])
-    return definition ? `${definition.id} ${definition.name}` : `审查任务 ${task.id}`
-  }
-  return ids.length > 1 ? `${ids.join(' + ')} 审查` : `审查任务 ${task.id}`
+  return `${repositoryName(task.svn_url)} · ${formatRevisionLabel(task.old_revision)} → ${formatRevisionLabel(task.new_revision)}`
 }
-const extractedIssueCount = (markdown: string | undefined): number | undefined => {
-  if (!markdown) return undefined
-  try {
-    return extractReviewIssues(markdown).length
-  } catch {
-    return undefined
-  }
-}
+const hasReadableMarkdownReport = (
+  task: Pick<TaskViewItem, 'status' | 'report_path'>
+): boolean =>
+  task.status === 'success' &&
+  typeof task.report_path === 'string' &&
+  task.report_path.trim().length > 0
 const toTaskViewModel = (task: TaskViewItem): ReviewTaskViewModel => {
   const stage = taskStage(task)
+  const message = stage === 'completed' && !hasReadableMarkdownReport(task)
+    ? '任务已完成，但未生成可查看的 Markdown 报告。'
+    : task.progress_message ?? task.error_message ?? (
+      stage === 'completed' ? '报告已生成，可查看。' : stageLabels[stage]
+    )
   return {
     id: task.id, title: taskTitle(task), svnUrl: task.svn_url,
     oldRevision: task.old_revision, newRevision: task.new_revision,
     reviewItemIds: itemIds(task), stage, stageLabel: stageLabels[stage],
-    message: task.progress_message ?? task.error_message ?? (stage === 'completed' ? '报告已生成，可查看。' : stageLabels[stage]),
+    message,
     updatedAt: formatTime(task), ...(stage === 'waiting' ? { queueIndex: task.queueIndex } : {}),
     phaseTrack: phaseTrack(stage)
   }
 }
-const toReportViewModel = (task: TaskViewItem): ReviewReportViewModel => ({
-  id: task.id, taskId: task.id, title: taskTitle(task), svnUrl: task.svn_url,
-  revisionRange: `${formatRevisionLabel(task.old_revision)} → ${formatRevisionLabel(task.new_revision)}`, reviewItemIds: itemIds(task),
-  completedAt: formatTime(task),
-  issueCount: task.issue_count ?? extractedIssueCount(task.reportMarkdown),
-  summary: task.issue_count === undefined
-    ? '报告已生成，问题等级以报告正文为准。'
-    : task.issue_count === 0 ? '报告未提取到审查问题。' : `报告包含 ${task.issue_count} 个审查问题，问题等级以报告正文为准。`,
-  markdown: task.reportMarkdown ?? '',
-  reportPath: task.report_path,
+type ReportContentState = Pick<ReviewReportViewModel, 'contentStatus' | 'contentMessage'>
+const reportSummaryInput = (task: TaskViewItem) => ({
   feedbackProtocolVersion: task.feedback_protocol_version,
-  feedbackSubmittedAt: task.feedback_submitted_at,
-  reportFeedbackHelpful: task.report_feedback_helpful
+  issueCount: task.issue_count,
+  highestIssueSeverity: task.highest_issue_severity
 })
+const toReportViewModel = (
+  task: TaskViewItem,
+  contentState?: ReportContentState
+): ReviewReportViewModel => {
+  const loadedAnalysis = task.reportMarkdown
+    ? analyzeLoadedReviewReport(task.reportMarkdown, reportSummaryInput(task))
+    : undefined
+  const analysis = loadedAnalysis ?? summarizeReviewReport(reportSummaryInput(task))
+  const contentStatus = contentState?.contentStatus ?? (
+    loadedAnalysis?.status ?? 'idle'
+  )
+  return {
+    id: task.id, taskId: task.id, title: taskTitle(task), svnUrl: task.svn_url,
+    revisionRange: `${formatRevisionLabel(task.old_revision)} → ${formatRevisionLabel(task.new_revision)}`,
+    reviewItemIds: itemIds(task), completedAt: formatTime(task),
+    issueCount: analysis.issueCount, highestSeverity: analysis.highestSeverity,
+    summary: analysis.summary, markdown: task.reportMarkdown ?? '',
+    contentStatus,
+    contentMessage: contentState?.contentMessage ?? loadedAnalysis?.message,
+    reportPath: task.report_path,
+    feedbackProtocolVersion: task.feedback_protocol_version,
+    feedbackSubmittedAt: task.feedback_submitted_at,
+    reportFeedbackHelpful: task.report_feedback_helpful
+  }
+}
 const emptySample: CreateTaskCommand = { svnUrl: '', oldRevision: '', newRevision: '', selection: {} }
 const commandResult = (message: string): PreviewCommandResult => ({ message })
 const formatFileSize = (bytes: number): string => {
@@ -190,9 +213,15 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
   const [feedbackAnchorScrollRequest, setFeedbackAnchorScrollRequest] = useState<WorkbenchViewModel['feedbackAnchorScrollRequest']>()
   const [requestedView, setRequestedView] = useState<WorkbenchViewModel['requestedView']>()
   const [taskStats, setTaskStats] = useState<WorkbenchTaskStats>({ status: 'loading' })
+  const [reportListState, setReportListState] = useState<WorkbenchReportListState>({ status: 'loading' })
+  const [reportContentStates, setReportContentStates] = useState<Record<string, ReportContentState>>({})
+  const reportContentStatesRef = useRef<Record<string, ReportContentState>>({})
   const selectedReportIdRef = useRef<string | undefined>(undefined)
   const requestedViewSequenceRef = useRef(0)
   const taskStatsRequestRef = useRef(0)
+  const reportListRequestRef = useRef(0)
+  const reportContentRequestRef = useRef(new Map<string, number>())
+  const mountedRef = useRef(true)
   const observedTaskStatsStateRef = useRef(new Map<string, TaskStatsSemanticState>())
   const createTaskInFlightRef = useRef(false)
   const feedbackInFlightRef = useRef(false)
@@ -207,6 +236,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
     setNoticeAction({ label: '查看报告', reportId: task.id })
   }, [])
   const handleTaskSuccess = useCallback((task: TaskViewItem): void => {
+    if (!hasReadableMarkdownReport(task)) return
     if (isRendererForeground()) {
       showCompletionNotice(task)
       return
@@ -238,6 +268,18 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
   })
   const tasksRef = useRef(queue.tasks)
   tasksRef.current = queue.tasks
+  const updateReportContentState = useCallback((taskId: string, state: ReportContentState): void => {
+    reportContentStatesRef.current = { ...reportContentStatesRef.current, [taskId]: state }
+    setReportContentStates(reportContentStatesRef.current)
+  }, [])
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      reportListRequestRef.current += 1
+    }
+  }, [])
 
   const loadTaskStats = useCallback(async (
     { showLoading = true }: { showLoading?: boolean } = {}
@@ -305,25 +347,36 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
     if (shouldRefresh) void loadTaskStats({ showLoading: false })
   }, [loadTaskStats, queue.tasks])
 
-  useEffect(() => {
-    let active = true
-    void window.codeReview.listTasks().then(async (response) => {
-      if (!active) return
+  const loadReportList = useCallback(async (): Promise<void> => {
+    reportListRequestRef.current += 1
+    const requestId = reportListRequestRef.current
+    setReportListState({ status: 'loading' })
+    try {
+      const response = await window.codeReview.listTasks()
+      if (!mountedRef.current || reportListRequestRef.current !== requestId) return
       queue.setServerTasks(response.data)
-      const firstReportTask = response.data.find((task) => task.status === 'success')
-      if (firstReportTask) {
-        selectedReportIdRef.current = firstReportTask.id
-        setSelectedReportId(firstReportTask.id)
-        const markdown = await window.codeReview.readTaskReport(firstReportTask.id)
-        if (active) {
-          queue.updateTask(firstReportTask.id, (current) => ({ ...current, reportMarkdown: markdown }))
-        }
+      setReportListState({ status: 'ready' })
+      const reportTasks = response.data.filter(hasReadableMarkdownReport)
+      const currentSelection = selectedReportIdRef.current
+      const nextSelection = currentSelection && reportTasks.some((task) => task.id === currentSelection)
+        ? currentSelection
+        : reportTasks[0]?.id
+      if (nextSelection !== currentSelection) {
+        selectedReportIdRef.current = nextSelection
+        setSelectedReportId(nextSelection)
       }
-    }).catch((error: unknown) => {
-      if (active) showNotice(error instanceof Error ? error.message : '任务列表加载失败。')
-    })
-    return () => { active = false }
-  }, [queue.setServerTasks, queue.updateTask, showNotice])
+    } catch (error) {
+      if (!mountedRef.current || reportListRequestRef.current !== requestId) return
+      setReportListState({
+        status: 'error',
+        message: error instanceof Error ? error.message : '任务列表加载失败。'
+      })
+    }
+  }, [queue.setServerTasks])
+
+  useEffect(() => {
+    void loadReportList()
+  }, [loadReportList])
 
   useEffect(() => window.codeReview.onTaskProgress(queue.applyProgressEvent), [queue.applyProgressEvent])
   useEffect(() => window.codeReview.onIssueFeedbackSubmitted(({ taskId, feedbackSubmittedAt, pdfPath, pdfReportName }) => {
@@ -367,25 +420,67 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
   const findTask = useCallback((taskId: string): TaskViewItem | undefined =>
     tasksRef.current.find((task) => task.id === taskId || task.localTaskId === taskId), [])
 
-  const selectReport = useCallback(async (task: TaskViewItem): Promise<string | undefined> => {
+  const selectReport = useCallback(async (
+    task: TaskViewItem,
+    { force = false }: { force?: boolean } = {}
+  ): Promise<string | undefined> => {
     selectedReportIdRef.current = task.id
     setSelectedReportId(task.id)
     setActiveFeedbackAnchorId(undefined)
     setFeedbackAnchorScrollRequest(undefined)
-    if (task.reportMarkdown) return task.reportMarkdown
-    try {
-      const markdown = await window.codeReview.readTaskReport(task.id)
-      queue.updateTask(task.id, (current) => ({ ...current, reportMarkdown: markdown }))
-      return markdown
-    } catch (error) {
-      showNotice(error instanceof Error ? error.message : '报告加载失败。')
+    if (task.reportMarkdown && !force) {
+      const analysis = analyzeLoadedReviewReport(task.reportMarkdown, reportSummaryInput(task))
+      updateReportContentState(task.id, {
+        contentStatus: analysis.status,
+        contentMessage: analysis.message
+      })
+      return task.reportMarkdown
+    }
+    const currentContentState = reportContentStatesRef.current[task.id]
+    if (!force && (currentContentState?.contentStatus === 'loading' || currentContentState?.contentStatus === 'error')) {
       return undefined
     }
-  }, [queue.updateTask, showNotice])
+    const nextRequestId = (reportContentRequestRef.current.get(task.id) ?? 0) + 1
+    reportContentRequestRef.current.set(task.id, nextRequestId)
+    updateReportContentState(task.id, { contentStatus: 'loading' })
+    try {
+      const markdown = await window.codeReview.readTaskReport(task.id)
+      if (
+        !mountedRef.current ||
+        reportContentRequestRef.current.get(task.id) !== nextRequestId
+      ) return undefined
+      const analysis = analyzeLoadedReviewReport(markdown, reportSummaryInput(task))
+      queue.updateTask(task.id, (current) => ({ ...current, reportMarkdown: markdown }))
+      updateReportContentState(task.id, {
+        contentStatus: analysis.status,
+        contentMessage: analysis.message
+      })
+      return markdown
+    } catch (error) {
+      if (
+        mountedRef.current &&
+        reportContentRequestRef.current.get(task.id) === nextRequestId
+      ) {
+        updateReportContentState(task.id, {
+          contentStatus: 'error',
+          contentMessage: error instanceof Error ? error.message : '报告加载失败。'
+        })
+      }
+      return undefined
+    }
+  }, [queue.updateTask, updateReportContentState])
+
+  useEffect(() => {
+    if (!selectedReportId) return
+    const task = findTask(selectedReportId)
+    if (!task || !hasReadableMarkdownReport(task)) return
+    if (task.reportMarkdown || reportContentStatesRef.current[task.id] !== undefined) return
+    void selectReport(task)
+  }, [findTask, queue.tasks, selectReport, selectedReportId])
 
   useEffect(() => window.codeReview.onTaskCompletionNotificationClicked((payload) => {
     const task = findTask(payload.localTaskId ?? payload.taskId) ?? findTask(payload.taskId)
-    if (!task || task.status !== 'success') return
+    if (!task || !hasReadableMarkdownReport(task)) return
     requestedViewSequenceRef.current += 1
     setRequestedView({ id: 'report-center', requestId: requestedViewSequenceRef.current })
     void selectReport(task)
@@ -471,10 +566,19 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
       await loadTaskStats()
       return commandResult('今日任务统计已重新加载。')
     },
+    async reloadReportList() {
+      await loadReportList()
+      return commandResult('报告列表已重新加载。')
+    },
     async openReport(reportId) {
       const task = findTask(reportId)
-      if (!task) return commandResult('未找到报告。')
+      if (!task || !hasReadableMarkdownReport(task)) return commandResult('未找到报告。')
       return commandResult((await selectReport(task)) ? '报告已打开。' : '报告加载失败。')
+    },
+    async retryReport(reportId) {
+      const task = findTask(reportId)
+      if (!task || !hasReadableMarkdownReport(task)) return commandResult('未找到报告。')
+      return commandResult((await selectReport(task, { force: true })) ? '报告已重新加载。' : '报告加载失败。')
     },
     async closeReport() {
       selectedReportIdRef.current = undefined
@@ -586,7 +690,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
       setNotice(undefined)
       setNoticeAction(undefined)
     }
-  }), [createTask, findTask, loadTaskStats, queue.cancelTask, queue.retryTask, queue.updateTask, selectReport, showNotice])
+  }), [createTask, findTask, loadReportList, loadTaskStats, queue.cancelTask, queue.retryTask, queue.updateTask, selectReport, showNotice])
 
   const viewModel: WorkbenchViewModel = {
     productName: 'AI 代码审查', previewLabel: '2.0 工作台',
@@ -594,9 +698,11 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
     departmentName: currentUser.department_name || '未命名部门',
     scenarios: [], activeScenario: 'active', catalog, sampleTask: emptySample,
     tasks: queue.tasks.map(toTaskViewModel),
-    reports: queue.tasks.filter((task) => task.status === 'success').map(toReportViewModel),
+    reports: queue.tasks.filter(hasReadableMarkdownReport).map((task) =>
+      toReportViewModel(task, reportContentStates[task.id])
+    ),
     selectedReportId, notice, noticeAction, activeFeedbackAnchorId, feedbackAnchorScrollRequest,
-    mode: 'production', canCreateTask, requestedView, taskStats,
+    mode: 'production', canCreateTask, requestedView, taskStats, reportListState,
     ...(!canCreateTask ? { taskCreationDisabledReason: '本地环境就绪后才可发起审查。' } : {})
   }
   const viewModelRef = useRef(viewModel); viewModelRef.current = viewModel

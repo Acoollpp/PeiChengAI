@@ -4,6 +4,7 @@ import { composeIssueFeedbackMarkdown } from '../issue-feedback-markdown'
 import { extractReviewIssues } from '../review-issues'
 import type { ReviewTaskIssue } from '../types'
 import {
+  bmsCodeReviewerReportWithIssuesFixture,
   templateOneReportFixture,
   templateTwoConclusionReportFixture,
   templateTwoTableReportFixture
@@ -54,6 +55,26 @@ const countTableDelimiters = (row: string): number => {
 }
 
 describe('composeIssueFeedbackMarkdown', () => {
+  it('新版固定模板把多问题反馈插入对应问题下方且不串位', () => {
+    const original = bmsCodeReviewerReportWithIssuesFixture
+    const issues = [
+      toServerIssue(original, 0, false, '休眠保护路径需要统一收口'),
+      toServerIssue(original, 1, true, '往返测试建议已纳入用例')
+    ]
+
+    const composed = composeIssueFeedbackMarkdown(original, issues)
+    const firstFeedbackOffset = composed.indexOf('休眠保护路径需要统一收口')
+    const secondIssueOffset = composed.indexOf('### P02 [建议]')
+    const secondFeedbackOffset = composed.indexOf('往返测试建议已纳入用例')
+    const coverageOffset = composed.indexOf('## 四、审查覆盖')
+
+    expect(firstFeedbackOffset).toBeGreaterThan(composed.indexOf('### P01 [高风险]'))
+    expect(firstFeedbackOffset).toBeLessThan(secondIssueOffset)
+    expect(secondFeedbackOffset).toBeGreaterThan(secondIssueOffset)
+    expect(secondFeedbackOffset).toBeLessThan(coverageOffset)
+    expect(composed.match(/> 是否有效：/g)).toHaveLength(2)
+  })
+
   it('CRLF 报告保持问题快照定位并生成反馈 Markdown', () => {
     const original = templateOneReportFixture.replaceAll('\n', '\r\n')
     const issue = toServerIssue(original, 0, true, '已确认并修复')

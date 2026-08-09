@@ -6,6 +6,21 @@ export const bmsDs03ReportFixture = readFileSync(
   'utf8'
 )
 
+export const bmsCodeReviewerReportWithIssuesFixture = readFileSync(
+  fileURLToPath(new URL('./bms-code-reviewer-report-with-issues.md', import.meta.url)),
+  'utf8'
+)
+
+export const bmsCodeReviewerReportRealVariantsFixture = readFileSync(
+  fileURLToPath(new URL('./bms-code-reviewer-report-real-variants.md', import.meta.url)),
+  'utf8'
+)
+
+export const bmsCodeReviewerZeroIssuesFixture = readFileSync(
+  fileURLToPath(new URL('./bms-code-reviewer-report-zero-issues.md', import.meta.url)),
+  'utf8'
+)
+
 export const templateOneReportFixture = `# 代码审查报告-模版一
 
 ## 五、代码质量问题
