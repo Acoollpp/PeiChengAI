@@ -991,7 +991,7 @@ describe('ProductionReviewWorkbench', () => {
     expect(screen.getByText('正在准备真实工作区')).toBeInTheDocument()
   })
 
-  it('报告列表先展示真实元数据且只预读首份正文，多审查项显示 ID、名称并保留未知 ID', async () => {
+  it('同屏区分协议 1 无严重度摘要与历史严重度、历史未知摘要', async () => {
     const user = userEvent.setup()
     vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
       data: [
@@ -1004,9 +1004,6 @@ describe('ProductionReviewWorkbench', () => {
           status: 'success',
           report_name: '多审查项真实报告.md',
           report_path: '/reports/multi-report.md',
-          feedback_protocol_version: 1,
-          issue_count: 1,
-          highest_issue_severity: 'high',
           finished_at: '2026-08-06T08:00:00Z'
         },
         {
@@ -1021,9 +1018,15 @@ describe('ProductionReviewWorkbench', () => {
           status: 'success', report_name: '无严重度报告.md',
           report_path: '/reports/no-severity-report.md',
           feedback_protocol_version: 1, issue_count: 2, highest_issue_severity: null
+        },
+        {
+          id: 'legacy-unknown-summary', svn_url: 'svn://server/legacy-unknown',
+          old_revision: '122', new_revision: '123', review_item_ids: ['DS-02'],
+          status: 'success', report_name: '历史未知摘要.md',
+          report_path: '/reports/legacy-unknown-summary.md'
         }
       ],
-      count: 3
+      count: 4
     })
 
     render(<ProductionReviewWorkbench {...productionProps} />)
@@ -1032,11 +1035,23 @@ describe('ProductionReviewWorkbench', () => {
     expect(screen.getAllByText(/DS-01 · 变更点审查/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/DS-02 · 编码规范审核/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/DS-FUTURE/).length).toBeGreaterThan(0)
-    expect(screen.getAllByText('1 个问题 · 高风险').length).toBeGreaterThan(0)
-    expect(screen.getByText('零问题报告')).toBeInTheDocument()
-    expect(screen.getByText('无严重度报告')).toBeInTheDocument()
-    expect(screen.getAllByText('2 个问题').length).toBeGreaterThan(0)
-    expect(screen.queryByText('严重度未知')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getAllByText('1 个问题 · 高风险').length).toBeGreaterThan(0)
+    })
+    const zeroReportRow = screen.getByText('零问题报告').closest('article')
+    expect(zeroReportRow).not.toBeNull()
+    expect(within(zeroReportRow as HTMLElement).getByText('0 个问题')).toBeInTheDocument()
+    expect(zeroReportRow).not.toHaveTextContent('严重度未知')
+    expect(screen.queryByText(/无最高严重度/)).not.toBeInTheDocument()
+    const noSeverityReportRow = screen.getByText('无严重度报告').closest('article')
+    expect(noSeverityReportRow).not.toBeNull()
+    expect(within(noSeverityReportRow as HTMLElement).getByText('2 个问题')).toBeInTheDocument()
+    expect(noSeverityReportRow).not.toHaveTextContent('严重度未知')
+    const legacyUnknownRow = screen.getByText('历史未知摘要').closest('article')
+    expect(legacyUnknownRow).not.toBeNull()
+    expect(within(legacyUnknownRow as HTMLElement).getByText(
+      '问题数未记录 · 严重度未知'
+    )).toBeInTheDocument()
     await waitFor(() => expect(window.codeReview.readTaskReport).toHaveBeenCalledTimes(1))
     expect(window.codeReview.readTaskReport).toHaveBeenCalledWith('multi-report')
     expect(window.codeReview.readTaskReport).not.toHaveBeenCalledWith('zero-report')
