@@ -564,7 +564,7 @@ const runExistingReviewTask = async (
     }
 
     const errorMessage = error instanceof CodexReviewError
-      ? `${codexErrorMessages[error.errorCode]}（Codex 分析：${error.message}）`
+      ? `${codexErrorMessages[error.errorCode]}（Codex 分析：${sanitizeErrorSummary(error, input.token)}）`
       : error instanceof SvnPreflightError
         ? toSvnPreflightUserMessage(error, {
             old_revision: oldRevision,

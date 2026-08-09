@@ -698,6 +698,49 @@ describe('executeReviewTask', () => {
     })
   })
 
+  it('Codex 内部错误直接终止报告处理并返回脱敏后的内部错误文案', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-structured-error-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '不存在的审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    const prepareReport = vi.fn()
+    const uploadReport = vi.fn()
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => makeTask({ review_item_ids: ['DS-03'] })),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      preflightSvn: vi.fn(),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      runCodex: vi.fn(async () => {
+        throw new CodexReviewError(
+          'INTERNAL_ERROR',
+          `DS-03 无法生成有效待判定清单，token=secret-token，工作区 ${cwd}`
+        )
+      }),
+      prepareReport,
+      uploadReport
+    })
+
+    await expect(
+      executeReviewTask({ token: 'secret-token', request }, dependencies)
+    ).rejects.toThrow('Codex 执行过程中发生内部错误。')
+
+    expect(prepareReport).not.toHaveBeenCalled()
+    expect(uploadReport).not.toHaveBeenCalled()
+    expect(dependencies.api.updateTaskStatus).toHaveBeenLastCalledWith('secret-token', 'task-1', {
+      status: 'failed',
+      error_message: expect.stringContaining('Codex 执行过程中发生内部错误。')
+    })
+    const failedStatus = vi.mocked(dependencies.api.updateTaskStatus).mock.calls.at(-1)?.[2]
+    expect(failedStatus?.error_message).not.toContain('SVN权限不足')
+    expect(failedStatus?.error_message).not.toContain('secret-token')
+    expect(failedStatus?.error_message).not.toContain(cwd)
+    expect(failedStatus?.error_message).toContain('[redacted]')
+    expect(failedStatus?.error_message).toContain('[路径已隐藏]')
+  })
+
   it('组合任务从头重试保留原始 revision 和逐项输入，且 Codex 只接收工作区副本', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-ds01-retry-'))
     tempDirs.push(cwd)

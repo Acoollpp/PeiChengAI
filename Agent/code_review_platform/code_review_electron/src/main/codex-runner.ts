@@ -56,8 +56,8 @@ export class CodexReviewError extends Error {
   }
 }
 
-export const parseCodexError = (stderr: string): CodexReviewError | null => {
-  const match = stderr.match(CODEX_ERROR_PATTERN)
+export const parseCodexError = (output: string): CodexReviewError | null => {
+  const match = output.match(CODEX_ERROR_PATTERN)
   if (!match) return null
   const [, code, description] = match
   if (!isCodexErrorCode(code)) return null
@@ -337,6 +337,12 @@ export const runCodexReview = ({
             return
           }
           reject(new Error(`Codex review failed with exit code ${code}: ${stderr}`))
+          return
+        }
+
+        const codexError = parseCodexError(stdout) ?? parseCodexError(stderr)
+        if (codexError) {
+          reject(codexError)
           return
         }
 

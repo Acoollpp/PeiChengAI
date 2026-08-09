@@ -24,7 +24,7 @@ describe('runCodexReview', () => {
     vi.resetModules()
   })
 
-  it('emits stdout and stderr chunks while Codex is running', async () => {
+  it('退出码 0 且输出无结构化错误时返回完整执行结果', async () => {
     const { EventEmitter } = await import('node:events')
     const { runCodexReview } = await import('../codex-runner')
     const child = new EventEmitter() as EventEmitterType & {
@@ -83,6 +83,105 @@ describe('runCodexReview', () => {
       })
     )
     expect(child.stdin.end).toHaveBeenCalledWith()
+  })
+
+  it('退出码 0 且 stdout 含结构化错误时按对应错误码拒绝', async () => {
+    const { EventEmitter } = await import('node:events')
+    const { runCodexReview } = await import('../codex-runner')
+    const child = new EventEmitter() as EventEmitterType & {
+      stdout: EventEmitterType
+      stderr: EventEmitterType
+      stdin: { end: ReturnType<typeof vi.fn> }
+      kill: ReturnType<typeof vi.fn>
+    }
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.stdin = { end: vi.fn() }
+    child.kill = vi.fn()
+    spawnMock.mockReturnValue(child)
+
+    const resultPromise = runCodexReview({
+      cwd: '/tmp/workspace',
+      prompt: 'prompt text',
+      timeoutMs: 1000
+    })
+
+    child.stdout.emit(
+      'data',
+      Buffer.from('[CODEX_ERROR::INTERNAL_ERROR] DS-03 无法生成有效待判定清单')
+    )
+    child.emit('close', 0)
+
+    await expect(resultPromise).rejects.toMatchObject({
+      name: 'CodexReviewError',
+      errorCode: 'INTERNAL_ERROR',
+      message: 'DS-03 无法生成有效待判定清单'
+    })
+  })
+
+  it('退出码 0 且 stderr 含结构化错误时按对应错误码拒绝', async () => {
+    const { EventEmitter } = await import('node:events')
+    const { runCodexReview } = await import('../codex-runner')
+    const child = new EventEmitter() as EventEmitterType & {
+      stdout: EventEmitterType
+      stderr: EventEmitterType
+      stdin: { end: ReturnType<typeof vi.fn> }
+      kill: ReturnType<typeof vi.fn>
+    }
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.stdin = { end: vi.fn() }
+    child.kill = vi.fn()
+    spawnMock.mockReturnValue(child)
+
+    const resultPromise = runCodexReview({
+      cwd: '/tmp/workspace',
+      prompt: 'prompt text',
+      timeoutMs: 1000
+    })
+
+    child.stderr.emit(
+      'data',
+      Buffer.from('[CODEX_ERROR::REPORT_ERROR] 审查报告文件写入失败')
+    )
+    child.emit('close', 0)
+
+    await expect(resultPromise).rejects.toMatchObject({
+      name: 'CodexReviewError',
+      errorCode: 'REPORT_ERROR',
+      message: '审查报告文件写入失败'
+    })
+  })
+
+  it('非零退出码继续按 stderr 中的结构化错误拒绝', async () => {
+    const { EventEmitter } = await import('node:events')
+    const { runCodexReview } = await import('../codex-runner')
+    const child = new EventEmitter() as EventEmitterType & {
+      stdout: EventEmitterType
+      stderr: EventEmitterType
+      stdin: { end: ReturnType<typeof vi.fn> }
+      kill: ReturnType<typeof vi.fn>
+    }
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.stdin = { end: vi.fn() }
+    child.kill = vi.fn()
+    spawnMock.mockReturnValue(child)
+
+    const resultPromise = runCodexReview({
+      cwd: '/tmp/workspace',
+      prompt: 'prompt text',
+      timeoutMs: 1000
+    })
+
+    child.stderr.emit('data', Buffer.from('[CODEX_ERROR::SVN_ERROR] 两种 SVN 获取策略均失败'))
+    child.emit('close', 1)
+
+    await expect(resultPromise).rejects.toMatchObject({
+      name: 'CodexReviewError',
+      errorCode: 'SVN_ERROR',
+      message: '两种 SVN 获取策略均失败'
+    })
   })
 
   it('kills Codex and rejects when the abort signal is triggered', async () => {
