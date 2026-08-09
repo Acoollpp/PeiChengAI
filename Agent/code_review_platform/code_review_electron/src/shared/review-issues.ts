@@ -108,6 +108,7 @@ const bmsIssueHeadingPatterns = [
   pcBmsIssueHeadingPattern,
   historicalDs02IssueHeadingPattern
 ] as const
+const bmsZeroIssueStatementPattern = /^本次未发现能够闭环的问题[。.]?$/
 
 const stripMarkerListPrefix = (value: string): string =>
   value.replace(/^\s*(?:\d+[\.)、]|[一二三四五六七八九十]+[、.．\)])\s*/, '').trim()
@@ -435,7 +436,7 @@ const extractBmsCodeReviewerIssues = (
     .map((issue, order) => ({ ...issue, order }))
   const sectionLines = lines.slice(section.line.index + 1, nextSection?.line.index)
   const hasZeroIssueStatement = sectionLines.some(
-    (line) => !line.inCodeBlock && line.text.trim() === '本次未发现能够闭环的问题'
+    (line) => !line.inCodeBlock && bmsZeroIssueStatementPattern.test(line.text.trim())
   )
   const valid =
     (directHeadings.length > 0 && issues.length === directHeadings.length) ||

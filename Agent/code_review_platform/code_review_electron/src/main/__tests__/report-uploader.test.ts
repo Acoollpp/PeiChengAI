@@ -46,6 +46,7 @@ import {
   bmsCodeReviewerHistoricalPcBmsReportFixture,
   bmsCodeReviewerNoSeverityReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
+  bmsCodeReviewerZeroIssuesFixture,
   templateOneReportFixture
 } from '../../shared/__tests__/fixtures/review-report-fixtures'
 
@@ -123,6 +124,41 @@ describe('report uploader', () => {
       feedback_protocol_version: 1,
       issues: [],
       assets: []
+    })
+  })
+
+  it('上传带中文句号的 bms-code-reviewer 零问题报告并提交零问题快照', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-zero-issues-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, 'DS-03零问题报告.md')
+    const report = bmsCodeReviewerZeroIssuesFixture.replace(
+      '本次未发现能够闭环的问题',
+      '本次未发现能够闭环的问题。'
+    )
+    const api = {
+      uploadReport: vi.fn(async () => ({
+        feedback_protocol_version: 1,
+        issue_count: 0,
+        highest_issue_severity: null
+      }))
+    }
+    await writeFile(reportPath, report)
+
+    const uploaded = await uploadReportFile(api, 'token-123', 'task-zero', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-zero',
+      expect.objectContaining({
+        report_content: report,
+        feedback_protocol_version: 1,
+        issues: []
+      })
+    )
+    expect(uploaded).toEqual({
+      feedback_protocol_version: 1,
+      issue_count: 0,
+      highest_issue_severity: null
     })
   })
 

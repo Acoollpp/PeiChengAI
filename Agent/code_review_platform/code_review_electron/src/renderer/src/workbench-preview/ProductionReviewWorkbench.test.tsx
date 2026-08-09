@@ -31,6 +31,25 @@ const reportMarkdown = `# DS-03 状态机审核报告
 **整改建议：** 在恢复完成时发送对应事件。
 `
 
+const zeroIssueReportMarkdown = `# 代码审查报告
+
+**审查范围：**
+
+| 审查项 ID | 审查项名称 | SVN 证据模式 |
+|-----------|------------|---------------|
+| DS-03 | 状态机审核 | old_to_new_diff |
+
+## 一、审查问题
+
+本次未发现能够闭环的问题。
+
+## 二、审查覆盖
+
+### 覆盖摘要
+
+此标题不属于审查问题。
+`
+
 const createDeferred = <T,>(): {
   promise: Promise<T>
   resolve: (value: T) => void
@@ -1174,6 +1193,29 @@ describe('ProductionReviewWorkbench', () => {
     const parseError = await screen.findByRole('alert', { name: '报告结构解析失败' })
     expect(parseError).toHaveTextContent('不符合 bms-code-reviewer 固定模板')
     expect(screen.getByRole('heading', { name: '原始报告' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '反馈报告问题' })).toBeInTheDocument()
+  })
+
+  it('报告中心将带中文句号的固定零问题报告显示为 0 个问题', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [{
+        id: 'zero-report-punctuation', svn_url: 'svn://server/zero-punctuation',
+        old_revision: '1', new_revision: '2', review_item_ids: ['DS-03'],
+        status: 'success', feedback_protocol_version: 1, issue_count: 0,
+        highest_issue_severity: null, report_path: '/reports/zero-punctuation.md'
+      }],
+      count: 1
+    })
+    vi.mocked(window.codeReview.readTaskReport).mockResolvedValueOnce(zeroIssueReportMarkdown)
+
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: /查看报告/ }))
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/0 个问题/).length).toBeGreaterThan(0)
+    })
+    expect(screen.queryByRole('alert', { name: '报告结构解析失败' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '反馈报告问题' })).toBeInTheDocument()
   })
 
