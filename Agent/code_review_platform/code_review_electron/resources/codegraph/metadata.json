@@ -1,0 +1,59 @@
+{
+  "name": "CodeGraph",
+  "package": "@colbymchenry/codegraph",
+  "version": "1.4.1",
+  "platform": "win32",
+  "arch": "x64",
+  "releaseUrl": "https://github.com/colbymchenry/codegraph/releases/tag/v1.4.1",
+  "publishedAt": "2026-07-10T22:40:02Z",
+  "asset": {
+    "name": "codegraph-win32-x64.zip",
+    "url": "https://github.com/colbymchenry/codegraph/releases/download/v1.4.1/codegraph-win32-x64.zip",
+    "size": 46005713,
+    "sha256": "559cb1010b7899b5137f0801d35698f722a33370e907a84968852d3d68f6458d"
+  },
+  "archiveRoot": "codegraph-win32-x64",
+  "runtimeDirectory": "codegraph/win32-x64",
+  "runtime": {
+    "fileCount": 853,
+    "unpackedBytes": 203338322,
+    "treeSha256": "6e04c8570e795ff31c8c3afe14b3cb7649edc2985f0a71fac4ac5b9b594a9549",
+    "command": "bin/codegraph.cmd",
+    "node": "node.exe",
+    "entrypoint": "lib/dist/bin/codegraph.js",
+    "packageJson": "lib/package.json",
+    "requiredFiles": [
+      {
+        "path": "bin/codegraph.cmd",
+        "sha256": "8531dc79ec0f6aacb7ae0162eee185b37bfc505d67ad5b4ead0cc8a4b667f33c"
+      },
+      {
+        "path": "node.exe",
+        "sha256": "b3094d0b49f9ad602262a9921551737bb97637c05dd357a06ae98188d7290aa3"
+      },
+      {
+        "path": "lib/package.json",
+        "sha256": "d6645859a702a9e0152bd17c2b1f0beb6722e46324b0ab576c96ec1bd7ef28b6"
+      },
+      {
+        "path": "lib/dist/bin/codegraph.js",
+        "sha256": "fd85934e127cf8c32a227b065e62d2f6589287dcb22d28dcf1d3b954bbd6f523"
+      },
+      {
+        "path": "lib/dist/db/schema.sql",
+        "sha256": "ba0c16b0b5e6b9e69850b4fd96ece0dd90f17d1d65d9885184d0a2a0c461f743"
+      },
+      {
+        "path": "lib/node_modules/web-tree-sitter/tree-sitter.wasm",
+        "sha256": "f38dcc4b43b818f9a0785bc1c6d5611a75ac4cdd428ff3f02757c34ca4e46d7f"
+      },
+      {
+        "path": "lib/node_modules/tree-sitter-wasms/out/tree-sitter-c.wasm",
+        "sha256": "056b25072382f72deee2c64ec238ffc4bb8cf42844ef21502c0e70f03a8a0d66"
+      }
+    ]
+  },
+  "license": "MIT",
+  "licenseSource": "https://github.com/colbymchenry/codegraph/blob/v1.4.1/LICENSE",
+  "licenseSha256": "e6d98f98c666bebe065ac2492a0a19232cc318d4d67bac3ca42ffb77bacc8809"
+}

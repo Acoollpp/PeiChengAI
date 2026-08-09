@@ -4,6 +4,11 @@ import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 
 import type { EnvironmentStatus, SyncedSkill } from '../shared/types'
+import {
+  bundledCodeGraphRuntime,
+  type CodeGraphRuntimeInspection,
+  type CodeGraphRuntimeStatus
+} from './bundled-codegraph-runtime'
 import { getRuntimePaths } from './runtime-paths'
 
 interface EnvironmentChecks {
@@ -24,6 +29,7 @@ export interface EnvironmentCheckDependencies {
   checkRuntimeWritable?: typeof checkRuntimeWritable
   checkSkillPackageReady?: typeof checkSkillPackageReady
   readSyncedSkills?: typeof readSyncedSkills
+  inspectCodeGraphRuntime?: () => Promise<CodeGraphRuntimeInspection>
 }
 
 export interface EnvironmentCheckResult {
@@ -35,6 +41,11 @@ export interface EnvironmentCheckResult {
   codexError?: string
   svnError?: string
   skillError?: string
+  codegraphStatus?: CodeGraphRuntimeStatus
+  codegraphRequiredVersion?: string
+  codegraphVersion?: string
+  codegraphPath?: string
+  codegraphError?: string
   skills?: SyncedSkill[]
 }
 
@@ -299,26 +310,47 @@ export const checkEnvironment = async (
   const runtimeWritableCheck = dependencies.checkRuntimeWritable ?? checkRuntimeWritable
   const skillPackageReadyCheck = dependencies.checkSkillPackageReady ?? checkSkillPackageReady
   const syncedSkillsReader = dependencies.readSyncedSkills ?? readSyncedSkills
+  const inspectCodeGraph =
+    dependencies.inspectCodeGraphRuntime ?? (() => bundledCodeGraphRuntime.inspect())
 
   try {
     const runtimePaths = await loadRuntimePaths()
-    const [codexResult, runtimeWritable] = await Promise.all([
+    const [codexResult, runtimeWritable, codeGraph] = await Promise.all([
       findCommand('codex', ['--version']),
-      runtimeWritableCheck(runtimePaths.runtimeRoot)
+      runtimeWritableCheck(runtimePaths.runtimeRoot),
+      inspectCodeGraph()
     ])
+    const codeGraphFields = {
+      codegraphStatus: codeGraph.status,
+      codegraphRequiredVersion: codeGraph.requiredVersion,
+      codegraphVersion: codeGraph.version,
+      codegraphPath: codeGraph.commandPath,
+      codegraphError: codeGraph.error
+    }
 
     if (!runtimeWritable) {
       return {
         status: 'failed',
         codexVersion: codexResult.output,
         codexPath: codexResult.path,
-        skillError: `客户端运行目录不可写：${runtimePaths.runtimeRoot}`
+        skillError: `客户端运行目录不可写：${runtimePaths.runtimeRoot}`,
+        ...codeGraphFields
+      }
+    }
+
+    if (codeGraph.status !== 'ready') {
+      return {
+        status: 'failed',
+        codexVersion: codexResult.output,
+        codexPath: codexResult.path,
+        ...codeGraphFields
       }
     }
 
     if (!codexResult.ok) {
       return {
-        status: 'missing_codex'
+        status: 'missing_codex',
+        ...codeGraphFields
       }
     }
 
@@ -338,6 +370,7 @@ export const checkEnvironment = async (
       svnVersion: svnResult.output,
       codexPath: codexResult.path,
       svnPath: svnResult.path,
+      ...codeGraphFields,
       skills: syncedSkills
     }
   } catch (error) {

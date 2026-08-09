@@ -13,6 +13,15 @@ import {
 } from '../environment-checker'
 import type { CommandResult, EnvironmentCheckResult } from '../environment-checker'
 
+const readyCodeGraph = {
+  status: 'ready' as const,
+  requiredVersion: '1.4.1',
+  version: '1.4.1',
+  commandPath: 'C:\\Program Files\\AI代码审查客户端\\resources\\codegraph\\win32-x64\\bin\\codegraph.cmd',
+  commandDirectory:
+    'C:\\Program Files\\AI代码审查客户端\\resources\\codegraph\\win32-x64\\bin'
+}
+
 describe('classifyEnvironment', () => {
   it('returns ready when Codex, SVN, and the review skill are available', () => {
     expect(classifyEnvironment({ codexOk: true, svnOk: true, skillOk: true })).toBe('ready')
@@ -76,6 +85,7 @@ describe('checkEnvironment', () => {
     const checkRuntimeWritable = vi.fn(async () => true)
     const checkSkillPackageReady = vi.fn(async () => true)
     const readSyncedSkills = vi.fn(async () => [])
+    const inspectCodeGraphRuntime = vi.fn(async () => readyCodeGraph)
     const getRuntimePaths = vi.fn(async () => ({
       runtimeRoot: '/tmp/code-review-runtime',
       skillPackagesDir: '/tmp/code-review-runtime/skill-packages',
@@ -93,10 +103,16 @@ describe('checkEnvironment', () => {
         checkRuntimeWritable,
         checkSkillPackageReady,
         readSyncedSkills,
+        inspectCodeGraphRuntime,
         getRuntimePaths
       })
     ).resolves.toEqual({
-      status: 'missing_codex'
+      status: 'missing_codex',
+      codegraphStatus: 'ready',
+      codegraphRequiredVersion: '1.4.1',
+      codegraphVersion: '1.4.1',
+      codegraphPath: readyCodeGraph.commandPath,
+      codegraphError: undefined
     })
 
     expect(findVersionCommand).toHaveBeenCalledTimes(1)
@@ -115,6 +131,7 @@ describe('checkEnvironment', () => {
     const checkRuntimeWritable = vi.fn(async () => true)
     const checkSkillPackageReady = vi.fn(async () => true)
     const readSyncedSkills = vi.fn(async () => [])
+    const inspectCodeGraphRuntime = vi.fn(async () => readyCodeGraph)
     const getRuntimePaths = vi.fn(async () => ({
       runtimeRoot: '/tmp/code-review-runtime',
       skillPackagesDir: '/tmp/code-review-runtime/skill-packages',
@@ -132,6 +149,7 @@ describe('checkEnvironment', () => {
         checkRuntimeWritable,
         checkSkillPackageReady,
         readSyncedSkills,
+        inspectCodeGraphRuntime,
         getRuntimePaths
       })
     ).resolves.toEqual({
@@ -140,6 +158,11 @@ describe('checkEnvironment', () => {
       codexPath: 'codex',
       svnVersion: undefined,
       svnPath: undefined,
+      codegraphStatus: 'ready',
+      codegraphRequiredVersion: '1.4.1',
+      codegraphVersion: '1.4.1',
+      codegraphPath: readyCodeGraph.commandPath,
+      codegraphError: undefined,
       skills: []
     })
 
@@ -148,6 +171,56 @@ describe('checkEnvironment', () => {
     expect(checkSkillPackageReady).toHaveBeenCalledWith(
       '/tmp/code-review-runtime/skill-packages/manifest.json'
     )
+  })
+
+  it('内置 CodeGraph 损坏时返回明确状态且不检查 SVN 或 Skill', async () => {
+    const findVersionCommand = vi.fn(async () => ({
+      ok: true,
+      output: 'codex-cli 0.130.0',
+      path: 'codex'
+    }))
+    const checkSkillPackageReady = vi.fn(async () => true)
+    const readSyncedSkills = vi.fn(async () => [])
+    const { checkEnvironment } = await import('../environment-checker')
+
+    await expect(
+      checkEnvironment({
+        findVersionCommand,
+        checkRuntimeWritable: vi.fn(async () => true),
+        checkSkillPackageReady,
+        readSyncedSkills,
+        inspectCodeGraphRuntime: vi.fn(async () => ({
+          status: 'corrupt' as const,
+          requiredVersion: '1.4.1',
+          version: '1.4.1',
+          commandPath: readyCodeGraph.commandPath,
+          commandDirectory: readyCodeGraph.commandDirectory,
+          error: '内置 CodeGraph 1.4.1 资源损坏，请重新安装客户端。'
+        })),
+        getRuntimePaths: vi.fn(async () => ({
+          runtimeRoot: '/tmp/code-review-runtime',
+          skillPackagesDir: '/tmp/code-review-runtime/skill-packages',
+          skillManifestPath: '/tmp/code-review-runtime/skill-packages/manifest.json',
+          workspacesDir: '/tmp/code-review-runtime/workspaces',
+          workspaceForTask: (taskId: string) => `/tmp/code-review-runtime/workspaces/${taskId}`,
+          reportPathForTask: (taskId: string) =>
+            `/tmp/code-review-runtime/workspaces/${taskId}/report.md`,
+          imagesDirForTask: (taskId: string) =>
+            `/tmp/code-review-runtime/workspaces/${taskId}/images`
+        }))
+      })
+    ).resolves.toMatchObject({
+      status: 'failed',
+      codegraphStatus: 'corrupt',
+      codegraphRequiredVersion: '1.4.1',
+      codegraphVersion: '1.4.1',
+      codegraphPath: readyCodeGraph.commandPath,
+      codegraphError: '内置 CodeGraph 1.4.1 资源损坏，请重新安装客户端。'
+    })
+
+    expect(findVersionCommand).toHaveBeenCalledTimes(1)
+    expect(checkSkillPackageReady).not.toHaveBeenCalled()
+    expect(readSyncedSkills).not.toHaveBeenCalled()
   })
 })
 

@@ -40,12 +40,21 @@ describe('runCodexReview', () => {
     spawnMock.mockReturnValue(child)
     const chunks: Array<{ stream: string; text: string }> = []
 
-    const resultPromise = runCodexReview({
-      cwd: '/tmp/workspace',
-      prompt: 'prompt text',
-      timeoutMs: 1000,
-      onOutput: (event) => chunks.push({ stream: event.stream, text: event.text })
-    })
+    const buildCodeGraphEnvironment = vi.fn(async (environment: NodeJS.ProcessEnv) => ({
+      ...environment,
+      PATH: `C:\\Program Files\\AI Review\\codegraph\\bin;${environment.PATH ?? ''}`
+    }))
+    const resultPromise = runCodexReview(
+      {
+        cwd: '/tmp/workspace',
+        prompt: 'prompt text',
+        timeoutMs: 1000,
+        onOutput: (event) => chunks.push({ stream: event.stream, text: event.text })
+      },
+      { buildCodeGraphEnvironment }
+    )
+
+    await vi.waitFor(() => expect(spawnMock).toHaveBeenCalledTimes(1))
 
     child.stdout.emit('data', Buffer.from('reading skill\n'))
     child.stderr.emit('data', Buffer.from('svn warning\n'))
@@ -77,11 +86,12 @@ describe('runCodexReview', () => {
         cwd: '/tmp/workspace',
         shell: false,
         env: {
-          PATH: 'test-path',
+          PATH: 'C:\\Program Files\\AI Review\\codegraph\\bin;test-path',
           CODEX_UNSAFE_ALLOW_NO_SANDBOX: '1'
         }
       })
     )
+    expect(buildCodeGraphEnvironment).toHaveBeenCalledWith({ PATH: 'test-path' })
     expect(child.stdin.end).toHaveBeenCalledWith()
   })
 
@@ -101,17 +111,42 @@ describe('runCodexReview', () => {
     spawnMock.mockReturnValue(child)
     const controller = new AbortController()
 
-    const resultPromise = runCodexReview({
-      cwd: '/tmp/workspace',
-      prompt: 'prompt text',
-      timeoutMs: 1000,
-      signal: controller.signal
-    })
+    const resultPromise = runCodexReview(
+      {
+        cwd: '/tmp/workspace',
+        prompt: 'prompt text',
+        timeoutMs: 1000,
+        signal: controller.signal
+      },
+      { buildCodeGraphEnvironment: async (environment) => environment }
+    )
+
+    await vi.waitFor(() => expect(spawnMock).toHaveBeenCalledTimes(1))
 
     controller.abort()
 
     await expect(resultPromise).rejects.toThrow('任务已取消')
     expect(child.kill).toHaveBeenCalledWith()
+  })
+
+  it('内置 CodeGraph 校验失败时在启动 Codex 前终止', async () => {
+    const { runCodexReview } = await import('../codex-runner')
+
+    await expect(
+      runCodexReview(
+        {
+          cwd: '/tmp/workspace',
+          prompt: 'prompt text',
+          timeoutMs: 1000
+        },
+        {
+          buildCodeGraphEnvironment: async () => {
+            throw new Error('内置 CodeGraph 1.4.1 资源损坏，请重新安装客户端。')
+          }
+        }
+      )
+    ).rejects.toThrow('资源损坏')
+    expect(spawnMock).not.toHaveBeenCalled()
   })
 })
 

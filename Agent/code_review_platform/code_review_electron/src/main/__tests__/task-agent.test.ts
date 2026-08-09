@@ -160,6 +160,38 @@ describe('executeReviewTask', () => {
     ])
   })
 
+  it('内置 CodeGraph 异常只阻止新任务进入 Codex 并保留明确重装提示', async () => {
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => makeTask()),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({
+        status: 'failed' as const,
+        codegraphStatus: 'corrupt' as const,
+        codegraphRequiredVersion: '1.4.1',
+        codegraphVersion: '1.4.1',
+        codegraphPath:
+          'C:\\Program Files\\AI代码审查客户端\\resources\\codegraph\\win32-x64\\bin\\codegraph.cmd',
+        codegraphError: '内置 CodeGraph 1.4.1 资源损坏，请重新安装客户端。'
+      })),
+      prepareWorkspace: vi.fn(),
+      runCodex: vi.fn(),
+      uploadReport: vi.fn()
+    })
+
+    await expect(
+      executeReviewTask({ token: 'token-123', request }, dependencies)
+    ).resolves.toEqual({ taskId: 'task-1', status: 'environment_error' })
+    expect(dependencies.api.updateTaskStatus).toHaveBeenLastCalledWith('token-123', 'task-1', {
+      status: 'environment_error',
+      error_message: '内置 CodeGraph 1.4.1 资源损坏，请重新安装客户端。'
+    })
+    expect(dependencies.prepareWorkspace).not.toHaveBeenCalled()
+    expect(dependencies.runCodex).not.toHaveBeenCalled()
+    expect(dependencies.uploadReport).not.toHaveBeenCalled()
+  })
+
   it('环境就绪后只上传原始Markdown并透传服务端反馈协议', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-'))
     tempDirs.push(cwd)
