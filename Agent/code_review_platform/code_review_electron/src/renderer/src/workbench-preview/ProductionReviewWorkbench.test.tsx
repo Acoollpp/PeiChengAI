@@ -221,10 +221,58 @@ describe('ProductionReviewWorkbench', () => {
     expect(within(overview).getByText('正在执行').closest('div')).toHaveTextContent('8')
     expect(within(overview).getByText('本机等待').closest('div')).toHaveTextContent('1')
     expect(within(overview).getByText('需要处理').closest('div')).toHaveTextContent('4')
-    expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('11')
+    expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('11')
     expect(within(overview).queryByText(/321|99|预计|趋势|%/)).not.toBeInTheDocument()
     expect(window.codeReview.executeTask).toHaveBeenCalledTimes(2)
     expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
+  })
+
+  it('生产任务状态更新不覆盖用户手动选择的任务视图', async () => {
+    const user = userEvent.setup()
+    let progressListener: ((event: TaskProgressEvent) => void) | undefined
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'running-lane', svn_url: 'svn://server/running-lane',
+          old_revision: '10', new_revision: '11', review_item_ids: ['DS-03'],
+          status: 'running_codex'
+        },
+        {
+          id: 'failed-lane', svn_url: 'svn://server/failed-lane',
+          old_revision: '11', new_revision: '12', review_item_ids: ['DS-03'],
+          status: 'failed', error_message: '生产任务失败，等待用户处理。'
+        }
+      ],
+      count: 2
+    })
+    vi.mocked(window.codeReview.getTodayTaskStats).mockResolvedValue(taskStats(1, 1, 0))
+    vi.mocked(window.codeReview.onTaskProgress).mockImplementation((listener) => {
+      progressListener = listener
+      return vi.fn()
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    const currentTab = await screen.findByRole('tab', { name: '当前任务 1' })
+    expect(currentTab).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('article', { name: /running-lane/ })).toBeInTheDocument()
+    expect(screen.queryByText('生产任务失败，等待用户处理。')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: '需要处理 1' }))
+    expect(screen.getByText('生产任务失败，等待用户处理。')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '打开任务日志 failed-lane' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '从头重试 failed-lane' })).toBeInTheDocument()
+
+    act(() => progressListener?.({
+      taskId: 'failed-lane', clientTaskId: 'failed-lane', type: 'stage',
+      stage: 'checking_environment', message: '失败任务重试后进入环境检查'
+    }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: '需要处理 0' })).toHaveAttribute('aria-selected', 'true')
+    })
+    expect(screen.getByText('暂无需要处理的任务')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '当前任务 2' })).toBeInTheDocument()
+    expect(screen.queryByText('失败任务重试后进入环境检查')).not.toBeInTheDocument()
   })
 
   it('统计加载失败时明确降级且不阻断任务创建，并可独立重试', async () => {
@@ -241,15 +289,15 @@ describe('ProductionReviewWorkbench', () => {
     const statsError = await screen.findByRole('alert')
     expect(statsError).toHaveTextContent('今日任务统计加载失败')
     expect(statsError).toHaveTextContent('任务创建与本机队列仍可使用')
-    expect(screen.queryByLabelText('本地环境状态')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('本地环境状态')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '查看本地依赖状态' })).toHaveAttribute('aria-expanded', 'false')
 
     await submitMinimalDs03Task('svn://server/stats-fallback')
     await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(1))
 
     await user.click(screen.getByRole('button', { name: '重新加载统计' }))
     await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
-    expect(await screen.findByText('今日服务端完成')).toBeInTheDocument()
-    expect(within(screen.getByLabelText('任务总览')).getByText('可查看报告').closest('div')).toHaveTextContent('3')
+    await waitFor(() => expect(within(screen.getByLabelText('任务总览')).getByText('今日完成').closest('button')).toHaveTextContent('3'))
   })
 
   it('真实任务绑定和进入终态时后台刷新统计，日志与重复阶段不重复请求', async () => {
@@ -267,7 +315,7 @@ describe('ProductionReviewWorkbench', () => {
     render(<ProductionReviewWorkbench {...productionProps} />)
 
     const overview = await screen.findByLabelText('任务总览')
-    await waitFor(() => expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('5'))
+    await waitFor(() => expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('5'))
     await submitMinimalDs03Task('svn://server/stats-refresh')
     await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(1))
     expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
@@ -278,7 +326,7 @@ describe('ProductionReviewWorkbench', () => {
       taskId: 'server-stats-refresh', clientTaskId, type: 'stage', stage: 'created', message: '服务端任务已创建'
     }))
     await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
-    expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('5')
+    expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('5')
     expect(screen.queryByText('正在加载今日服务端统计。')).not.toBeInTheDocument()
 
     act(() => {
@@ -299,12 +347,12 @@ describe('ProductionReviewWorkbench', () => {
       backgroundRefresh.resolve(taskStats(2, 1, 6))
       await backgroundRefresh.promise
     })
-    await waitFor(() => expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('6'))
+    await waitFor(() => expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('6'))
     act(() => progressListener?.({
       taskId: 'server-stats-refresh', clientTaskId, type: 'stage', stage: 'success', message: '审查完成'
     }))
     await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(3))
-    await waitFor(() => expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('7'))
+    await waitFor(() => expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('7'))
 
     act(() => progressListener?.({
       taskId: 'server-stats-refresh', clientTaskId, type: 'stage', stage: 'success', message: '重复完成事件'
@@ -336,12 +384,12 @@ describe('ProductionReviewWorkbench', () => {
 
     await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
     const overview = await screen.findByLabelText('任务总览')
-    await waitFor(() => expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('9'))
+    await waitFor(() => expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('9'))
     await act(async () => {
       initialRequest.resolve(taskStats(1, 0, 1))
       await initialRequest.promise
     })
-    await waitFor(() => expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('9'))
+    await waitFor(() => expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('9'))
   })
 
   it('失败任务重试在服务端真实阶段事件到达后才刷新统计', async () => {
@@ -360,6 +408,7 @@ describe('ProductionReviewWorkbench', () => {
     })
     render(<ProductionReviewWorkbench {...productionProps} />)
 
+    expect(await screen.findByRole('tab', { name: '需要处理 1' })).toHaveAttribute('aria-selected', 'true')
     await userEvent.setup().click(await screen.findByRole('button', { name: '从头重试 retry-stats' }))
     await waitFor(() => expect(window.codeReview.retryTask).toHaveBeenCalledTimes(1))
     expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
@@ -440,7 +489,7 @@ describe('ProductionReviewWorkbench', () => {
     expect(within(waitingRow as HTMLElement).getByText('本机等待第 1 位')).toBeInTheDocument()
     expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
     await userEvent.setup().click(within(waitingRow as HTMLElement).getByRole('button', { name: /取消任务/ }))
-    expect(within(waitingRow as HTMLElement).getByText('已取消')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('svn://server/terminal-cancelled')).not.toBeInTheDocument())
     expect(window.codeReview.cancelTask).not.toHaveBeenCalled()
     expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
 
@@ -933,10 +982,8 @@ describe('ProductionReviewWorkbench', () => {
     await submitMinimalDs03Task('svn://server/success-without-report-path')
     await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
 
-    expect(await screen.findByText(
-      '任务已完成，但未生成可查看的 Markdown 报告。'
-    )).toBeInTheDocument()
-    expect(screen.getByText('0 执行 · 0 等待 · 0 失败 · 1 无报告')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('tab', { name: '当前任务 0' })).toBeInTheDocument())
+    expect(screen.getByText('暂无当前任务')).toBeInTheDocument()
     expect(window.codeReview.showTaskCompletionNotification).not.toHaveBeenCalled()
     expect(screen.queryByText(
       '任务 success-without-report-path 已完成，可查看报告。'
@@ -994,12 +1041,15 @@ describe('ProductionReviewWorkbench', () => {
 
     render(<ProductionReviewWorkbench {...productionProps} />)
 
-    expect(await screen.findByText('legacy · r0 → r12')).toBeInTheDocument()
-    expect(screen.getByText('r0 → r12')).toBeInTheDocument()
+    await userEvent.setup().click(await screen.findByRole('button', { name: '报告中心' }))
+    const legacyReportRow = (await screen.findByText('legacy · r0 → r12')).closest('button')
+    expect(legacyReportRow).not.toBeNull()
+    expect(legacyReportRow).toHaveTextContent('r0 → r12')
     expect(screen.getAllByText(/历史任务未记录审查项/).length).toBeGreaterThan(0)
     await waitFor(() => {
       expect(screen.getAllByText('1 个问题 · 高风险').length).toBeGreaterThan(0)
     })
+    await userEvent.setup().click(screen.getByRole('button', { name: '任务管理' }))
     progressListener?.({
       taskId: 'running-1',
       type: 'stage',
@@ -1050,6 +1100,7 @@ describe('ProductionReviewWorkbench', () => {
 
     render(<ProductionReviewWorkbench {...productionProps} />)
 
+    await user.click(await screen.findByRole('button', { name: '报告中心' }))
     expect(await screen.findByText('多审查项真实报告')).toBeInTheDocument()
     expect(screen.getAllByText(/DS-01 · 变更点审查/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/DS-02 · 编码规范审核/).length).toBeGreaterThan(0)
@@ -1057,16 +1108,16 @@ describe('ProductionReviewWorkbench', () => {
     await waitFor(() => {
       expect(screen.getAllByText('1 个问题 · 高风险').length).toBeGreaterThan(0)
     })
-    const zeroReportRow = screen.getByText('零问题报告').closest('article')
+    const zeroReportRow = screen.getByText('零问题报告').closest('button')
     expect(zeroReportRow).not.toBeNull()
     expect(within(zeroReportRow as HTMLElement).getByText('0 个问题')).toBeInTheDocument()
     expect(zeroReportRow).not.toHaveTextContent('严重度未知')
     expect(screen.queryByText(/无最高严重度/)).not.toBeInTheDocument()
-    const noSeverityReportRow = screen.getByText('无严重度报告').closest('article')
+    const noSeverityReportRow = screen.getByText('无严重度报告').closest('button')
     expect(noSeverityReportRow).not.toBeNull()
     expect(within(noSeverityReportRow as HTMLElement).getByText('2 个问题')).toBeInTheDocument()
     expect(noSeverityReportRow).not.toHaveTextContent('严重度未知')
-    const legacyUnknownRow = screen.getByText('历史未知摘要').closest('article')
+    const legacyUnknownRow = screen.getByText('历史未知摘要').closest('button')
     expect(legacyUnknownRow).not.toBeNull()
     expect(within(legacyUnknownRow as HTMLElement).getByText(
       '问题数未记录 · 严重度未知'
@@ -1075,7 +1126,6 @@ describe('ProductionReviewWorkbench', () => {
     expect(window.codeReview.readTaskReport).toHaveBeenCalledWith('multi-report')
     expect(window.codeReview.readTaskReport).not.toHaveBeenCalledWith('zero-report')
 
-    await user.click(screen.getAllByRole('button', { name: /查看报告/ })[0])
     await waitFor(() => expect(window.codeReview.readTaskReport).toHaveBeenCalledWith('multi-report'))
     expect(await screen.findByRole('heading', { name: 'DS-03 状态机审核报告' })).toBeInTheDocument()
   })
@@ -1106,13 +1156,13 @@ describe('ProductionReviewWorkbench', () => {
 
     render(<ProductionReviewWorkbench {...productionProps} />)
 
-    expect(await screen.findAllByRole('button', { name: /查看报告/ })).toHaveLength(2)
+    await user.click(await screen.findByRole('button', { name: '报告中心' }))
     await waitFor(() => expect(window.codeReview.readTaskReport).toHaveBeenCalledTimes(1))
     expect(window.codeReview.readTaskReport).toHaveBeenCalledWith('legacy-with-report')
     expect(window.codeReview.readTaskReport).not.toHaveBeenCalledWith('success-without-report')
 
-    await user.click(screen.getByRole('button', { name: '报告中心' }))
     const reportIndex = screen.getByLabelText('任务和报告列表')
+    expect(within(reportIndex).getAllByRole('button')).toHaveLength(2)
     expect(within(reportIndex).queryByText('仅有报告名')).not.toBeInTheDocument()
     expect(within(reportIndex).getByText('legacy-report · r2 → r3')).toBeInTheDocument()
     expect(within(reportIndex).getByText('新版真实报告')).toBeInTheDocument()
@@ -1129,6 +1179,7 @@ describe('ProductionReviewWorkbench', () => {
 
     render(<StrictMode><ProductionReviewWorkbench {...productionProps} /></StrictMode>)
 
+    await userEvent.setup().click(await screen.findByRole('button', { name: '报告中心' }))
     expect(await screen.findByText('StrictMode 报告')).toBeInTheDocument()
   })
 
@@ -1140,12 +1191,13 @@ describe('ProductionReviewWorkbench', () => {
 
     render(<ProductionReviewWorkbench {...productionProps} />)
 
+    expect(await screen.findByRole('button', { name: '创建审查任务' })).toBeDisabled()
+    await user.click(await screen.findByRole('button', { name: '报告中心' }))
     const reportError = await screen.findByRole('alert', { name: '报告列表加载失败' })
     expect(reportError).toHaveTextContent('报告服务暂不可用')
-    expect(screen.getByRole('button', { name: '创建审查任务' })).toBeDisabled()
     await user.click(within(reportError).getByRole('button', { name: '重新加载报告列表' }))
     await waitFor(() => expect(window.codeReview.listTasks).toHaveBeenCalledTimes(2))
-    expect(await screen.findByText('暂无可查看报告')).toBeInTheDocument()
+    expect(await screen.findByText('暂无可预览报告')).toBeInTheDocument()
   })
 
   it('单份报告读取失败只影响当前预览并可重试', async () => {
@@ -1163,7 +1215,7 @@ describe('ProductionReviewWorkbench', () => {
       .mockResolvedValueOnce(reportMarkdown)
 
     render(<ProductionReviewWorkbench {...productionProps} />)
-    await user.click(await screen.findByRole('button', { name: /查看报告/ }))
+    await user.click(await screen.findByRole('button', { name: '报告中心' }))
 
     const reportError = await screen.findByRole('alert', { name: '报告加载失败' })
     expect(reportError).toHaveTextContent('Markdown 下载失败')
@@ -1188,7 +1240,7 @@ describe('ProductionReviewWorkbench', () => {
     )
 
     render(<ProductionReviewWorkbench {...productionProps} />)
-    await user.click(await screen.findByRole('button', { name: /查看报告/ }))
+    await user.click(await screen.findByRole('button', { name: '报告中心' }))
 
     const parseError = await screen.findByRole('alert', { name: '报告结构解析失败' })
     expect(parseError).toHaveTextContent('不符合 bms-code-reviewer 固定模板')
@@ -1210,7 +1262,7 @@ describe('ProductionReviewWorkbench', () => {
     vi.mocked(window.codeReview.readTaskReport).mockResolvedValueOnce(zeroIssueReportMarkdown)
 
     render(<ProductionReviewWorkbench {...productionProps} />)
-    await user.click(await screen.findByRole('button', { name: /查看报告/ }))
+    await user.click(await screen.findByRole('button', { name: '报告中心' }))
 
     await waitFor(() => {
       expect(screen.getAllByText(/0 个问题/).length).toBeGreaterThan(0)
@@ -1236,7 +1288,10 @@ describe('ProductionReviewWorkbench', () => {
     expect(window.codeReview.executeTask).toHaveBeenCalledWith(expect.objectContaining({
       old_revision: 'r0', new_revision: 'R12'
     }))
-    expect(await screen.findByText('r0 → r12')).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: '报告中心' }))
+    const prefixedReportRow = (await screen.findByText('prefixed · r0 → r12')).closest('button')
+    expect(prefixedReportRow).not.toBeNull()
+    expect(prefixedReportRow).toHaveTextContent('r0 → r12')
     expect(screen.queryByText(/rr0|rR12/)).not.toBeInTheDocument()
   })
 
@@ -1253,7 +1308,7 @@ describe('ProductionReviewWorkbench', () => {
       '# 状态机报告\n\n![状态图](images/state.png)'
     )
     render(<ProductionReviewWorkbench {...productionProps} />)
-    await user.click((await screen.findAllByRole('button', { name: /查看报告/ }))[0])
+    await user.click(await screen.findByRole('button', { name: '报告中心' }))
     await waitFor(() => expect(window.codeReview.readReportAsset).toHaveBeenCalledWith({
       reportPath: '/reports/asset/report.md', assetPath: 'images/state.png'
     }))
@@ -1283,7 +1338,8 @@ describe('ProductionReviewWorkbench', () => {
       return new Promise((resolve) => { resolveReportB = resolve })
     })
     render(<ProductionReviewWorkbench {...productionProps} />)
-    await user.click((await screen.findAllByRole('button', { name: /查看报告/ }))[1])
+    await user.click(await screen.findByRole('button', { name: '报告中心' }))
+    await user.click(screen.getByRole('button', { name: /task-b/ }))
     await user.click(screen.getByRole('button', { name: /task-a/ }))
     expect(await screen.findByRole('heading', { name: '报告 A' })).toBeInTheDocument()
     act(() => resolveReportB?.('# 报告 B'))
@@ -1314,10 +1370,12 @@ describe('ProductionReviewWorkbench', () => {
     render(<ProductionReviewWorkbench {...productionProps} />)
 
     vi.mocked(window.codeReview.openTaskLog).mockResolvedValueOnce({ status: 'missing' })
+    await user.click(await screen.findByRole('tab', { name: /需要处理/ }))
     await user.click(await screen.findByRole('button', { name: '打开任务日志 failed-1' }))
     expect(window.codeReview.openTaskLog).toHaveBeenCalledWith('failed-1')
     expect(await screen.findByRole('status')).toHaveTextContent('未找到该任务的本地 Codex 执行日志。')
     expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
+    await user.click(screen.getByRole('tab', { name: /当前任务/ }))
     await user.click(await screen.findByRole('button', { name: '取消任务 running-1' }))
     expect(window.codeReview.cancelTask).toHaveBeenCalledWith({
       client_task_id: 'running-1', task_id: 'running-1'
@@ -1328,6 +1386,7 @@ describe('ProductionReviewWorkbench', () => {
       await cancelRequest.promise
     })
     await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
+    await user.click(screen.getByRole('tab', { name: /需要处理/ }))
     await user.click(screen.getByRole('button', { name: '从头重试 failed-1' }))
     await waitFor(() => expect(window.codeReview.retryTask).toHaveBeenCalledWith({
       task_id: 'failed-1', client_task_id: 'failed-1',
@@ -1374,8 +1433,7 @@ describe('ProductionReviewWorkbench', () => {
       return vi.fn()
     })
     render(<ProductionReviewWorkbench {...productionProps} />)
-    await screen.findByRole('button', { name: /查看报告/ })
-    await user.click(screen.getByRole('button', { name: /查看报告/ }))
+    await user.click(await screen.findByRole('button', { name: '报告中心' }))
     expect(screen.getByRole('button', { name: '反馈报告问题' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '查看PDF报告' })).not.toBeInTheDocument()
     act(() => issueFeedbackListener?.({
@@ -1420,7 +1478,7 @@ describe('ProductionReviewWorkbench', () => {
       return vi.fn()
     })
     render(<ProductionReviewWorkbench {...productionProps} />)
-    await user.click((await screen.findAllByRole('button', { name: /查看报告/ }))[0])
+    await user.click(await screen.findByRole('button', { name: '报告中心' }))
     await screen.findByRole('heading', { name: 'DS-03 状态机审核报告' })
     const previewScroll = document.querySelector('.preview-scroll') as HTMLDivElement
     previewScroll.scrollTo = vi.fn()
@@ -1454,7 +1512,7 @@ describe('ProductionReviewWorkbench', () => {
       return vi.fn()
     })
     render(<ProductionReviewWorkbench {...productionProps} />)
-    await user.click(await screen.findByRole('button', { name: /查看报告/ }))
+    await user.click(await screen.findByRole('button', { name: '报告中心' }))
     await user.click(screen.getByRole('button', { name: '报告有帮助' }))
     expect(window.codeReview.openReportFeedbackWindow).toHaveBeenCalledWith({
       mode: 'legacy', taskId: 'legacy-feedback', options: expect.any(Array)

@@ -47,7 +47,42 @@ describe('ReviewWorkbenchPreview', () => {
     expect(within(overview).getByText('正在执行').closest('div')).toHaveTextContent('2')
     expect(within(overview).getByText('本机等待').closest('div')).toHaveTextContent('3')
     expect(within(overview).getByText('需要处理').closest('div')).toHaveTextContent('1')
-    expect(within(overview).getByText('可查看报告').closest('div')).toHaveTextContent('3')
+    expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('3')
+  })
+
+  it('初始优先当前任务，手动选择需要处理后刷新不覆盖选择', async () => {
+    const user = userEvent.setup()
+    const adapter = createFixtureWorkbenchAdapter()
+    render(<ReviewWorkbenchPreview adapter={adapter} />)
+
+    expect(screen.getByRole('tab', { name: '当前任务 5' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByText('产品规格书在任务开始前已被移动，请重新选择材料后从头重试。')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: '需要处理 1' }))
+    expect(screen.getByText('产品规格书在任务开始前已被移动，请重新选择材料后从头重试。')).toBeInTheDocument()
+    await adapter.commands.advanceTasks()
+
+    expect(screen.getByRole('tab', { name: /需要处理/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('产品规格书在任务开始前已被移动，请重新选择材料后从头重试。')).toBeInTheDocument()
+  })
+
+  it('没有当前任务但存在失败任务时初始选择需要处理', () => {
+    const fixtureAdapter = createFixtureWorkbenchAdapter()
+    const adapter = {
+      ...fixtureAdapter,
+      getViewModel: () => {
+        const viewModel = fixtureAdapter.getViewModel()
+        return {
+          ...viewModel,
+          tasks: viewModel.tasks.filter((task) => task.stage === 'failed')
+        }
+      }
+    }
+
+    render(<ReviewWorkbenchPreview adapter={adapter} />)
+
+    expect(screen.getByRole('tab', { name: '需要处理 1' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('产品规格书在任务开始前已被移动，请重新选择材料后从头重试。')).toBeInTheDocument()
   })
 
   it('从默认不可提交、校验失败切换到可提交，并创建可观察的预览任务', async () => {
@@ -140,24 +175,25 @@ describe('ReviewWorkbenchPreview', () => {
     expect(screen.queryByRole('button', { name: '空数据' })).not.toBeInTheDocument()
     expect(screen.getAllByText('正在执行').length).toBeGreaterThan(0)
     expect(screen.getByText('本机等待第 3 位')).toBeInTheDocument()
+    expect(screen.queryByText('产品规格书在任务开始前已被移动，请重新选择材料后从头重试。')).not.toBeInTheDocument()
+    expect(screen.queryByText('任务已由当前用户取消。')).not.toBeInTheDocument()
+    expect(screen.queryByText('低压上下电状态机复核')).not.toBeInTheDocument()
+    expect(screen.queryByText('可查看报告')).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '当前任务 5' })).toHaveAttribute('aria-selected', 'true')
+    await user.click(screen.getByRole('tab', { name: '需要处理 1' }))
     expect(screen.getByText('产品规格书在任务开始前已被移动，请重新选择材料后从头重试。')).toBeInTheDocument()
-    expect(screen.getByText('任务已由当前用户取消。')).toBeInTheDocument()
-    const runningTask = screen.getByLabelText('CR-240806-017 电池包主控状态机变更')
-    expect(within(runningTask).getByTitle('svn://192.168.8.20/bms/platform/trunk/vehicle-control/pack-controller')).toHaveTextContent(
-      'svn://192.168.8.20/bms/platform/trunk/vehicle-control/pack-controller'
-    )
-
-    const reportRow = screen.getByText('低压上下电状态机复核').closest('.wb-management-report-row')
-    expect(reportRow).not.toBeNull()
-    expect(within(reportRow as HTMLElement).getByTitle('svn://192.168.8.20/bms/platform/trunk/power-mode')).toHaveTextContent(
-      'svn://192.168.8.20/bms/platform/trunk/power-mode'
-    )
-    expect(reportRow).toHaveTextContent('CR-240806-009 · DS-03')
+    expect(screen.queryByText('本机等待第 3 位')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('CR-240806-017 电池包主控状态机变更')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '从头重试 CR-240806-012' }))
     expect(await screen.findByRole('status')).toHaveTextContent('已从头重试')
     await user.click(within(screen.getByRole('status')).getByRole('button', { name: '关闭提示' }))
 
+    await user.click(screen.getByRole('tab', { name: /当前任务/ }))
+    const currentRunningTask = screen.getByLabelText('CR-240806-017 电池包主控状态机变更')
+    expect(within(currentRunningTask).getByTitle('svn://192.168.8.20/bms/platform/trunk/vehicle-control/pack-controller')).toHaveTextContent(
+      'svn://192.168.8.20/bms/platform/trunk/vehicle-control/pack-controller'
+    )
     await user.click(screen.getByRole('button', { name: '取消任务 CR-240806-018' }))
     expect(await screen.findByRole('status')).toHaveTextContent('已取消任务 CR-240806-018')
 
@@ -185,13 +221,13 @@ describe('ReviewWorkbenchPreview', () => {
 
     render(<ReviewWorkbenchPreview adapter={adapter} />)
 
+    await user.click(screen.getByRole('button', { name: '报告中心' }))
+
     const errorState = screen.getByRole('alert', { name: '报告列表加载失败' })
     expect(errorState).toHaveTextContent('服务端暂时无法刷新报告列表。')
     expect(within(errorState).getByRole('button', { name: '重新加载报告列表' })).toBeInTheDocument()
 
-    const reportRow = screen.getByText('低压上下电状态机复核').closest('.wb-management-report-row')
-    expect(reportRow).not.toBeNull()
-    await user.click(within(reportRow as HTMLElement).getByRole('button', { name: '查看报告' }))
+    await user.click(screen.getByRole('button', { name: /低压上下电状态机复核/ }))
 
     expect(screen.getByRole('heading', { name: '报告中心' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '低压上下电状态机复核' })).toBeInTheDocument()
@@ -210,10 +246,10 @@ describe('ReviewWorkbenchPreview', () => {
 
     render(<ReviewWorkbenchPreview adapter={adapter} />)
 
-    expect(screen.getByRole('status')).toHaveTextContent('正在加载可查看报告。')
-    const reportRow = screen.getByText('低压上下电状态机复核').closest('.wb-management-report-row')
-    expect(reportRow).not.toBeNull()
-    await user.click(within(reportRow as HTMLElement).getByRole('button', { name: '查看报告' }))
+    await user.click(screen.getByRole('button', { name: '报告中心' }))
+
+    expect(screen.getByRole('status')).toHaveTextContent('正在加载报告列表。')
+    await user.click(screen.getByRole('button', { name: /低压上下电状态机复核/ }))
 
     expect(screen.getByRole('heading', { name: '报告中心' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '低压上下电状态机复核' })).toBeInTheDocument()
@@ -244,12 +280,12 @@ describe('ReviewWorkbenchPreview', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('已打开《SOC 滤波边界复查》PDF 报告。')
   })
 
-  it('从任务表进入报告中心，并完成意见反馈页基础交互', async () => {
+  it('从完成数量进入报告中心，并完成意见反馈页基础交互', async () => {
     const user = userEvent.setup()
     const adapter = createFixtureWorkbenchAdapter()
     render(<ReviewWorkbenchPreview adapter={adapter} />)
 
-    await user.click(screen.getAllByRole('button', { name: /查看报告/ })[0])
+    await user.click(screen.getByRole('button', { name: /^今日完成/ }))
     expect(screen.getByRole('heading', { name: '报告中心' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '低压上下电状态机复核' })).toBeInTheDocument()
 

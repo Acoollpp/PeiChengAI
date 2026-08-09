@@ -717,14 +717,15 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
   }), [])
   useEffect(() => { listenersRef.current.forEach((listener) => listener(viewModel)) }, [viewModel])
 
-  const showEnvironment = !canCreateTask || isCheckingEnvironment || isInstallingSkillDuringCheck || isInstallingCodex || isInstallingSvn
   return <div className="wb-production-shell">
-    {showEnvironment && <div className="wb-environment-banner">
+    <ReviewWorkbenchPreview
+      adapter={adapter}
+      environmentStatus={
       <EnvironmentStatus result={environment} isChecking={isCheckingEnvironment}
         isInstallingSkillDuringCheck={isInstallingSkillDuringCheck} isInstallingCodex={isInstallingCodex}
         isInstallingSvn={isInstallingSvn} onRefresh={onRefreshEnvironment} onInstallCodex={onInstallCodex}
         onInstallSvn={onInstallSvn} onInstallSkill={onInstallSkill} />
-    </div>}
-    <ReviewWorkbenchPreview adapter={adapter} />
+      }
+    />
   </div>
 }

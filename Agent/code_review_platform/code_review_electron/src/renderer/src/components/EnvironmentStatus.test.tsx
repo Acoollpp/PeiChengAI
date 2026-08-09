@@ -93,4 +93,63 @@ describe('EnvironmentStatus', () => {
     ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /安装 CodeGraph/ })).not.toBeInTheDocument()
   })
+
+  it('CodeGraph 状态变化时就绪态收起、异常态自动展开并在恢复后重新收起', () => {
+    const props = {
+      isChecking: false,
+      isInstallingSkillDuringCheck: false,
+      isInstallingCodex: false,
+      isInstallingSvn: false,
+      onRefresh: vi.fn(),
+      onInstallCodex: vi.fn(),
+      onInstallSvn: vi.fn(),
+      onInstallSkill: vi.fn()
+    }
+    const readyResult = {
+      status: 'ready' as const,
+      codexVersion: 'codex-cli 0.130.0',
+      svnVersion: '1.14.5',
+      codegraphStatus: 'ready' as const,
+      codegraphRequiredVersion: '1.4.1',
+      codegraphVersion: '1.4.1',
+      codegraphPath: 'C:\\Program Files\\PeiCheng AI\\resources\\codegraph\\bin\\codegraph.cmd'
+    }
+    const { rerender } = render(<EnvironmentStatus {...props} result={readyResult} />)
+
+    expect(screen.getByRole('button', { name: '查看本地依赖状态' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    )
+
+    rerender(
+      <EnvironmentStatus
+        {...props}
+        result={{
+          ...readyResult,
+          status: 'failed',
+          codegraphStatus: 'corrupt',
+          codegraphError: '内置 CodeGraph 资源损坏，请重新安装客户端。'
+        }}
+      />
+    )
+    expect(screen.getByRole('button', { name: '查看本地依赖状态' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    )
+    expect(screen.getByText('内置 CodeGraph 资源损坏，请重新安装客户端。')).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: '查看本地依赖状态' }))
+    expect(screen.getByRole('button', { name: '查看本地依赖状态' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    )
+    expect(screen.queryByText('内置 CodeGraph 资源损坏，请重新安装客户端。')).not.toBeInTheDocument()
+
+    rerender(<EnvironmentStatus {...props} result={readyResult} />)
+    expect(screen.getByRole('button', { name: '查看本地依赖状态' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    )
+    expect(screen.queryByText('内置 CodeGraph 资源损坏，请重新安装客户端。')).not.toBeInTheDocument()
+  })
 })
