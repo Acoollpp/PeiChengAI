@@ -133,7 +133,7 @@ export const buildCodexExecArgs = (prompt: string): string[] => [
   'exec',
   '--skip-git-repo-check',
   '--model',
-  'gpt-5.5',
+  'gpt-5.6-sol',
   '-c',
   'model_reasoning_effort=medium',
   '--enable',
