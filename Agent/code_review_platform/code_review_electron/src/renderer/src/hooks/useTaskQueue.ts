@@ -53,6 +53,7 @@ type UseTaskQueueResult = {
   applyProgressEvent: (event: TaskProgressEvent) => void
   setServerTasks: (serverTasks: ReviewTask[]) => void
   updateTask: (taskId: string, updater: (task: TaskViewItem) => TaskViewItem) => void
+  removeTask: (taskId: string) => void
 }
 
 const terminalStatuses = new Set<ReviewTask['status']>([
@@ -554,6 +555,14 @@ export function useTaskQueue({
     []
   )
 
+  const removeTask = useCallback((taskId: string): void => {
+    setTasks((current) =>
+      normalizeQueueIndexes(
+        current.filter((task) => task.id !== taskId && task.localTaskId !== taskId)
+      )
+    )
+  }, [])
+
   const setServerTasks = useCallback((serverTasks: ReviewTask[]): void => {
     setTasks((current) => {
       const serverIds = new Set(serverTasks.map((task) => task.id))
@@ -628,6 +637,7 @@ export function useTaskQueue({
     cancelTask,
     applyProgressEvent,
     setServerTasks,
-    updateTask
+    updateTask,
+    removeTask
   }
 }

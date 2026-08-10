@@ -98,6 +98,7 @@ describe('registerIpcHandlers', () => {
       'task:retry',
       'task:cancel',
       'task:open-log',
+      'task:hide',
       'feedback:submit',
       'report-feedback:open',
       'report-feedback:submit-negative',
@@ -2043,6 +2044,100 @@ describe('registerIpcHandlers', () => {
 
     await expect(listHandler()).rejects.toThrow('Not authenticated')
     expect(api.listTasks).not.toHaveBeenCalled()
+  })
+
+  it('hides a task from the local list without touching the server record', async () => {
+    const api = {
+      deleteTask: vi.fn()
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const hiddenTaskStore = {
+      load: vi.fn(async () => []),
+      add: vi.fn(async () => undefined),
+      prune: vi.fn(async () => undefined)
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      hiddenTaskStore: hiddenTaskStore as never
+    })
+
+    const hideHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:hide')?.[1]
+
+    await expect(hideHandler({}, { taskId: 'task-a' })).resolves.toEqual({ status: 'hidden' })
+    expect(hiddenTaskStore.add).toHaveBeenCalledWith('task-a')
+    expect(api.deleteTask).not.toHaveBeenCalled()
+  })
+
+  it('filters hidden tasks out of the task list and keeps the server count', async () => {
+    const api = {
+      listTasks: vi.fn(async () => ({
+        data: [{ id: 'task-a' }, { id: 'task-b' }, { id: 'task-c' }],
+        count: 3
+      }))
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const hiddenTaskStore = {
+      load: vi.fn(async () => ['task-b']),
+      add: vi.fn(async () => undefined),
+      prune: vi.fn(async () => undefined)
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      hiddenTaskStore: hiddenTaskStore as never
+    })
+
+    const listHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:list')?.[1]
+
+    await expect(listHandler()).resolves.toEqual({
+      data: [{ id: 'task-a' }, { id: 'task-c' }],
+      count: 3
+    })
+    expect(hiddenTaskStore.prune).toHaveBeenCalledWith(['task-a', 'task-b', 'task-c'])
+  })
+
+  it('does not prune hidden ids when the task list is paginated', async () => {
+    const api = {
+      listTasks: vi.fn(async () => ({
+        data: [{ id: 'task-a' }, { id: 'task-b' }],
+        count: 137
+      }))
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const hiddenTaskStore = {
+      load: vi.fn(async () => ['task-b']),
+      add: vi.fn(async () => undefined),
+      prune: vi.fn(async () => undefined)
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      hiddenTaskStore: hiddenTaskStore as never
+    })
+
+    const listHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:list')?.[1]
+
+    await expect(listHandler()).resolves.toEqual({
+      data: [{ id: 'task-a' }],
+      count: 137
+    })
+    expect(hiddenTaskStore.prune).not.toHaveBeenCalled()
   })
 
   it('reads a task report for the authenticated user', async () => {

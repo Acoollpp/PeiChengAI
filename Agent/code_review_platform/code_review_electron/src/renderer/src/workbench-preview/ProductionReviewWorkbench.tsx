@@ -661,6 +661,22 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
         return commandResult(message)
       }
     },
+    async hideTask(taskId) {
+      const task = findTask(taskId)
+      if (!task) return commandResult('未找到任务。')
+      try {
+        // 只隐藏本机展示，服务端任务与报告保持不变。
+        await window.codeReview.hideTask(task.id)
+        queue.removeTask(task.id)
+        const message = '任务已从本机列表移除，服务端记录保留。'
+        showNotice(message)
+        return commandResult(message)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '移除任务失败。'
+        showNotice(message)
+        return commandResult(message)
+      }
+    },
     async chooseFeedbackScreenshot() { throw new Error('生产工作台通过本机文件选择器添加截图。') },
     async submitFeedback(input: SubmitFeedbackCommand) {
       if (feedbackInFlightRef.current) return commandResult('意见正在提交，请勿重复操作。')

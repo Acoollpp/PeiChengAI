@@ -99,6 +99,8 @@ contextBridge.exposeInMainWorld('codeReview', {
     ipcRenderer.invoke('task:cancel', payload),
   openTaskLog: (taskId: string): ReturnType<CodeReviewApi['openTaskLog']> =>
     ipcRenderer.invoke('task:open-log', { taskId }),
+  hideTask: (taskId: string): ReturnType<CodeReviewApi['hideTask']> =>
+    ipcRenderer.invoke('task:hide', { taskId }),
   selectRequirementFile: (): Promise<SelectRequirementFileResult> =>
     ipcRenderer.invoke('requirement-file:select'),
   selectReviewMaterialFile: (
