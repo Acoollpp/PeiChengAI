@@ -114,6 +114,7 @@ const setupCodeReviewApi = (): void => {
       taskId, helpful: false, usefulIssuesText: null
     })),
     openTaskLog: vi.fn(async () => ({ status: 'ready' as const, logPath: '/logs/task.log' })),
+    hideTask: vi.fn(async () => ({ status: 'hidden' as const })),
     readReportAsset: vi.fn(async () => ({ dataUrl: 'data:image/png;base64,aW1hZ2U=' })),
     showTaskCompletionNotification: vi.fn(async () => ({ status: 'shown' as const })),
     onTaskCompletionNotificationClicked: vi.fn(() => vi.fn()),
@@ -220,7 +221,7 @@ describe('ProductionReviewWorkbench', () => {
     const overview = await screen.findByLabelText('任务总览')
     expect(within(overview).getByText('正在执行').closest('div')).toHaveTextContent('8')
     expect(within(overview).getByText('本机等待').closest('div')).toHaveTextContent('1')
-    expect(within(overview).getByText('需要处理').closest('div')).toHaveTextContent('4')
+    expect(within(overview).getByText('今日失败').closest('div')).toHaveTextContent('4')
     expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('11')
     expect(within(overview).queryByText(/321|99|预计|趋势|%/)).not.toBeInTheDocument()
     expect(window.codeReview.executeTask).toHaveBeenCalledTimes(2)
@@ -257,7 +258,7 @@ describe('ProductionReviewWorkbench', () => {
     expect(screen.getByRole('article', { name: /running-lane/ })).toBeInTheDocument()
     expect(screen.queryByText('生产任务失败，等待用户处理。')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('tab', { name: '需要处理 1' }))
+    await user.click(screen.getByRole('tab', { name: '待处理失败任务 1' }))
     expect(screen.getByText('生产任务失败，等待用户处理。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '打开任务日志 failed-lane' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '从头重试 failed-lane' })).toBeInTheDocument()
@@ -268,9 +269,9 @@ describe('ProductionReviewWorkbench', () => {
     }))
 
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: '需要处理 0' })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByRole('tab', { name: '待处理失败任务 0' })).toHaveAttribute('aria-selected', 'true')
     })
-    expect(screen.getByText('暂无需要处理的任务')).toBeInTheDocument()
+    expect(screen.getByText('暂无待处理失败任务')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '当前任务 2' })).toBeInTheDocument()
     expect(screen.queryByText('失败任务重试后进入环境检查')).not.toBeInTheDocument()
   })
@@ -408,7 +409,7 @@ describe('ProductionReviewWorkbench', () => {
     })
     render(<ProductionReviewWorkbench {...productionProps} />)
 
-    expect(await screen.findByRole('tab', { name: '需要处理 1' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByRole('tab', { name: '待处理失败任务 1' })).toHaveAttribute('aria-selected', 'true')
     await userEvent.setup().click(await screen.findByRole('button', { name: '从头重试 retry-stats' }))
     await waitFor(() => expect(window.codeReview.retryTask).toHaveBeenCalledTimes(1))
     expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
@@ -1370,7 +1371,7 @@ describe('ProductionReviewWorkbench', () => {
     render(<ProductionReviewWorkbench {...productionProps} />)
 
     vi.mocked(window.codeReview.openTaskLog).mockResolvedValueOnce({ status: 'missing' })
-    await user.click(await screen.findByRole('tab', { name: /需要处理/ }))
+    await user.click(await screen.findByRole('tab', { name: /待处理失败任务/ }))
     await user.click(await screen.findByRole('button', { name: '打开任务日志 failed-1' }))
     expect(window.codeReview.openTaskLog).toHaveBeenCalledWith('failed-1')
     expect(await screen.findByRole('status')).toHaveTextContent('未找到该任务的本地 Codex 执行日志。')
@@ -1386,13 +1387,43 @@ describe('ProductionReviewWorkbench', () => {
       await cancelRequest.promise
     })
     await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
-    await user.click(screen.getByRole('tab', { name: /需要处理/ }))
+    await user.click(screen.getByRole('tab', { name: /待处理失败任务/ }))
     await user.click(screen.getByRole('button', { name: '从头重试 failed-1' }))
     await waitFor(() => expect(window.codeReview.retryTask).toHaveBeenCalledWith({
       task_id: 'failed-1', client_task_id: 'failed-1',
       old_revision: '2', new_revision: '3',
       requirement_file_path: undefined, review_items: undefined
     }))
+  })
+
+  it('移除失败任务后调用隐藏接口并把该任务移出本机列表', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValue({
+      data: [
+        {
+          id: 'failed-1', svn_url: 'svn://server/failed-1', old_revision: '2', new_revision: '3',
+          review_item_ids: ['DS-03'], status: 'failed', error_message: '执行失败'
+        },
+        {
+          id: 'failed-2', svn_url: 'svn://server/failed-2', old_revision: '4', new_revision: '5',
+          review_item_ids: ['DS-03'], status: 'failed', error_message: '执行失败'
+        }
+      ],
+      count: 2
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await user.click(await screen.findByRole('tab', { name: /待处理失败任务 2/ }))
+    await user.click(await screen.findByRole('button', { name: '从本机列表移除 failed-1' }))
+
+    expect(window.codeReview.hideTask).toHaveBeenCalledWith('failed-1')
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      '任务已从本机列表移除，服务端记录保留。'
+    )
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: '从本机列表移除 failed-1' })).not.toBeInTheDocument()
+    )
+    expect(screen.getByRole('button', { name: '从本机列表移除 failed-2' })).toBeInTheDocument()
   })
 
   it('意见反馈只提交用户实际选择的文件，不生成 fixture 截图', async () => {

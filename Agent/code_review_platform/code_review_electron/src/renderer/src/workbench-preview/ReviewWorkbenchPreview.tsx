@@ -222,6 +222,17 @@ const TaskTableRow = ({
           </button>
         </>
       )}
+      {['failed', 'cancelled'].includes(task.stage) && adapter.commands.hideTask && (
+        <button
+          className="wb-icon-button"
+          type="button"
+          title={`从本机列表移除（不影响服务端记录） ${task.id}`}
+          onClick={() => void adapter.commands.hideTask?.(task.id)}
+        >
+          <Trash2 aria-hidden="true" />
+          <span className="wb-sr-only">从本机列表移除 {task.id}</span>
+        </button>
+      )}
     </div>
   </article>
 )
@@ -300,7 +311,7 @@ function TaskManagementView({
         <section className="wb-overview" aria-label="任务总览">
           <div><span>正在执行</span><strong className="is-running">{serviceRunning}</strong><small>{taskStats ? '今日服务端任务' : '本机并发上限 2'}</small></div>
           <div><span>本机等待</span><strong className="is-waiting">{waitingTasks.length}</strong><small>按创建顺序执行</small></div>
-          <div><span>需要处理</span><strong className="is-failed">{serviceFailed}</strong><small>{taskStats ? '今日失败或环境异常' : '失败任务可重试'}</small></div>
+          <div><span>今日失败</span><strong className="is-failed">{serviceFailed}</strong><small>{taskStats ? '今日服务端失败或环境异常' : '失败任务可重试'}</small></div>
           <button className="wb-completed-link" type="button" onClick={onOpenReportCenter}>
             <span>今日完成</span><strong>{serviceSuccess}</strong><small>进入报告中心查看</small><ArrowRight aria-hidden="true" />
           </button>
@@ -331,7 +342,7 @@ function TaskManagementView({
               className={selectedTaskLane === 'attention' ? 'is-active' : ''}
               onClick={() => selectTaskLane('attention')}
             >
-              需要处理 <span>{failedCount}</span>
+              待处理失败任务 <span>{failedCount}</span>
             </button>
           </div>
         </div>
@@ -345,7 +356,7 @@ function TaskManagementView({
           className="wb-task-lane-panel"
         >
           {visibleTasks.length === 0 ? (
-            <div className="wb-empty-band"><SearchX aria-hidden="true" /><div><strong>{selectedTaskLane === 'current' ? '暂无当前任务' : '暂无需要处理的任务'}</strong><span>{selectedTaskLane === 'current' ? '新任务会按本机队列顺序显示在这里。' : '失败任务会保留完整原因和恢复操作。'}</span></div></div>
+            <div className="wb-empty-band"><SearchX aria-hidden="true" /><div><strong>{selectedTaskLane === 'current' ? '暂无当前任务' : '暂无待处理失败任务'}</strong><span>{selectedTaskLane === 'current' ? '新任务会按本机队列顺序显示在这里。' : '失败任务会保留完整原因和恢复操作。'}</span></div></div>
           ) : (
             <div className="wb-task-table-body">
               {visibleTasks.map((task) => (
