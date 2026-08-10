@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { readFile, readdir, stat } from 'node:fs/promises'
-import { delimiter, dirname, join, relative, sep } from 'node:path'
+import { stat } from 'node:fs/promises'
+import { delimiter, dirname, join } from 'node:path'
 
 import { app } from 'electron'
+import log from 'electron-log/main'
 
 import metadata from '../../resources/codegraph/metadata.json'
 import type { CodeGraphRuntimeStatus } from '../shared/types'
@@ -31,37 +31,41 @@ interface RuntimeMetadata {
     command: string
     node: string
     entrypoint: string
-    packageJson: string
-    requiredFiles: Array<{ path: string; sha256: string }>
-    fileCount: number
-    unpackedBytes: number
-    treeSha256: string
   }
 }
 
 interface VersionCommandResult {
   ok: boolean
   output?: string
+  failureReason?: 'timeout' | 'spawn_error' | 'exit_code'
+  exitCode?: number
 }
 
 interface FileStat {
   isFile(): boolean
-  size: number
-  mtimeMs: number
-  ctimeMs: number
-}
-
-interface DirectoryEntry {
-  name: string
-  isDirectory(): boolean
-  isFile(): boolean
 }
 
 interface CodeGraphRuntimeAdapter {
-  readFile(path: string): Promise<Buffer>
-  readdir(path: string): Promise<DirectoryEntry[]>
   stat(path: string): Promise<FileStat>
   runVersionCommand(nodePath: string, entrypointPath: string): Promise<VersionCommandResult>
+}
+
+export type CodeGraphRuntimeDiagnostic =
+  | {
+      event: 'command_entry_failed'
+      stage: 'command_entry'
+      code: string
+      path: string
+    }
+  | {
+      event: 'version_command_failed'
+      stage: 'version_command'
+      reason: 'timeout' | 'spawn_error' | 'exit_code' | 'unknown'
+      exitCode?: number
+    }
+
+interface CodeGraphRuntimeDiagnosticLogger {
+  warn(diagnostic: CodeGraphRuntimeDiagnostic): void
 }
 
 interface CreateBundledCodeGraphRuntimeOptions {
@@ -70,6 +74,7 @@ interface CreateBundledCodeGraphRuntimeOptions {
   runtimeRoot?: string | (() => string)
   metadata?: RuntimeMetadata
   adapter?: CodeGraphRuntimeAdapter
+  diagnosticLogger?: CodeGraphRuntimeDiagnosticLogger
 }
 
 const DEFAULT_VERSION_TIMEOUT_MS = 10_000
@@ -95,24 +100,31 @@ const runVersionCommand = (
     }
     const timeout = setTimeout(() => {
       child.kill()
-      settle({ ok: false })
+      settle({ ok: false, failureReason: 'timeout' })
     }, DEFAULT_VERSION_TIMEOUT_MS)
 
     child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk))
-    child.on('error', () => settle({ ok: false }))
+    child.on('error', () => settle({ ok: false, failureReason: 'spawn_error' }))
     child.on('close', (code) => {
       settle({
         ok: code === 0,
-        output: code === 0 ? Buffer.concat(stdout).toString('utf8').trim() : undefined
+        output: code === 0 ? Buffer.concat(stdout).toString('utf8').trim() : undefined,
+        ...(code === 0
+          ? {}
+          : { failureReason: 'exit_code' as const, exitCode: code ?? undefined })
       })
     })
   })
 
 const productionAdapter: CodeGraphRuntimeAdapter = {
-  readFile,
-  readdir: (path) => readdir(path, { withFileTypes: true }),
   stat,
   runVersionCommand
+}
+
+const productionDiagnosticLogger: CodeGraphRuntimeDiagnosticLogger = {
+  warn(diagnostic) {
+    log.warn('[CodeGraph 功能检查]', diagnostic)
+  }
 }
 
 const defaultRuntimeRoot = (): string => {
@@ -127,6 +139,11 @@ const pathFromMetadata = (root: string, relativePath: string): string =>
 
 const isMissingFileError = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
+
+const getErrorCode = (error: unknown): string =>
+  typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : 'UNKNOWN'
 
 const unavailableMessage = (status: Exclude<CodeGraphRuntimeStatus, 'ready'>): string => {
   switch (status) {
@@ -160,6 +177,7 @@ export const createBundledCodeGraphRuntime = (
   const arch = options.arch ?? process.arch
   const runtimeMetadata = options.metadata ?? metadata
   const adapter = options.adapter ?? productionAdapter
+  const diagnosticLogger = options.diagnosticLogger ?? productionDiagnosticLogger
   let resolveRuntimeRoot: () => string
   if (typeof options.runtimeRoot === 'function') {
     resolveRuntimeRoot = options.runtimeRoot
@@ -167,10 +185,6 @@ export const createBundledCodeGraphRuntime = (
     const configuredRuntimeRoot = options.runtimeRoot
     resolveRuntimeRoot = () => configuredRuntimeRoot ?? defaultRuntimeRoot()
   }
-  const integrityCache = new Map<
-    string,
-    { size: number; mtimeMs: number; ctimeMs: number; sha256: string }
-  >()
 
   const makeInspection = (
     status: CodeGraphRuntimeStatus,
@@ -188,129 +202,60 @@ export const createBundledCodeGraphRuntime = (
     }
   }
 
-  const inspectRuntimeTree = async (root: string) => {
-    const files: Array<{ filePath: string; relativePath: string }> = []
-    const walk = async (directory: string): Promise<void> => {
-      for (const entry of await adapter.readdir(directory)) {
-        const entryPath = join(directory, entry.name)
-        if (entry.isDirectory()) {
-          await walk(entryPath)
-        } else if (entry.isFile()) {
-          files.push({
-            filePath: entryPath,
-            relativePath: relative(root, entryPath).split(sep).join('/')
-          })
-        } else {
-          throw new Error(`CodeGraph 运行时包含不支持的文件类型：${entryPath}`)
-        }
-      }
-    }
-    await walk(root)
-    files.sort((left, right) =>
-      left.relativePath < right.relativePath
-        ? -1
-        : left.relativePath > right.relativePath
-          ? 1
-          : 0
-    )
-
-    const treeHash = createHash('sha256')
-    const observedPaths = new Set<string>()
-    let unpackedBytes = 0
-    for (const file of files) {
-      observedPaths.add(file.filePath)
-      const fileStat = await adapter.stat(file.filePath)
-      if (!fileStat.isFile()) {
-        throw new Error(`CodeGraph 运行时条目不是普通文件：${file.relativePath}`)
-      }
-      const cached = integrityCache.get(file.filePath)
-      let fileHash: string
-      if (
-        cached &&
-        cached.size === fileStat.size &&
-        cached.mtimeMs === fileStat.mtimeMs &&
-        cached.ctimeMs === fileStat.ctimeMs
-      ) {
-        fileHash = cached.sha256
-      } else {
-        const content = await adapter.readFile(file.filePath)
-        if (content.length !== fileStat.size) {
-          throw new Error(`CodeGraph 运行时文件在校验期间发生变化：${file.relativePath}`)
-        }
-        fileHash = createHash('sha256').update(content).digest('hex')
-        integrityCache.set(file.filePath, {
-          size: fileStat.size,
-          mtimeMs: fileStat.mtimeMs,
-          ctimeMs: fileStat.ctimeMs,
-          sha256: fileHash
-        })
-      }
-      unpackedBytes += fileStat.size
-      treeHash.update(`${file.relativePath}\0${fileStat.size}\0${fileHash}\n`)
-    }
-    for (const cachedPath of integrityCache.keys()) {
-      if (!observedPaths.has(cachedPath)) {
-        integrityCache.delete(cachedPath)
-      }
-    }
-
-    return {
-      fileCount: files.length,
-      unpackedBytes,
-      treeSha256: treeHash.digest('hex')
-    }
-  }
-
   const inspect = async (): Promise<CodeGraphRuntimeInspection> => {
     const root = resolveRuntimeRoot()
     if (platform !== 'win32' || arch !== 'x64') {
       return makeInspection('unsupported', root)
     }
 
-    let packageVersion: string
+    const commandPath = pathFromMetadata(root, runtimeMetadata.runtime.command)
     try {
-      const packageJson = JSON.parse(
-        (await adapter.readFile(pathFromMetadata(root, runtimeMetadata.runtime.packageJson))).toString(
-          'utf8'
-        )
-      ) as { version?: unknown }
-      packageVersion = typeof packageJson.version === 'string' ? packageJson.version : ''
+      const commandStat = await adapter.stat(commandPath)
+      if (!commandStat.isFile()) {
+        diagnosticLogger.warn({
+          event: 'command_entry_failed',
+          stage: 'command_entry',
+          code: 'NOT_FILE',
+          path: runtimeMetadata.runtime.command
+        })
+        return makeInspection('not_executable', root)
+      }
     } catch (error) {
-      return makeInspection(isMissingFileError(error) ? 'missing' : 'corrupt', root)
-    }
-    if (packageVersion !== runtimeMetadata.version) {
-      return makeInspection('version_mismatch', root, { version: packageVersion || undefined })
-    }
-
-    let runtimeTree: Awaited<ReturnType<typeof inspectRuntimeTree>>
-    try {
-      runtimeTree = await inspectRuntimeTree(root)
-    } catch (error) {
-      return makeInspection(isMissingFileError(error) ? 'missing' : 'corrupt', root, {
-        version: packageVersion
+      diagnosticLogger.warn({
+        event: 'command_entry_failed',
+        stage: 'command_entry',
+        code: getErrorCode(error),
+        path: runtimeMetadata.runtime.command
       })
-    }
-    if (runtimeTree.fileCount < runtimeMetadata.runtime.fileCount) {
-      return makeInspection('missing', root, { version: packageVersion })
-    }
-    if (
-      runtimeTree.fileCount !== runtimeMetadata.runtime.fileCount ||
-      runtimeTree.unpackedBytes !== runtimeMetadata.runtime.unpackedBytes ||
-      runtimeTree.treeSha256 !== runtimeMetadata.runtime.treeSha256
-    ) {
-      return makeInspection('corrupt', root, { version: packageVersion })
+      return makeInspection(isMissingFileError(error) ? 'missing' : 'not_executable', root)
     }
 
-    const versionResult = await adapter.runVersionCommand(
-      pathFromMetadata(root, runtimeMetadata.runtime.node),
-      pathFromMetadata(root, runtimeMetadata.runtime.entrypoint)
-    )
+    let versionResult: VersionCommandResult
+    try {
+      versionResult = await adapter.runVersionCommand(
+        pathFromMetadata(root, runtimeMetadata.runtime.node),
+        pathFromMetadata(root, runtimeMetadata.runtime.entrypoint)
+      )
+    } catch {
+      diagnosticLogger.warn({
+        event: 'version_command_failed',
+        stage: 'version_command',
+        reason: 'spawn_error'
+      })
+      return makeInspection('not_executable', root)
+    }
     if (!versionResult.ok) {
-      return makeInspection('not_executable', root, { version: packageVersion })
+      diagnosticLogger.warn({
+        event: 'version_command_failed',
+        stage: 'version_command',
+        reason: versionResult.failureReason ?? 'unknown',
+        ...(versionResult.exitCode === undefined ? {} : { exitCode: versionResult.exitCode })
+      })
+      return makeInspection('not_executable', root)
     }
     if (versionResult.output !== runtimeMetadata.version) {
       return makeInspection('version_mismatch', root, {
-        version: versionResult.output || packageVersion
+        version: versionResult.output || undefined
       })
     }
 
