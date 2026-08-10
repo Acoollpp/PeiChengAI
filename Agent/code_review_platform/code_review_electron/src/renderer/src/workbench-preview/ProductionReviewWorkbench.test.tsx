@@ -1169,6 +1169,37 @@ describe('ProductionReviewWorkbench', () => {
     expect(within(reportIndex).getByText('新版真实报告')).toBeInTheDocument()
   })
 
+  it('本次会话内新完成的报告排在报告列表首位', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'older-report', svn_url: 'svn://server/older-report',
+          old_revision: '1', new_revision: '2', status: 'success',
+          report_name: '较早的报告.md', report_path: '/reports/older-report.md',
+          started_at: '2026-01-01T00:00:00.000Z', finished_at: '2026-01-01T00:10:00.000Z'
+        }
+      ],
+      count: 1
+    })
+
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await submitMinimalDs03Task('svn://server/newer-report')
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(1))
+
+    await user.click(await screen.findByRole('button', { name: '报告中心' }))
+    const reportIndex = await screen.findByLabelText('任务和报告列表')
+    await waitFor(() =>
+      expect(within(reportIndex).getAllByRole('button')).toHaveLength(2)
+    )
+
+    // 新完成的任务在 queue.tasks 里被追加到末尾，只有按完成时间倒序才会回到首位。
+    const reportButtons = within(reportIndex).getAllByRole('button')
+    expect(reportButtons[0]).toHaveTextContent('task-production-1')
+    expect(reportButtons[1]).toHaveTextContent('older-report')
+  })
+
   it('React StrictMode 重建 effect 后仍接收报告列表响应', async () => {
     vi.mocked(window.codeReview.listTasks).mockResolvedValue({
       data: [{
