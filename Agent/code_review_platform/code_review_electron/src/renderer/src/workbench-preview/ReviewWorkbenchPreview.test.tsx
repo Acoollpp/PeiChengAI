@@ -11,7 +11,7 @@ import { ReviewWorkbenchPreview } from './ReviewWorkbenchPreview'
 afterEach(cleanup)
 
 describe('ReviewWorkbenchPreview', () => {
-  it('从 view model 派生头像和空选择入口文案', () => {
+  it('显示沛城品牌 Logo，并从 view model 派生头像和空选择入口文案', () => {
     const fixtureAdapter = createFixtureWorkbenchAdapter()
     const adapter = {
       ...fixtureAdapter,
@@ -27,6 +27,11 @@ describe('ReviewWorkbenchPreview', () => {
 
     render(<ReviewWorkbenchPreview adapter={adapter} />)
 
+    expect(screen.getByRole('img', { name: '沛城科技' })).toHaveAttribute(
+      'src',
+      expect.stringContaining('pace-logo.png')
+    )
+    expect(screen.queryByText('AI 代码审查')).not.toBeInTheDocument()
     expect(screen.getByText('王', { selector: '.wb-avatar' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /选择 DS-03、DS-02、DS-01/ })).toBeInTheDocument()
   })
@@ -131,20 +136,20 @@ describe('ReviewWorkbenchPreview', () => {
     render(<ReviewWorkbenchPreview adapter={adapter} />)
 
     await user.click(screen.getByRole('button', { name: '选择' }))
-    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审查' }))
     await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
     const selectionSection = screen.getByRole('heading', { name: '审查项' }).closest('section')
     expect(selectionSection).not.toBeNull()
-    expect(within(selectionSection as HTMLElement).getByText('DS-03').closest('.wb-selected-item')).toHaveTextContent('状态机审核')
+    expect(within(selectionSection as HTMLElement).getByText('DS-03').closest('.wb-selected-item')).toHaveTextContent('状态机审查')
 
     await user.click(screen.getByRole('button', { name: '调整' }))
-    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' }))
-    await user.click(screen.getByRole('checkbox', { name: '选择 DS-02 编码规范审核' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审查' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-02 编码规范审查' }))
     await user.click(screen.getByRole('button', { name: '取消' }))
 
     await user.click(screen.getByRole('button', { name: '调整' }))
-    expect(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审核' })).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: '选择 DS-02 编码规范审核' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审查' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: '选择 DS-02 编码规范审查' })).not.toBeChecked()
   })
 
   it('选择器初始聚焦并在 Escape 关闭后恢复触发按钮焦点', async () => {

@@ -12,6 +12,7 @@ import { extractDetailedHeadingOptions } from '../components/MarkdownPreview'
 import { useTaskQueue, type TaskViewItem } from '../hooks/useTaskQueue'
 import { ReviewWorkbenchPreview } from './ReviewWorkbenchPreview'
 import { formatRevisionLabel } from './revision'
+import { applyWorkbenchReviewItemPresentation } from './review-item-presentation'
 import type {
   CreateTaskCommand,
   PreviewCommandResult,
@@ -47,7 +48,7 @@ interface ProductionReviewWorkbenchProps {
 export const PRODUCTION_REVIEW_ITEM_CATALOG: ReviewItemDefinition[] = REVIEW_ITEM_CATALOG
   .filter((item) => item.enabled)
   .sort((left, right) => left.sortOrder - right.sortOrder)
-  .map((item) => ({
+  .map((item): ReviewItemDefinition => ({
     id: item.id,
     category: item.category.name,
     name: item.name,
@@ -64,6 +65,7 @@ export const PRODUCTION_REVIEW_ITEM_CATALOG: ReviewItemDefinition[] = REVIEW_ITE
       multiplicity: field.multiple ? 'multiple' : 'single'
     }))
   }))
+  .map(applyWorkbenchReviewItemPresentation)
 const productionReviewItemIds = new Set<ReviewItemId>(
   PRODUCTION_REVIEW_ITEM_CATALOG.map((item) => item.id)
 )

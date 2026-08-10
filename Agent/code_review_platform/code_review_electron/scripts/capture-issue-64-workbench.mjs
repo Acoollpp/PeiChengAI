@@ -72,7 +72,14 @@ const assertVisualFoundation = async (page, label) => {
       const rect = control.getBoundingClientRect()
       if (rect.width === 0 || rect.height === 0) return false
       const verticallyVisible = rect.bottom > 0 && rect.top < innerHeight
-      return verticallyVisible && (rect.left < 0 || rect.right > innerWidth + 1 || rect.width < 24 || rect.height < 24)
+      const labelRect = control instanceof HTMLInputElement && control.type === 'checkbox'
+        ? control.closest('label')?.getBoundingClientRect()
+        : undefined
+      const hasUsableCheckboxTarget = Boolean(labelRect && labelRect.width >= 24 && labelRect.height >= 24)
+      return verticallyVisible && (
+        rect.left < 0 || rect.right > innerWidth + 1 ||
+        (!hasUsableCheckboxTarget && (rect.width < 24 || rect.height < 24))
+      )
     })
     const shellStyle = getComputedStyle(document.querySelector('.wb-shell'))
     const gradientSurfaces = [...document.querySelectorAll('.wb-shell, .wb-app-header, .wb-create-panel, .wb-workspace')]
@@ -83,7 +90,15 @@ const assertVisualFoundation = async (page, label) => {
       color: shellStyle.color,
       fontFamily: shellStyle.fontFamily,
       unnamedButtons: unnamedButtons.length,
-      clippedControls: clippedControls.length,
+      clippedControls: clippedControls.map((control) => {
+        const rect = control.getBoundingClientRect()
+        return {
+          tag: control.tagName.toLowerCase(),
+          type: control.getAttribute('type'),
+          name: control.getAttribute('aria-label') || control.getAttribute('title') || control.textContent?.trim(),
+          rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height }
+        }
+      }),
       gradientSurfaces: gradientSurfaces.length
     }
   })
@@ -92,7 +107,7 @@ const assertVisualFoundation = async (page, label) => {
   assert(metrics.color === 'rgb(24, 35, 43)', `${label}：未使用指定深色正文。`)
   assert(metrics.fontFamily.includes('Segoe UI'), `${label}：未使用 Windows 系统字体。`)
   assert(metrics.unnamedButtons === 0, `${label}：存在无可访问名称的按钮。`)
-  assert(metrics.clippedControls === 0, `${label}：首屏存在截断或尺寸不可操作的控件。`)
+  assert(metrics.clippedControls.length === 0, `${label}：首屏存在截断或尺寸不可操作的控件：${JSON.stringify(metrics.clippedControls)}`)
   assert(metrics.gradientSurfaces === 0, `${label}：主工作台出现渐变背景。`)
 }
 
@@ -120,6 +135,10 @@ const assertHeaderAndFormBounds = async (page, label) => {
   const metrics = await page.evaluate(() => {
     const navigation = document.querySelector('.wb-preview-controls')?.getBoundingClientRect()
     const user = document.querySelector('.wb-user')?.getBoundingClientRect()
+    const header = document.querySelector('.wb-app-header')?.getBoundingClientRect()
+    const brand = document.querySelector('.wb-brand')
+    const brandLogo = document.querySelector('.wb-brand-logo')
+    const brandLogoRect = brandLogo?.getBoundingClientRect()
     const userName = document.querySelector('.wb-user strong')
     const department = document.querySelector('.wb-user > div span')
     const panel = document.querySelector('.wb-create-panel')
@@ -132,6 +151,13 @@ const assertHeaderAndFormBounds = async (page, label) => {
         userName.scrollWidth <= userName.clientWidth &&
         department.scrollWidth <= department.clientWidth
       ),
+      brandLogoLoaded: Boolean(brandLogo instanceof HTMLImageElement && brandLogo.complete && brandLogo.naturalWidth > 0),
+      brandLogoFits: Boolean(
+        header && brandLogoRect &&
+        brandLogoRect.left >= header.left && brandLogoRect.right <= header.right &&
+        brandLogoRect.top >= header.top && brandLogoRect.bottom <= header.bottom
+      ),
+      legacyBrandHidden: !brand?.textContent?.includes('AI 代码审查'),
       formHasNoHorizontalOverflow: Boolean(panel && panel.scrollWidth <= panel.clientWidth),
       svnInputWithinPanel: Boolean(
         svnInput && panelRect && svnInput.left >= panelRect.left && svnInput.right <= panelRect.right + 1
@@ -142,6 +168,9 @@ const assertHeaderAndFormBounds = async (page, label) => {
   })
   assert(metrics.userClearsNavigation, `${label}：顶部用户信息与导航重叠。`)
   assert(metrics.userTextFits, `${label}：长用户名或部门名被截断。`)
+  assert(metrics.brandLogoLoaded, `${label}：沛城品牌 Logo 未加载。`)
+  assert(metrics.brandLogoFits, `${label}：沛城品牌 Logo 超出顶部栏。`)
+  assert(metrics.legacyBrandHidden, `${label}：顶部仍显示旧的 AI 代码审查标题。`)
   assert(metrics.formHasNoHorizontalOverflow, `${label}：左侧创建任务表单横向溢出。`)
   assert(
     metrics.svnInputWithinPanel,
@@ -168,8 +197,58 @@ const assertKeyboardFocus = async (page, locator, label) => {
 const selectDs03 = async (page) => {
   await page.getByRole('button', { name: '选择', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '选择审查项', exact: true })
-  await dialog.getByLabel('选择 DS-03 状态机审核', { exact: true }).check()
+  await dialog.getByLabel('选择 DS-03 状态机审查', { exact: true }).check()
   await dialog.getByRole('button', { name: '完成选择（1）', exact: true }).click()
+}
+
+const captureReviewItemSelector = async (browser) => {
+  const viewport = { width: 1280, height: 720 }
+  const label = '1280x720 审查项选择器'
+  const { page, errors } = await createPage(browser, viewport)
+  try {
+    await page.goto(`${harnessUrl}?scenario=multi-task`, { waitUntil: 'networkidle' })
+    await page.getByRole('button', { name: '选择', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '选择审查项', exact: true })
+    await dialog.waitFor()
+
+    assert(await dialog.getByText('日常提交审核', { exact: true }).isVisible(), `${label}：缺少日常提交审核分组。`)
+    assert(await dialog.getByText('控制逻辑专项审核', { exact: true }).isVisible(), `${label}：缺少控制逻辑专项审核分组。`)
+    assert(await dialog.getByText('变更点审查', { exact: true }).first().isVisible(), `${label}：缺少变更点审查。`)
+    assert(await dialog.getByText('编码规范审查', { exact: true }).isVisible(), `${label}：缺少编码规范审查。`)
+    assert(await dialog.getByText('状态机审查', { exact: true }).isVisible(), `${label}：缺少状态机审查。`)
+    assert(
+      await dialog.getByText(
+        '重点依据产品开发需求表和产品规格书，核对代码变更是否完整、准确落实需求与规格。',
+        { exact: true }
+      ).first().isVisible(),
+      `${label}：变更点审查说明未突出需求表和规格书。`
+    )
+
+    const metrics = await dialog.evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      const itemLabels = [...element.querySelectorAll('.wb-item-copy strong')]
+      const itemSummaries = [...element.querySelectorAll('.wb-item-copy > span')]
+      return {
+        withinViewport: rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight,
+        horizontalOverflow: element.scrollWidth > element.clientWidth,
+        labelsFit: itemLabels.every((labelElement) => labelElement.scrollWidth <= labelElement.clientWidth),
+        summariesVisible: itemSummaries.every((summary) => summary.getBoundingClientRect().height > 0)
+      }
+    })
+    assert(metrics.withinViewport, `${label}：弹窗超出视口。`)
+    assert(!metrics.horizontalOverflow, `${label}：弹窗存在横向溢出。`)
+    assert(metrics.labelsFit, `${label}：审查项名称被截断。`)
+    assert(metrics.summariesVisible, `${label}：审查项说明不可见。`)
+    await assertHeaderAndFormBounds(page, label)
+    await assertVisualFoundation(page, label)
+    await page.screenshot({
+      path: join(screenshotDirectory, 'review-item-selector-1280x720.png'),
+      animations: 'disabled'
+    })
+    assert(errors.length === 0, `${label} 控制台错误：${errors.join('；')}`)
+  } finally {
+    await page.close()
+  }
 }
 
 const createQueuedTasks = async (page) => {
@@ -434,6 +513,7 @@ let browser
 try {
   await waitForServer(server, () => serverOutput)
   browser = await chromium.launch({ headless: true })
+  await captureReviewItemSelector(browser)
   for (const viewport of viewports) {
     await captureCurrentTasks(browser, viewport)
     await captureAttentionTasks(browser, viewport)
@@ -444,6 +524,7 @@ try {
   await captureProductionDialog(browser, 'svn-binding-dialog', 'svn-binding-dialog', '.dialog-card')
   await captureProductionDialog(browser, 'update-dialog', 'update-dialog', '.update-dialog')
   console.log('1280x720 通过：登录后 SVN 绑定与客户端更新对话框。')
+  console.log('1280x720 通过：沛城品牌 Logo 与新审查项分组。')
   console.log(`Issue #64 截图已写入 ${screenshotDirectory}`)
 } finally {
   await browser?.close()

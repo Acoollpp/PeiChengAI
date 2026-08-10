@@ -24,6 +24,7 @@ import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+import paceLogo from '../assets/pace-logo.png'
 import { MarkdownPreview } from '../components/MarkdownPreview'
 import { ReviewItemSelector } from './ReviewItemSelector'
 import { formatRevisionLabel, isRevisionValue, normalizeRevisionDigits } from './revision'
@@ -705,11 +706,8 @@ export function ReviewWorkbenchPreview({ adapter, environmentStatus }: ReviewWor
     <main className="wb-shell">
       <header className="wb-app-header">
         <div className="wb-brand">
-          <div className="wb-brand-mark" aria-hidden="true"><FileCheck2 /></div>
-          <div>
-            <strong>{viewModel.productName}</strong>
-            <span>{viewModel.previewLabel}</span>
-          </div>
+          <img className="wb-brand-logo" src={paceLogo} alt="沛城科技" />
+          <span>{viewModel.previewLabel}</span>
         </div>
         <nav className="wb-preview-controls" aria-label="工作台视图">
           <button type="button" className={activeView === 'task-management' ? 'is-active' : ''} aria-current={activeView === 'task-management' ? 'page' : undefined} onClick={() => setActiveView('task-management')}><ClipboardList aria-hidden="true" />任务管理</button>

@@ -133,40 +133,30 @@ textarea:focus-visible {
 }
 
 .wb-brand {
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
 
-.wb-brand-mark {
-  display: grid;
-  flex: 0 0 34px;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid #8dc9c1;
-  border-radius: 6px;
-  color: var(--wb-accent);
-  background: var(--wb-accent-soft);
+.wb-brand-logo {
+  display: block;
+  flex: 0 0 auto;
+  width: 132px;
+  height: auto;
 }
 
-.wb-brand-mark svg {
-  width: 18px;
-}
-
-.wb-brand > div:last-child,
 .wb-user > div {
   display: flex;
   min-width: 0;
   flex-direction: column;
 }
 
-.wb-brand strong {
-  font-family: var(--wb-display);
-  font-size: 15px;
-  font-weight: 650;
+.wb-brand > span {
+  padding-left: 11px;
+  border-left: 1px solid var(--wb-line-strong);
+  white-space: nowrap;
 }
 
-.wb-brand span,
+.wb-brand > span,
 .wb-user span,
 .wb-user > div span {
   color: var(--wb-muted);
@@ -1177,6 +1167,7 @@ textarea:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  min-height: 24px;
   color: var(--wb-text-soft);
   font-size: 10px;
   white-space: nowrap;
@@ -1217,6 +1208,7 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 24px;
   font-weight: 650;
 }
 
