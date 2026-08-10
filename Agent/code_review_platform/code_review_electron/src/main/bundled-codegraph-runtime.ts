@@ -4,6 +4,7 @@ import { readFile, readdir, stat } from 'node:fs/promises'
 import { delimiter, dirname, join, relative, sep } from 'node:path'
 
 import { app } from 'electron'
+import log from 'electron-log/main'
 
 import metadata from '../../resources/codegraph/metadata.json'
 import type { CodeGraphRuntimeStatus } from '../shared/types'
@@ -64,15 +65,51 @@ interface CodeGraphRuntimeAdapter {
   runVersionCommand(nodePath: string, entrypointPath: string): Promise<VersionCommandResult>
 }
 
+type IntegrityOperationStage = 'package_json' | 'readdir' | 'stat' | 'read_file'
+
+export type CodeGraphRuntimeDiagnostic =
+  | {
+      event: 'access_retry' | 'access_failed'
+      code: string
+      stage: IntegrityOperationStage
+      path: string
+    }
+  | {
+      event: 'integrity_failed'
+      code: string
+      stage: IntegrityOperationStage
+      path: string
+    }
+  | {
+      event: 'integrity_mismatch'
+      stage: 'tree_digest'
+      expected: RuntimeTreeDigest
+      actual: RuntimeTreeDigest
+    }
+
+interface CodeGraphRuntimeDiagnosticLogger {
+  warn(diagnostic: CodeGraphRuntimeDiagnostic): void
+}
+
+interface RuntimeTreeDigest {
+  fileCount: number
+  unpackedBytes: number
+  treeSha256: string
+}
+
 interface CreateBundledCodeGraphRuntimeOptions {
   platform?: NodeJS.Platform
   arch?: string
   runtimeRoot?: string | (() => string)
   metadata?: RuntimeMetadata
   adapter?: CodeGraphRuntimeAdapter
+  delay?: (milliseconds: number) => Promise<void>
+  diagnosticLogger?: CodeGraphRuntimeDiagnosticLogger
 }
 
 const DEFAULT_VERSION_TIMEOUT_MS = 10_000
+const INTEGRITY_RETRY_DELAY_MS = 100
+const RETRYABLE_ACCESS_ERROR_CODES = new Set(['EPERM', 'EACCES', 'EBUSY'])
 
 const runVersionCommand = (
   nodePath: string,
@@ -115,6 +152,15 @@ const productionAdapter: CodeGraphRuntimeAdapter = {
   runVersionCommand
 }
 
+const productionDiagnosticLogger: CodeGraphRuntimeDiagnosticLogger = {
+  warn(diagnostic) {
+    log.warn('[CodeGraph 运行时校验]', diagnostic)
+  }
+}
+
+const defaultDelay = (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds))
+
 const defaultRuntimeRoot = (): string => {
   if (app.isPackaged) {
     return join(process.resourcesPath, ...metadata.runtimeDirectory.split('/'))
@@ -125,13 +171,45 @@ const defaultRuntimeRoot = (): string => {
 const pathFromMetadata = (root: string, relativePath: string): string =>
   join(root, ...relativePath.split('/'))
 
-const isMissingFileError = (error: unknown): boolean =>
-  typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
+const getErrorCode = (error: unknown): string =>
+  typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : 'UNKNOWN'
+
+class RuntimeAccessError extends Error {
+  readonly code: string
+  readonly stage: IntegrityOperationStage
+  readonly path: string
+
+  constructor(error: unknown, stage: IntegrityOperationStage, path: string) {
+    super('CodeGraph 运行时资源访问失败', { cause: error })
+    this.name = 'RuntimeAccessError'
+    this.code = getErrorCode(error)
+    this.stage = stage
+    this.path = path
+  }
+}
+
+class RuntimeIntegrityError extends Error {
+  readonly code: string
+  readonly stage: IntegrityOperationStage
+  readonly path: string
+
+  constructor(code: string, stage: IntegrityOperationStage, path: string) {
+    super('CodeGraph 运行时资源结构异常')
+    this.name = 'RuntimeIntegrityError'
+    this.code = code
+    this.stage = stage
+    this.path = path
+  }
+}
 
 const unavailableMessage = (status: Exclude<CodeGraphRuntimeStatus, 'ready'>): string => {
   switch (status) {
     case 'missing':
       return '内置 CodeGraph 1.4.1 缺失，请重新安装客户端。'
+    case 'unreadable':
+      return '内置 CodeGraph 1.4.1 暂时无法完成校验，请重新检查；如持续失败，请联系管理员检查安全软件。'
     case 'corrupt':
       return '内置 CodeGraph 1.4.1 资源损坏，请重新安装客户端。'
     case 'version_mismatch':
@@ -160,6 +238,8 @@ export const createBundledCodeGraphRuntime = (
   const arch = options.arch ?? process.arch
   const runtimeMetadata = options.metadata ?? metadata
   const adapter = options.adapter ?? productionAdapter
+  const delay = options.delay ?? defaultDelay
+  const diagnosticLogger = options.diagnosticLogger ?? productionDiagnosticLogger
   let resolveRuntimeRoot: () => string
   if (typeof options.runtimeRoot === 'function') {
     resolveRuntimeRoot = options.runtimeRoot
@@ -171,6 +251,76 @@ export const createBundledCodeGraphRuntime = (
     string,
     { size: number; mtimeMs: number; ctimeMs: number; sha256: string }
   >()
+
+  const diagnosticPath = (root: string, path: string): string =>
+    relative(root, path).split(sep).join('/') || '.'
+
+  const runFileOperation = async <T>(
+    root: string,
+    stage: IntegrityOperationStage,
+    path: string,
+    operation: () => Promise<T>
+  ): Promise<T> => {
+    try {
+      return await operation()
+    } catch (error) {
+      const code = getErrorCode(error)
+      const pathForLog = diagnosticPath(root, path)
+      if (!RETRYABLE_ACCESS_ERROR_CODES.has(code)) {
+        throw new RuntimeAccessError(error, stage, pathForLog)
+      }
+
+      diagnosticLogger.warn({ event: 'access_retry', code, stage, path: pathForLog })
+      await delay(INTEGRITY_RETRY_DELAY_MS)
+      try {
+        return await operation()
+      } catch (retryError) {
+        throw new RuntimeAccessError(retryError, stage, pathForLog)
+      }
+    }
+  }
+
+  const inspectionForError = (
+    error: unknown,
+    root: string,
+    version?: string
+  ): CodeGraphRuntimeInspection => {
+    if (error instanceof RuntimeIntegrityError) {
+      diagnosticLogger.warn({
+        event: 'integrity_failed',
+        code: error.code,
+        stage: error.stage,
+        path: error.path
+      })
+      return makeInspection('corrupt', root, { version })
+    }
+    const accessError =
+      error instanceof RuntimeAccessError
+        ? error
+        : new RuntimeAccessError(error, 'read_file', '.')
+    diagnosticLogger.warn({
+      event: 'access_failed',
+      code: accessError.code,
+      stage: accessError.stage,
+      path: accessError.path
+    })
+    return makeInspection(accessError.code === 'ENOENT' ? 'missing' : 'unreadable', root, {
+      version
+    })
+  }
+
+  const reportIntegrityMismatch = (actual: RuntimeTreeDigest): void => {
+    diagnosticLogger.warn({
+      event: 'integrity_mismatch',
+      stage: 'tree_digest',
+      expected: {
+        fileCount: runtimeMetadata.runtime.fileCount,
+        unpackedBytes: runtimeMetadata.runtime.unpackedBytes,
+        treeSha256: runtimeMetadata.runtime.treeSha256
+      },
+      actual
+    })
+  }
 
   const makeInspection = (
     status: CodeGraphRuntimeStatus,
@@ -191,7 +341,10 @@ export const createBundledCodeGraphRuntime = (
   const inspectRuntimeTree = async (root: string) => {
     const files: Array<{ filePath: string; relativePath: string }> = []
     const walk = async (directory: string): Promise<void> => {
-      for (const entry of await adapter.readdir(directory)) {
+      const entries = await runFileOperation(root, 'readdir', directory, () =>
+        adapter.readdir(directory)
+      )
+      for (const entry of entries) {
         const entryPath = join(directory, entry.name)
         if (entry.isDirectory()) {
           await walk(entryPath)
@@ -201,7 +354,11 @@ export const createBundledCodeGraphRuntime = (
             relativePath: relative(root, entryPath).split(sep).join('/')
           })
         } else {
-          throw new Error(`CodeGraph 运行时包含不支持的文件类型：${entryPath}`)
+          throw new RuntimeIntegrityError(
+            'UNSUPPORTED_FILE_TYPE',
+            'readdir',
+            diagnosticPath(root, entryPath)
+          )
         }
       }
     }
@@ -219,9 +376,11 @@ export const createBundledCodeGraphRuntime = (
     let unpackedBytes = 0
     for (const file of files) {
       observedPaths.add(file.filePath)
-      const fileStat = await adapter.stat(file.filePath)
+      const fileStat = await runFileOperation(root, 'stat', file.filePath, () =>
+        adapter.stat(file.filePath)
+      )
       if (!fileStat.isFile()) {
-        throw new Error(`CodeGraph 运行时条目不是普通文件：${file.relativePath}`)
+        throw new RuntimeIntegrityError('NOT_REGULAR_FILE', 'stat', file.relativePath)
       }
       const cached = integrityCache.get(file.filePath)
       let fileHash: string
@@ -233,9 +392,11 @@ export const createBundledCodeGraphRuntime = (
       ) {
         fileHash = cached.sha256
       } else {
-        const content = await adapter.readFile(file.filePath)
+        const content = await runFileOperation(root, 'read_file', file.filePath, () =>
+          adapter.readFile(file.filePath)
+        )
         if (content.length !== fileStat.size) {
-          throw new Error(`CodeGraph 运行时文件在校验期间发生变化：${file.relativePath}`)
+          throw new RuntimeIntegrityError('FILE_CHANGED_DURING_SCAN', 'read_file', file.relativePath)
         }
         fileHash = createHash('sha256').update(content).digest('hex')
         integrityCache.set(file.filePath, {
@@ -267,17 +428,29 @@ export const createBundledCodeGraphRuntime = (
       return makeInspection('unsupported', root)
     }
 
-    let packageVersion: string
+    const packageJsonPath = pathFromMetadata(root, runtimeMetadata.runtime.packageJson)
+    let packageJsonContent: Buffer
     try {
-      const packageJson = JSON.parse(
-        (await adapter.readFile(pathFromMetadata(root, runtimeMetadata.runtime.packageJson))).toString(
-          'utf8'
-        )
-      ) as { version?: unknown }
-      packageVersion = typeof packageJson.version === 'string' ? packageJson.version : ''
+      packageJsonContent = await runFileOperation(root, 'package_json', packageJsonPath, () =>
+        adapter.readFile(packageJsonPath)
+      )
     } catch (error) {
-      return makeInspection(isMissingFileError(error) ? 'missing' : 'corrupt', root)
+      return inspectionForError(error, root)
     }
+    let packageJson: { version?: unknown }
+    try {
+      packageJson = JSON.parse(packageJsonContent.toString('utf8')) as { version?: unknown }
+    } catch {
+      return inspectionForError(
+        new RuntimeIntegrityError(
+          'INVALID_PACKAGE_JSON',
+          'package_json',
+          runtimeMetadata.runtime.packageJson
+        ),
+        root
+      )
+    }
+    const packageVersion = typeof packageJson.version === 'string' ? packageJson.version : ''
     if (packageVersion !== runtimeMetadata.version) {
       return makeInspection('version_mismatch', root, { version: packageVersion || undefined })
     }
@@ -286,11 +459,10 @@ export const createBundledCodeGraphRuntime = (
     try {
       runtimeTree = await inspectRuntimeTree(root)
     } catch (error) {
-      return makeInspection(isMissingFileError(error) ? 'missing' : 'corrupt', root, {
-        version: packageVersion
-      })
+      return inspectionForError(error, root, packageVersion)
     }
     if (runtimeTree.fileCount < runtimeMetadata.runtime.fileCount) {
+      reportIntegrityMismatch(runtimeTree)
       return makeInspection('missing', root, { version: packageVersion })
     }
     if (
@@ -298,6 +470,7 @@ export const createBundledCodeGraphRuntime = (
       runtimeTree.unpackedBytes !== runtimeMetadata.runtime.unpackedBytes ||
       runtimeTree.treeSha256 !== runtimeMetadata.runtime.treeSha256
     ) {
+      reportIntegrityMismatch(runtimeTree)
       return makeInspection('corrupt', root, { version: packageVersion })
     }
 

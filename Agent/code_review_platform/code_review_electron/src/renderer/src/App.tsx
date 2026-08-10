@@ -15,6 +15,7 @@ import { DepartmentSelectionDialog } from './components/DepartmentSelectionDialo
 import { LoginPage } from './components/LoginPage'
 import { SvnBindingDialog } from './components/SvnBindingDialog'
 import { UpdateDialog } from './components/UpdateDialog'
+import { createLatestRequestRunner, type LatestRequestRunner } from './latest-request-runner'
 import { ProductionReviewWorkbench } from './workbench-preview/ProductionReviewWorkbench'
 
 type AuthSession = {
@@ -56,19 +57,29 @@ export function App(): React.JSX.Element {
   const [isInstallingUpdate, setIsInstallingUpdate] = useState(false)
   const [isForcedUpdate, setIsForcedUpdate] = useState(false)
   const isForcedUpdateRef = useRef(false)
+  const environmentCheckRunnerRef = useRef<LatestRequestRunner | null>(null)
+  if (!environmentCheckRunnerRef.current) {
+    environmentCheckRunnerRef.current = createLatestRequestRunner()
+  }
   const [forcedRetryAction, setForcedRetryAction] = useState<'download' | 'install'>('download')
 
   const checkEnvironment = useCallback(async (): Promise<void> => {
-    setIsCheckingEnvironment(true)
-    setEnvironmentProgress(null)
-    try {
-      setEnvironment(await window.codeReview.checkEnvironment())
-    } catch {
-      setEnvironment(fallbackEnvironment)
-    } finally {
-      setIsCheckingEnvironment(false)
-      setEnvironmentProgress(null)
-    }
+    await environmentCheckRunnerRef.current?.run(() => window.codeReview.checkEnvironment(), {
+      onStart() {
+        setIsCheckingEnvironment(true)
+        setEnvironmentProgress(null)
+      },
+      onSuccess(result) {
+        setEnvironment(result)
+      },
+      onError() {
+        setEnvironment(fallbackEnvironment)
+      },
+      onSettled() {
+        setIsCheckingEnvironment(false)
+        setEnvironmentProgress(null)
+      }
+    })
   }, [])
 
   const installCodex = useCallback(async (): Promise<void> => {

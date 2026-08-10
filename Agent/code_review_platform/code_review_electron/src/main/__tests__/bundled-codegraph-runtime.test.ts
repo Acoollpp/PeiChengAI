@@ -72,7 +72,11 @@ const createFixtureRuntime = async (
   versionCommand: () => Promise<{ ok: boolean; output?: string }> = vi.fn(async () => ({
     ok: true,
     output: '1.4.1'
-  }))
+  })),
+  options: {
+    delay?: (milliseconds: number) => Promise<void>
+    diagnosticLogger?: { warn(diagnostic: unknown): void }
+  } = {}
 ) => {
   const root = await createFixture()
   const runtime = createBundledCodeGraphRuntime({
@@ -80,6 +84,7 @@ const createFixtureRuntime = async (
     arch: 'x64',
     runtimeRoot: root,
     metadata: makeMetadata(),
+    ...options,
     adapter: {
       readFile,
       readdir: (path: string) => readdir(path, { withFileTypes: true }),
@@ -115,6 +120,100 @@ describe('内置 CodeGraph 运行时', () => {
     )
   })
 
+  it.each(['EPERM', 'EACCES', 'EBUSY'])('首次目录读取出现 %s 后恢复时返回 ready', async (code) => {
+    const root = await createFixture()
+    const delay = vi.fn(async () => undefined)
+    const diagnosticLogger = { warn: vi.fn() }
+    const readdirWithTransientFailure = vi.fn(async (path: string) => {
+      if (readdirWithTransientFailure.mock.calls.length === 1) {
+        throw Object.assign(new Error(`transient ${code}`), { code })
+      }
+      return readdir(path, { withFileTypes: true })
+    })
+    const runtime = createBundledCodeGraphRuntime({
+      platform: 'win32',
+      arch: 'x64',
+      runtimeRoot: root,
+      metadata: makeMetadata(),
+      delay,
+      diagnosticLogger,
+      adapter: {
+        readFile,
+        readdir: readdirWithTransientFailure,
+        stat,
+        runVersionCommand: vi.fn(async () => ({ ok: true, output: '1.4.1' }))
+      }
+    })
+
+    await expect(runtime.inspect()).resolves.toMatchObject({
+      status: 'ready',
+      version: '1.4.1'
+    })
+    expect(readdirWithTransientFailure).toHaveBeenCalledTimes(8)
+    expect(delay).toHaveBeenCalledWith(100)
+    expect(diagnosticLogger.warn).toHaveBeenCalledWith({
+      event: 'access_retry',
+      code,
+      stage: 'readdir',
+      path: '.'
+    })
+  })
+
+  it('文件持续无法读取时不误报为资源损坏并记录相对路径', async () => {
+    const root = await createFixture()
+    const persistentError = Object.assign(new Error('file is busy'), { code: 'EBUSY' })
+    const unreadablePath = join(root, 'lib', 'node_modules', 'parser', 'index.js')
+    const delay = vi.fn(async () => undefined)
+    const diagnosticLogger = { warn: vi.fn() }
+    const readFileWithPersistentFailure = vi.fn(async (path: string) => {
+      if (path === unreadablePath) {
+        throw persistentError
+      }
+      return readFile(path)
+    })
+    const runtime = createBundledCodeGraphRuntime({
+      platform: 'win32',
+      arch: 'x64',
+      runtimeRoot: root,
+      metadata: makeMetadata(),
+      delay,
+      diagnosticLogger,
+      adapter: {
+        readFile: readFileWithPersistentFailure,
+        readdir: (path: string) => readdir(path, { withFileTypes: true }),
+        stat,
+        runVersionCommand: vi.fn(async () => ({ ok: true, output: '1.4.1' }))
+      }
+    })
+
+    const inspection = await runtime.inspect()
+
+    expect(inspection).toMatchObject({
+      status: 'unreadable',
+      version: '1.4.1'
+    })
+    expect(inspection.error).toContain('暂时无法完成校验')
+    expect(inspection.error).not.toContain('资源损坏')
+    expect(delay).toHaveBeenCalledTimes(1)
+    expect(diagnosticLogger.warn).toHaveBeenNthCalledWith(1, {
+      event: 'access_retry',
+      code: 'EBUSY',
+      stage: 'read_file',
+      path: 'lib/node_modules/parser/index.js'
+    })
+    expect(diagnosticLogger.warn).toHaveBeenNthCalledWith(2, {
+      event: 'access_failed',
+      code: 'EBUSY',
+      stage: 'read_file',
+      path: 'lib/node_modules/parser/index.js'
+    })
+    await expect(
+      runtime.buildCodexEnvironment({ PATH: 'C:\\global-codegraph' })
+    ).rejects.toMatchObject({
+      inspection: { status: 'unreadable' }
+    })
+  })
+
   it('只在 Codex 子进程环境前置内置命令目录并优先于全局版本', async () => {
     const { root, runtime } = await createFixtureRuntime()
     const original = {
@@ -131,9 +230,27 @@ describe('内置 CodeGraph 运行时', () => {
     )
   })
 
-  it('资源缺失时报告 missing 且不回退全局 CodeGraph', async () => {
-    const { root, runtime, versionCommand } = await createFixtureRuntime()
-    await rm(join(root, 'node.exe'))
+  it('扫描文件时遇到 ENOENT 报告 missing 且不回退全局 CodeGraph', async () => {
+    const root = await createFixture()
+    const versionCommand = vi.fn(async () => ({ ok: true, output: '1.4.1' }))
+    const runtime = createBundledCodeGraphRuntime({
+      platform: 'win32',
+      arch: 'x64',
+      runtimeRoot: root,
+      metadata: makeMetadata(),
+      diagnosticLogger: { warn: vi.fn() },
+      adapter: {
+        readFile,
+        readdir: (path: string) => readdir(path, { withFileTypes: true }),
+        stat: async (path: string) => {
+          if (path === join(root, 'node.exe')) {
+            throw Object.assign(new Error('missing'), { code: 'ENOENT' })
+          }
+          return stat(path)
+        },
+        runVersionCommand: versionCommand
+      }
+    })
 
     await expect(runtime.inspect()).resolves.toMatchObject({
       status: 'missing',
@@ -146,8 +263,34 @@ describe('内置 CodeGraph 运行时', () => {
     expect(versionCommand).not.toHaveBeenCalled()
   })
 
+  it('package.json 无法解析时保持 corrupt 并记录结构诊断', async () => {
+    const diagnosticLogger = { warn: vi.fn() }
+    const { root, runtime, versionCommand } = await createFixtureRuntime(undefined, {
+      diagnosticLogger
+    })
+    await writeFile(join(root, 'lib', 'package.json'), '{not-json')
+
+    const inspection = await runtime.inspect()
+
+    expect(inspection).toMatchObject({
+      status: 'corrupt',
+      error: expect.stringContaining('资源损坏')
+    })
+    expect(inspection.error).not.toContain('{not-json')
+    expect(diagnosticLogger.warn).toHaveBeenCalledWith({
+      event: 'integrity_failed',
+      code: 'INVALID_PACKAGE_JSON',
+      stage: 'package_json',
+      path: 'lib/package.json'
+    })
+    expect(versionCommand).not.toHaveBeenCalled()
+  })
+
   it('关键资源校验值变化时报告 corrupt', async () => {
-    const { root, runtime, versionCommand } = await createFixtureRuntime()
+    const diagnosticLogger = { warn: vi.fn() }
+    const { root, runtime, versionCommand } = await createFixtureRuntime(undefined, {
+      diagnosticLogger
+    })
     await writeFile(join(root, 'lib', 'dist', 'bin', 'codegraph.js'), 'damaged runtime')
 
     await expect(runtime.inspect()).resolves.toMatchObject({
@@ -156,10 +299,27 @@ describe('内置 CodeGraph 运行时', () => {
       error: expect.stringContaining('资源损坏')
     })
     expect(versionCommand).not.toHaveBeenCalled()
+    expect(diagnosticLogger.warn).toHaveBeenCalledWith({
+      event: 'integrity_mismatch',
+      stage: 'tree_digest',
+      expected: expect.objectContaining({
+        fileCount: 5,
+        unpackedBytes: expect.any(Number),
+        treeSha256: expect.any(String)
+      }),
+      actual: expect.objectContaining({
+        fileCount: 5,
+        unpackedBytes: expect.any(Number),
+        treeSha256: expect.any(String)
+      })
+    })
   })
 
   it('完整性缓存存在时仍检测 requiredFiles 之外的文件缺失并阻止构建 Codex 环境', async () => {
-    const { root, runtime, versionCommand } = await createFixtureRuntime()
+    const diagnosticLogger = { warn: vi.fn() }
+    const { root, runtime, versionCommand } = await createFixtureRuntime(undefined, {
+      diagnosticLogger
+    })
     await expect(runtime.inspect()).resolves.toMatchObject({ status: 'ready' })
     await rm(join(root, 'lib', 'node_modules', 'parser', 'index.js'))
 
@@ -167,6 +327,20 @@ describe('内置 CodeGraph 运行时', () => {
       status: 'missing',
       version: '1.4.1',
       error: expect.stringContaining('缺失')
+    })
+    expect(diagnosticLogger.warn).toHaveBeenCalledWith({
+      event: 'integrity_mismatch',
+      stage: 'tree_digest',
+      expected: expect.objectContaining({
+        fileCount: 5,
+        unpackedBytes: expect.any(Number),
+        treeSha256: expect.any(String)
+      }),
+      actual: expect.objectContaining({
+        fileCount: 4,
+        unpackedBytes: expect.any(Number),
+        treeSha256: expect.any(String)
+      })
     })
     await expect(runtime.buildCodexEnvironment({ PATH: 'C:\\global-codegraph' })).rejects.toBeInstanceOf(
       BundledCodeGraphUnavailableError

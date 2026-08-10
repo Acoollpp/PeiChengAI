@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { act } from 'react'
+import { useRef, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { App } from './App'
@@ -15,6 +15,8 @@ import type {
   CodeReviewApi,
   EnvironmentProgressEvent
 } from './code-review-api'
+import { EnvironmentStatus } from './components/EnvironmentStatus'
+import { createLatestRequestRunner, type LatestRequestRunner } from './latest-request-runner'
 
 type ProgressListener = (progress: AppUpdateProgress) => void
 type AvailableListener = (info: AppUpdateInfo) => void
@@ -22,6 +24,17 @@ type DownloadedListener = (info: AppUpdateInfo) => void
 type ErrorListener = (error: AppUpdateError) => void
 type RequiredListener = (policy: ClientUpdatePolicy) => void
 type EnvironmentProgressListener = (progress: EnvironmentProgressEvent) => void
+
+const deferred = <T,>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+} => {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolver) => {
+    resolve = resolver
+  })
+  return { promise, resolve }
+}
 
 let progressListener: ProgressListener | null = null
 let availableListener: AvailableListener | null = null
@@ -235,6 +248,77 @@ describe('App update flow', () => {
 
     expect(await screen.findByRole('heading', { name: '创建审查任务' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '选择部门' })).not.toBeInTheDocument()
+  })
+
+  it('较慢的旧环境检查不会覆盖较新的成功结果', async () => {
+    const user = userEvent.setup()
+    const olderCheck = deferred<Awaited<ReturnType<CodeReviewApi['checkEnvironment']>>>()
+    const newerCheck = deferred<Awaited<ReturnType<CodeReviewApi['checkEnvironment']>>>()
+    const Harness = (): React.JSX.Element => {
+      const [environment, setEnvironment] = useState<
+        Awaited<ReturnType<CodeReviewApi['checkEnvironment']>> | null
+      >(null)
+      const runnerRef = useRef<LatestRequestRunner | null>(null)
+      if (!runnerRef.current) {
+        runnerRef.current = createLatestRequestRunner()
+      }
+      const startCheck = (request: Promise<Awaited<ReturnType<CodeReviewApi['checkEnvironment']>>>) =>
+        runnerRef.current?.run(() => request, {
+          onSuccess: setEnvironment
+        })
+
+      return (
+        <>
+          <button type="button" onClick={() => void startCheck(olderCheck.promise)}>
+            触发旧检查
+          </button>
+          <button type="button" onClick={() => void startCheck(newerCheck.promise)}>
+            触发新检查
+          </button>
+          <EnvironmentStatus
+            result={environment}
+            isChecking={false}
+            isInstallingSkillDuringCheck={false}
+            isInstallingCodex={false}
+            isInstallingSvn={false}
+            onRefresh={vi.fn()}
+            onInstallCodex={vi.fn()}
+            onInstallSvn={vi.fn()}
+            onInstallSkill={vi.fn()}
+          />
+        </>
+      )
+    }
+    render(<Harness />)
+
+    await user.click(screen.getByRole('button', { name: '触发旧检查' }))
+    await user.click(screen.getByRole('button', { name: '触发新检查' }))
+
+    await act(async () => {
+      newerCheck.resolve({
+        status: 'ready',
+        codexVersion: 'codex-cli 0.130.0',
+        svnVersion: '1.14.5',
+        codegraphStatus: 'ready',
+        codegraphVersion: '1.4.1'
+      })
+    })
+    expect(screen.getByText('环境就绪')).toBeInTheDocument()
+
+    await act(async () => {
+      olderCheck.resolve({
+        status: 'failed',
+        codegraphStatus: 'corrupt',
+        codegraphRequiredVersion: '1.4.1',
+        codegraphVersion: '1.4.1',
+        codegraphError: '内置 CodeGraph 1.4.1 资源损坏，请重新安装客户端。'
+      })
+    })
+
+    expect(screen.getByText('环境就绪')).toBeInTheDocument()
+    expect(
+      screen.queryByText('内置 CodeGraph 1.4.1 资源损坏，请重新安装客户端。')
+    ).not.toBeInTheDocument()
   })
 
   it('continues to the task page when the update policy check fails', async () => {
