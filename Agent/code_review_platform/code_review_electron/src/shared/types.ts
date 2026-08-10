@@ -10,7 +10,6 @@ export type EnvironmentStatus =
 export type CodeGraphRuntimeStatus =
   | 'ready'
   | 'missing'
-  | 'unreadable'
   | 'corrupt'
   | 'version_mismatch'
   | 'not_executable'
