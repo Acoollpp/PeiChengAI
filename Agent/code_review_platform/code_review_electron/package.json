@@ -8,6 +8,7 @@
     "dev": "electron-vite dev",
     "dev:workbench": "cross-env CODE_REVIEW_UI_PREVIEW=1 electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
+    "prepare:codegraph": "node scripts/prepare-codegraph-runtime.mjs",
     "capture:workbench": "node scripts/capture-workbench-preview.mjs",
     "dist:win": "npm run build && electron-builder --win --x64",
     "preview": "electron-vite preview",
@@ -21,6 +22,7 @@
     "directories": {
       "output": "release"
     },
+    "beforePack": "scripts/prepare-codegraph-before-pack.cjs",
     "publish": [
       {
         "provider": "generic",
@@ -32,6 +34,20 @@
       "package.json"
     ],
     "win": {
+      "extraResources": [
+        {
+          "from": "build/codegraph-runtime/win32-x64",
+          "to": "codegraph/win32-x64"
+        },
+        {
+          "from": "resources/codegraph/legal",
+          "to": "codegraph/legal"
+        },
+        {
+          "from": "resources/codegraph/metadata.json",
+          "to": "codegraph/metadata.json"
+        }
+      ],
       "target": [
         {
           "target": "nsis",

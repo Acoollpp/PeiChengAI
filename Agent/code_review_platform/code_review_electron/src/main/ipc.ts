@@ -1076,7 +1076,13 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     ): Promise<TaskPreflightResult> => {
       const environment = await checkLocalEnvironment()
       if (environment.status !== 'ready') {
-        return { status: 'invalid', errors: { svn_url: getEnvironmentErrorMessage(environment.status) } }
+        return {
+          status: 'invalid',
+          errors: {
+            svn_url:
+              environment.codegraphError ?? getEnvironmentErrorMessage(environment.status)
+          }
+        }
       }
       if (!environment.svnPath) {
         return {

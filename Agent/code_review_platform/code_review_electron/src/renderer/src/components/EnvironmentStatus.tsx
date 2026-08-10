@@ -29,7 +29,7 @@ type DependencyItem = {
   version?: string
   path?: string
   missingText: string
-  actionText: string
+  actionText?: string
 }
 
 export function EnvironmentStatus({
@@ -55,7 +55,9 @@ export function EnvironmentStatus({
   const checkingStatusText = isInstallingSkillDuringCheck ? '安装 Skill 中' : '检查中'
   const refreshText = isInstallingSkillDuringCheck ? '安装 Skill 中...' : '检查中...'
   const showDependencyPanel = hasKnownResult && (isOpen || hasIssue || hasSkillSyncIssue)
-  const showDownstreamDependencies = hasKnownResult && !codexMissing
+  const codegraphUnavailable =
+    Boolean(result?.codegraphStatus) && result?.codegraphStatus !== 'ready'
+  const showDownstreamDependencies = hasKnownResult && !codexMissing && !codegraphUnavailable
   const items: DependencyItem[] = hasKnownResult
     ? [
         {
@@ -69,6 +71,18 @@ export function EnvironmentStatus({
         }
       ]
     : []
+  if (hasKnownResult && result.codegraphStatus) {
+    items.push({
+      key: 'codegraph',
+      name: '内置 CodeGraph',
+      ok: result.codegraphStatus === 'ready',
+      version: result.codegraphVersion ?? result.codegraphRequiredVersion,
+      path: result.codegraphPath,
+      missingText:
+        result.codegraphError ??
+        `内置 CodeGraph ${result.codegraphRequiredVersion ?? '1.4.1'} 不可用，请重新安装客户端。`
+    })
+  }
   const busy = isChecking || isInstallingCodex || isInstallingSvn || installingSkill
 
   if (showDownstreamDependencies) {
@@ -131,7 +145,11 @@ export function EnvironmentStatus({
           <p className="environment-detail">
             {codexMissing
               ? `Codex ${result?.codexVersion ?? '-'}`
-              : `Codex CLI ${result?.codexVersion ?? '-'} · SVN CLI ${result?.svnVersion ?? '-'}`}
+              : `Codex CLI ${result?.codexVersion ?? '-'} · SVN CLI ${result?.svnVersion ?? '-'}${
+                  result?.codegraphStatus
+                    ? ` · CodeGraph ${result.codegraphVersion ?? result.codegraphRequiredVersion ?? '-'}`
+                    : ''
+                }`}
           </p>
         </div>
         <button className="ghost-button" type="button" disabled={busy} onClick={() => void onRefresh()}>
@@ -149,9 +167,9 @@ export function EnvironmentStatus({
             >
               <div>
                 <strong>{item.ok ? `${item.name} 已就绪` : item.missingText}</strong>
-                <p>{item.version ?? item.path ?? '-'}</p>
+                <p>{[item.version, item.path].filter(Boolean).join(' · ') || '-'}</p>
               </div>
-              {!item.ok && (
+              {!item.ok && item.actionText && (
                 <button
                   className="install-button"
                   type="button"
@@ -182,7 +200,7 @@ export function EnvironmentStatus({
           ))}
           {hasIssue && (
             <p className="dependency-help">
-              如本机已安装但仍显示缺失，请点击重新检查；SVN CLI/Codex CLI 会自动搜索 Homebrew 和系统常见路径。
+              CodeGraph 异常请重新安装客户端；其他依赖如已安装但仍显示缺失，请点击重新检查。
             </p>
           )}
         </div>

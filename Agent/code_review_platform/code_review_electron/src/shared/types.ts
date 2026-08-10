@@ -7,6 +7,14 @@ export type EnvironmentStatus =
   | 'missing_skill'
   | 'failed'
 
+export type CodeGraphRuntimeStatus =
+  | 'ready'
+  | 'missing'
+  | 'corrupt'
+  | 'version_mismatch'
+  | 'not_executable'
+  | 'unsupported'
+
 export type EnvironmentProgressStage = 'installing_skill'
 
 export interface EnvironmentProgressEvent {

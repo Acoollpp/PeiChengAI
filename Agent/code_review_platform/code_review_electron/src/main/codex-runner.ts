@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { win32 as windowsPath } from 'node:path'
 
 import { buildVersionCommandOptions } from './environment-checker'
+import { bundledCodeGraphRuntime } from './bundled-codegraph-runtime'
 import {
   REVIEW_REPORT_IMAGES_DIR_NAME,
   isFullReviewOldRevision,
@@ -27,6 +28,10 @@ export interface RunCodexReviewOptions {
   timeoutMs: number
   signal?: AbortSignal
   onOutput?: (event: CodexOutputEvent) => void
+}
+
+export interface RunCodexReviewDependencies {
+  buildCodeGraphEnvironment?: (environment: NodeJS.ProcessEnv) => Promise<NodeJS.ProcessEnv>
 }
 
 export interface CodexReviewResult {
@@ -253,27 +258,34 @@ Markdown 报告中引用图片时必须使用相对路径：${REVIEW_REPORT_IMAG
 5. 错误描述应包含已尝试的恢复策略、每步失败的具体原因，帮助用户定位问题
 6. 对于不在上述列表中的错误，一律使用 INTERNAL_ERROR 并附上你的分析`
 
-export const runCodexReview = ({
-  cwd,
-  prompt,
-  timeoutMs,
-  signal,
-  onOutput
-}: RunCodexReviewOptions): Promise<CodexReviewResult> =>
-  new Promise((resolve, reject) => {
+export const runCodexReview = async (
+  { cwd, prompt, timeoutMs, signal, onOutput }: RunCodexReviewOptions,
+  dependencies: RunCodexReviewDependencies = {}
+): Promise<CodexReviewResult> => {
+  if (signal?.aborted) {
+    throw new Error('任务已取消')
+  }
+
+  const commandOptions = buildVersionCommandOptions()
+  const buildCodeGraphEnvironment =
+    dependencies.buildCodeGraphEnvironment ??
+    ((environment: NodeJS.ProcessEnv) =>
+      bundledCodeGraphRuntime.buildCodexEnvironment(environment))
+  const codeGraphEnvironment = await buildCodeGraphEnvironment(commandOptions.env ?? process.env)
+  const command = buildCodexCommand(process.platform, codeGraphEnvironment)
+
+  return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(new Error('任务已取消'))
       return
     }
 
-    const commandOptions = buildVersionCommandOptions()
-    const command = buildCodexCommand(process.platform, commandOptions.env)
     const child = spawn(command, buildCodexExecArgs(prompt), {
       ...commandOptions,
       cwd,
       shell: buildCodexShellOption(command),
       env: {
-        ...commandOptions.env,
+        ...codeGraphEnvironment,
         CODEX_UNSAFE_ALLOW_NO_SANDBOX: '1'
       }
     })
@@ -344,3 +356,4 @@ export const runCodexReview = ({
       })
     })
   })
+}

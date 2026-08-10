@@ -442,16 +442,18 @@ const runExistingReviewTask = async (
     throwIfCancelled(input.signal)
 
     if (environment.status !== 'ready') {
+      const environmentError =
+        environment.codegraphError ?? environmentErrorMessages[environment.status]
       await updateStatus(dependencies, input.token, task.id, {
         status: 'environment_error',
-        error_message: environmentErrorMessages[environment.status]
+        error_message: environmentError
       })
       emitStage(
         onProgress,
         task.id,
         input.clientTaskId,
         'environment_error',
-        environmentErrorMessages[environment.status]
+        environmentError
       )
 
       return { taskId: task.id, status: 'environment_error' }

@@ -7,6 +7,7 @@ import type {
 } from '../../shared/report-feedback-window'
 import type {
   ClientUpdatePolicy,
+  CodeGraphRuntimeStatus,
   EnvironmentProgressEvent,
   EnvironmentStatus,
   CurrentUser,
@@ -123,6 +124,11 @@ export interface EnvironmentCheckResult {
   codexError?: string
   svnError?: string
   skillError?: string
+  codegraphStatus?: CodeGraphRuntimeStatus
+  codegraphRequiredVersion?: string
+  codegraphVersion?: string
+  codegraphPath?: string
+  codegraphError?: string
   skills?: SyncedSkill[]
 }
 

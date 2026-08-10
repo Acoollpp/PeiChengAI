@@ -3,6 +3,7 @@ out
 dist
 release
 .runtime-data
+build/codegraph-runtime
 *.local
 .DS_Store
 npm-debug.log*
