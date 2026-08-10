@@ -545,7 +545,11 @@ const renderMarkdownToHtml = (markdown: string, imageDataUrls: Map<string, strin
       paragraph.push(lines[index])
       index += 1
     }
-    html.push(`<p>${renderInline(paragraph.join(' '), imageDataUrls)}</p>`)
+    html.push(
+      `<p>${paragraph
+        .map((paragraphLine) => renderInline(paragraphLine.trimEnd(), imageDataUrls))
+        .join('<br />')}</p>`
+    )
   }
 
   return html.join('\n')

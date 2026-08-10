@@ -10,6 +10,7 @@ import bmsCodeReviewerHistoricalDs02ReportFixture from '../../../shared/__tests_
 import bmsCodeReviewerHistoricalPcBmsReportFixture from '../../../shared/__tests__/fixtures/bms-code-reviewer-historical-pc-bms-report.md?raw'
 import bmsCodeReviewerNoSeverityReportFixture from '../../../shared/__tests__/fixtures/bms-code-reviewer-no-severity-report.md?raw'
 import bmsCodeReviewerPcBmsReportFixture from '../../../shared/__tests__/fixtures/bms-code-reviewer-pc-bms-report.md?raw'
+import bmsDs03ReportFixture from '../../../shared/__tests__/fixtures/bms-ds03-report.md?raw'
 
 afterEach(() => {
   cleanup()
@@ -492,5 +493,48 @@ describe('MarkdownPreview', () => {
     render(<MarkdownPreview markdown={'## 高风险问题\n\n### 空指针风险'} />)
 
     expect(screen.queryByRole('checkbox', { name: '空指针风险' })).not.toBeInTheDocument()
+  })
+
+  it('段落内的单个换行渲染为换行', () => {
+    const { container } = render(
+      <MarkdownPreview
+        markdown={[
+          '**项目路径：** svn://repo/bms',
+          '**所属部门：** 软件开发部',
+          '**新版本：** r49072',
+          '**审查日期：** 2026-08-10'
+        ].join('\n')}
+      />
+    )
+
+    const paragraph = container.querySelector('.markdown-preview p')
+    expect(paragraph?.querySelectorAll('br')).toHaveLength(3)
+  })
+
+  it('行尾两个空格的历史报告不产生重复换行', () => {
+    const { container } = render(
+      <MarkdownPreview markdown={'**项目路径：** svn://repo/bms  \n**所属部门：** 软件开发部'} />
+    )
+
+    const paragraph = container.querySelector('.markdown-preview p')
+    expect(paragraph?.querySelectorAll('br')).toHaveLength(1)
+  })
+
+  it('含软换行的新格式报告仍保留问题锚点定位', () => {
+    const [firstIssue] = extractDetailedHeadingOptions(bmsDs03ReportFixture)
+    expect(firstIssue).toBeDefined()
+
+    render(
+      <MarkdownPreview
+        markdown={bmsDs03ReportFixture}
+        activeFeedbackAnchorId={firstIssue.anchorId}
+      />
+    )
+
+    const heading = screen.getByRole('heading', {
+      name: firstIssue.text,
+      level: firstIssue.level
+    })
+    expect(heading).toHaveAttribute('data-report-anchor-id', firstIssue.anchorId)
   })
 })
