@@ -42,7 +42,7 @@ describe('ReviewItemSelector', () => {
     await user.click(fileButtons[0])
     await user.click(fileButtons[1])
 
-    await user.click(screen.getByRole('button', { name: /DS-02.*编码规范审核/ }))
+    await user.click(screen.getByRole('button', { name: /DS-02.*编码规范审查/ }))
     expect(screen.getByLabelText('DS-02 额外规则')).toBeDisabled()
     await user.click(screen.getByRole('button', { name: /DS-01.*变更点审查/ }))
 
@@ -89,22 +89,26 @@ describe('ReviewItemSelector', () => {
       />
     )
 
-    await user.type(screen.getByPlaceholderText('搜索 ID、名称或分类'), '可靠性')
-    expect(screen.getByText('状态机审核')).toBeInTheDocument()
-    expect(screen.queryByText('编码规范审核')).not.toBeInTheDocument()
+    expect(screen.getAllByText(
+      '重点依据产品开发需求表和产品规格书，核对代码变更是否完整、准确落实需求与规格。'
+    ).length).toBeGreaterThan(0)
+    await user.type(screen.getByPlaceholderText('搜索 ID、名称或分类'), '控制逻辑专项审核')
+    expect(screen.getByText('状态机审查')).toBeInTheDocument()
+    expect(screen.queryByText('编码规范审查')).not.toBeInTheDocument()
     await user.clear(screen.getByPlaceholderText('搜索 ID、名称或分类'))
 
-    await user.click(screen.getByRole('checkbox', { name: '选择需求与变更全部审查项' }))
-    expect(screen.getByRole('dialog').querySelector('.wb-selector-count')).toHaveTextContent('已选 1 项')
+    await user.click(screen.getByRole('checkbox', { name: '选择日常提交审核全部审查项' }))
+    expect(screen.getByRole('dialog').querySelector('.wb-selector-count')).toHaveTextContent('已选 2 项')
     await user.click(screen.getByRole('checkbox', { name: '仅看已选' }))
     const catalogList = screen.getByLabelText('审查项列表')
     expect(within(catalogList).getByText('变更点审查')).toBeInTheDocument()
-    expect(within(catalogList).queryByText('状态机审核')).not.toBeInTheDocument()
+    expect(within(catalogList).getByText('编码规范审查')).toBeInTheDocument()
+    expect(within(catalogList).queryByText('状态机审查')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '清空选择' }))
     expect(within(screen.getByLabelText('审查项列表')).getByText('没有匹配的审查项')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '显示全部' }))
-    expect(screen.getByText('状态机审核')).toBeInTheDocument()
+    expect(screen.getByText('状态机审查')).toBeInTheDocument()
   })
 
   it('将 Tab 限制在弹窗内，并支持 Escape 取消', async () => {

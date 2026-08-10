@@ -20,9 +20,11 @@ import {
   X
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+import paceLogo from '../assets/pace-logo.png'
 import { MarkdownPreview } from '../components/MarkdownPreview'
 import { ReviewItemSelector } from './ReviewItemSelector'
 import { formatRevisionLabel, isRevisionValue, normalizeRevisionDigits } from './revision'
@@ -41,6 +43,7 @@ import type {
 
 interface ReviewWorkbenchPreviewProps {
   adapter: WorkbenchAdapter
+  environmentStatus?: ReactNode
 }
 
 interface FormErrors {
@@ -186,7 +189,9 @@ const TaskTableRow = ({
         </ol>
       )}
     </div>
-    <time>{task.updatedAt}</time>
+    <time title={task.updatedAt} aria-label={`更新时间 ${task.updatedAt}`}>
+      {task.updatedAt}
+    </time>
     <div className="wb-task-actions">
       {['waiting', ...activeStages].includes(task.stage) && (
         <button
@@ -226,30 +231,35 @@ interface TaskManagementViewProps {
   adapter: WorkbenchAdapter
   runningTasks: ReviewTaskViewModel[]
   waitingTasks: ReviewTaskViewModel[]
-  onOpenReport: (reportId: string) => void
+  onOpenReportCenter: () => void
+  environmentStatus?: ReactNode
 }
+
+type TaskLane = 'current' | 'attention'
 
 function TaskManagementView({
   viewModel,
   adapter,
   runningTasks,
   waitingTasks,
-  onOpenReport
+  onOpenReportCenter,
+  environmentStatus
 }: TaskManagementViewProps): React.JSX.Element {
-  const taskPriority = (task: ReviewTaskViewModel): number => {
-    if (activeStages.includes(task.stage)) return 0
-    if (task.stage === 'failed') return 1
-    if (task.stage === 'waiting') return 2
-    return 3
+  const currentTasks = [
+    ...runningTasks,
+    ...[...waitingTasks].sort((left, right) => (left.queueIndex ?? 0) - (right.queueIndex ?? 0))
+  ]
+  const failedTasks = viewModel.tasks.filter((task) => task.stage === 'failed')
+  const automaticTaskLane: TaskLane =
+    currentTasks.length === 0 && failedTasks.length > 0 ? 'attention' : 'current'
+  const [manualTaskLane, setManualTaskLane] = useState<TaskLane>()
+  const selectedTaskLane = manualTaskLane ?? automaticTaskLane
+
+  const selectTaskLane = (nextLane: TaskLane): void => {
+    setManualTaskLane(nextLane)
   }
-  const reportTaskIds = new Set(viewModel.reports.map((report) => report.taskId))
-  const managedTasks = viewModel.tasks
-    .filter((task) => task.stage !== 'completed' || !reportTaskIds.has(task.id))
-    .sort((left, right) => taskPriority(left) - taskPriority(right))
-  const failedCount = managedTasks.filter((task) => task.stage === 'failed').length
-  const completedWithoutReportCount = managedTasks.filter(
-    (task) => task.stage === 'completed'
-  ).length
+  const visibleTasks = selectedTaskLane === 'current' ? currentTasks : failedTasks
+  const failedCount = failedTasks.length
   const taskStats = viewModel.taskStats
   const serviceRunning = taskStats === undefined
     ? runningTasks.length
@@ -260,7 +270,6 @@ function TaskManagementView({
   const serviceSuccess = taskStats === undefined
     ? viewModel.reports.length
     : taskStats.status === 'ready' ? taskStats.success : '—'
-  const reportListState = viewModel.reportListState
 
   return (
     <section className="wb-workspace wb-task-management" aria-labelledby="workbench-title">
@@ -274,6 +283,7 @@ function TaskManagementView({
       </div>
 
       <div className="wb-overview-block">
+        {environmentStatus && <div className="wb-environment-inline">{environmentStatus}</div>}
         {taskStats?.status === 'loading' && (
           <div className="wb-stats-state" role="status">正在加载今日服务端统计。</div>
         )}
@@ -291,69 +301,59 @@ function TaskManagementView({
           <div><span>正在执行</span><strong className="is-running">{serviceRunning}</strong><small>{taskStats ? '今日服务端任务' : '本机并发上限 2'}</small></div>
           <div><span>本机等待</span><strong className="is-waiting">{waitingTasks.length}</strong><small>按创建顺序执行</small></div>
           <div><span>需要处理</span><strong className="is-failed">{serviceFailed}</strong><small>{taskStats ? '今日失败或环境异常' : '失败任务可重试'}</small></div>
-          <div><span>可查看报告</span><strong>{serviceSuccess}</strong><small>{taskStats ? '今日服务端完成' : '本机已完成结果'}</small></div>
+          <button className="wb-completed-link" type="button" onClick={onOpenReportCenter}>
+            <span>今日完成</span><strong>{serviceSuccess}</strong><small>进入报告中心查看</small><ArrowRight aria-hidden="true" />
+          </button>
         </section>
       </div>
 
       <section className="wb-task-section wb-execution-section" aria-labelledby="execution-heading">
         <div className="wb-band-heading">
-          <div><h3 id="execution-heading">执行与等待</h3><span>当前阶段与本机排队状态</span></div>
-          <span>
-            {runningTasks.length} 执行 · {waitingTasks.length} 等待 · {failedCount} 失败
-            {completedWithoutReportCount > 0 ? ` · ${completedWithoutReportCount} 无报告` : ''}
-          </span>
+          <div><h3 id="execution-heading">单轨任务台</h3><span>一次只关注一类任务</span></div>
+          <div className="wb-task-lane-tabs" role="tablist" aria-label="任务列表视图">
+            <button
+              id="current-task-tab"
+              type="button"
+              role="tab"
+              aria-selected={selectedTaskLane === 'current'}
+              aria-controls="current-task-panel"
+              className={selectedTaskLane === 'current' ? 'is-active' : ''}
+              onClick={() => selectTaskLane('current')}
+            >
+              当前任务 <span>{currentTasks.length}</span>
+            </button>
+            <button
+              id="attention-task-tab"
+              type="button"
+              role="tab"
+              aria-selected={selectedTaskLane === 'attention'}
+              aria-controls="attention-task-panel"
+              className={selectedTaskLane === 'attention' ? 'is-active' : ''}
+              onClick={() => selectTaskLane('attention')}
+            >
+              需要处理 <span>{failedCount}</span>
+            </button>
+          </div>
         </div>
         <div className="wb-table-head wb-task-table-head" aria-hidden="true">
           <span>任务</span><span>状态</span><span>当前进度</span><span>更新</span><span>操作</span>
         </div>
-        {managedTasks.length === 0 ? (
-          <div className="wb-empty-band"><SearchX aria-hidden="true" /><div><strong>暂无执行或等待任务</strong><span>从左侧创建任务后，阶段会显示在这里。</span></div></div>
-        ) : (
-          <div className="wb-task-table-body">
-            {managedTasks.map((task) => (
+        <div
+          id={selectedTaskLane === 'current' ? 'current-task-panel' : 'attention-task-panel'}
+          role="tabpanel"
+          aria-labelledby={selectedTaskLane === 'current' ? 'current-task-tab' : 'attention-task-tab'}
+          className="wb-task-lane-panel"
+        >
+          {visibleTasks.length === 0 ? (
+            <div className="wb-empty-band"><SearchX aria-hidden="true" /><div><strong>{selectedTaskLane === 'current' ? '暂无当前任务' : '暂无需要处理的任务'}</strong><span>{selectedTaskLane === 'current' ? '新任务会按本机队列顺序显示在这里。' : '失败任务会保留完整原因和恢复操作。'}</span></div></div>
+          ) : (
+            <div className="wb-task-table-body">
+              {visibleTasks.map((task) => (
               <TaskTableRow key={task.id} task={task} adapter={adapter} catalog={viewModel.catalog} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="wb-report-section wb-management-reports" aria-labelledby="reports-heading">
-        <div className="wb-band-heading"><div><h3 id="reports-heading">可查看报告</h3><span>按完成时间展示本机结果</span></div><span>{viewModel.reports.length} 份</span></div>
-        <div className="wb-table-head wb-report-table-head" aria-hidden="true">
-          <span>任务 / 报告</span><span>审查范围</span><span>问题</span><span>完成时间</span><span>操作</span>
+              ))}
+            </div>
+          )}
         </div>
-        {reportListState?.status === 'error' && (
-          <div className="wb-report-state is-error" role="alert" aria-label="报告列表加载失败">
-            <div><strong>报告列表加载失败</strong><span>{reportListState.message}</span></div>
-            {adapter.commands.reloadReportList && (
-              <button type="button" onClick={() => void adapter.commands.reloadReportList?.()}>
-                <RefreshCw aria-hidden="true" />重新加载报告列表
-              </button>
-            )}
-          </div>
-        )}
-        {reportListState?.status === 'loading' && (
-          <div className="wb-report-state" role="status">正在加载可查看报告。</div>
-        )}
-        {viewModel.reports.length === 0 && reportListState?.status !== 'loading' && reportListState?.status !== 'error' ? (
-          <div className="wb-empty-band"><FileText aria-hidden="true" /><div><strong>暂无可查看报告</strong><span>任务完成后，报告会出现在这里。</span></div></div>
-        ) : viewModel.reports.length > 0 ? (
-          <div className="wb-management-report-list">
-            {viewModel.reports.map((report) => (
-              <article className="wb-management-report-row" key={report.id}>
-                <div>
-                  <strong title={report.title}>{report.title}</strong>
-                  <span className="wb-row-svn" title={report.svnUrl}>{report.svnUrl}</span>
-                  <span className="wb-row-meta">{report.taskId} · {formatReviewItemScope(report.reviewItemIds, viewModel.catalog)}</span>
-                </div>
-                <span>{report.revisionRange}</span>
-                <strong className={`is-${report.highestSeverity}`}>{formatIssueSummary(report)}</strong>
-                <time>{report.completedAt}</time>
-                <button className="wb-link-button" type="button" onClick={() => onOpenReport(report.id)}>查看报告<ArrowRight aria-hidden="true" /></button>
-              </article>
-            ))}
-          </div>
-        ) : null}
       </section>
     </section>
   )
@@ -430,7 +430,7 @@ function ReportCenterView({
                 )}
               </div>
             )}
-            {viewModel.reportListState?.status !== 'loading' && viewModel.reportListState?.status !== 'error' && reports.map((report) => (
+            {reports.map((report) => (
               <button className={selectedReport?.id === report.id ? 'is-active' : ''} type="button" aria-current={selectedReport?.id === report.id ? 'page' : undefined} key={report.id} onClick={() => onSelect(report.id)}>
                 <span className="wb-report-index-title"><FileText aria-hidden="true" /><strong title={report.title}>{report.title}</strong></span>
                 <span className="wb-report-index-svn" title={report.svnUrl}>{report.svnUrl}</span>
@@ -601,7 +601,7 @@ function FeedbackView({ adapter }: { adapter: WorkbenchAdapter }): React.JSX.Ele
   )
 }
 
-export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps): React.JSX.Element {
+export function ReviewWorkbenchPreview({ adapter, environmentStatus }: ReviewWorkbenchPreviewProps): React.JSX.Element {
   const [viewModel, setViewModel] = useState<WorkbenchViewModel>(() => adapter.getViewModel())
   const [activeView, setActiveView] = useState<WorkbenchViewId>('task-management')
   const [draft, setDraft] = useState({ svnUrl: '', oldRevision: '', newRevision: '' })
@@ -706,11 +706,8 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
     <main className="wb-shell">
       <header className="wb-app-header">
         <div className="wb-brand">
-          <div className="wb-brand-mark" aria-hidden="true"><FileCheck2 /></div>
-          <div>
-            <strong>{viewModel.productName}</strong>
-            <span>{viewModel.previewLabel}</span>
-          </div>
+          <img className="wb-brand-logo" src={paceLogo} alt="沛城科技" />
+          <span>{viewModel.previewLabel}</span>
         </div>
         <nav className="wb-preview-controls" aria-label="工作台视图">
           <button type="button" className={activeView === 'task-management' ? 'is-active' : ''} aria-current={activeView === 'task-management' ? 'page' : undefined} onClick={() => setActiveView('task-management')}><ClipboardList aria-hidden="true" />任务管理</button>
@@ -868,7 +865,7 @@ export function ReviewWorkbenchPreview({ adapter }: ReviewWorkbenchPreviewProps)
         )}
 
         {activeView === 'task-management' && (
-          <TaskManagementView viewModel={viewModel} adapter={adapter} runningTasks={runningTasks} waitingTasks={waitingTasks} onOpenReport={openReport} />
+          <TaskManagementView viewModel={viewModel} adapter={adapter} runningTasks={runningTasks} waitingTasks={waitingTasks} onOpenReportCenter={() => setActiveView('report-center')} environmentStatus={environmentStatus} />
         )}
         {activeView === 'report-center' && (
           <ReportCenterView reports={viewModel.reports} selectedReport={selectedReport} onSelect={(reportId) => void adapter.commands.openReport(reportId)} adapter={adapter} viewModel={viewModel} />

@@ -10,6 +10,7 @@
     "build": "npm run typecheck && electron-vite build",
     "prepare:codegraph": "node scripts/prepare-codegraph-runtime.mjs",
     "capture:workbench": "node scripts/capture-workbench-preview.mjs",
+    "capture:issue64": "node scripts/capture-issue-64-workbench.mjs",
     "dist:win": "npm run build && electron-builder --win --x64",
     "preview": "electron-vite preview",
     "preview:workbench": "cross-env CODE_REVIEW_UI_PREVIEW=1 electron-vite preview",

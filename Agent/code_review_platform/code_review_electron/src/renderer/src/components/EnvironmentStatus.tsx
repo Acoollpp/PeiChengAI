@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { CircleCheck, Download, RefreshCw, TriangleAlert } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 import type { EnvironmentCheckResult } from '../code-review-api'
 
@@ -49,12 +50,18 @@ export function EnvironmentStatus({
   const hasKnownResult = result !== null
   const hasIssue = hasKnownResult && status !== 'ready'
   const hasSkillSyncIssue = Boolean(result?.skillError)
+  const hasDependencyIssue = hasIssue || hasSkillSyncIssue
   const codexMissing = hasKnownResult && status === 'missing_codex'
   const isUnknownChecking = !hasKnownResult
   const statusClass = hasKnownResult ? status : 'checking'
   const checkingStatusText = isInstallingSkillDuringCheck ? '安装 Skill 中' : '检查中'
   const refreshText = isInstallingSkillDuringCheck ? '安装 Skill 中...' : '检查中...'
-  const showDependencyPanel = hasKnownResult && (isOpen || hasIssue || hasSkillSyncIssue)
+  const dependencyStateKey = [
+    result?.status ?? 'checking',
+    result?.codegraphStatus ?? 'unknown',
+    result?.skillError ?? ''
+  ].join(':')
+  const showDependencyPanel = hasKnownResult && isOpen
   const codegraphUnavailable =
     Boolean(result?.codegraphStatus) && result?.codegraphStatus !== 'ready'
   const showDownstreamDependencies = hasKnownResult && !codexMissing && !codegraphUnavailable
@@ -84,6 +91,10 @@ export function EnvironmentStatus({
     })
   }
   const busy = isChecking || isInstallingCodex || isInstallingSvn || installingSkill
+
+  useEffect(() => {
+    setIsOpen(hasDependencyIssue)
+  }, [dependencyStateKey, hasDependencyIssue])
 
   if (showDownstreamDependencies) {
     items.push(
@@ -123,7 +134,7 @@ export function EnvironmentStatus({
       <div className="environment-summary">
         <button
           className={`dependency-alert-button ${
-            isUnknownChecking ? 'is-checking' : hasIssue ? 'is-warning' : 'is-ready'
+            isUnknownChecking ? 'is-checking' : hasDependencyIssue ? 'is-warning' : 'is-ready'
           }`}
           type="button"
           aria-label="查看本地依赖状态"
@@ -132,10 +143,10 @@ export function EnvironmentStatus({
         >
           {isUnknownChecking ? (
             <span className="button-spinner alert-spinner" aria-hidden="true" />
-          ) : hasIssue ? (
-            '△'
+          ) : hasDependencyIssue ? (
+            <TriangleAlert aria-hidden="true" />
           ) : (
-            '✓'
+            <CircleCheck aria-hidden="true" />
           )}
         </button>
         <div>
@@ -154,6 +165,7 @@ export function EnvironmentStatus({
         </div>
         <button className="ghost-button" type="button" disabled={busy} onClick={() => void onRefresh()}>
           {isChecking && <span className="button-spinner" aria-hidden="true" />}
+          {!isChecking && <RefreshCw aria-hidden="true" />}
           {isChecking ? refreshText : '重新检查'}
         </button>
       </div>
@@ -193,12 +205,15 @@ export function EnvironmentStatus({
                     (item.key === 'skill' && installingSkill)) && (
                     <span className="button-spinner" aria-hidden="true" />
                   )}
+                  {!((item.key === 'codex' && isInstallingCodex) ||
+                    (item.key === 'svn' && isInstallingSvn) ||
+                    (item.key === 'skill' && installingSkill)) && <Download aria-hidden="true" />}
                   {item.actionText}
                 </button>
               )}
             </div>
           ))}
-          {hasIssue && (
+          {hasDependencyIssue && (
             <p className="dependency-help">
               CodeGraph 异常请重新安装客户端；其他依赖如已安装但仍显示缺失，请点击重新检查。
             </p>

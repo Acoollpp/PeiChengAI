@@ -14,8 +14,9 @@ import type {
   WorkbenchViewModel
 } from './types'
 import { formatRevisionLabel } from './revision'
+import { applyWorkbenchReviewItemPresentation } from './review-item-presentation'
 
-const catalog: ReviewItemDefinition[] = [
+const catalog: ReviewItemDefinition[] = ([
   {
     id: 'DS-01',
     category: '需求与变更',
@@ -63,7 +64,7 @@ const catalog: ReviewItemDefinition[] = [
     specification: '固定使用新 revision 全量审查；旧 revision 原样传递，不依赖额外材料。',
     materialFields: []
   }
-]
+] satisfies ReviewItemDefinition[]).map(applyWorkbenchReviewItemPresentation)
 
 const phaseOrder: Array<Exclude<TaskStage, 'waiting' | 'failed' | 'cancelled'>> = [
   'checking_environment',

@@ -1894,3 +1894,192 @@ h2 {
   color: #202124;
   background: #f1f3f4;
 }
+
+/* 登录后的生产工作台统一使用亮色；auth-shell 保留原登录与强制更新视觉。 */
+.production-shell .dialog-overlay,
+.production-shell .modal-backdrop {
+  background: rgb(24 35 43 / 42%);
+  backdrop-filter: blur(4px);
+}
+
+.production-shell .dialog-card,
+.production-shell .update-dialog {
+  border-color: #c9d5da;
+  color: #18232b;
+  background: #ffffff;
+  box-shadow: 0 20px 58px rgb(24 35 43 / 24%);
+}
+
+.production-shell .dialog-desc,
+.production-shell .update-dialog p,
+.production-shell .submit-feedback-field,
+.production-shell .feedback-paste-hint,
+.production-shell .feedback-screenshot-preview span {
+  color: #667780;
+}
+
+.production-shell .dialog-close {
+  color: #667780;
+}
+
+.production-shell .dialog-close:hover {
+  color: #18232b;
+  background: #edf5f3;
+}
+
+.production-shell .auth-field {
+  color: #34444e;
+}
+
+.production-shell .auth-field input,
+.production-shell .auth-field select,
+.production-shell .submit-feedback-field textarea {
+  border-color: #bac8cf;
+  color: #18232b;
+  background: #ffffff;
+}
+
+.production-shell .auth-field input::placeholder,
+.production-shell .submit-feedback-field textarea::placeholder {
+  color: #7b8a92;
+}
+
+.production-shell .auth-field input:focus,
+.production-shell .auth-field select:focus,
+.production-shell .submit-feedback-field textarea:focus {
+  border-color: #087f73;
+  box-shadow: 0 0 0 3px rgb(8 127 115 / 16%);
+}
+
+.production-shell .password-toggle {
+  color: #667780;
+}
+
+.production-shell .password-toggle:hover {
+  color: #18232b;
+  background: #edf5f3;
+  box-shadow: none;
+}
+
+.production-shell .secondary-button,
+.production-shell .ghost-button,
+.production-shell .feedback-screenshot-picker {
+  border-color: #bac8cf;
+  color: #34444e;
+  background: #f7fafb;
+  box-shadow: none;
+}
+
+.production-shell .secondary-button:hover:not(:disabled),
+.production-shell .ghost-button:hover:not(:disabled),
+.production-shell .feedback-screenshot-picker:hover {
+  border-color: #087f73;
+  color: #065f57;
+  background: #e1f1ee;
+  box-shadow: none;
+}
+
+.production-shell .submit-feedback-scroll::-webkit-scrollbar-thumb {
+  background: #bac8cf;
+}
+
+.production-shell .feedback-screenshot-preview {
+  border-color: #d9e2e7;
+  background: #f7fafb;
+}
+
+.production-shell .feedback-screenshot-preview img {
+  background: #edf2f4;
+}
+
+.production-shell .feedback-screenshot-preview strong {
+  color: #18232b;
+}
+
+.production-shell .submit-feedback-dialog .dialog-actions {
+  border-color: #d9e2e7;
+  background: #ffffff;
+}
+
+.production-shell .update-notes {
+  border-color: #d9e2e7;
+  color: #34444e;
+  background: #f7fafb;
+}
+
+.production-shell .update-progress-track {
+  background: #d9e2e7;
+}
+
+.production-shell .update-progress-track span {
+  background: #087f73;
+}
+
+.production-shell .wb-markdown-panel .markdown-preview,
+.production-shell .wb-markdown-panel .markdown-preview p,
+.production-shell .wb-markdown-panel .markdown-preview li,
+.production-shell .wb-markdown-panel .markdown-preview td {
+  color: #34444e;
+}
+
+.production-shell .wb-markdown-panel .preview-empty {
+  color: #526169;
+}
+
+.production-shell .wb-markdown-panel .markdown-preview h1,
+.production-shell .wb-markdown-panel .markdown-preview h2,
+.production-shell .wb-markdown-panel .markdown-preview h3,
+.production-shell .wb-markdown-panel .markdown-preview h4,
+.production-shell .wb-markdown-panel .markdown-preview h5,
+.production-shell .wb-markdown-panel .markdown-preview h6,
+.production-shell .wb-markdown-panel .markdown-preview th {
+  color: #18232b;
+}
+
+.production-shell .wb-markdown-panel .markdown-preview blockquote {
+  border-color: #65a79e;
+  color: #526169;
+  background: #f4f8f8;
+}
+
+.production-shell .wb-markdown-panel .markdown-preview a {
+  color: #087f73;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.production-shell .wb-markdown-panel .markdown-preview img {
+  border-color: #d9e2e7;
+  background: #f7fafb;
+}
+
+.production-shell .wb-markdown-panel .markdown-preview :not(pre) > code {
+  border-color: #bad8d3;
+  color: #065f57;
+  background: #e1f1ee;
+}
+
+.production-shell .wb-markdown-panel .markdown-code-block {
+  border-color: #c9d5da;
+  background: #f6f9fa;
+}
+
+.production-shell .wb-markdown-panel .markdown-code-language {
+  border-color: #bad8d3;
+  color: #065f57;
+  background: #e1f1ee;
+}
+
+.production-shell .wb-markdown-panel .markdown-code-block code {
+  color: #34444e;
+}
+
+.production-shell .wb-markdown-panel .markdown-preview th,
+.production-shell .wb-markdown-panel .markdown-preview td {
+  border-color: #c9d5da;
+}
+
+.production-shell .wb-markdown-panel .markdown-preview th,
+.production-shell .wb-markdown-panel .markdown-preview tr:nth-child(even) td {
+  background: #f4f7f9;
+}
