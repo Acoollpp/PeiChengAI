@@ -171,6 +171,7 @@ export interface WorkbenchCommands {
   openReportFeedback?(reportId: string): Promise<PreviewCommandResult>
   submitNegativeReportFeedback?(reportId: string): Promise<PreviewCommandResult>
   openTaskLog?(taskId: string): Promise<PreviewCommandResult>
+  hideTask?(taskId: string): Promise<PreviewCommandResult>
   chooseFeedbackScreenshot(currentScreenshotIds?: string[]): Promise<FeedbackScreenshotView>
   submitFeedback(input: SubmitFeedbackCommand): Promise<PreviewCommandResult>
   chooseMaterial(

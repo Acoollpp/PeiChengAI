@@ -3,7 +3,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createFixtureWorkbenchAdapter } from './fixture-adapter'
 import { ReviewWorkbenchPreview } from './ReviewWorkbenchPreview'
@@ -51,7 +51,7 @@ describe('ReviewWorkbenchPreview', () => {
     const overview = screen.getByLabelText('任务总览')
     expect(within(overview).getByText('正在执行').closest('div')).toHaveTextContent('2')
     expect(within(overview).getByText('本机等待').closest('div')).toHaveTextContent('3')
-    expect(within(overview).getByText('需要处理').closest('div')).toHaveTextContent('1')
+    expect(within(overview).getByText('今日失败').closest('div')).toHaveTextContent('1')
     expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('3')
   })
 
@@ -63,11 +63,11 @@ describe('ReviewWorkbenchPreview', () => {
     expect(screen.getByRole('tab', { name: '当前任务 5' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByText('产品规格书在任务开始前已被移动，请重新选择材料后从头重试。')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('tab', { name: '需要处理 1' }))
+    await user.click(screen.getByRole('tab', { name: '待处理失败任务 1' }))
     expect(screen.getByText('产品规格书在任务开始前已被移动，请重新选择材料后从头重试。')).toBeInTheDocument()
     await adapter.commands.advanceTasks()
 
-    expect(screen.getByRole('tab', { name: /需要处理/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: /待处理失败任务/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByText('产品规格书在任务开始前已被移动，请重新选择材料后从头重试。')).toBeInTheDocument()
   })
 
@@ -86,8 +86,42 @@ describe('ReviewWorkbenchPreview', () => {
 
     render(<ReviewWorkbenchPreview adapter={adapter} />)
 
-    expect(screen.getByRole('tab', { name: '需要处理 1' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: '待处理失败任务 1' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByText('产品规格书在任务开始前已被移动，请重新选择材料后从头重试。')).toBeInTheDocument()
+  })
+
+  it('失败任务提供移除按钮并调用隐藏命令', async () => {
+    const user = userEvent.setup()
+    const fixtureAdapter = createFixtureWorkbenchAdapter()
+    const hideTask = vi.fn(async () => ({ message: '已从本机列表移除' }))
+    const adapter = {
+      ...fixtureAdapter,
+      commands: { ...fixtureAdapter.commands, hideTask }
+    }
+
+    render(<ReviewWorkbenchPreview adapter={adapter} />)
+
+    await user.click(screen.getByRole('tab', { name: '待处理失败任务 1' }))
+    await user.click(
+      screen.getByRole('button', { name: '从本机列表移除 CR-240806-012' })
+    )
+
+    expect(hideTask).toHaveBeenCalledWith('CR-240806-012')
+  })
+
+  it('当前任务不提供移除按钮', async () => {
+    const user = userEvent.setup()
+    const fixtureAdapter = createFixtureWorkbenchAdapter()
+    const adapter = {
+      ...fixtureAdapter,
+      commands: { ...fixtureAdapter.commands, hideTask: vi.fn() }
+    }
+
+    render(<ReviewWorkbenchPreview adapter={adapter} />)
+
+    await user.click(screen.getByRole('tab', { name: '当前任务 5' }))
+
+    expect(screen.queryByRole('button', { name: /从本机列表移除/ })).not.toBeInTheDocument()
   })
 
   it('从默认不可提交、校验失败切换到可提交，并创建可观察的预览任务', async () => {
@@ -185,7 +219,7 @@ describe('ReviewWorkbenchPreview', () => {
     expect(screen.queryByText('低压上下电状态机复核')).not.toBeInTheDocument()
     expect(screen.queryByText('可查看报告')).not.toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '当前任务 5' })).toHaveAttribute('aria-selected', 'true')
-    await user.click(screen.getByRole('tab', { name: '需要处理 1' }))
+    await user.click(screen.getByRole('tab', { name: '待处理失败任务 1' }))
     expect(screen.getByText('产品规格书在任务开始前已被移动，请重新选择材料后从头重试。')).toBeInTheDocument()
     expect(screen.queryByText('本机等待第 3 位')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('CR-240806-017 电池包主控状态机变更')).not.toBeInTheDocument()

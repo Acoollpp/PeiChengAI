@@ -1842,4 +1842,66 @@ describe('useTaskQueue', () => {
       'task-start-old'
     ])
   })
+
+  it('移除任务后该任务不再出现在队列里', async () => {
+    const { result } = renderHook(() => useTaskQueue({ executeTask: vi.fn() }))
+
+    await act(async () => {
+      result.current.setServerTasks([
+        {
+          id: 'task-keep',
+          svn_url: 'svn://repo/keep',
+          old_revision: '1',
+          new_revision: '2',
+          template_key: 'template_1',
+          skill_name: '通用-代码审查-模版一',
+          status: 'failed'
+        },
+        {
+          id: 'task-drop',
+          svn_url: 'svn://repo/drop',
+          old_revision: '3',
+          new_revision: '4',
+          template_key: 'template_1',
+          skill_name: '通用-代码审查-模版一',
+          status: 'failed'
+        }
+      ])
+    })
+
+    expect(result.current.tasks.map((task) => task.id)).toEqual(['task-keep', 'task-drop'])
+
+    await act(async () => {
+      result.current.removeTask('task-drop')
+    })
+
+    expect(result.current.tasks.map((task) => task.id)).toEqual(['task-keep'])
+  })
+
+  it('移除后的任务不会因服务端列表刷新而以本地任务身份复活', async () => {
+    const { result } = renderHook(() => useTaskQueue({ executeTask: vi.fn() }))
+    const serverTask = {
+      id: 'task-drop',
+      svn_url: 'svn://repo/drop',
+      old_revision: '3',
+      new_revision: '4',
+      template_key: 'template_1' as const,
+      skill_name: '通用-代码审查-模版一',
+      status: 'failed' as const
+    }
+
+    await act(async () => {
+      result.current.setServerTasks([serverTask])
+    })
+    await act(async () => {
+      result.current.removeTask('task-drop')
+    })
+
+    // 主进程已过滤掉该任务，刷新时它不再出现在服务端返回里。
+    await act(async () => {
+      result.current.setServerTasks([])
+    })
+
+    expect(result.current.tasks).toEqual([])
+  })
 })

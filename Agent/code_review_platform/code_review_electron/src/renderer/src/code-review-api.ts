@@ -157,6 +157,10 @@ export interface OpenTaskLogResult {
   logPath?: string
 }
 
+export interface HideTaskResult {
+  status: 'hidden' | 'missing'
+}
+
 export interface SubmitFeedbackPayload {
   description: string
   screenshots?: File[]
@@ -268,6 +272,7 @@ export interface CodeReviewApi {
   retryTask(payload: RetryTaskRequest): Promise<ExecuteTaskResult>
   cancelTask(payload: CancelTaskRequest): Promise<CancelTaskResult>
   openTaskLog(taskId: string): Promise<OpenTaskLogResult>
+  hideTask(taskId: string): Promise<HideTaskResult>
   selectRequirementFile(): Promise<SelectRequirementFileResult>
   selectReviewMaterialFile(
     payload: SelectReviewMaterialFileRequest

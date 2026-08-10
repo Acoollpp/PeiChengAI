@@ -60,6 +60,7 @@ import {
   uploadRequirementFile
 } from './report-uploader'
 import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
+import { HiddenTaskStore } from './hidden-task-store'
 import { ServerConfigStore, normalizeServerUrl } from './server-config-store'
 import { createSkillSyncService, type SkillSyncResult } from './skill-sync'
 import { appendTaskLogEvent, CODEX_REVIEW_LOG_FILE_NAME } from './task-log'
@@ -89,6 +90,7 @@ export interface IpcHandlerDependencies {
   authStore?: AuthStore
   credentialStore?: CredentialStore
   serverConfigStore?: ServerConfigStore
+  hiddenTaskStore?: HiddenTaskStore
   checkEnvironment?: () => Promise<EnvironmentCheckResult>
   preflightSvn?: TaskAgentDependencies['preflightSvn']
   preflightSvnUrl?: typeof runSvnUrlPreflight
@@ -163,6 +165,14 @@ interface OpenTaskLogRequest {
 interface OpenTaskLogResult {
   status: 'ready' | 'missing'
   logPath?: string
+}
+
+interface HideTaskRequest {
+  taskId: string
+}
+
+interface HideTaskResult {
+  status: 'hidden' | 'missing'
 }
 
 type SelectRequirementFileResult =
@@ -661,6 +671,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   const authStore = dependencies.authStore ?? new AuthStore()
   const credentialStore = dependencies.credentialStore ?? new CredentialStore()
   const serverConfigStore = dependencies.serverConfigStore ?? new ServerConfigStore()
+  const hiddenTaskStore = dependencies.hiddenTaskStore ?? new HiddenTaskStore()
   const appUpdateService =
     dependencies.appUpdateService ?? createAppUpdateService(authStore, serverConfigStore)
   const getMainWindow = dependencies.getMainWindow ?? (() => undefined)
@@ -961,7 +972,20 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     }
 
     const taskApi = await createApiClient()
-    return taskApi.listTasks(tokens.access_token, { mine: true })
+    const response = await taskApi.listTasks(tokens.access_token, { mine: true })
+    const hiddenTaskIds = await hiddenTaskStore.load()
+
+    // 服务端默认分页返回前 100 条，只有拿到全量时裁剪名单才安全，
+    // 否则会误清分页外任务的隐藏记录，导致已移除任务重新出现。
+    if (response.data.length === response.count) {
+      await hiddenTaskStore.prune(response.data.map((task) => task.id))
+    }
+
+    // count 保留服务端原值：它反映服务端真实任务数，不因本机隐藏而改变。
+    return {
+      ...response,
+      data: response.data.filter((task) => !hiddenTaskIds.includes(task.id))
+    }
   })
 
   ipcMain.handle('task:stats', async () => {
@@ -1364,6 +1388,20 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
     shell.showItemInFolder(logPath)
     return { status: 'ready', logPath }
   })
+
+  ipcMain.handle(
+    'task:hide',
+    async (_event, payload: HideTaskRequest): Promise<HideTaskResult> => {
+      const trimmedTaskId = payload.taskId.trim()
+      if (!trimmedTaskId) {
+        return { status: 'missing' }
+      }
+
+      // 只隐藏本机列表展示，服务端任务记录与报告一律保留。
+      await hiddenTaskStore.add(trimmedTaskId)
+      return { status: 'hidden' }
+    }
+  )
 
   ipcMain.handle(
     'feedback:submit',
