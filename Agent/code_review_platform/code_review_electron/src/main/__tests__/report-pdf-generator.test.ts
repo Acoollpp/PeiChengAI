@@ -425,4 +425,54 @@ describe('report pdf generator', () => {
       'PDF生成失败：请选择 Markdown 报告文件'
     )
   })
+
+  it('renders single line breaks inside a paragraph as line breaks', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-pdf-soft-break-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    await writeFile(
+      reportPath,
+      ['**项目路径：** svn://repo/bms', '**所属部门：** 软件开发部', '**新版本：** r49072'].join(
+        '\n'
+      )
+    )
+    let loadedHtml = ''
+    const loadFile = vi.fn<(path: string) => Promise<void>>(async (path) => {
+      loadedHtml = await readFile(path, 'utf8')
+    })
+    const createWindow = vi.fn(() => ({
+      loadFile,
+      webContents: {
+        printToPDF: vi.fn(async () => Buffer.from('pdf-bytes'))
+      },
+      close: vi.fn()
+    }))
+
+    await generatePdfReport(reportPath, { createWindow })
+
+    expect(loadedHtml.match(/<br \/>/g) ?? []).toHaveLength(2)
+    expect(loadedHtml).not.toContain('&lt;br /&gt;')
+  })
+
+  it('keeps hard line breaks from legacy reports from doubling', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-pdf-hard-break-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    await writeFile(reportPath, '**项目路径：** svn://repo/bms  \n**所属部门：** 软件开发部')
+    let loadedHtml = ''
+    const loadFile = vi.fn<(path: string) => Promise<void>>(async (path) => {
+      loadedHtml = await readFile(path, 'utf8')
+    })
+    const createWindow = vi.fn(() => ({
+      loadFile,
+      webContents: {
+        printToPDF: vi.fn(async () => Buffer.from('pdf-bytes'))
+      },
+      close: vi.fn()
+    }))
+
+    await generatePdfReport(reportPath, { createWindow })
+
+    expect(loadedHtml.match(/<br \/>/g) ?? []).toHaveLength(1)
+  })
 })

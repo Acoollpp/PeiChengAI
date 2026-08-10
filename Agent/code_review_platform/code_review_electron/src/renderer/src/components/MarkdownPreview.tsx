@@ -11,6 +11,7 @@ import {
 } from 'react'
 import type { Element, ElementContent, Root, RootContent } from 'hast'
 import ReactMarkdown from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import type { Plugin } from 'unified'
 
@@ -329,7 +330,7 @@ export function MarkdownPreview({
       <MarkdownErrorBoundary resetKey={markdown}>
         <article className="markdown-preview">
           <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={[remarkGfm, remarkBreaks]}
             rehypePlugins={[issueBlockPlugin]}
             urlTransform={(url, key) =>
               key === 'src' && isRelativeImagePath(url) ? url : safeUrl(url)
