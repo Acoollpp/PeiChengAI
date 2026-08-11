@@ -104,6 +104,7 @@ export interface ExecuteReviewTaskResult {
   pdfReportName?: string
   codexLogPath?: string
   feedbackProtocolVersion?: number | null
+  serverTask?: ReviewTask
 }
 
 export interface TaskAgentApi {
@@ -153,6 +154,39 @@ const feedbackProtocolVersionFromUpload = (result: unknown): number | null | und
   }
   const version = result.feedback_protocol_version
   return typeof version === 'number' || version === null ? version : undefined
+}
+
+const reviewTaskStatuses = new Set<ReviewTaskStatus>([
+  'created',
+  'checking_environment',
+  'running_codex',
+  'uploading_report',
+  'success',
+  'failed',
+  'environment_error',
+  'cancelled'
+])
+
+const reviewTaskFromUpload = (result: unknown, taskId: string): ReviewTask | undefined => {
+  if (
+    typeof result !== 'object' ||
+    result === null ||
+    !('id' in result) ||
+    result.id !== taskId ||
+    !('svn_url' in result) ||
+    typeof result.svn_url !== 'string' ||
+    !('old_revision' in result) ||
+    typeof result.old_revision !== 'string' ||
+    !('new_revision' in result) ||
+    typeof result.new_revision !== 'string' ||
+    !('status' in result) ||
+    typeof result.status !== 'string' ||
+    !reviewTaskStatuses.has(result.status as ReviewTaskStatus)
+  ) {
+    return undefined
+  }
+
+  return result as ReviewTask
 }
 
 export const getEnvironmentErrorMessage = (status: Exclude<EnvironmentStatus, 'ready'>): string =>
@@ -574,6 +608,7 @@ const runExistingReviewTask = async (
       reportMarkdown
     )
     const feedbackProtocolVersion = feedbackProtocolVersionFromUpload(uploadResult)
+    const serverTask = reviewTaskFromUpload(uploadResult, task.id)
     throwIfCancelled(input.signal)
     emitStage(onProgress, task.id, input.clientTaskId, 'success', '审查完成')
     return {
@@ -582,7 +617,8 @@ const runExistingReviewTask = async (
       reportMarkdown,
       reportPath: workspace.reportPath,
       ...(workspace.codexLogPath ? { codexLogPath: workspace.codexLogPath } : {}),
-      ...(feedbackProtocolVersion === undefined ? {} : { feedbackProtocolVersion })
+      ...(feedbackProtocolVersion === undefined ? {} : { feedbackProtocolVersion }),
+      ...(serverTask ? { serverTask } : {})
     }
   } catch (error) {
     if (isCancelledError(error) || input.signal?.aborted) {

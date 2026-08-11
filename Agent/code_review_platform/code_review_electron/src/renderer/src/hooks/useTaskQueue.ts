@@ -248,26 +248,36 @@ export function useTaskQueue({
           const latestTask =
             tasksRef.current.find((currentTask) => currentTask.localTaskId === task.localTaskId) ??
             task
+          const serverTask = result.serverTask?.id === result.taskId ? result.serverTask : undefined
           const completedTask: TaskViewItem = {
             ...latestTask,
+            ...serverTask,
             id: result.taskId,
             status: result.status,
-            report_path: result.reportPath,
-            pdf_report_name: result.pdfReportName ?? latestTask.pdf_report_name,
+            report_path: serverTask?.report_path ?? result.reportPath ?? latestTask.report_path,
+            pdf_report_name:
+              serverTask?.pdf_report_name ?? result.pdfReportName ?? latestTask.pdf_report_name,
             codex_log_path: result.codexLogPath ?? latestTask.codex_log_path,
-            reportMarkdown: result.reportMarkdown,
-            pdfPath: result.pdfPath,
+            codex_log: latestTask.codex_log,
+            reportMarkdown: result.reportMarkdown ?? latestTask.reportMarkdown,
+            pdfPath: result.pdfPath ?? latestTask.pdfPath,
+            requirement_file_path: latestTask.requirement_file_path,
             feedback_protocol_version:
-              result.feedbackProtocolVersion !== undefined
+              serverTask?.feedback_protocol_version !== undefined
+                ? serverTask.feedback_protocol_version
+                : result.feedbackProtocolVersion !== undefined
                 ? result.feedbackProtocolVersion
                 : latestTask.feedback_protocol_version,
             progress_message:
               result.status === 'success' ? '审查完成' : latestTask.progress_message,
-            started_at: latestTask.started_at ?? nowIso(),
+            started_at: serverTask?.started_at ?? latestTask.started_at ?? nowIso(),
             finished_at: isTerminalStatus(result.status)
-              ? (latestTask.finished_at ?? nowIso())
-              : latestTask.finished_at,
+              ? (serverTask?.finished_at ?? latestTask.finished_at ?? nowIso())
+              : (serverTask?.finished_at ?? latestTask.finished_at),
             localQueueState: 'finished',
+            localTaskId: latestTask.localTaskId,
+            createdAtMs: latestTask.createdAtMs,
+            queueIndex: latestTask.queueIndex,
             isLocalOnly: false,
             isLocallyExecuting: false
           }
@@ -420,6 +430,9 @@ export function useTaskQueue({
       pdf_report_name: undefined,
       pdfPath: undefined,
       codex_log: undefined,
+      issue_count: undefined,
+      highest_issue_severity: undefined,
+      feedback_protocol_version: undefined,
       started_at: undefined,
       finished_at: undefined,
       localQueueState: 'queued',

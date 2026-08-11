@@ -141,6 +141,7 @@ export interface ExecuteTaskResult {
   pdfReportName?: string
   codexLogPath?: string
   feedbackProtocolVersion?: number | null
+  serverTask?: ReviewTask
 }
 
 export interface CancelTaskRequest {
