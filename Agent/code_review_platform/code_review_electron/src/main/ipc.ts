@@ -63,7 +63,7 @@ import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
 import { HiddenTaskStore } from './hidden-task-store'
 import { ServerConfigStore, normalizeServerUrl } from './server-config-store'
 import { createSkillSyncService, type SkillSyncResult } from './skill-sync'
-import { appendTaskLogEvent, CODEX_REVIEW_LOG_FILE_NAME } from './task-log'
+import { appendTaskLogEvent, flushTaskLog, CODEX_REVIEW_LOG_FILE_NAME } from './task-log'
 import {
   runSvnPreflight,
   runSvnUrlPreflight,
@@ -207,6 +207,7 @@ interface ActiveReviewTask {
   api: TaskAgentDependencies['api']
   abortController: AbortController
   workspaceDir?: string
+  evidenceDir?: string
   cancelPromise?: Promise<CancelTaskResult>
 }
 
@@ -279,7 +280,9 @@ const cancelActiveReviewTask = async (
       }
     }
 
+    // 证据目录在任务工作区之外（为压住 Windows MAX_PATH），删 cwd 删不掉它。
     await deleteWorkspace(task.workspaceDir)
+    await deleteWorkspace(task.evidenceDir)
     if (statusError) {
       throw statusError
     }
@@ -1215,6 +1218,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
             registerActiveTask(activeTask)
             const workspace = await prepareWorkspace(input)
             activeTask.workspaceDir = workspace.cwd
+            activeTask.evidenceDir = workspace.evidenceDir
             codexLogPath = workspace.codexLogPath ?? join(workspace.cwd, CODEX_REVIEW_LOG_FILE_NAME)
             return {
               ...workspace,
@@ -1246,8 +1250,10 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
           }
           sendToRenderer(event.sender, 'task:progress', progressEvent)
         }
-      ).finally(() => {
+      ).finally(async () => {
         unregisterActiveTask(activeTask)
+        // 日志是 fire-and-forget 写入的，收尾前 flush，避免任务已返回而日志还缺行。
+        await flushTaskLog(codexLogPath)
       })
 
       if (result.status === 'success' && result.reportPath) {
@@ -1313,6 +1319,7 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
             registerActiveTask(activeTask)
             const workspace = await prepareWorkspace(input)
             activeTask.workspaceDir = workspace.cwd
+            activeTask.evidenceDir = workspace.evidenceDir
             codexLogPath = workspace.codexLogPath ?? join(workspace.cwd, CODEX_REVIEW_LOG_FILE_NAME)
             return {
               ...workspace,
@@ -1344,8 +1351,10 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
           }
           sendToRenderer(event.sender, 'task:progress', progressEvent)
         }
-      ).finally(() => {
+      ).finally(async () => {
         unregisterActiveTask(activeTask)
+        // 日志是 fire-and-forget 写入的，收尾前 flush，避免任务已返回而日志还缺行。
+        await flushTaskLog(codexLogPath)
       })
 
       if (result.status === 'success' && result.reportPath) {

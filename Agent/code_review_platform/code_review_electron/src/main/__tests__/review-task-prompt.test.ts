@@ -41,6 +41,26 @@ describe('buildBmsReviewTaskPrompt', () => {
     expect(prompt).not.toContain('重点审查方向')
   })
 
+  it('指定证据工作目录，未提供时不产出该段落', () => {
+    const input = {
+      svnUrl: 'svn://example.com/bms/trunk',
+      oldRevision: '12',
+      newRevision: '14',
+      reviewItems: [{ id: 'DS-03', name: '状态机审核', materials: [] }],
+      reportPath: 'C:\\review\\report.md'
+    }
+
+    const withEvidenceDir = buildBmsReviewTaskPrompt({
+      ...input,
+      evidenceDir: 'C:\\crv\\e\\6fcddf8b'
+    })
+    expect(withEvidenceDir).toContain('证据工作目录：C:\\crv\\e\\6fcddf8b')
+    expect(withEvidenceDir).toContain('不得在其他位置新建工作目录')
+
+    // 没有证据目录时保持原提示词，不留空段落。
+    expect(buildBmsReviewTaskPrompt(input)).not.toContain('证据工作目录')
+  })
+
   it('空额外规则显示为无且拒绝相对报告路径', () => {
     const input = {
       svnUrl: 'svn://example.com/bms/trunk',

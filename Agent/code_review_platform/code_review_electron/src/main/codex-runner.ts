@@ -4,6 +4,7 @@ import { win32 as windowsPath } from 'node:path'
 
 import { buildVersionCommandOptions } from './environment-checker'
 import { bundledCodeGraphRuntime } from './bundled-codegraph-runtime'
+import { buildEvidenceDirSection } from './review-task-prompt'
 import {
   REVIEW_REPORT_IMAGES_DIR_NAME,
   isFullReviewOldRevision,
@@ -20,6 +21,7 @@ export interface ReviewPromptInput {
   requirementFilePath?: string
   departmentName?: string
   focusDirectionSnapshot?: string
+  evidenceDir?: string
 }
 
 export interface RunCodexReviewOptions {
@@ -213,7 +215,8 @@ export const buildReviewPrompt = ({
   skillName,
   requirementFilePath,
   departmentName,
-  focusDirectionSnapshot
+  focusDirectionSnapshot,
+  evidenceDir
 }: ReviewPromptInput): string => `请强制使用本机 Codex 已安装的 Skill：${skillName}
 
 审查输入：
@@ -225,7 +228,7 @@ export const buildReviewPrompt = ({
   requirementFilePath,
   departmentName,
   focusDirectionSnapshot
-})}${buildReviewModeInstruction(oldRevision, newRevision)}
+})}${buildReviewModeInstruction(oldRevision, newRevision)}${buildEvidenceDirSection(evidenceDir).join('\n')}
 
 请严格按该 Skill 的输入模块、SVN 获取策略、规则模块、输出模块执行代码变更审查。
 最终生成 Markdown 审查报告到报告输出路径：${reportPath}

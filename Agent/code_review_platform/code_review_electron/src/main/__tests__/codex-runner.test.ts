@@ -236,6 +236,23 @@ describe('buildReviewPrompt', () => {
     expect(prompt).not.toContain('閫氱敤')
   })
 
+  it('指定证据工作目录，未提供时不产出该段落', () => {
+    const input = {
+      svnUrl: 'svn://example.com/repo/project',
+      oldRevision: '123',
+      newRevision: '130',
+      reportPath: '/tmp/review/代码审查报告.md',
+      imagesDir: '/tmp/review/images',
+      skillName: '通用-代码审查-模版二'
+    }
+
+    const withEvidenceDir = buildReviewPrompt({ ...input, evidenceDir: 'C:\\crv\\e\\6fcddf8b' })
+    expect(withEvidenceDir).toContain('证据工作目录：C:\\crv\\e\\6fcddf8b')
+    expect(withEvidenceDir).toContain('不得在其他位置新建工作目录')
+
+    expect(buildReviewPrompt(input)).not.toContain('证据工作目录')
+  })
+
   it('does not ask Codex to run a hard-coded svn diff command outside the skill', () => {
     const prompt = buildReviewPrompt({
       svnUrl: 'svn://example.com/repo/project',
