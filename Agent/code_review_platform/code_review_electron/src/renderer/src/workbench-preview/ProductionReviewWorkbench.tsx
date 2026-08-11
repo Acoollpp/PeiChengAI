@@ -716,7 +716,9 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
     departmentName: currentUser.department_name || '未命名部门',
     scenarios: [], activeScenario: 'active', catalog, sampleTask: emptySample,
     tasks: queue.tasks.map(toTaskViewModel),
-    reports: queue.tasks.filter(hasReadableMarkdownReport).map((task) =>
+    // 必须用 historyTasks（按 finished_at → started_at → createdAtMs 倒序）而非 queue.tasks：
+    // 后者是插入顺序，本次会话内新完成的任务会停在数组末尾，导致新报告排到列表最下方。
+    reports: queue.historyTasks.filter(hasReadableMarkdownReport).map((task) =>
       toReportViewModel(task, reportContentStates[task.id])
     ),
     selectedReportId, notice, noticeAction, activeFeedbackAnchorId, feedbackAnchorScrollRequest,
