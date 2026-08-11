@@ -156,6 +156,26 @@ const longNameStressCatalog: ReviewItemDefinition[] = [
   }
 ]
 
+const multipleMaterialStressCatalog: ReviewItemDefinition[] = [
+  {
+    id: 'DS-01',
+    category: '测试目录',
+    name: '多材料审查',
+    summary: '仅用于验证 renderer 多文件摘要，不改变正式目录。',
+    goal: '验证多文件材料数量。',
+    process: ['使用真实生产组件渲染'],
+    specification: '仅用于自动化验收。',
+    materialFields: [{
+      id: 'evidence',
+      label: '审查证据',
+      description: '可选择多份 PDF 证据。',
+      required: true,
+      extensions: ['.pdf'],
+      multiplicity: 'multiple'
+    }]
+  }
+]
+
 const submitMinimalDs03Task = async (svnUrl: string): Promise<void> => {
   const user = userEvent.setup()
   const svnInput = await screen.findByLabelText('SVN 地址')
@@ -544,6 +564,41 @@ describe('ProductionReviewWorkbench', () => {
       })
     ).toBeInTheDocument()
     expect(screen.queryByText('编码规范审查')).not.toBeInTheDocument()
+  })
+
+  it('synthetic 多文件目录确认后显示文件数量摘要', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.selectReviewMaterialFile)
+      .mockResolvedValueOnce({
+        status: 'selected',
+        filePath: '/local/materials/第一份证据.pdf',
+        fileName: '第一份证据.pdf',
+        fileSize: 1024
+      })
+      .mockResolvedValueOnce({
+        status: 'selected',
+        filePath: '/local/materials/第二份证据.pdf',
+        fileName: '第二份证据.pdf',
+        fileSize: 2048
+      })
+    render(
+      <ProductionReviewWorkbench
+        {...productionProps}
+        catalogOverride={multipleMaterialStressCatalog}
+      />
+    )
+
+    await user.click(await screen.findByRole('button', { name: '选择' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-01 多材料审查' }))
+    await user.click(screen.getByRole('button', { name: '选择文件' }))
+    await user.click(screen.getByRole('button', { name: '选择文件' }))
+    await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
+
+    expect(screen.getByText('已选 1 项 · 2 个材料文件')).toBeInTheDocument()
+    expect(screen.getByText('DS-01').closest('.wb-selected-item')).toHaveTextContent(
+      '2 个材料文件已就绪'
+    )
+    expect(window.codeReview.selectReviewMaterialFile).toHaveBeenCalledTimes(2)
   })
 
   it('从生产工作台原样提交 r0 和 DS-03 规则，并打开真实 Markdown、PDF 与逐问题反馈', async () => {

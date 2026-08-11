@@ -1,5 +1,5 @@
 import { mkdtemp, mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -174,6 +174,106 @@ describe('prepareReviewTaskMaterials', () => {
     await expect(prepareReviewTaskMaterials(reviewItems, join(root, 'failed-workspace'), {
       copyFile: vi.fn(async () => { throw new Error('disk full') })
     })).rejects.toThrow('审查材料复制失败：DS-TEST 材料一复制失败')
+  })
+
+  it('同一多文件字段按输入顺序隔离同名文件并保留两份内容', async () => {
+    const root = await makeTemporaryDirectory()
+    const firstDirectory = join(root, 'first')
+    const secondDirectory = join(root, 'second')
+    await mkdir(firstDirectory)
+    await mkdir(secondDirectory)
+    const firstPath = join(firstDirectory, '同名材料.bin')
+    const secondPath = join(secondDirectory, '同名材料.bin')
+    await writeFile(firstPath, 'first-content')
+    await writeFile(secondPath, 'second-content')
+    const destinationRoot = join(root, 'workspace', 'materials')
+    const destinationDirectory = join(destinationRoot, 'DS-TEST', 'evidence')
+    const reviewItems: ResolvedReviewItemInput[] = [{
+      id: 'DS-TEST',
+      name: '测试材料',
+      materials: [{
+        fieldId: 'evidence',
+        name: '审查证据',
+        required: true,
+        multiple: true,
+        allowedExtensions: ['.bin'],
+        filePaths: [firstPath, secondPath]
+      }]
+    }]
+
+    const prepared = await prepareReviewTaskMaterials(reviewItems, destinationRoot)
+    const copiedPaths = prepared[0].materials[0].filePaths
+
+    expect(copiedPaths).toEqual([
+      join(destinationDirectory, '同名材料.bin'),
+      join(destinationDirectory, '同名材料-2.bin')
+    ])
+    expect(copiedPaths.every((filePath) => dirname(filePath) === destinationDirectory)).toBe(true)
+    await expect(Promise.all(copiedPaths.map((filePath) => readFile(filePath, 'utf8')))).resolves.toEqual([
+      'first-content',
+      'second-content'
+    ])
+  })
+
+  it('同一多文件字段按输入顺序复制不同名文件且不重命名', async () => {
+    const root = await makeTemporaryDirectory()
+    const sourceDirectory = join(root, 'source')
+    await mkdir(sourceDirectory)
+    const firstPath = join(sourceDirectory, '第一份证据.bin')
+    const secondPath = join(sourceDirectory, '第二份证据.txt')
+    await writeFile(firstPath, 'first-content')
+    await writeFile(secondPath, 'second-content')
+    const destinationRoot = join(root, 'workspace', 'materials')
+    const reviewItems: ResolvedReviewItemInput[] = [{
+      id: 'DS-TEST',
+      name: '测试材料',
+      materials: [{
+        fieldId: 'evidence',
+        name: '审查证据',
+        required: true,
+        multiple: true,
+        allowedExtensions: ['.bin', '.txt'],
+        filePaths: [firstPath, secondPath]
+      }]
+    }]
+
+    const prepared = await prepareReviewTaskMaterials(reviewItems, destinationRoot)
+    const copiedPaths = prepared[0].materials[0].filePaths
+
+    expect(copiedPaths).toEqual([
+      join(destinationRoot, 'DS-TEST', 'evidence', '第一份证据.bin'),
+      join(destinationRoot, 'DS-TEST', 'evidence', '第二份证据.txt')
+    ])
+    await expect(Promise.all(copiedPaths.map((filePath) => readFile(filePath, 'utf8')))).resolves.toEqual([
+      'first-content',
+      'second-content'
+    ])
+  })
+
+  it('单文件字段选择多份文件时保留原有错误且在复制前失败', async () => {
+    const root = await makeTemporaryDirectory()
+    const firstPath = join(root, '第一份.bin')
+    const secondPath = join(root, '第二份.bin')
+    await writeFile(firstPath, 'first-content')
+    await writeFile(secondPath, 'second-content')
+    const copyFile = vi.fn()
+    const reviewItems: ResolvedReviewItemInput[] = [{
+      id: 'DS-TEST',
+      name: '测试材料',
+      materials: [{
+        fieldId: 'single-evidence',
+        name: '单文件证据',
+        required: true,
+        multiple: false,
+        allowedExtensions: ['.bin'],
+        filePaths: [firstPath, secondPath]
+      }]
+    }]
+
+    await expect(
+      prepareReviewTaskMaterials(reviewItems, join(root, 'workspace'), { copyFile })
+    ).rejects.toThrow('审查材料无效：DS-TEST 单文件证据只能选择一个文件。')
+    expect(copyFile).not.toHaveBeenCalled()
   })
 
   it('从头重试会重新读取原始路径，原文件删除后明确失败', async () => {
