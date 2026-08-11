@@ -272,7 +272,12 @@ describe('executeReviewTask', () => {
       }),
       uploadReport: vi.fn(async () => {
         calls.push('uploadReport')
-        return { feedback_protocol_version: 1 }
+        return makeTask({
+          status: 'success',
+          feedback_protocol_version: 1,
+          issue_count: 2,
+          highest_issue_severity: 'high'
+        })
       }),
       uploadPdfReport: vi.fn(async () => {
         calls.push('uploadPdfReport')
@@ -286,7 +291,13 @@ describe('executeReviewTask', () => {
       status: 'success',
       reportMarkdown: '# report\n',
       reportPath,
-      feedbackProtocolVersion: 1
+      feedbackProtocolVersion: 1,
+      serverTask: makeTask({
+        status: 'success',
+        feedback_protocol_version: 1,
+        issue_count: 2,
+        highest_issue_severity: 'high'
+      })
     })
     expect(dependencies.runCodex).toHaveBeenCalledWith({
       cwd,
@@ -343,13 +354,16 @@ describe('executeReviewTask', () => {
     vi.mocked(dependencies.uploadReport).mockResolvedValueOnce({
       feedback_protocol_version: null
     })
-    await expect(
-      executeReviewTask({ token: 'token-123', request }, dependencies)
-    ).resolves.toMatchObject({
+    const resultWithoutTaskSnapshot = await executeReviewTask(
+      { token: 'token-123', request },
+      dependencies
+    )
+    expect(resultWithoutTaskSnapshot).toMatchObject({
       taskId: 'task-1',
       status: 'success',
       feedbackProtocolVersion: null
     })
+    expect(resultWithoutTaskSnapshot).not.toHaveProperty('serverTask')
   })
 
   it('DS-03 结构化任务贯通创建、预检、Codex 和报告上传且原样透传 0', async () => {

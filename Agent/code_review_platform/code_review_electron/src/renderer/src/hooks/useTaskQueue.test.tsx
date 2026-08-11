@@ -1301,6 +1301,126 @@ describe('useTaskQueue', () => {
     expect(result.current.tasks).toHaveLength(1)
   })
 
+  it('跨会话重试清除旧问题快照并在完成时合并服务端任务快照', async () => {
+    const retry = createDeferred<ExecuteTaskResult>()
+    const retryTask = vi.fn((_payload: RetryTaskRequest) => retry.promise)
+    const { result } = renderHook(() => useTaskQueue({ executeTask: vi.fn(), retryTask }))
+
+    act(() => {
+      result.current.setServerTasks([{
+        id: 'task-cross-session',
+        svn_url: 'svn://repo/cross-session',
+        old_revision: '10',
+        new_revision: '12',
+        review_item_ids: ['DS-03'],
+        skill_name: 'bms-code-reviewer',
+        status: 'failed',
+        error_message: '历史执行失败',
+        issue_count: 0,
+        highest_issue_severity: null,
+        feedback_protocol_version: 1,
+        requirement_file_path: '/server/requirement.xlsx',
+        codex_log_path: '/local/old-codex.log'
+      }])
+      result.current.updateTask('task-cross-session', (task) => ({
+        ...task,
+        requirement_file_path: '/local/requirement.xlsx'
+      }))
+    })
+    const createdAtMs = result.current.historyTasks[0].createdAtMs
+
+    await act(async () => {
+      await result.current.retryTask(result.current.historyTasks[0])
+    })
+
+    await waitFor(() => expect(retryTask).toHaveBeenCalledTimes(1))
+    expect(result.current.runningTasks[0]).toEqual(expect.objectContaining({
+      issue_count: undefined,
+      highest_issue_severity: undefined,
+      feedback_protocol_version: undefined
+    }))
+
+    act(() => {
+      result.current.applyProgressEvent({
+        taskId: 'task-cross-session',
+        clientTaskId: 'task-cross-session',
+        type: 'codex_output',
+        stream: 'stdout',
+        message: '本地重试日志'
+      })
+      result.current.applyProgressEvent({
+        taskId: 'task-cross-session',
+        clientTaskId: 'task-cross-session',
+        type: 'stage',
+        stage: 'uploading_report',
+        message: '本地正在上传报告'
+      })
+    })
+
+    await act(async () => {
+      retry.resolve({
+        taskId: 'task-cross-session',
+        status: 'success',
+        reportMarkdown: '# 本地重试报告',
+        reportPath: '/local/retry.md',
+        pdfPath: '/local/retry.pdf',
+        codexLogPath: '/local/retry-codex.log',
+        serverTask: {
+          id: 'task-cross-session',
+          svn_url: 'svn://repo/cross-session',
+          old_revision: '10',
+          new_revision: '12',
+          review_item_ids: ['DS-03'],
+          skill_name: 'bms-code-reviewer',
+          status: 'success',
+          issue_count: 2,
+          highest_issue_severity: 'high',
+          feedback_protocol_version: 1,
+          report_path: '/server/retry.md',
+          pdf_report_name: '重试报告.pdf',
+          progress_message: '服务端进度不应覆盖本地状态',
+          codex_log_path: '/server/codex.log',
+          codex_log: [{
+            taskId: 'task-cross-session',
+            type: 'codex_output',
+            stream: 'stderr',
+            message: '服务端日志不应覆盖本地日志'
+          }],
+          requirement_file_path: '/server/new-requirement.xlsx',
+          reportMarkdown: '# 服务端报告不应覆盖本地报告',
+          pdfPath: '/server/report.pdf',
+          localQueueState: 'queued',
+          localTaskId: 'server-local-task-id',
+          createdAtMs: 0,
+          isLocalOnly: true,
+          isLocallyExecuting: true,
+          queueIndex: 99
+        } as unknown as NonNullable<ExecuteTaskResult['serverTask']>
+      })
+    })
+
+    await waitFor(() => expect(result.current.historyTasks[0]?.status).toBe('success'))
+    expect(result.current.historyTasks[0]).toEqual(expect.objectContaining({
+      issue_count: 2,
+      highest_issue_severity: 'high',
+      feedback_protocol_version: 1,
+      report_path: '/server/retry.md',
+      pdf_report_name: '重试报告.pdf',
+      progress_message: '审查完成',
+      codex_log: [expect.objectContaining({ message: '本地重试日志' })],
+      codex_log_path: '/local/retry-codex.log',
+      reportMarkdown: '# 本地重试报告',
+      pdfPath: '/local/retry.pdf',
+      requirement_file_path: '/local/requirement.xlsx',
+      localQueueState: 'finished',
+      localTaskId: 'task-cross-session',
+      createdAtMs,
+      isLocalOnly: false,
+      isLocallyExecuting: false,
+      queueIndex: 0
+    }))
+  })
+
   it('服务端刷新后仍保留组合逐项输入并在失败重试时原样透传', async () => {
     const execution = createDeferred<ExecuteTaskResult>()
     const retry = createDeferred<ExecuteTaskResult>()

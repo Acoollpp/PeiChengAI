@@ -1434,7 +1434,7 @@ describe('ProductionReviewWorkbench', () => {
     expect(screen.queryByRole('heading', { name: '报告 B' })).not.toBeInTheDocument()
   })
 
-  it('把生产任务取消和失败任务重试交给本地队列', async () => {
+  it('把生产任务取消和跨会话失败任务重试交给本地队列', async () => {
     const user = userEvent.setup()
     const cancelRequest = createDeferred<Awaited<ReturnType<CodeReviewApi['cancelTask']>>>()
     vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
@@ -1445,13 +1445,19 @@ describe('ProductionReviewWorkbench', () => {
         },
         {
           id: 'failed-1', svn_url: 'svn://server/failed', old_revision: '2', new_revision: '3',
-          review_item_ids: ['DS-03'], status: 'failed', error_message: '执行失败'
+          review_item_ids: ['DS-03'], status: 'failed', error_message: '执行失败',
+          feedback_protocol_version: 1, issue_count: 0, highest_issue_severity: null
         }
       ],
       count: 2
     })
     vi.mocked(window.codeReview.retryTask).mockResolvedValueOnce({
-      taskId: 'failed-1', status: 'success', reportMarkdown
+      taskId: 'failed-1', status: 'success', reportMarkdown,
+      serverTask: {
+        id: 'failed-1', svn_url: 'svn://server/failed', old_revision: '2', new_revision: '3',
+        review_item_ids: ['DS-03'], status: 'success', feedback_protocol_version: 1,
+        issue_count: 1, highest_issue_severity: 'high', report_path: '/reports/failed-1.md'
+      }
     })
     vi.mocked(window.codeReview.cancelTask).mockImplementationOnce(() => cancelRequest.promise)
     render(<ProductionReviewWorkbench {...productionProps} />)
@@ -1480,6 +1486,11 @@ describe('ProductionReviewWorkbench', () => {
       old_revision: '2', new_revision: '3',
       requirement_file_path: undefined, review_items: undefined
     }))
+    await user.click(await screen.findByRole('button', { name: '报告中心' }))
+    await user.click(await screen.findByRole('button', { name: /failed-1/ }))
+    expect(await screen.findByRole('heading', { name: 'DS-03 状态机审核报告' })).toBeInTheDocument()
+    expect(screen.getAllByText('1 个问题 · 高风险').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('alert', { name: '报告结构解析失败' })).not.toBeInTheDocument()
   })
 
   it('移除失败任务后调用隐藏接口并把该任务移出本机列表', async () => {
