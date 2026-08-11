@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -190,6 +190,39 @@ describe('executeReviewTask', () => {
     expect(dependencies.prepareWorkspace).not.toHaveBeenCalled()
     expect(dependencies.runCodex).not.toHaveBeenCalled()
     expect(dependencies.uploadReport).not.toHaveBeenCalled()
+  })
+
+  it('把工作区的证据目录透传给 Codex', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-evidence-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '代码审查报告.md')
+    const evidenceDir = join(cwd, 'e', '6fcddf8b')
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => makeTask()),
+        updateTaskStatus: vi.fn()
+      } as unknown as TaskAgentDependencies['api'],
+      checkEnvironment: vi.fn(async () => ({
+        status: 'ready' as const,
+        svnPath: '/fake/bin/svn'
+      })),
+      prepareWorkspace: vi.fn(async () => ({
+        cwd,
+        reportPath,
+        imagesDir: join(cwd, 'images'),
+        evidenceDir
+      })),
+      runCodex: vi.fn(async () => {
+        await writeFile(reportPath, '# report\n')
+      }),
+      uploadReport: vi.fn(async () => ({}))
+    })
+
+    await executeReviewTask({ token: 'token-123', request }, dependencies)
+
+    expect(dependencies.runCodex).toHaveBeenCalledWith(
+      expect.objectContaining({ evidenceDir })
+    )
   })
 
   it('环境就绪后只上传原始Markdown并透传服务端反馈协议', async () => {
@@ -1567,6 +1600,58 @@ describe('executeReviewTask', () => {
   })
 })
 
+describe('defaultRunCodex', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.resetModules()
+  })
+
+  const runWithEvidenceDir = async (
+    reviewItems?: { id: string; name: string; materials: [] }[]
+  ): Promise<string> => {
+    vi.doMock('electron', () => ({
+      app: { isPackaged: false, getAppPath: vi.fn(() => '/tmp/code_review_electron') }
+    }))
+    let capturedPrompt = ''
+    const runCodexReview = vi.fn(async (input: { prompt: string }) => {
+      capturedPrompt = input.prompt
+      return { stdout: '', stderr: '' }
+    })
+    vi.doMock('../codex-runner', async () => ({
+      ...(await vi.importActual<typeof import('../codex-runner')>('../codex-runner')),
+      runCodexReview
+    }))
+
+    const { defaultRunCodex } = await import('../task-agent')
+    await defaultRunCodex({
+      cwd: 'C:\\crv\\w\\task-1',
+      reportPath: 'C:\\crv\\w\\task-1\\报告.md',
+      imagesDir: 'C:\\crv\\w\\task-1\\images',
+      evidenceDir: 'C:\\crv\\e\\6fcddf8b',
+      skillName: '通用-代码审查-模版二',
+      task: makeTask(),
+      ...(reviewItems ? { reviewItems } : {})
+    })
+
+    expect(runCodexReview).toHaveBeenCalledTimes(1)
+    return capturedPrompt
+  }
+
+  it('逐项审查提示词包含证据工作目录', async () => {
+    const prompt = await runWithEvidenceDir([
+      { id: 'DS-03', name: '状态机审核', materials: [] }
+    ])
+
+    expect(prompt).toContain('证据工作目录：C:\\crv\\e\\6fcddf8b')
+  })
+
+  it('模板审查提示词包含证据工作目录', async () => {
+    const prompt = await runWithEvidenceDir()
+
+    expect(prompt).toContain('证据工作目录：C:\\crv\\e\\6fcddf8b')
+  })
+})
+
 describe('defaultPrepareWorkspace', () => {
   const appRoot = join(tmpdir(), `code-review-app-${Date.now()}`)
 
@@ -1611,7 +1696,8 @@ describe('defaultPrepareWorkspace', () => {
         'task-runtime-workspace',
         'codex-review.log'
       ),
-      imagesDir: join(appRoot, '.runtime-data', 'workspaces', 'task-runtime-workspace', 'images')
+      imagesDir: join(appRoot, '.runtime-data', 'workspaces', 'task-runtime-workspace', 'images'),
+      evidenceDir: join(appRoot, '.runtime-data', 'e', 'taskrunt')
     })
     await expect(
       readFile(join(workspace.cwd, 'skills', '??-??????', 'SKILL.md'), 'utf8')
@@ -1619,6 +1705,33 @@ describe('defaultPrepareWorkspace', () => {
     await expect(
       readFile(join(workspace.cwd, 'skills', '???-?????????', 'SKILL.md'), 'utf8')
     ).rejects.toThrow()
+  })
+
+  it('在短路径下准备证据目录，且重试时清空上一次的证据', async () => {
+    vi.doMock('electron', () => ({
+      app: {
+        isPackaged: false,
+        getAppPath: vi.fn(() => appRoot)
+      }
+    }))
+
+    const evidenceDir = join(appRoot, '.runtime-data', 'e', 'taskevid')
+    // 模拟同一任务的上一次运行残留：acquire-svn-evidence.ps1 拒绝非空输出目录，
+    // 不清空就会让重试必然失败。
+    await mkdir(join(evidenceDir, 'new-source'), { recursive: true })
+    await writeFile(join(evidenceDir, 'new-source', 'stale.c'), 'stale')
+
+    const { defaultPrepareWorkspace } = await import('../task-agent')
+    const workspace = await defaultPrepareWorkspace({
+      taskId: 'task-evidence-dir',
+      svnCommand: '/fake/bin/svn',
+      svnUrl: 'svn://repo/project',
+      oldRevision: '12',
+      newRevision: '14'
+    })
+
+    expect(workspace.evidenceDir).toBe(evidenceDir)
+    await expect(readdir(evidenceDir)).resolves.toEqual([])
   })
 
   it('copies requirement Excel into the task workspace', async () => {

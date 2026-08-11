@@ -1184,6 +1184,19 @@ describe('registerIpcHandlers', () => {
     const logPath = join(cwd, 'codex-review.log')
     await expect(readFile(logPath, 'utf8')).resolves.toContain('[stdout] 读取 Skill')
     await expect(readFile(logPath, 'utf8')).resolves.toContain('[stderr] Codex warning')
+    // 日志按事件发生顺序落盘：写入串行化之前这里会乱序，且 handler 返回时可能还没写完。
+    expect(
+      (await readFile(logPath, 'utf8'))
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => line.replace(/^\S+ /, ''))
+    ).toEqual([
+      '[stage:running_codex] 启动 Codex 执行审查 Skill',
+      '[stdout] 读取 Skill',
+      '[stderr] Codex warning',
+      '[stage:uploading_report] 上传审查报告',
+      '[stage:success] 审查完成'
+    ])
 
     await expect(openLogHandler({}, { taskId: 'task-log' })).resolves.toEqual({
       status: 'ready',
@@ -3752,5 +3765,71 @@ describe('registerIpcHandlers', () => {
     await expect(
       bindHandler({}, { svn_username: 'ada', svn_password: 'secret' })
     ).rejects.toThrow('Not authenticated')
+  })
+
+  it('取消任务时一并删除任务工作区之外的证据目录', async () => {
+    const api = {
+      createTask: vi.fn(async () => ({
+        id: 'task-cancel-evidence',
+        svn_url: 'svn://repo/project',
+        old_revision: '1',
+        new_revision: '2',
+        status: 'created'
+      })),
+      updateTaskStatus: vi.fn(async () => undefined)
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123' })),
+      save: vi.fn()
+    }
+    const cwd = await mkdtemp(join(tmpdir(), 'ipc-evidence-workspace-'))
+    tempDirs.push(cwd)
+    // 证据目录刻意放在任务工作区之外（为压住 Windows MAX_PATH），删 cwd 删不到它。
+    const evidenceDir = await mkdtemp(join(tmpdir(), 'ipc-evidence-dir-'))
+    tempDirs.push(evidenceDir)
+    const exportedFile = join(evidenceDir, 'new-source.c')
+    const runCodex = vi.fn(async ({ signal }: { signal?: AbortSignal }) => {
+      await writeFile(exportedFile, 'exported')
+      await new Promise<void>((resolve) => {
+        signal?.addEventListener('abort', () => resolve(), { once: true })
+      })
+    })
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      prepareWorkspace: vi.fn(async () => ({
+        cwd,
+        reportPath: join(cwd, '代码审查报告.md'),
+        imagesDir: join(cwd, 'images'),
+        evidenceDir
+      })),
+      preflightSvn: vi.fn(),
+      runCodex: runCodex as never
+    })
+
+    const executeHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:execute')?.[1]
+    const cancelHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:cancel')?.[1]
+
+    const executePromise = executeHandler({ sender: { send: vi.fn() } }, {
+      client_task_id: 'local-cancel-evidence',
+      svn_url: 'svn://repo/project',
+      old_revision: '1',
+      new_revision: '2',
+      template_key: 'template_1',
+      skill_name: '通用-代码审查-模版一'
+    })
+    await vi.waitFor(() => expect(runCodex).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(readFile(exportedFile, 'utf8')).resolves.toBe('exported'))
+
+    await expect(
+      cancelHandler({}, { client_task_id: 'local-cancel-evidence' })
+    ).resolves.toEqual({ status: 'cancelled' })
+    await expect(executePromise).resolves.toMatchObject({ status: 'cancelled' })
+
+    await expect(readFile(exportedFile, 'utf8')).rejects.toThrow()
   })
 })

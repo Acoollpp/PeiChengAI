@@ -12,6 +12,24 @@ export interface BmsReviewTaskPromptInput {
   departmentName?: string
   reviewItems: readonly ResolvedReviewItemInput[]
   reportPath: string
+  evidenceDir?: string
+}
+
+// 平台指定证据落盘位置，只为把 SVN 导出的源码树压进 Windows MAX_PATH 260 之内；
+// 不触碰 Skill 自身的证据模式、编排策略和失败策略（见 issue #76）。
+export const buildEvidenceDirSection = (evidenceDir: string | undefined): string[] => {
+  const trimmed = evidenceDir?.trim()
+  if (!trimmed) {
+    return []
+  }
+
+  return [
+    '',
+    '## 证据工作目录',
+    `- 证据工作目录：${trimmed}`,
+    '',
+    'SVN 取证必须以该目录作为输出目录，不得在其他位置新建工作目录。该目录已由平台清空且仅供本次任务使用。指定它是因为 Windows 路径长度上限为 260 字符，工作目录过深会让 PowerShell 读不到导出的源文件。本约束只规定证据落盘位置，不改变 Skill 自身的证据模式、编排策略和失败策略。'
+  ]
 }
 
 const isAbsoluteOnSupportedPlatform = (value: string): boolean =>
@@ -23,7 +41,8 @@ export const buildBmsReviewTaskPrompt = ({
   newRevision,
   departmentName,
   reviewItems,
-  reportPath
+  reportPath,
+  evidenceDir
 }: BmsReviewTaskPromptInput): string => {
   if (!isAbsoluteOnSupportedPlatform(reportPath)) {
     throw new Error('Markdown 报告输出路径必须是绝对路径。')
@@ -75,6 +94,7 @@ export const buildBmsReviewTaskPrompt = ({
     reviewItemSections.join('\n\n'),
     '',
     '每项用户额外规则只属于紧邻的该审查项，不得应用到其他审查项或扩展为未选择的审查方向。',
+    ...buildEvidenceDirSection(evidenceDir),
     '',
     '## 报告输出',
     `- Markdown 报告完整路径：${reportPath}`,

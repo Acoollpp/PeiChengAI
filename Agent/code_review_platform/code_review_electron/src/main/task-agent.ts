@@ -1,4 +1,4 @@
-import { copyFile, mkdir, stat } from 'node:fs/promises'
+import { copyFile, mkdir, rm, stat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 
 import type { ApiClient, CreateTaskRequest, UpdateTaskStatusRequest } from './api-client'
@@ -62,6 +62,7 @@ export interface PreparedWorkspace {
   reportPath: string
   imagesDir: string
   codexLogPath?: string
+  evidenceDir?: string
   requirementFilePath?: string
   reviewItems?: ResolvedReviewItemInput[]
 }
@@ -88,6 +89,7 @@ export interface RunCodexInput {
   newRevision?: string
   skillName: string
   task: ReviewTask
+  evidenceDir?: string
   clientTaskId?: string
   signal?: AbortSignal
   onProgress?: TaskProgressReporter
@@ -214,6 +216,7 @@ export const defaultPrepareWorkspace = async ({
 
   await mkdir(cwd, { recursive: true })
   await mkdir(imagesDir, { recursive: true })
+  const evidenceDir = await prepareEvidenceDir(runtimePaths.evidenceDirForTask?.(taskId))
   const workspaceRequirementFilePath = await prepareRequirementFile(
     reviewItems ? undefined : requirementFilePath,
     join(cwd, 'requirements')
@@ -225,9 +228,22 @@ export const defaultPrepareWorkspace = async ({
     imagesDir,
     codexLogPath:
       runtimePaths.codexLogPathForTask?.(taskId) ?? join(cwd, CODEX_REVIEW_LOG_FILE_NAME),
+    ...(evidenceDir ? { evidenceDir } : {}),
     requirementFilePath: workspaceRequirementFilePath,
     ...(preparedReviewItems ? { reviewItems: preparedReviewItems } : {})
   }
+}
+
+// 证据目录必须交给 Skill 一个空目录：acquire-svn-evidence.ps1 拒绝非空输出目录，
+// 而重试复用同一任务 ID，不清空会让每次重试都失败。
+const prepareEvidenceDir = async (evidenceDir: string | undefined): Promise<string | undefined> => {
+  if (!evidenceDir) {
+    return undefined
+  }
+
+  await rm(evidenceDir, { recursive: true, force: true })
+  await mkdir(evidenceDir, { recursive: true })
+  return evidenceDir
 }
 
 export const prepareRequirementFile = async (
@@ -274,6 +290,7 @@ export const defaultRunCodex = async ({
   newRevision,
   skillName,
   task,
+  evidenceDir,
   clientTaskId,
   signal,
   onProgress
@@ -285,7 +302,8 @@ export const defaultRunCodex = async ({
         newRevision: newRevision ?? task.new_revision,
         departmentName: task.department_name ?? undefined,
         reviewItems,
-        reportPath
+        reportPath,
+        evidenceDir
       })
     : buildReviewPrompt({
         svnUrl: task.svn_url,
@@ -296,7 +314,8 @@ export const defaultRunCodex = async ({
         skillName,
         requirementFilePath,
         departmentName: task.department_name ?? undefined,
-        focusDirectionSnapshot: task.focus_direction_snapshot ?? undefined
+        focusDirectionSnapshot: task.focus_direction_snapshot ?? undefined,
+        evidenceDir
       })
 
   await runCodexReview({

@@ -45,6 +45,30 @@ describe('runtime paths', () => {
     )
   })
 
+  it('把证据目录放在短路径下，避免导出源码超过 Windows MAX_PATH', async () => {
+    vi.doMock('electron', () => ({
+      app: {
+        isPackaged: true,
+        getPath: vi.fn(() => 'D:\\SoftWare\\code-review-electron\\AI代码审查客户端.exe')
+      }
+    }))
+
+    const { getRuntimePaths } = await import('../runtime-paths')
+    const paths = await getRuntimePaths()
+
+    // 只取任务 ID 前 8 位：证据目录是一次性工作区，长度比可读性重要得多。
+    expect(paths.evidenceDirForTask?.('6fcddf8b-171e-4a7f-a384-6f0c40236800')).toBe(
+      'D:\\SoftWare\\code-review-electron-data\\e\\6fcddf8b'
+    )
+    // 剥掉分隔符和点，任务 ID 异常时也不能逃出证据根目录。
+    expect(paths.evidenceDirForTask?.('../../etc')).toBe(
+      'D:\\SoftWare\\code-review-electron-data\\e\\etc'
+    )
+    expect(paths.evidenceDirForTask?.('///')).toBe(
+      'D:\\SoftWare\\code-review-electron-data\\e\\task'
+    )
+  })
+
   it('uses a local .runtime-data directory when Electron is not packaged', async () => {
     vi.doMock('electron', () => ({
       app: {
