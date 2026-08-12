@@ -3,7 +3,11 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { cancelAllActiveReviewTasks, registerIpcHandlers } from './ipc'
+import { registerIpcHandlers } from './ipc'
+import {
+  createDefaultReviewTaskRuntime,
+  type ReviewTaskRuntime
+} from './review-task-runtime'
 import {
   createReportFeedbackWindowManager,
   type ReportFeedbackWindowManager
@@ -20,6 +24,10 @@ const MAIN_PROCESS_DIR = dirname(fileURLToPath(import.meta.url))
 const workbenchPreviewEnabled = isWorkbenchPreviewEnabled()
 let mainWindow: BrowserWindow | undefined
 let reportFeedbackWindowManager: ReportFeedbackWindowManager | undefined
+let reviewTaskRuntime: ReviewTaskRuntime | undefined
+
+const cancelAllReviewTaskRuns = (): Promise<void> =>
+  reviewTaskRuntime?.cancelAll() ?? Promise.resolve()
 
 const resolvePreloadPath = (): string => {
   const mjsPath = join(MAIN_PROCESS_DIR, '../preload/index.mjs')
@@ -69,9 +77,11 @@ app.whenReady().then(() => {
   app.setAppUserModelId(APP_USER_MODEL_ID)
   Menu.setApplicationMenu(null)
   createWindow()
+  reviewTaskRuntime = createDefaultReviewTaskRuntime()
   registerIpcHandlers({
     getMainWindow: () => mainWindow,
-    getReportFeedbackWindowManager: () => reportFeedbackWindowManager
+    getReportFeedbackWindowManager: () => reportFeedbackWindowManager,
+    reviewTaskRuntime
   })
 
   app.on('activate', () => {
@@ -82,7 +92,7 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  void cancelAllActiveReviewTasks().finally(() => {
+  void cancelAllReviewTaskRuns().finally(() => {
     if (process.platform !== 'darwin') {
       app.quit()
     }
@@ -99,7 +109,7 @@ app.on('before-quit', (event) => {
   }
 
   event.preventDefault()
-  void cancelAllActiveReviewTasks().finally(() => {
+  void cancelAllReviewTaskRuns().finally(() => {
     isQuittingAfterTaskCleanup = true
     app.quit()
   })

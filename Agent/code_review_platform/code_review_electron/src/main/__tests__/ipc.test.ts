@@ -1307,16 +1307,36 @@ describe('registerIpcHandlers', () => {
         signal?.addEventListener('abort', () => resolve(), { once: true })
       })
     })
-    const { cancelAllActiveReviewTasks, registerIpcHandlers } = await import('../ipc')
+    const { registerIpcHandlers } = await import('../ipc')
+    const { DefaultReviewTaskRuntime } = await import(
+      '../review-task-runtime/review-task-runtime'
+    )
+    const syncSkill = vi.fn(async () => ({ status: 'current' as const, skills: [] }))
+    const checkEnvironment = vi.fn(async () => ({
+      status: 'ready' as const,
+      svnPath: '/fake/bin/svn'
+    }))
+    const prepareWorkspace = vi.fn(async () => ({ cwd, reportPath, imagesDir }))
+    const preflightSvn = vi.fn()
+    const reviewTaskRuntime = new DefaultReviewTaskRuntime({
+      authStore: authStore as never,
+      createApiClient: vi.fn(async () => api as never),
+      syncSkill,
+      checkEnvironment,
+      prepareWorkspace,
+      preflightSvn,
+      runCodex: runCodex as never
+    })
 
     registerIpcHandlers({
       api: api as never,
       authStore: authStore as never,
-      syncSkill: vi.fn(async () => ({ status: 'current' as const, skills: [] })),
-      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
-      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
-      preflightSvn: vi.fn(),
-      runCodex: runCodex as never
+      syncSkill,
+      checkEnvironment,
+      prepareWorkspace,
+      preflightSvn,
+      runCodex: runCodex as never,
+      reviewTaskRuntime
     })
 
     const executeHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:execute')?.[1]
@@ -1331,7 +1351,7 @@ describe('registerIpcHandlers', () => {
     })
     await vi.waitFor(() => expect(runCodex).toHaveBeenCalledTimes(1))
 
-    await cancelAllActiveReviewTasks()
+    await reviewTaskRuntime.cancelAll()
     await expect(executePromise).resolves.toMatchObject({
       taskId: 'task-close',
       status: 'cancelled'
