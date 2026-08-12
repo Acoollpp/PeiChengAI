@@ -8,7 +8,7 @@ import type {
   ExecuteTaskResult,
   RetryTaskRequest
 } from '../code-review-api'
-import { REVIEW_TASK_TIMEOUT_MS, useTaskQueue } from './useTaskQueue'
+import { useTaskQueue } from './useTaskQueue'
 
 const basePayload = (index: number): ExecuteTaskRequest => ({
   svn_url: `svn://repo/project-${index}`,
@@ -45,10 +45,6 @@ afterEach(() => {
 })
 
 describe('useTaskQueue', () => {
-  it('默认任务超时时间为 60 分钟', () => {
-    expect(REVIEW_TASK_TIMEOUT_MS).toBe(60 * 60 * 1000)
-  })
-
   it('组合等待任务保留逐项规则和 DS-01 原始材料路径', async () => {
     const executions = [
       createDeferred<ExecuteTaskResult>(),
@@ -89,7 +85,7 @@ describe('useTaskQueue', () => {
     expect(JSON.stringify(result.current.queuedTasks[0])).not.toContain('workspace')
   })
 
-  it('组合任务运行中取消和失败都会释放槽位，后续任务仍保留完整逐项输入', async () => {
+  it('组合任务运行中取消后等待 Promise 结束才释放槽位，后续任务保留完整逐项输入', async () => {
     const deferreds = Array.from({ length: 4 }, () => createDeferred<ExecuteTaskResult>())
     const executeTask = vi.fn((_payload: ExecuteTaskRequest) =>
       deferreds[executeTask.mock.calls.length - 1].promise
@@ -125,6 +121,12 @@ describe('useTaskQueue', () => {
     const firstRunningTask = result.current.runningTasks[0]
     await act(async () => {
       await result.current.cancelTask(firstRunningTask)
+    })
+    expect(executeTask).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      deferreds[0].resolve({ taskId: 'task-cancelled', status: 'cancelled' })
+      await deferreds[0].promise
     })
     await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(3))
     expect(executeTask.mock.calls[2][0].review_items).toEqual(reviewItems)
@@ -599,7 +601,7 @@ describe('useTaskQueue', () => {
     )
   })
 
-  it('服务端刷新合并尚未绑定服务端 ID 的本地运行任务', async () => {
+  it('服务端刷新不会按公共字段绑定尚未收到双 ID 的本地运行任务', async () => {
     const deferred = createDeferred<ExecuteTaskResult>()
     const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)
     const payload = basePayload(1)
@@ -629,24 +631,17 @@ describe('useTaskQueue', () => {
       ])
     })
 
-    expect(result.current.tasks).toHaveLength(1)
-    expect(result.current.tasks[0]).toEqual(
+    expect(result.current.tasks).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'task-server-1',
-        localTaskId,
-        svn_url: payload.svn_url,
-        old_revision: payload.old_revision,
-        new_revision: payload.new_revision,
-        template_key: payload.template_key,
-        skill_name: payload.skill_name,
-        status: 'running_codex',
-        progress_message: '服务端任务运行中',
-        localQueueState: 'running'
-      })
-    )
+        localTaskId: 'task-server-1',
+        status: 'running_codex'
+      }),
+      expect.objectContaining({ id: localTaskId, localTaskId })
+    ]))
   })
 
-  it('服务端刷新同参数任务时只绑定已启动本地任务并保留排队任务', async () => {
+  it('服务端刷新同参数任务时保持双卡且不交换本地任务身份', async () => {
     const deferreds = [
       createDeferred<ExecuteTaskResult>(),
       createDeferred<ExecuteTaskResult>(),
@@ -694,18 +689,12 @@ describe('useTaskQueue', () => {
       ])
     })
 
-    expect(result.current.runningTasks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: 'task-server-1',
-          localTaskId: startedLocalTaskIds[0]
-        }),
-        expect.objectContaining({
-          id: 'task-server-2',
-          localTaskId: startedLocalTaskIds[1]
-        })
-      ])
-    )
+    expect(result.current.tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'task-server-1', localTaskId: 'task-server-1' }),
+      expect.objectContaining({ id: 'task-server-2', localTaskId: 'task-server-2' }),
+      expect.objectContaining({ id: startedLocalTaskIds[0], localTaskId: startedLocalTaskIds[0] }),
+      expect.objectContaining({ id: startedLocalTaskIds[1], localTaskId: startedLocalTaskIds[1] })
+    ]))
     expect(result.current.queuedTasks).toEqual([
       expect.objectContaining({
         id: expect.stringMatching(/^local-/),
@@ -797,7 +786,7 @@ describe('useTaskQueue', () => {
     )
   })
 
-  it('服务端刷新时可绑定尚未回填需求表名称的本地任务', async () => {
+  it('服务端尚未回填需求表名称时也不会按公共字段模糊绑定', async () => {
     const deferred = createDeferred<ExecuteTaskResult>()
     const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)
     const payload: ExecuteTaskRequest = {
@@ -831,12 +820,13 @@ describe('useTaskQueue', () => {
       ])
     })
 
-    expect(result.current.tasks).toEqual([
+    expect(result.current.tasks).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'task-server-pending-requirement-upload',
-        localTaskId
-      })
-    ])
+        localTaskId: 'task-server-pending-requirement-upload'
+      }),
+      expect.objectContaining({ id: localTaskId, localTaskId })
+    ]))
   })
 
   it('服务端刷新同参数终态历史任务时不绑定本地运行任务且不释放并发槽位', async () => {
@@ -914,6 +904,53 @@ describe('useTaskQueue', () => {
     ])
   })
 
+  it('已精确绑定任务收到服务端终态后仍等待本地 Promise 结束才启动第三条', async () => {
+    const deferreds = [
+      createDeferred<ExecuteTaskResult>(),
+      createDeferred<ExecuteTaskResult>(),
+      createDeferred<ExecuteTaskResult>()
+    ]
+    const executeTask = vi.fn((_payload: ExecuteTaskRequest) =>
+      deferreds[executeTask.mock.calls.length - 1].promise
+    )
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
+
+    await act(async () => {
+      await result.current.submitTask(basePayload(1))
+      await result.current.submitTask(basePayload(2))
+      await result.current.submitTask(basePayload(3))
+    })
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(2))
+    const firstClientTaskId = executeTask.mock.calls[0][0].client_task_id
+    if (!firstClientTaskId) throw new Error('未生成第一条本地任务 ID')
+
+    act(() => {
+      result.current.applyProgressEvent({
+        taskId: 'server-task-1',
+        clientTaskId: firstClientTaskId,
+        type: 'stage',
+        stage: 'created',
+        message: '任务已创建'
+      })
+      result.current.setServerTasks([{
+        id: 'server-task-1',
+        svn_url: 'svn://repo/project-1',
+        old_revision: '1',
+        new_revision: '2',
+        status: 'success'
+      }])
+    })
+
+    expect(executeTask).toHaveBeenCalledTimes(2)
+    expect(result.current.queuedTasks).toHaveLength(1)
+
+    await act(async () => {
+      deferreds[0].resolve({ taskId: 'server-task-1', status: 'success' })
+      await deferreds[0].promise
+    })
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(3))
+  })
+
   it('任务失败后进入历史任务并继续调度下一条', async () => {
     const deferreds = [
       createDeferred<ExecuteTaskResult>(),
@@ -953,7 +990,7 @@ describe('useTaskQueue', () => {
     expect(result.current.queuedTasks).toHaveLength(0)
   })
 
-  it('任务执行超过配置超时时间后标记失败并继续调度下一条', async () => {
+  it('Renderer 长时间等待时不自行判定失败或释放并发槽位', async () => {
     vi.useFakeTimers()
     const deferreds = [
       createDeferred<ExecuteTaskResult>(),
@@ -965,7 +1002,7 @@ describe('useTaskQueue', () => {
       return deferred.promise
     })
 
-    const { result } = renderHook(() => useTaskQueue({ executeTask, taskTimeoutMs: 100 }))
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
 
     await act(async () => {
       await result.current.submitTask(basePayload(1))
@@ -976,39 +1013,20 @@ describe('useTaskQueue', () => {
     expect(executeTask).toHaveBeenCalledTimes(2)
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(100)
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
     })
 
-    expect(result.current.historyTasks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          svn_url: 'svn://repo/project-1',
-          status: 'failed',
-          error_message: '任务执行超时，请联系管理员处理。',
-          progress_message: '任务执行超时，请联系管理员处理。',
-          localQueueState: 'finished',
-          isLocallyExecuting: false
-        }),
-        expect.objectContaining({
-          svn_url: 'svn://repo/project-2',
-          status: 'failed',
-          error_message: '任务执行超时，请联系管理员处理。',
-          progress_message: '任务执行超时，请联系管理员处理。',
-          localQueueState: 'finished',
-          isLocallyExecuting: false
-        })
-      ])
-    )
-    expect(executeTask).toHaveBeenCalledTimes(3)
-    expect(result.current.runningTasks.map((task) => task.svn_url)).toContain('svn://repo/project-3')
-    expect(result.current.queuedTasks).toHaveLength(0)
+    expect(result.current.historyTasks).toEqual([])
+    expect(executeTask).toHaveBeenCalledTimes(2)
+    expect(result.current.runningTasks).toHaveLength(2)
+    expect(result.current.queuedTasks).toHaveLength(1)
   })
 
-  it('超时后的迟到成功结果不会覆盖失败状态', async () => {
+  it('Main 超时返回失败后按普通执行结果展示并释放槽位', async () => {
     const deferred = createDeferred<ExecuteTaskResult>()
     const executeTask = vi.fn((_: ExecuteTaskRequest) => deferred.promise)
 
-    const { result } = renderHook(() => useTaskQueue({ executeTask, taskTimeoutMs: 1 }))
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
 
     await act(async () => {
       await result.current.submitTask(basePayload(1))
@@ -1016,32 +1034,29 @@ describe('useTaskQueue', () => {
 
     expect(executeTask).toHaveBeenCalledTimes(1)
 
-    await waitFor(() =>
-      expect(result.current.historyTasks[0]).toEqual(
-        expect.objectContaining({
-          status: 'failed',
-          error_message: '任务执行超时，请联系管理员处理。'
-        })
-      )
-    )
-
     await act(async () => {
       deferred.resolve({
-        taskId: 'task-late-success',
-        status: 'success',
-        reportMarkdown: '# late report',
-        reportPath: '/tmp/late.md'
+        taskId: 'task-main-timeout',
+        status: 'failed',
+        serverTask: {
+          id: 'task-main-timeout',
+          svn_url: 'svn://repo/project-1',
+          old_revision: '1',
+          new_revision: '2',
+          status: 'failed',
+          error_message: '任务执行超时，请联系管理员处理。'
+        }
       })
-      await Promise.resolve()
+      await flushMicrotasks()
     })
 
     expect(result.current.historyTasks[0]).toEqual(
       expect.objectContaining({
         status: 'failed',
-        error_message: '任务执行超时，请联系管理员处理。'
+        error_message: '任务执行超时，请联系管理员处理。',
+        isLocallyExecuting: false
       })
     )
-    expect(result.current.historyTasks[0].reportMarkdown).toBeUndefined()
   })
 
   it('取消等待中的任务后进入历史任务且不会调用后台取消接口', async () => {
@@ -1087,7 +1102,7 @@ describe('useTaskQueue', () => {
     )
   })
 
-  it('取消运行中的任务后调用后台取消接口并释放并发槽位', async () => {
+  it('取消运行中的任务后立即展示取消，Promise 结束后才释放并发槽位', async () => {
     const deferreds = [
       createDeferred<ExecuteTaskResult>(),
       createDeferred<ExecuteTaskResult>(),
@@ -1125,10 +1140,16 @@ describe('useTaskQueue', () => {
           status: 'cancelled',
           progress_message: '任务已取消',
           localQueueState: 'finished',
-          isLocallyExecuting: false
+          isLocallyExecuting: true
         })
       ])
     )
+    expect(executeTask).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      deferreds[0].resolve({ taskId: 'task-cancelled', status: 'cancelled' })
+      await deferreds[0].promise
+    })
     await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(3))
     expect(result.current.runningTasks.map((task) => task.svn_url)).toContain('svn://repo/project-3')
   })
@@ -1319,13 +1340,9 @@ describe('useTaskQueue', () => {
         issue_count: 0,
         highest_issue_severity: null,
         feedback_protocol_version: 1,
-        requirement_file_path: '/server/requirement.xlsx',
+        requirement_file_path: '/local/requirement.xlsx',
         codex_log_path: '/local/old-codex.log'
       }])
-      result.current.updateTask('task-cross-session', (task) => ({
-        ...task,
-        requirement_file_path: '/local/requirement.xlsx'
-      }))
     })
     const createdAtMs = result.current.historyTasks[0].createdAtMs
 
@@ -1822,7 +1839,7 @@ describe('useTaskQueue', () => {
     ]))
   })
 
-  it('取消后的迟到进度和完成结果不把本地逐项输入挂到远端占位卡', async () => {
+  it('取消后的精确迟到事件合并双卡并把本地私有输入保留在取消卡', async () => {
     const execution = createDeferred<ExecuteTaskResult>()
     const executeTask = vi.fn((_payload: ExecuteTaskRequest) => execution.promise)
     const cancelTask = vi.fn(async () => ({ status: 'cancelled' as const }))
@@ -1882,15 +1899,14 @@ describe('useTaskQueue', () => {
       execution.resolve({ taskId: 'task-cancelled-shadow', status: 'success' })
     })
 
-    const serverShadow = result.current.tasks.find((task) => task.id === 'task-cancelled-shadow')
-    const cancelledLocal = result.current.tasks.find((task) => task.localTaskId === clientTaskId)
-    expect(serverShadow?.review_items).toBeUndefined()
-    expect(JSON.stringify(serverShadow)).not.toContain('/cancelled/')
-    expect(cancelledLocal).toEqual(expect.objectContaining({
-      id: clientTaskId,
+    expect(result.current.tasks).toEqual([expect.objectContaining({
+      id: 'task-cancelled-shadow',
+      localTaskId: clientTaskId,
       status: 'cancelled',
-      review_items: reviewItems
-    }))
+      review_items: reviewItems,
+      isLocallyExecuting: false
+    })])
+    expect(JSON.stringify(result.current.tasks[0])).toContain('/cancelled/')
   })
 
   it('历史任务按完成时间倒序展示', () => {
@@ -1963,6 +1979,41 @@ describe('useTaskQueue', () => {
     ])
   })
 
+  it('刷新服务端历史任务时保留已加载报告并更新服务端权威字段', () => {
+    const { result } = renderHook(() => useTaskQueue({ executeTask: vi.fn() }))
+
+    act(() => {
+      result.current.setServerTasks([{
+        id: 'task-report-cache',
+        svn_url: 'svn://repo/cache',
+        old_revision: '10',
+        new_revision: '20',
+        status: 'success',
+        issue_count: 1
+      }])
+      result.current.setTaskReportContent('task-report-cache', '# 已加载报告')
+    })
+    act(() => {
+      result.current.setServerTasks([{
+        id: 'task-report-cache',
+        svn_url: 'svn://repo/cache',
+        old_revision: '11',
+        new_revision: '21',
+        status: 'success',
+        issue_count: 3,
+        report_path: '/server/latest.md'
+      }])
+    })
+
+    expect(result.current.historyTasks).toEqual([expect.objectContaining({
+      old_revision: '11',
+      new_revision: '21',
+      issue_count: 3,
+      report_path: '/server/latest.md',
+      reportMarkdown: '# 已加载报告'
+    })])
+  })
+
   it('移除任务后该任务不再出现在队列里', async () => {
     const { result } = renderHook(() => useTaskQueue({ executeTask: vi.fn() }))
 
@@ -1992,7 +2043,7 @@ describe('useTaskQueue', () => {
     expect(result.current.tasks.map((task) => task.id)).toEqual(['task-keep', 'task-drop'])
 
     await act(async () => {
-      result.current.removeTask('task-drop')
+      result.current.hideTask('task-drop')
     })
 
     expect(result.current.tasks.map((task) => task.id)).toEqual(['task-keep'])
@@ -2014,7 +2065,7 @@ describe('useTaskQueue', () => {
       result.current.setServerTasks([serverTask])
     })
     await act(async () => {
-      result.current.removeTask('task-drop')
+      result.current.hideTask('task-drop')
     })
 
     // 主进程已过滤掉该任务，刷新时它不再出现在服务端返回里。
