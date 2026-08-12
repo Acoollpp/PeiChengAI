@@ -74,7 +74,7 @@ const terminalStatuses = new Set<ReviewTask['status']>([
   'cancelled'
 ])
 
-export const isTerminalTaskStatus = (status: ReviewTask['status']): boolean =>
+const isTerminalTaskStatus = (status: ReviewTask['status']): boolean =>
   terminalStatuses.has(status)
 
 export const toTaskViewItem = (task: ReviewTask, createdAtMs = Date.now()): TaskViewItem => ({
@@ -88,7 +88,7 @@ export const toTaskViewItem = (task: ReviewTask, createdAtMs = Date.now()): Task
   origin: 'server-snapshot'
 })
 
-export const normalizeQueueIndexes = (tasks: TaskViewItem[]): TaskViewItem[] => {
+const normalizeQueueIndexes = (tasks: TaskViewItem[]): TaskViewItem[] => {
   let queueIndex = 0
   return tasks.map((task) => {
     if (task.localQueueState !== 'queued') {
@@ -197,8 +197,8 @@ const applyProgress = (current: TaskViewItem[], event: TaskProgressEvent, now: s
     event.type === 'stage' ? mapProgressStageToTaskStatus(event.stage) : merged.status
   const status = target.userIntent === 'cancelled'
     ? 'cancelled'
-    : serverShadow && isTerminalTaskStatus(serverShadow.status) && !isTerminalTaskStatus(progressStatus)
-      ? serverShadow.status
+    : isTerminalTaskStatus(merged.status) && !isTerminalTaskStatus(progressStatus)
+      ? merged.status
       : progressStatus
   const updated: TaskViewItem = {
     ...merged,

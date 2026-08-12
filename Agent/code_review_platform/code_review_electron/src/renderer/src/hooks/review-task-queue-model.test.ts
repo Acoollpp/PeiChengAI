@@ -163,6 +163,75 @@ describe('ReviewTaskQueueModel', () => {
     })])
   })
 
+  it.each([
+    {
+      name: '成功态收到带双 ID 的运行进度',
+      status: 'success' as const,
+      stage: 'running_codex' as const,
+      clientTaskId: 'local-bound',
+      isLocallyExecuting: true
+    },
+    {
+      name: '失败态收到仅服务端 ID 的环境检查进度',
+      status: 'failed' as const,
+      stage: 'checking_environment' as const,
+      clientTaskId: undefined,
+      isLocallyExecuting: false
+    },
+    {
+      name: '环境错误态收到带双 ID 的报告上传进度',
+      status: 'environment_error' as const,
+      stage: 'uploading_report' as const,
+      clientTaskId: 'local-bound',
+      isLocallyExecuting: true
+    }
+  ])('$name时保持已绑定单卡的终态与三类事实所有权', ({
+    status,
+    stage,
+    clientTaskId,
+    isLocallyExecuting
+  }) => {
+    const reviewItems = [{ id: 'DS-03', user_extra_rules: '保留本地规则' }]
+    const progressed = applyReviewTaskQueueCommand([
+      task({
+        id: 'server-bound',
+        localTaskId: 'local-bound',
+        status,
+        localQueueState: 'finished',
+        isLocallyExecuting,
+        issue_count: 5,
+        pdf_report_name: '服务端完整报告.pdf',
+        reportMarkdown: '# Renderer 报告缓存',
+        pdfPath: '/local/report.pdf',
+        review_items: reviewItems,
+        requirement_file_path: '/local/requirements.xlsx'
+      })
+    ], {
+      type: 'apply-progress',
+      event: {
+        taskId: 'server-bound',
+        clientTaskId,
+        type: 'stage',
+        stage,
+        message: '迟到的非终态进度'
+      }
+    })
+
+    expect(progressed).toEqual([expect.objectContaining({
+      id: 'server-bound',
+      localTaskId: 'local-bound',
+      status,
+      localQueueState: 'finished',
+      isLocallyExecuting,
+      issue_count: 5,
+      pdf_report_name: '服务端完整报告.pdf',
+      reportMarkdown: '# Renderer 报告缓存',
+      pdfPath: '/local/report.pdf',
+      review_items: reviewItems,
+      requirement_file_path: '/local/requirements.xlsx'
+    })])
+  })
+
   it('取消后直接收到完成结果也会精确绑定并去重服务端占位卡', () => {
     const reviewItems = [{ id: 'DS-03', user_extra_rules: '取消任务本地规则' }]
     const completed = applyReviewTaskQueueCommand([
