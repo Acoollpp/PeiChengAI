@@ -164,7 +164,8 @@ export function TaskPage({
     cancelTask,
     applyProgressEvent,
     setServerTasks,
-    updateTask
+    setTaskReportFeedback,
+    setTaskIssueFeedback
   } = useTaskQueue({
     executeTask: window.codeReview.executeTask,
     retryTask: window.codeReview.retryTask,
@@ -347,13 +348,9 @@ export function TaskPage({
 
   const markTaskFeedbackSubmitted = useCallback(
     (taskId: string, helpful: boolean, usefulText: string | null): void => {
-      updateTask(taskId, (task) => ({
-        ...task,
-        report_feedback_helpful: helpful,
-        report_feedback_useful_issues_text: usefulText
-      }))
+      setTaskReportFeedback(taskId, helpful, usefulText)
     },
-    [updateTask]
+    [setTaskReportFeedback]
   )
 
   const openSelectedPdfReport = useCallback(async ({
@@ -499,13 +496,7 @@ export function TaskPage({
       pdfPath,
       pdfReportName
     }) => {
-      updateTask(taskId, (task) => ({
-        ...task,
-        feedback_submitted_at: feedbackSubmittedAt,
-        evaluated_issue_count: task.issue_count ?? task.evaluated_issue_count,
-        pdf_report_name: pdfReportName,
-        pdfPath
-      }))
+      setTaskIssueFeedback(taskId, feedbackSubmittedAt, pdfPath, pdfReportName)
       if (selectedTaskIdRef.current !== taskId) {
         return
       }
@@ -514,7 +505,7 @@ export function TaskPage({
       setFeedbackAnchorScrollRequest(undefined)
       setActivePdfPath(pdfPath)
       setActivePdfReportName(pdfReportName)
-    }), [setActivePdfPath, setActivePdfReportName, updateTask])
+    }), [setActivePdfPath, setActivePdfReportName, setTaskIssueFeedback])
 
   return (
     <section className="review-workspace">

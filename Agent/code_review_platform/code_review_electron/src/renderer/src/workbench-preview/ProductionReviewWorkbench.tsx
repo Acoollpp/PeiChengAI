@@ -382,19 +382,13 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
 
   useEffect(() => window.codeReview.onTaskProgress(queue.applyProgressEvent), [queue.applyProgressEvent])
   useEffect(() => window.codeReview.onIssueFeedbackSubmitted(({ taskId, feedbackSubmittedAt, pdfPath, pdfReportName }) => {
-    queue.updateTask(taskId, (task) => ({
-      ...task, feedback_submitted_at: feedbackSubmittedAt,
-      evaluated_issue_count: task.issue_count ?? task.evaluated_issue_count,
-      pdfPath, pdf_report_name: pdfReportName
-    }))
+    queue.setTaskIssueFeedback(taskId, feedbackSubmittedAt, pdfPath, pdfReportName)
     showNotice('问题反馈已提交，反馈版 PDF 已生成。')
-  }), [queue.updateTask, showNotice])
+  }), [queue.setTaskIssueFeedback, showNotice])
   useEffect(() => window.codeReview.onReportFeedbackSubmitted(({ taskId, helpful, usefulIssuesText }) => {
     const task = tasksRef.current.find((candidate) => candidate.id === taskId)
     if (!task || task.feedback_protocol_version === 1) return
-    queue.updateTask(taskId, (task) => ({
-      ...task, report_feedback_helpful: helpful, report_feedback_useful_issues_text: usefulIssuesText
-    }))
+    queue.setTaskReportFeedback(taskId, helpful, usefulIssuesText)
     if (selectedReportIdRef.current !== taskId) return
     setActiveFeedbackAnchorId(undefined)
     setFeedbackAnchorScrollRequest(undefined)
@@ -405,7 +399,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
     }).catch((error: unknown) => {
       showNotice(error instanceof Error ? error.message : 'PDF 报告打开失败。')
     })
-  }), [queue.updateTask, showNotice])
+  }), [queue.setTaskReportFeedback, showNotice])
   useEffect(() => window.codeReview.onReportFeedbackFocusAnchor(({ taskId, anchorId }) => {
     if (selectedReportIdRef.current !== taskId) return
     setActiveFeedbackAnchorId(anchorId)
@@ -452,7 +446,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
         reportContentRequestRef.current.get(task.id) !== nextRequestId
       ) return undefined
       const analysis = analyzeLoadedReviewReport(markdown, reportSummaryInput(task))
-      queue.updateTask(task.id, (current) => ({ ...current, reportMarkdown: markdown }))
+      queue.setTaskReportContent(task.id, markdown)
       updateReportContentState(task.id, {
         contentStatus: analysis.status,
         contentMessage: analysis.message
@@ -470,7 +464,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
       }
       return undefined
     }
-  }, [queue.updateTask, updateReportContentState])
+  }, [queue.setTaskReportContent, updateReportContentState])
 
   useEffect(() => {
     if (!selectedReportId) return
@@ -610,7 +604,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
       if (task.feedback_protocol_version !== 1 && task.report_feedback_helpful !== null && task.report_feedback_helpful !== undefined) return commandResult('该报告反馈已提交。')
       try {
         const markdown = task.reportMarkdown ?? await window.codeReview.readTaskReport(task.id)
-        if (!task.reportMarkdown) queue.updateTask(task.id, (current) => ({ ...current, reportMarkdown: markdown }))
+        if (!task.reportMarkdown) queue.setTaskReportContent(task.id, markdown)
         const options = extractDetailedHeadingOptions(markdown)
         await window.codeReview.openReportFeedbackWindow(task.feedback_protocol_version === 1 ? {
           mode: 'issues', taskId: task.id,
@@ -632,11 +626,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
       negativeFeedbackInFlightRef.current.add(task.id)
       try {
         const event = await window.codeReview.submitNegativeReportFeedback(task.id)
-        queue.updateTask(task.id, (current) => ({
-          ...current,
-          report_feedback_helpful: event.helpful,
-          report_feedback_useful_issues_text: event.usefulIssuesText
-        }))
+        queue.setTaskReportFeedback(task.id, event.helpful, event.usefulIssuesText)
         showNotice('报告反馈已提交。')
         return commandResult('报告反馈已提交。')
       } catch (error) {
@@ -667,7 +657,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
       try {
         // 只隐藏本机展示，服务端任务与报告保持不变。
         await window.codeReview.hideTask(task.id)
-        queue.removeTask(task.id)
+        queue.hideTask(task.id)
         const message = '任务已从本机列表移除，服务端记录保留。'
         showNotice(message)
         return commandResult(message)
@@ -708,7 +698,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
       setNotice(undefined)
       setNoticeAction(undefined)
     }
-  }), [createTask, findTask, loadReportList, loadTaskStats, queue.cancelTask, queue.retryTask, queue.updateTask, selectReport, showNotice])
+  }), [createTask, findTask, loadReportList, loadTaskStats, queue.cancelTask, queue.hideTask, queue.retryTask, queue.setTaskReportContent, queue.setTaskReportFeedback, selectReport, showNotice])
 
   const viewModel: WorkbenchViewModel = {
     productName: 'AI 代码审查', previewLabel: '2.0 工作台',

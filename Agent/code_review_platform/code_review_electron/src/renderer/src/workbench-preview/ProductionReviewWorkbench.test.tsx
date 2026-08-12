@@ -267,6 +267,7 @@ describe('ProductionReviewWorkbench', () => {
       count: 2
     })
     vi.mocked(window.codeReview.getTodayTaskStats).mockResolvedValue(taskStats(1, 1, 0))
+    vi.mocked(window.codeReview.retryTask).mockImplementation(() => new Promise<never>(() => undefined))
     vi.mocked(window.codeReview.onTaskProgress).mockImplementation((listener) => {
       progressListener = listener
       return vi.fn()
@@ -281,7 +282,7 @@ describe('ProductionReviewWorkbench', () => {
     await user.click(screen.getByRole('tab', { name: '待处理失败任务 1' }))
     expect(screen.getByText('生产任务失败，等待用户处理。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '打开任务日志 failed-lane' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '从头重试 failed-lane' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '从头重试 failed-lane' }))
 
     act(() => progressListener?.({
       taskId: 'failed-lane', clientTaskId: 'failed-lane', type: 'stage',
@@ -489,7 +490,14 @@ describe('ProductionReviewWorkbench', () => {
 
   it('真实队列和任务事件映射本机等待、完成、失败、环境异常和已取消', async () => {
     let progressListener: ((event: TaskProgressEvent) => void) | undefined
-    vi.mocked(window.codeReview.executeTask).mockImplementation(() => new Promise<never>(() => undefined))
+    const executions = [
+      createDeferred<Awaited<ReturnType<CodeReviewApi['executeTask']>>>(),
+      createDeferred<Awaited<ReturnType<CodeReviewApi['executeTask']>>>(),
+      createDeferred<Awaited<ReturnType<CodeReviewApi['executeTask']>>>()
+    ]
+    vi.mocked(window.codeReview.executeTask).mockImplementation(
+      () => executions[vi.mocked(window.codeReview.executeTask).mock.calls.length - 1].promise
+    )
     vi.mocked(window.codeReview.onTaskProgress).mockImplementation((listener) => {
       progressListener = listener
       return vi.fn()
@@ -530,6 +538,8 @@ describe('ProductionReviewWorkbench', () => {
     expect(within(failedRow).getByText('Skill 执行失败')).toBeInTheDocument()
 
     await submitMinimalDs03Task('svn://server/terminal-environment-error')
+    expect(window.codeReview.executeTask).toHaveBeenCalledTimes(2)
+    executions[0].resolve({ taskId: 'server-success', status: 'success' })
     await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(3))
     const thirdClientTaskId = vi.mocked(window.codeReview.executeTask).mock.calls[2][0].client_task_id
     if (!thirdClientTaskId) throw new Error('本地任务 ID 未生成')
