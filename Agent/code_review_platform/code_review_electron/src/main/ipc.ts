@@ -1,4 +1,4 @@
-import { mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
 
 import { dialog, ipcMain, Notification, shell, type BrowserWindow } from 'electron'
@@ -45,9 +45,7 @@ import type { ReportFeedbackWindowManager } from './report-feedback-window'
 import {
   defaultPrepareWorkspace,
   defaultRunCodex,
-  executeReviewTask,
   getEnvironmentErrorMessage,
-  retryReviewTask,
   toSvnPreflightUserMessage,
   type ExecuteReviewTaskResult,
   type TaskAgentDependencies
@@ -60,10 +58,15 @@ import {
   uploadRequirementFile
 } from './report-uploader'
 import { getRuntimePaths, type RuntimePaths } from './runtime-paths'
+import {
+  type CancelTaskResult,
+  type ReviewTaskRuntime
+} from './review-task-runtime'
+import { DefaultReviewTaskRuntime } from './review-task-runtime/review-task-runtime'
 import { HiddenTaskStore } from './hidden-task-store'
 import { ServerConfigStore, normalizeServerUrl } from './server-config-store'
 import { createSkillSyncService, type SkillSyncResult } from './skill-sync'
-import { appendTaskLogEvent, flushTaskLog, CODEX_REVIEW_LOG_FILE_NAME } from './task-log'
+import { CODEX_REVIEW_LOG_FILE_NAME } from './task-log'
 import {
   runSvnPreflight,
   runSvnUrlPreflight,
@@ -108,6 +111,7 @@ export interface IpcHandlerDependencies {
   appUpdateService?: AppUpdateService
   getMainWindow?: () => BrowserWindow | undefined
   getReportFeedbackWindowManager?: () => ReportFeedbackWindowManager | undefined
+  reviewTaskRuntime?: ReviewTaskRuntime
 }
 
 export interface DownloadCurrentReportResult {
@@ -154,10 +158,6 @@ interface RetryTaskRequest {
   review_items?: SelectedReviewItemInput[]
 }
 
-interface CancelTaskResult {
-  status: 'cancelled' | 'not_found'
-}
-
 interface OpenTaskLogRequest {
   taskId: string
 }
@@ -199,104 +199,6 @@ type SelectReviewMaterialFileResult =
   | {
       status: 'cancelled'
     }
-
-interface ActiveReviewTask {
-  clientTaskId?: string
-  taskId?: string
-  token: string
-  api: TaskAgentDependencies['api']
-  abortController: AbortController
-  workspaceDir?: string
-  evidenceDir?: string
-  cancelPromise?: Promise<CancelTaskResult>
-}
-
-const activeReviewTasks = new Map<string, ActiveReviewTask>()
-
-const registerActiveTask = (task: ActiveReviewTask): void => {
-  if (task.clientTaskId) {
-    activeReviewTasks.set(task.clientTaskId, task)
-  }
-
-  if (task.taskId) {
-    activeReviewTasks.set(task.taskId, task)
-  }
-}
-
-const unregisterActiveTask = (task: ActiveReviewTask): void => {
-  if (task.clientTaskId) {
-    activeReviewTasks.delete(task.clientTaskId)
-  }
-
-  if (task.taskId) {
-    activeReviewTasks.delete(task.taskId)
-  }
-}
-
-const findActiveTask = ({ client_task_id: clientTaskId, task_id: taskId }: CancelTaskRequest):
-  | ActiveReviewTask
-  | undefined => {
-  if (clientTaskId) {
-    const task = activeReviewTasks.get(clientTaskId)
-    if (task) {
-      return task
-    }
-  }
-
-  if (!taskId) {
-    return undefined
-  }
-
-  return Array.from(activeReviewTasks.values()).find((task) => task.taskId === taskId)
-}
-
-const deleteWorkspace = async (workspaceDir: string | undefined): Promise<void> => {
-  if (!workspaceDir) {
-    return
-  }
-
-  await rm(workspaceDir, { recursive: true, force: true })
-}
-
-const cancelActiveReviewTask = async (
-  task: ActiveReviewTask
-): Promise<CancelTaskResult> => {
-  if (task.cancelPromise) {
-    return task.cancelPromise
-  }
-
-  task.cancelPromise = (async () => {
-    task.abortController.abort()
-    let statusError: unknown
-
-    if (task.taskId) {
-      try {
-        await task.api.updateTaskStatus(task.token, task.taskId, {
-          status: 'cancelled',
-          error_message: '任务已取消'
-        })
-      } catch (error) {
-        statusError = error
-      }
-    }
-
-    // 证据目录在任务工作区之外（为压住 Windows MAX_PATH），删 cwd 删不掉它。
-    await deleteWorkspace(task.workspaceDir)
-    await deleteWorkspace(task.evidenceDir)
-    if (statusError) {
-      throw statusError
-    }
-
-    return { status: 'cancelled' as const }
-  })()
-
-  return task.cancelPromise
-}
-
-export const cancelAllActiveReviewTasks = async (): Promise<void> => {
-  const uniqueTasks = new Set(activeReviewTasks.values())
-  await Promise.allSettled(Array.from(uniqueTasks).map((task) => cancelActiveReviewTask(task)))
-}
 
 const toSubmitFeedbackRequest = (payload: SubmitFeedbackIpcPayload): SubmitFeedbackRequest => ({
   description: payload.description,
@@ -669,7 +571,9 @@ const resolvePreflightErrorField = (
   return 'svn_url'
 }
 
-export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): void => {
+export const registerIpcHandlers = (
+  dependencies: IpcHandlerDependencies = {}
+): void => {
   const apiOverride = dependencies.api
   const authStore = dependencies.authStore ?? new AuthStore()
   const credentialStore = dependencies.credentialStore ?? new CredentialStore()
@@ -807,6 +711,22 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       const api = await createApiClient()
       const service = await createSkillSyncService(api)
       return service.sync(token)
+    })
+  const reviewTaskRuntime =
+    dependencies.reviewTaskRuntime ??
+    new DefaultReviewTaskRuntime({
+      authStore,
+      createApiClient,
+      syncSkill,
+      checkEnvironment: checkLocalEnvironment,
+      preflightSvn: dependencies.preflightSvn,
+      prepareWorkspace: dependencies.prepareWorkspace,
+      runCodex: dependencies.runCodex,
+      prepareReport: dependencies.prepareReport,
+      generatePdfReport: dependencies.generatePdfReport,
+      uploadRequirementFile: dependencies.uploadRequirementFile,
+      uploadReport: dependencies.uploadReport,
+      uploadPdfReport: dependencies.uploadPdfReport
     })
   let latestSuccessfulReport: DownloadCurrentReportResult | null = null
   const notifyEnvironmentProgress = (
@@ -1177,84 +1097,15 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       event,
       payload: CreateTaskRequest & { client_task_id?: string }
     ): Promise<ExecuteReviewTaskResult> => {
-      const tokens = await authStore.load()
-
-      if (!tokens) {
-        throw new Error('Not authenticated')
-      }
-
-      const skillSyncResult = await syncSkillForCurrentUser(authStore, syncSkill)
-      if (typeof skillSyncResult === 'string') {
-        throw new Error(skillSyncResult)
-      }
-
-      const taskApi = await createApiClient()
       const { client_task_id: clientTaskId, ...createTaskPayload } = payload
-      const abortController = new AbortController()
-      const activeTask: ActiveReviewTask = {
-        clientTaskId,
-        token: tokens.access_token,
-        api: taskApi,
-        abortController
-      }
-
-      registerActiveTask(activeTask)
-
-      const prepareWorkspace = dependencies.prepareWorkspace ?? defaultPrepareWorkspace
-      let codexLogPath: string | undefined
-      const result = await executeReviewTask(
+      const result = await reviewTaskRuntime.run(
         {
-          token: tokens.access_token,
+          kind: 'create',
           request: createTaskPayload,
-          clientTaskId,
-          signal: abortController.signal
+          clientTaskId
         },
-        {
-          api: taskApi,
-          checkEnvironment: checkLocalEnvironment,
-          preflightSvn: dependencies.preflightSvn ?? runSvnPreflight,
-          prepareWorkspace: async (input) => {
-            activeTask.taskId = input.taskId
-            registerActiveTask(activeTask)
-            const workspace = await prepareWorkspace(input)
-            activeTask.workspaceDir = workspace.cwd
-            activeTask.evidenceDir = workspace.evidenceDir
-            codexLogPath = workspace.codexLogPath ?? join(workspace.cwd, CODEX_REVIEW_LOG_FILE_NAME)
-            return {
-              ...workspace,
-              codexLogPath
-            }
-          },
-          runCodex: dependencies.runCodex ?? defaultRunCodex,
-          prepareReport: dependencies.prepareReport ?? prepareReportForPublishing,
-          generatePdfReport: dependencies.generatePdfReport ?? generatePdfReport,
-          uploadRequirementFile:
-            dependencies.uploadRequirementFile ??
-            ((token, taskId, filePath) =>
-              uploadRequirementFile(taskApi, token, taskId, filePath)),
-          uploadReport:
-            dependencies.uploadReport ??
-            ((token, taskId, reportPath, reportContent) =>
-              uploadReportFile(taskApi, token, taskId, reportPath, reportContent)),
-          uploadPdfReport:
-            dependencies.uploadPdfReport ??
-            ((token, taskId, pdfPath) => uploadPdfReportFile(taskApi, token, taskId, pdfPath))
-        },
-        (progressEvent) => {
-          if (codexLogPath) {
-            void appendTaskLogEvent(codexLogPath, progressEvent)
-          }
-          if (progressEvent.taskId) {
-            activeTask.taskId = progressEvent.taskId
-            registerActiveTask(activeTask)
-          }
-          sendToRenderer(event.sender, 'task:progress', progressEvent)
-        }
-      ).finally(async () => {
-        unregisterActiveTask(activeTask)
-        // 日志是 fire-and-forget 写入的，收尾前 flush，避免任务已返回而日志还缺行。
-        await flushTaskLog(codexLogPath)
-      })
+        (progressEvent) => sendToRenderer(event.sender, 'task:progress', progressEvent)
+      )
 
       if (result.status === 'success' && result.reportPath) {
         latestSuccessfulReport = {
@@ -1274,88 +1125,18 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
       event,
       payload: RetryTaskRequest
     ): Promise<ExecuteReviewTaskResult> => {
-      const tokens = await authStore.load()
-
-      if (!tokens) {
-        throw new Error('Not authenticated')
-      }
-
-      const skillSyncResult = await syncSkillForCurrentUser(authStore, syncSkill)
-      if (typeof skillSyncResult === 'string') {
-        throw new Error(skillSyncResult)
-      }
-
-      const taskApi = await createApiClient()
-      const abortController = new AbortController()
-      const activeTask: ActiveReviewTask = {
-        clientTaskId: payload.client_task_id,
-        taskId: payload.task_id,
-        token: tokens.access_token,
-        api: taskApi,
-        abortController
-      }
-
-      registerActiveTask(activeTask)
-
-      const prepareWorkspace = dependencies.prepareWorkspace ?? defaultPrepareWorkspace
-      let codexLogPath: string | undefined
-      const result = await retryReviewTask(
+      const result = await reviewTaskRuntime.run(
         {
-          token: tokens.access_token,
+          kind: 'retry',
           taskId: payload.task_id,
           clientTaskId: payload.client_task_id,
           oldRevision: payload.old_revision,
           newRevision: payload.new_revision,
           requirementFilePath: payload.requirement_file_path,
-          reviewItems: payload.review_items,
-          signal: abortController.signal
+          reviewItems: payload.review_items
         },
-        {
-          api: taskApi,
-          checkEnvironment: checkLocalEnvironment,
-          preflightSvn: dependencies.preflightSvn ?? runSvnPreflight,
-          prepareWorkspace: async (input) => {
-            activeTask.taskId = input.taskId
-            registerActiveTask(activeTask)
-            const workspace = await prepareWorkspace(input)
-            activeTask.workspaceDir = workspace.cwd
-            activeTask.evidenceDir = workspace.evidenceDir
-            codexLogPath = workspace.codexLogPath ?? join(workspace.cwd, CODEX_REVIEW_LOG_FILE_NAME)
-            return {
-              ...workspace,
-              codexLogPath
-            }
-          },
-          runCodex: dependencies.runCodex ?? defaultRunCodex,
-          prepareReport: dependencies.prepareReport ?? prepareReportForPublishing,
-          generatePdfReport: dependencies.generatePdfReport ?? generatePdfReport,
-          uploadRequirementFile:
-            dependencies.uploadRequirementFile ??
-            ((token, taskId, filePath) =>
-              uploadRequirementFile(taskApi, token, taskId, filePath)),
-          uploadReport:
-            dependencies.uploadReport ??
-            ((token, taskId, reportPath, reportContent) =>
-              uploadReportFile(taskApi, token, taskId, reportPath, reportContent)),
-          uploadPdfReport:
-            dependencies.uploadPdfReport ??
-            ((token, taskId, pdfPath) => uploadPdfReportFile(taskApi, token, taskId, pdfPath))
-        },
-        (progressEvent) => {
-          if (codexLogPath) {
-            void appendTaskLogEvent(codexLogPath, progressEvent)
-          }
-          if (progressEvent.taskId) {
-            activeTask.taskId = progressEvent.taskId
-            registerActiveTask(activeTask)
-          }
-          sendToRenderer(event.sender, 'task:progress', progressEvent)
-        }
-      ).finally(async () => {
-        unregisterActiveTask(activeTask)
-        // 日志是 fire-and-forget 写入的，收尾前 flush，避免任务已返回而日志还缺行。
-        await flushTaskLog(codexLogPath)
-      })
+        (progressEvent) => sendToRenderer(event.sender, 'task:progress', progressEvent)
+      )
 
       if (result.status === 'success' && result.reportPath) {
         latestSuccessfulReport = {
@@ -1370,13 +1151,10 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
   )
 
   ipcMain.handle('task:cancel', async (_event, payload: CancelTaskRequest): Promise<CancelTaskResult> => {
-    const activeTask = findActiveTask(payload)
-
-    if (!activeTask) {
-      return { status: 'not_found' }
-    }
-
-    return cancelActiveReviewTask(activeTask)
+    return reviewTaskRuntime.cancel({
+      clientTaskId: payload.client_task_id,
+      taskId: payload.task_id
+    })
   })
 
   ipcMain.handle('task:open-log', async (_event, payload: OpenTaskLogRequest): Promise<OpenTaskLogResult> => {
