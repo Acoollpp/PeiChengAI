@@ -1,16 +1,43 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createFixtureWorkbenchAdapter } from './fixture-adapter'
 import { ReviewWorkbenchPreview } from './ReviewWorkbenchPreview'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 describe('ReviewWorkbenchPreview', () => {
+  it('运行中任务显示旋转活动反馈并按固定节奏轮换业务提示，非运行状态不显示', () => {
+    vi.useFakeTimers()
+    const { unmount } = render(<ReviewWorkbenchPreview adapter={createFixtureWorkbenchAdapter()} />)
+
+    const runningRow = screen.getByRole('article', { name: /CR-240806-017/ })
+    const preparingRow = screen.getByRole('article', { name: /CR-240806-016/ })
+    const waitingRow = screen.getByRole('article', { name: /CR-240806-018/ })
+
+    expect(within(runningRow).getByText('正在执行审查规则与代码证据。')).toBeInTheDocument()
+    expect(within(preparingRow).getByText('正在准备任务专属工作区。')).toBeInTheDocument()
+    expect(runningRow.querySelector('.wb-task-activity-spinner')).not.toBeNull()
+    expect(preparingRow.querySelector('.wb-task-activity-spinner')).not.toBeNull()
+    expect(waitingRow.querySelector('.wb-task-activity-spinner')).toBeNull()
+    expect(within(waitingRow).getByText('本机等待第 1 位')).toBeInTheDocument()
+
+    act(() => vi.advanceTimersByTime(4000))
+
+    expect(within(runningRow).getByText('审查正在继续，请保持客户端打开。')).toBeInTheDocument()
+    expect(within(preparingRow).getByText('正在整理本次审查输入。')).toBeInTheDocument()
+
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('显示沛城品牌 Logo，并从 view model 派生头像和空选择入口文案', () => {
     const fixtureAdapter = createFixtureWorkbenchAdapter()
     const adapter = {

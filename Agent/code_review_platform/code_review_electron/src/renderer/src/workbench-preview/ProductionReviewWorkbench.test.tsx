@@ -207,10 +207,51 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   vi.restoreAllMocks()
 })
 
 describe('ProductionReviewWorkbench', () => {
+  it('运行任务进入完成状态后停止轮换并清理活动反馈定时器', async () => {
+    vi.useFakeTimers()
+    let progressListener: ((event: TaskProgressEvent) => void) | undefined
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [{
+        id: 'active-to-success', svn_url: 'svn://server/active-to-success',
+        old_revision: '1', new_revision: '2', review_item_ids: ['DS-03'], status: 'running_codex'
+      }],
+      count: 1
+    })
+    vi.mocked(window.codeReview.onTaskProgress).mockImplementation((listener) => {
+      progressListener = listener
+      return vi.fn()
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const runningRow = screen.getByRole('article', { name: /active-to-success/ })
+    expect(within(runningRow).getByText('正在执行审查规则与代码证据。')).toBeInTheDocument()
+    expect(vi.getTimerCount()).toBe(1)
+
+    act(() => vi.advanceTimersByTime(4000))
+    expect(within(runningRow).getByText('审查正在继续，请保持客户端打开。')).toBeInTheDocument()
+
+    act(() => progressListener?.({
+      taskId: 'active-to-success', type: 'stage', stage: 'success', message: '报告上传完成'
+    }))
+
+    const completedRow = screen.getByRole('article', { name: /active-to-success/ })
+    expect(completedRow.querySelector('.wb-task-activity-spinner')).toBeNull()
+    expect(within(completedRow).getByText('任务已完成，但未生成可查看的 Markdown 报告。')).toBeInTheDocument()
+    expect(vi.getTimerCount()).toBe(0)
+
+    act(() => vi.advanceTimersByTime(8000))
+    expect(within(completedRow).getByText('任务已完成，但未生成可查看的 Markdown 报告。')).toBeInTheDocument()
+  })
+
   it('服务端运行统计为零时仍显示本机正在执行的任务数', async () => {
     vi.mocked(window.codeReview.executeTask).mockImplementation(() => new Promise<never>(() => undefined))
     vi.mocked(window.codeReview.getTodayTaskStats).mockResolvedValue(taskStats(0, 0, 0))
@@ -464,7 +505,7 @@ describe('ProductionReviewWorkbench', () => {
         type: 'stage', stage: 'running_codex', message: '重试任务执行 Skill'
       })
     })
-    await waitFor(() => expect(screen.getByText('重试任务执行 Skill')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('正在执行审查规则与代码证据。')).toBeInTheDocument())
     expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
 
     act(() => progressListener?.({
@@ -497,7 +538,16 @@ describe('ProductionReviewWorkbench', () => {
       }))
       const row = await screen.findByRole('article', { name: /server-stage-task/ })
       expect(within(row).getByText(expectedLabel)).toBeInTheDocument()
-      expect(within(row).getByText(`事件：${expectedLabel}`)).toBeInTheDocument()
+      if (expectedLabel === '环境检查') {
+        expect(within(row).getByText('正在检查本机审查环境。')).toBeInTheDocument()
+      } else if (expectedLabel === '准备工作区') {
+        expect(within(row).getByText('正在准备任务专属工作区。')).toBeInTheDocument()
+      } else if (expectedLabel === '执行 Skill') {
+        expect(within(row).getByText('正在执行审查规则与代码证据。')).toBeInTheDocument()
+      } else {
+        expect(within(row).getByText('正在整理审查报告并上传。')).toBeInTheDocument()
+      }
+      expect(row.querySelector('.wb-task-activity-spinner')).not.toBeNull()
     }
 
     await assertStage('created', '环境检查')
@@ -511,7 +561,7 @@ describe('ProductionReviewWorkbench', () => {
       taskId: 'server-stage-task', clientTaskId, type: 'codex_output', stream: 'stdout',
       message: 'succeeded in 291ms: 大段原始 Codex 输出'
     }))
-    expect(within(runningRow).getByText('事件：执行 Skill')).toBeInTheDocument()
+    expect(within(runningRow).getByText('正在执行审查规则与代码证据。')).toBeInTheDocument()
     expect(within(runningRow).queryByText(/大段原始 Codex 输出/)).not.toBeInTheDocument()
     await assertStage('uploading_report', '上传报告')
   })
@@ -544,6 +594,7 @@ describe('ProductionReviewWorkbench', () => {
     expect(waitingRow).not.toBeNull()
     expect(within(waitingRow as HTMLElement).getByText('本机等待')).toBeInTheDocument()
     expect(within(waitingRow as HTMLElement).getByText('本机等待第 1 位')).toBeInTheDocument()
+    expect(waitingRow?.querySelector('.wb-task-activity-spinner')).toBeNull()
     expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
     await userEvent.setup().click(within(waitingRow as HTMLElement).getByRole('button', { name: /取消任务/ }))
     await waitFor(() => expect(screen.queryByText('svn://server/terminal-cancelled')).not.toBeInTheDocument())
@@ -564,6 +615,7 @@ describe('ProductionReviewWorkbench', () => {
     const failedRow = await screen.findByRole('article', { name: /server-failed/ })
     expect(within(failedRow).getByText('失败')).toBeInTheDocument()
     expect(within(failedRow).getByText('Skill 执行失败')).toBeInTheDocument()
+    expect(failedRow.querySelector('.wb-task-activity-spinner')).toBeNull()
 
     await submitMinimalDs03Task('svn://server/terminal-environment-error')
     expect(window.codeReview.executeTask).toHaveBeenCalledTimes(2)
@@ -578,6 +630,7 @@ describe('ProductionReviewWorkbench', () => {
     const environmentErrorRow = await screen.findByRole('article', { name: /server-environment-error/ })
     expect(within(environmentErrorRow).getByText('失败')).toBeInTheDocument()
     expect(within(environmentErrorRow).getByText('环境检查失败')).toBeInTheDocument()
+    expect(environmentErrorRow.querySelector('.wb-task-activity-spinner')).toBeNull()
   })
 
   it('默认使用正式目录，只在显式注入时渲染长名称压力目录', async () => {
@@ -1152,7 +1205,7 @@ describe('ProductionReviewWorkbench', () => {
       message: '正在准备真实工作区'
     })
     expect(await screen.findByText('准备工作区')).toBeInTheDocument()
-    expect(screen.getByText('正在准备真实工作区')).toBeInTheDocument()
+    expect(screen.getByText('正在准备任务专属工作区。')).toBeInTheDocument()
   })
 
   it('任务台显示服务端已完成任务，并仅对有 Markdown 路径的任务提供查看报告入口', async () => {
