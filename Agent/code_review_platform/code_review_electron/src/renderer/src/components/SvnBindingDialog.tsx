@@ -24,8 +24,14 @@ export function SvnBindingDialog({
   }
 
   return (
-    <div className="dialog-overlay" onClick={isSubmitting ? undefined : onSkip}>
-      <div className="dialog-card" onClick={(event) => event.stopPropagation()}>
+    <div
+      className="dialog-overlay login-dialog-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="svn-binding-title"
+      onClick={isSubmitting ? undefined : onSkip}
+    >
+      <div className="dialog-card login-dialog-card" onClick={(event) => event.stopPropagation()}>
         <button
           className="dialog-close"
           type="button"
@@ -36,7 +42,7 @@ export function SvnBindingDialog({
           ✕
         </button>
 
-        <h2>绑定 SVN 账号</h2>
+        <h2 id="svn-binding-title">绑定 SVN 账号</h2>
         <p className="dialog-desc">
           使用 Key 登录需要绑定 SVN 账号才能执行代码审查任务。
         </p>

@@ -87,7 +87,7 @@ export function UpdateDialog({
   }, [isForced, onDismiss])
 
   return (
-    <div className="modal-backdrop" role="presentation">
+    <div className="modal-backdrop login-update-backdrop" role="presentation">
       <section
         ref={dialogRef}
         className="update-dialog"

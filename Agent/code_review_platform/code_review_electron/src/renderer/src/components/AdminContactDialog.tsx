@@ -2,8 +2,13 @@ import adminContactCard from '../assets/admin-contact-card.jpg'
 
 export function AdminContactDialog({ onClose }: { onClose: () => void }): React.JSX.Element {
   return (
-    <div className="dialog-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-contact-title">
-      <div className="admin-contact-card">
+    <div
+      className="dialog-overlay login-dialog-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="admin-contact-title"
+    >
+      <div className="admin-contact-card login-admin-contact-card">
         <button className="dialog-close" type="button" aria-label="关闭" onClick={onClose}>
           ×
         </button>

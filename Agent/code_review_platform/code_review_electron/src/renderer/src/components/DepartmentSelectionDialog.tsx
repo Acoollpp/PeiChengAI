@@ -34,8 +34,13 @@ export function DepartmentSelectionDialog({
   }
 
   return (
-    <div className="dialog-overlay" role="dialog" aria-modal="true" aria-labelledby="department-selection-title">
-      <form className="dialog-card" onSubmit={handleSubmit}>
+    <div
+      className="dialog-overlay login-dialog-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="department-selection-title"
+    >
+      <form className="dialog-card login-dialog-card" onSubmit={handleSubmit}>
         <h2 id="department-selection-title">选择部门</h2>
         <p className="dialog-desc">
           当前账号尚未绑定部门，请选择所在部门后继续使用。
