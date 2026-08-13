@@ -213,13 +213,13 @@ const TaskTableRow = ({
           <span className="wb-sr-only">取消任务 {task.id}</span>
         </button>
       )}
+      {(['failed', ...activeStages].includes(task.stage) && adapter.commands.openTaskLog) && (
+        <button className="wb-icon-button" type="button" title={`打开任务日志 ${task.id}`} onClick={() => void adapter.commands.openTaskLog?.(task.id)}>
+          <FileText aria-hidden="true" /><span className="wb-sr-only">打开任务日志 {task.id}</span>
+        </button>
+      )}
       {task.stage === 'failed' && (
         <>
-          {adapter.commands.openTaskLog && (
-            <button className="wb-icon-button" type="button" title={`打开任务日志 ${task.id}`} onClick={() => void adapter.commands.openTaskLog?.(task.id)}>
-              <FileText aria-hidden="true" /><span className="wb-sr-only">打开任务日志 {task.id}</span>
-            </button>
-          )}
           <button
             className="wb-icon-button"
             type="button"
@@ -302,9 +302,6 @@ function TaskManagementView({
       : selectedTaskLane === 'completed' ? completedTasks : failedTasks
   const failedCount = failedTasks.length
   const taskStats = viewModel.taskStats
-  const serviceRunning = taskStats === undefined
-    ? runningTasks.length
-    : taskStats.status === 'ready' ? taskStats.running : '—'
   const serviceFailed = taskStats === undefined
     ? failedCount
     : taskStats.status === 'ready' ? taskStats.failedOrError : '—'
@@ -357,7 +354,7 @@ function TaskManagementView({
           </div>
         )}
         <section className="wb-overview" aria-label="任务总览">
-          <div><span>正在执行</span><strong className="is-running">{serviceRunning}</strong><small>{taskStats ? '今日服务端任务' : '本机并发上限 2'}</small></div>
+          <div><span>正在执行</span><strong className="is-running">{runningTasks.length}</strong><small>本机正在执行</small></div>
           <div><span>本机等待</span><strong className="is-waiting">{waitingTasks.length}</strong><small>按创建顺序执行</small></div>
           <div><span>今日失败</span><strong className="is-failed">{serviceFailed}</strong><small>{taskStats ? '今日服务端失败或环境异常' : '失败任务可重试'}</small></div>
           <button className="wb-completed-link" type="button" onClick={onOpenReportCenter}>

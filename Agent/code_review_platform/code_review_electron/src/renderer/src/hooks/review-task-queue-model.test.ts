@@ -22,6 +22,28 @@ const task = (overrides: Partial<TaskViewItem>): TaskViewItem => ({
 })
 
 describe('ReviewTaskQueueModel', () => {
+  it('Codex 原始输出只追加日志，不覆盖当前阶段进度', () => {
+    const progressed = applyReviewTaskQueueCommand([task({
+      localProgressStage: 'running_codex',
+      progress_message: '正在执行 Skill'
+    })], {
+      type: 'apply-progress',
+      event: {
+        taskId: 'server-1',
+        clientTaskId: 'local-1',
+        type: 'codex_output',
+        stream: 'stdout',
+        message: 'succeeded in 291ms: 大段原始 Codex 输出'
+      }
+    })
+
+    expect(progressed).toEqual([expect.objectContaining({
+      localProgressStage: 'running_codex',
+      progress_message: '正在执行 Skill',
+      codex_log: [expect.objectContaining({ message: 'succeeded in 291ms: 大段原始 Codex 输出' })]
+    })])
+  })
+
   it('服务端终态不会在本地执行结束前提前释放并发槽位', () => {
     const tasks = [
       task({ status: 'success' }),

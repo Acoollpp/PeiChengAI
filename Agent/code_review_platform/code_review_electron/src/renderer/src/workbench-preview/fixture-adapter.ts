@@ -406,8 +406,8 @@ const makeState = (scenario: PreviewScenario): WorkbenchViewModel => ({
   tasks: scenario === 'active' ? clone(activeTasks) : [],
   reports: scenario === 'active' ? clone(reports) : [],
   taskStats: scenario === 'active'
-    ? { status: 'ready', range: 'today', running: 2, failedOrError: 1, success: 3 }
-    : { status: 'ready', range: 'today', running: 0, failedOrError: 0, success: 0 }
+    ? { status: 'ready', range: 'today', failedOrError: 1, success: 3 }
+    : { status: 'ready', range: 'today', failedOrError: 0, success: 0 }
 })
 
 const nextStage: Partial<Record<TaskStage, TaskStage>> = {
@@ -425,9 +425,6 @@ export const createFixtureWorkbenchAdapter = (): WorkbenchAdapter => {
     state.taskStats = {
       status: 'ready',
       range: 'today',
-      running: state.tasks.filter((value) =>
-        ['checking_environment', 'preparing_workspace', 'running_review', 'uploading_report'].includes(value.stage)
-      ).length,
       failedOrError: state.tasks.filter((value) => value.stage === 'failed').length,
       success: state.reports.length
     }

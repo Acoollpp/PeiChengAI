@@ -211,7 +211,22 @@ afterEach(() => {
 })
 
 describe('ProductionReviewWorkbench', () => {
-  it('总览使用今日服务端统计，但本机等待始终取自当前 renderer 队列', async () => {
+  it('服务端运行统计为零时仍显示本机正在执行的任务数', async () => {
+    vi.mocked(window.codeReview.executeTask).mockImplementation(() => new Promise<never>(() => undefined))
+    vi.mocked(window.codeReview.getTodayTaskStats).mockResolvedValue(taskStats(0, 0, 0))
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await submitMinimalDs03Task('svn://server/local-running-count')
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(1))
+
+    const overview = await screen.findByLabelText('任务总览')
+    await waitFor(() => {
+      expect(within(overview).getByText('正在执行').closest('div')).toHaveTextContent('1')
+      expect(within(overview).getByText('本机等待').closest('div')).toHaveTextContent('0')
+    })
+  })
+
+  it('总览的执行和等待计数始终取自当前 renderer 队列', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(199)
     const pendingRuns = [
       new Promise<never>(() => undefined),
@@ -239,7 +254,7 @@ describe('ProductionReviewWorkbench', () => {
     await submitMinimalDs03Task('svn://server/stats-queue-3')
 
     const overview = await screen.findByLabelText('任务总览')
-    expect(within(overview).getByText('正在执行').closest('div')).toHaveTextContent('8')
+    expect(within(overview).getByText('正在执行').closest('div')).toHaveTextContent('2')
     expect(within(overview).getByText('本机等待').closest('div')).toHaveTextContent('1')
     expect(within(overview).getByText('今日失败').closest('div')).toHaveTextContent('4')
     expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('11')
@@ -322,7 +337,7 @@ describe('ProductionReviewWorkbench', () => {
     await waitFor(() => expect(within(screen.getByLabelText('任务总览')).getByText('今日完成').closest('button')).toHaveTextContent('3'))
   })
 
-  it('真实任务绑定和进入终态时后台刷新统计，日志与重复阶段不重复请求', async () => {
+  it('真实任务仅在进入统计终态时后台刷新今日统计，日志和执行阶段不重复请求', async () => {
     let progressListener: ((event: TaskProgressEvent) => void) | undefined
     const backgroundRefresh = createDeferred<Awaited<ReturnType<CodeReviewApi['getTodayTaskStats']>>>()
     vi.mocked(window.codeReview.executeTask).mockImplementation(() => new Promise<never>(() => undefined))
@@ -347,10 +362,6 @@ describe('ProductionReviewWorkbench', () => {
     act(() => progressListener?.({
       taskId: 'server-stats-refresh', clientTaskId, type: 'stage', stage: 'created', message: '服务端任务已创建'
     }))
-    await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
-    expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('5')
-    expect(screen.queryByText('正在加载今日服务端统计。')).not.toBeInTheDocument()
-
     act(() => {
       progressListener?.({
         taskId: 'server-stats-refresh', clientTaskId, type: 'stage', stage: 'created', message: '重复创建阶段'
@@ -363,23 +374,25 @@ describe('ProductionReviewWorkbench', () => {
       })
     })
     await waitFor(() => expect(screen.getAllByText('执行 Skill').length).toBeGreaterThan(0))
-    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2)
+    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
+
+    act(() => progressListener?.({
+      taskId: 'server-stats-refresh', clientTaskId, type: 'stage', stage: 'success', message: '审查完成'
+    }))
+    await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
+    expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('5')
+    expect(screen.queryByText('正在加载今日服务端统计。')).not.toBeInTheDocument()
 
     await act(async () => {
       backgroundRefresh.resolve(taskStats(2, 1, 6))
       await backgroundRefresh.promise
     })
     await waitFor(() => expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('6'))
-    act(() => progressListener?.({
-      taskId: 'server-stats-refresh', clientTaskId, type: 'stage', stage: 'success', message: '审查完成'
-    }))
-    await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(3))
-    await waitFor(() => expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('7'))
 
     act(() => progressListener?.({
       taskId: 'server-stats-refresh', clientTaskId, type: 'stage', stage: 'success', message: '重复完成事件'
     }))
-    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(3)
+    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2)
   })
 
   it('后发统计请求先返回时忽略初始请求的陈旧响应', async () => {
@@ -401,7 +414,7 @@ describe('ProductionReviewWorkbench', () => {
     const clientTaskId = vi.mocked(window.codeReview.executeTask).mock.calls[0][0].client_task_id
     if (!clientTaskId) throw new Error('本地任务 ID 未生成')
     act(() => progressListener?.({
-      taskId: 'server-stats-race', clientTaskId, type: 'stage', stage: 'created', message: '服务端任务已创建'
+      taskId: 'server-stats-race', clientTaskId, type: 'stage', stage: 'success', message: '服务端任务已完成'
     }))
 
     await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
@@ -414,7 +427,7 @@ describe('ProductionReviewWorkbench', () => {
     await waitFor(() => expect(within(overview).getByText('今日完成').closest('button')).toHaveTextContent('9'))
   })
 
-  it('失败任务重试在服务端真实阶段事件到达后才刷新统计', async () => {
+  it('失败任务重试仅在重新进入统计终态时刷新统计', async () => {
     let progressListener: ((event: TaskProgressEvent) => void) | undefined
     vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
       data: [{
@@ -439,7 +452,7 @@ describe('ProductionReviewWorkbench', () => {
       taskId: 'retry-stats', clientTaskId: 'retry-stats',
       type: 'stage', stage: 'checking_environment', message: '重试任务已进入环境检查'
     }))
-    await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
+    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
 
     act(() => {
       progressListener?.({
@@ -452,7 +465,13 @@ describe('ProductionReviewWorkbench', () => {
       })
     })
     await waitFor(() => expect(screen.getByText('重试任务执行 Skill')).toBeInTheDocument())
-    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2)
+    expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(1)
+
+    act(() => progressListener?.({
+      taskId: 'retry-stats', clientTaskId: 'retry-stats',
+      type: 'stage', stage: 'success', message: '重试任务已完成'
+    }))
+    await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
   })
 
   it('真实任务事件依次映射环境检查、准备工作区、执行 Skill 和上传报告', async () => {
@@ -485,6 +504,15 @@ describe('ProductionReviewWorkbench', () => {
     await assertStage('checking_environment', '环境检查')
     await assertStage('preparing_workspace', '准备工作区')
     await assertStage('running_codex', '执行 Skill')
+    const runningRow = await screen.findByRole('article', { name: /server-stage-task/ })
+    await userEvent.setup().click(within(runningRow).getByRole('button', { name: '打开任务日志 server-stage-task' }))
+    expect(window.codeReview.openTaskLog).toHaveBeenCalledWith('server-stage-task')
+    act(() => progressListener?.({
+      taskId: 'server-stage-task', clientTaskId, type: 'codex_output', stream: 'stdout',
+      message: 'succeeded in 291ms: 大段原始 Codex 输出'
+    }))
+    expect(within(runningRow).getByText('事件：执行 Skill')).toBeInTheDocument()
+    expect(within(runningRow).queryByText(/大段原始 Codex 输出/)).not.toBeInTheDocument()
     await assertStage('uploading_report', '上传报告')
   })
 

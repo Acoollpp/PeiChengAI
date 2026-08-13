@@ -207,7 +207,9 @@ const applyProgress = (current: TaskViewItem[], event: TaskProgressEvent, now: s
     isLocalOnly: false,
     status,
     ...(event.type === 'stage' ? { localProgressStage: event.stage } : {}),
-    progress_message: target.userIntent === 'cancelled' ? '任务已取消' : event.message,
+    progress_message: target.userIntent === 'cancelled'
+      ? '任务已取消'
+      : event.type === 'stage' ? event.message : target.progress_message ?? merged.progress_message,
     error_message: target.userIntent === 'cancelled' ? undefined : merged.error_message,
     codex_log: event.type === 'codex_output'
       ? [...(target.codex_log ?? []), event].slice(-20)
