@@ -2721,3 +2721,220 @@ html[data-theme="dark"] .auth-logo {
     padding: 14px;
   }
 }
+
+/* Issue #88：主窗口主题覆盖补强。
+   styles.css 在生产入口中晚于 workbench CSS 加载，这里只覆盖会反向固定浅色/低对比的全局规则。 */
+.production-shell {
+  --pc-dialog-surface: var(--pc-surface);
+  --pc-dialog-surface-raised: var(--pc-surface-raised);
+  --pc-dialog-text: var(--pc-text);
+  --pc-dialog-muted: var(--pc-text-muted);
+  --pc-dialog-border: var(--pc-border-strong);
+  --pc-dialog-overlay: rgb(24 35 43 / 42%);
+  --pc-dialog-field-bg: #ffffff;
+  --pc-dialog-field-placeholder: #61737c;
+  --pc-dialog-thumb: #bac8cf;
+}
+
+html[data-theme="dark"] .production-shell {
+  --pc-dialog-surface: #151d24;
+  --pc-dialog-surface-raised: #1b252e;
+  --pc-dialog-text: #eef3f4;
+  --pc-dialog-muted: #a6b3ba;
+  --pc-dialog-border: rgb(226 236 240 / 22%);
+  --pc-dialog-overlay: rgb(0 0 0 / 62%);
+  --pc-dialog-field-bg: #10171d;
+  --pc-dialog-field-placeholder: #96a6ae;
+  --pc-dialog-thumb: rgb(226 236 240 / 24%);
+}
+
+.production-shell .dialog-overlay:not(.login-dialog-overlay),
+.production-shell .modal-backdrop:not(.login-update-backdrop) {
+  background: var(--pc-dialog-overlay);
+  backdrop-filter: blur(4px);
+}
+
+.production-shell .dialog-card:not(.login-dialog-card),
+.production-shell .submit-feedback-dialog {
+  border-color: var(--pc-dialog-border);
+  color: var(--pc-dialog-text);
+  background: var(--pc-dialog-surface);
+  box-shadow: 0 20px 58px rgb(0 0 0 / 28%);
+}
+
+.production-shell .dialog-card:not(.login-dialog-card) h2,
+.production-shell .submit-feedback-dialog h2 {
+  color: var(--pc-dialog-text);
+}
+
+.production-shell .dialog-card:not(.login-dialog-card) .dialog-desc,
+.production-shell .submit-feedback-field,
+.production-shell .feedback-paste-hint,
+.production-shell .feedback-screenshot-preview span {
+  color: var(--pc-dialog-muted);
+}
+
+.production-shell .dialog-card:not(.login-dialog-card) .dialog-close {
+  color: var(--pc-dialog-muted);
+}
+
+.production-shell .dialog-card:not(.login-dialog-card) .dialog-close:hover {
+  color: var(--pc-dialog-text);
+  background: var(--pc-surface-hover);
+}
+
+.production-shell .submit-feedback-field textarea {
+  border-color: var(--pc-dialog-border);
+  color: var(--pc-dialog-text);
+  background: var(--pc-dialog-field-bg);
+}
+
+.production-shell .submit-feedback-field textarea::placeholder {
+  color: var(--pc-dialog-field-placeholder);
+}
+
+.production-shell .submit-feedback-field textarea:focus {
+  border-color: var(--pc-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pc-focus) 18%, transparent);
+}
+
+.production-shell .secondary-button,
+.production-shell .ghost-button,
+.production-shell .feedback-screenshot-picker {
+  border-color: var(--pc-dialog-border);
+  color: var(--pc-control-text);
+  background: var(--pc-dialog-surface-raised);
+  box-shadow: none;
+}
+
+.production-shell .secondary-button:hover:not(:disabled),
+.production-shell .ghost-button:hover:not(:disabled),
+.production-shell .feedback-screenshot-picker:hover {
+  border-color: var(--pc-primary);
+  color: var(--pc-primary);
+  background: var(--pc-surface-hover);
+  box-shadow: none;
+  transform: none;
+}
+
+.production-shell .feedback-screenshot-preview {
+  border-color: var(--pc-border);
+  background: var(--pc-dialog-surface-raised);
+}
+
+.production-shell .feedback-screenshot-preview img {
+  background: var(--pc-bg);
+}
+
+.production-shell .feedback-screenshot-preview strong {
+  color: var(--pc-dialog-text);
+}
+
+.production-shell .submit-feedback-dialog .dialog-actions {
+  border-color: var(--pc-border);
+  background: var(--pc-dialog-surface);
+}
+
+.production-shell .submit-feedback-scroll::-webkit-scrollbar-thumb {
+  background: var(--pc-dialog-thumb);
+}
+
+html[data-theme="dark"] .production-shell .wb-markdown-panel,
+html[data-theme="dark"] .production-shell .wb-markdown-panel > .preview-scroll {
+  background: var(--wb-markdown-bg);
+}
+
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview,
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview p,
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview li,
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview td,
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview th {
+  color: var(--wb-markdown-text);
+}
+
+html[data-theme="dark"] .production-shell .wb-markdown-panel .preview-empty {
+  color: var(--wb-markdown-muted);
+}
+
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview h1,
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview h2,
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview h3,
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview h4,
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview h5,
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview h6,
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview th {
+  color: var(--wb-text);
+}
+
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview blockquote {
+  border-color: var(--wb-quote-border);
+  color: var(--wb-markdown-muted);
+  background: var(--wb-quote-bg);
+}
+
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview a {
+  color: var(--wb-link);
+}
+
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview img {
+  border-color: var(--wb-line);
+  background: var(--wb-control-bg-muted);
+}
+
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview :not(pre) > code {
+  border-color: color-mix(in srgb, var(--wb-accent) 34%, var(--wb-line));
+  color: var(--wb-inline-code-text);
+  background: var(--wb-inline-code-bg);
+}
+
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-code-block {
+  border-color: var(--wb-line);
+  background: var(--wb-code-bg);
+}
+
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-code-language {
+  border-color: var(--wb-line);
+  color: var(--wb-markdown-muted);
+  background: var(--wb-code-header-bg);
+}
+
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-code-block code {
+  color: var(--wb-code-text);
+}
+
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview th,
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview td {
+  border-color: var(--wb-line-strong);
+}
+
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview th,
+html[data-theme="dark"] .production-shell .wb-markdown-panel .markdown-preview tr:nth-child(even) td {
+  background: var(--wb-table-row-bg);
+}
+
+.report-feedback-panel,
+.report-feedback-bar textarea,
+.report-feedback-panel textarea {
+  border-color: var(--pc-border);
+  color: var(--pc-text);
+  background: var(--pc-surface);
+}
+
+.report-feedback-panel {
+  background: var(--pc-surface-raised);
+}
+
+.report-feedback-copy strong,
+.report-heading-option {
+  color: var(--pc-text);
+}
+
+.report-feedback-copy span,
+.report-feedback-count {
+  color: var(--pc-text-muted);
+}
+
+.report-feedback-bar textarea,
+.report-feedback-panel textarea {
+  background: var(--pc-bg-elevated);
+}

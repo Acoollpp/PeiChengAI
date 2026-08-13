@@ -104,6 +104,30 @@ describe('report pdf generator', () => {
     expect(loadedHtml).not.toContain('<p>---</p>')
   })
 
+  it('PDF 打印 HTML 显式固定白底浅色，不继承客户端主题', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-pdf-light-theme-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    await writeFile(reportPath, '# 审查报告\n\n正文内容\n')
+    let loadedHtml = ''
+    const createWindow = vi.fn(() => ({
+      loadFile: vi.fn(async (path: string) => {
+        loadedHtml = await readFile(path, 'utf8')
+      }),
+      webContents: {
+        printToPDF: vi.fn(async () => Buffer.from('pdf-bytes'))
+      },
+      close: vi.fn()
+    }))
+
+    await generatePdfReport(reportPath, { createWindow })
+
+    expect(loadedHtml).toContain('html, body { background: #ffffff; }')
+    expect(loadedHtml).toContain('body { color: #111827;')
+    expect(loadedHtml).not.toContain('data-theme')
+    expect(loadedHtml).not.toContain('--pc-')
+  })
+
   it('忽略报告末尾没有后续内容的 Markdown 分隔线', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'report-pdf-trailing-break-'))
     tempDirs.push(dir)

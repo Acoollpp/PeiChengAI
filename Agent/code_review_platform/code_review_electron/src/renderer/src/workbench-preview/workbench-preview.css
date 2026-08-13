@@ -2904,15 +2904,24 @@ input[type="checkbox"] {
 
 .wb-environment-inline .dependency-card strong {
   color: var(--wb-text);
-  font-size: 11px;
+  font-size: 13px;
+}
+
+.wb-environment-inline .dependency-card.is-missing strong {
+  color: var(--wb-danger-text);
 }
 
 .wb-environment-inline .dependency-card p,
 .wb-environment-inline .dependency-help {
-  color: var(--wb-muted);
+  color: var(--wb-readable-muted);
   font-family: var(--wb-utility);
-  font-size: 9px;
+  font-size: 13px;
   line-height: 1.45;
+}
+
+.wb-environment-inline .dependency-card.is-missing p,
+.wb-environment-inline .dependency-help {
+  color: var(--wb-danger-readable);
 }
 
 .wb-environment-inline .dependency-help {
@@ -2935,4 +2944,510 @@ input[type="checkbox"] {
   .wb-task-lane-tabs button {
     padding-inline: 7px;
   }
+}
+
+/* Issue #88：主窗口其余界面完整消费语义主题。
+   保持方案 A 工程仪表盘视觉，只提升阅读对比度、层级和状态可辨识度。 */
+.wb-shell {
+  color-scheme: light;
+  --wb-control-bg: #ffffff;
+  --wb-control-bg-muted: #f7fafb;
+  --wb-control-border: #b9c7ce;
+  --wb-control-placeholder: #61737c;
+  --wb-readable-muted: #4f6069;
+  --wb-link: #056b61;
+  --wb-low: #287b91;
+  --wb-markdown-bg: #ffffff;
+  --wb-markdown-text: #34444e;
+  --wb-markdown-muted: #526169;
+  --wb-quote-bg: #f0f7f5;
+  --wb-quote-border: #65a79e;
+  --wb-inline-code-bg: #e1f1ee;
+  --wb-inline-code-text: #05534d;
+  --wb-code-bg: #f6f9fa;
+  --wb-code-header-bg: #e1f1ee;
+  --wb-code-text: #263842;
+  --wb-table-head-bg: #edf5f3;
+  --wb-table-row-bg: #f7fafb;
+  --wb-anchor-bg: rgb(8 127 115 / 14%);
+  --wb-danger-text: #8a2424;
+  --wb-danger-readable: #5f2b2b;
+  --wb-modal-backdrop: rgb(24 35 43 / 42%);
+  --wb-shadow-popover: 0 24px 70px rgb(24 35 43 / 24%);
+}
+
+html[data-theme="dark"] .wb-shell {
+  color-scheme: dark;
+  --wb-control-bg: #10171d;
+  --wb-control-bg-muted: #17212b;
+  --wb-control-border: rgb(226 236 240 / 22%);
+  --wb-control-placeholder: #96a6ae;
+  --wb-readable-muted: #c1cbd2;
+  --wb-link: #8eeadd;
+  --wb-low: #8bd4eb;
+  --wb-markdown-bg: #0e151b;
+  --wb-markdown-text: #dce6eb;
+  --wb-markdown-muted: #c1cbd2;
+  --wb-quote-bg: rgb(52 211 189 / 12%);
+  --wb-quote-border: #34d3bd;
+  --wb-inline-code-bg: rgb(52 211 189 / 16%);
+  --wb-inline-code-text: #bff8d8;
+  --wb-code-bg: #081018;
+  --wb-code-header-bg: #121e28;
+  --wb-code-text: #e8edf2;
+  --wb-table-head-bg: #1b2731;
+  --wb-table-row-bg: #16212a;
+  --wb-anchor-bg: rgb(52 211 189 / 16%);
+  --wb-danger-text: #ffb3b3;
+  --wb-danger-readable: #ffd1d1;
+  --wb-modal-backdrop: rgb(0 0 0 / 72%);
+  --wb-shadow-popover: 0 24px 70px rgb(0 0 0 / 54%);
+}
+
+.wb-shell,
+.wb-app-header,
+.wb-create-panel,
+.wb-workspace,
+.wb-task-section,
+.wb-report-section,
+.wb-report-center-grid,
+.wb-feedback-form {
+  color: var(--wb-text);
+  background: var(--wb-bg);
+}
+
+.wb-app-header,
+.wb-create-panel,
+.wb-task-section,
+.wb-report-section,
+.wb-report-center-grid,
+.wb-feedback-form {
+  background: var(--wb-surface);
+}
+
+.wb-modal-backdrop {
+  background: var(--wb-modal-backdrop);
+}
+
+.wb-selector,
+.wb-report-drawer {
+  box-shadow: var(--wb-shadow-popover);
+}
+
+.wb-form-field,
+.wb-toggle-field,
+.wb-section-heading p,
+.wb-detail-heading p,
+.wb-detail-facts p,
+.wb-detail-facts ol,
+.wb-material-label p,
+.wb-no-materials,
+.wb-selector-footer > p,
+.wb-empty-band,
+.wb-report-state,
+.wb-report-content-state,
+.wb-feedback-intro span,
+.wb-feedback-screenshots .wb-section-heading p,
+.wb-feedback-empty {
+  color: var(--wb-readable-muted);
+}
+
+.wb-form-field,
+.wb-toggle-field {
+  font-size: 13px;
+}
+
+.wb-form-field input,
+.wb-search-field input,
+.wb-detail-input-section textarea,
+.wb-feedback-description textarea {
+  border-color: var(--wb-control-border);
+  color: var(--wb-text);
+  background: var(--wb-control-bg);
+  font-size: 13px;
+}
+
+.wb-form-field input {
+  height: 38px;
+}
+
+.wb-search-field input {
+  height: 34px;
+}
+
+.wb-detail-input-section textarea,
+.wb-feedback-description textarea {
+  font-size: 14px;
+}
+
+.wb-form-field input::placeholder,
+.wb-search-field input::placeholder,
+.wb-detail-input-section textarea::placeholder,
+.wb-feedback-description textarea::placeholder {
+  color: var(--wb-control-placeholder);
+}
+
+.wb-form-field input[aria-invalid="true"] {
+  border-color: var(--wb-danger);
+  background: var(--wb-danger-soft);
+}
+
+.wb-primary-button {
+  color: var(--pc-primary-text);
+  background: var(--wb-accent);
+}
+
+.wb-primary-button:hover:not(:disabled) {
+  border-color: var(--pc-primary-hover);
+  background: var(--pc-primary-hover);
+}
+
+.wb-secondary-button,
+.wb-file-button,
+.wb-icon-button,
+.wb-text-button,
+.wb-report-state button,
+.wb-report-parse-warning button {
+  border-color: var(--wb-control-border);
+  color: var(--wb-text-soft);
+  background: var(--wb-control-bg-muted);
+}
+
+.wb-secondary-button:hover:not(:disabled),
+.wb-file-button:hover:not(:disabled),
+.wb-icon-button:hover:not(:disabled),
+.wb-text-button:hover:not(:disabled),
+.wb-report-state button:hover:not(:disabled),
+.wb-report-parse-warning button:hover:not(:disabled) {
+  border-color: var(--wb-accent);
+  color: var(--wb-accent);
+  background: var(--wb-accent-soft);
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+input[type="checkbox"]:focus-visible,
+.wb-report-index button:focus-visible,
+.wb-catalog-item > button:focus-visible {
+  outline: 2px solid var(--wb-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--wb-focus) 18%, transparent);
+}
+
+.wb-preview-sample,
+.wb-selection-empty,
+.wb-band-heading,
+.wb-table-head,
+.wb-task-group > p,
+.wb-selector-header,
+.wb-selector-footer,
+.wb-selector-list,
+.wb-category-header,
+.wb-material-field,
+.wb-file-row,
+.wb-drawer-note,
+.wb-feedback-file-list > div,
+.wb-report-index,
+.wb-task-lane-tabs,
+.wb-preview-controls {
+  background: var(--wb-control-bg-muted);
+}
+
+.wb-catalog-item,
+.wb-task-table-row,
+.wb-management-report-row,
+.wb-report-row,
+.wb-report-index button {
+  border-color: var(--wb-line);
+  color: var(--wb-text);
+  background: var(--wb-surface);
+}
+
+.wb-catalog-item {
+  border-top-color: var(--wb-line);
+}
+
+.wb-task-table-row:hover,
+.wb-management-report-row:hover,
+.wb-report-index button:hover,
+.wb-catalog-item.is-active,
+.wb-preview-controls button:hover:not(.is-active),
+.wb-task-lane-tabs button:hover:not(.is-active) {
+  background: var(--wb-surface-hover);
+}
+
+.wb-report-index button.is-active,
+.wb-preview-controls button.is-active,
+.wb-task-lane-tabs button.is-active {
+  background: var(--wb-accent-soft);
+}
+
+.wb-overview span,
+.wb-overview > div small,
+.wb-overview > .wb-completed-link small,
+.wb-table-head,
+.wb-report-index > header span,
+.wb-report-index-svn,
+.wb-report-index button small,
+.wb-report-index-meta,
+.wb-management-report-row > span,
+.wb-management-report-row time,
+.wb-task-table-row time,
+.wb-row-meta,
+.wb-character-count,
+.wb-material-label > span,
+.wb-file-row > small,
+.wb-feedback-file-list small {
+  color: var(--wb-readable-muted);
+}
+
+.wb-overview span,
+.wb-report-index > header,
+.wb-band-heading h3,
+.wb-section-heading h2,
+.wb-section-heading h3,
+.wb-section-heading h4,
+.wb-detail-facts h4,
+.wb-detail-input-section h4,
+.wb-material-label strong,
+.wb-feedback-screenshots h3,
+.wb-report-main strong,
+.wb-task-title-line h4,
+.wb-selected-item strong,
+.wb-item-copy strong {
+  font-size: 13px;
+}
+
+.wb-task-identity strong,
+.wb-management-report-row > div:first-child strong,
+.wb-report-index-title strong,
+.wb-feedback-intro strong {
+  color: var(--wb-text);
+  font-size: 14px;
+  line-height: 1.38;
+}
+
+.wb-row-svn,
+.wb-task-progress > strong,
+.wb-feedback-file-list strong {
+  color: var(--wb-text-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.wb-task-table-row time,
+.wb-row-meta,
+.wb-report-index-svn,
+.wb-report-index button small,
+.wb-report-index-meta,
+.wb-detail-facts p,
+.wb-detail-facts ol,
+.wb-material-label p,
+.wb-file-row > span,
+.wb-feedback-file-list small,
+.wb-feedback-empty,
+.wb-selector-count,
+.wb-empty-band span {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.wb-status-label,
+.wb-task-table-row .wb-status-label {
+  border-color: var(--wb-control-border);
+  color: var(--wb-text-soft);
+  background: var(--wb-control-bg-muted);
+  font-size: 12px;
+}
+
+.is-running .wb-status-label {
+  border-color: color-mix(in srgb, var(--wb-accent) 48%, var(--wb-line));
+  color: var(--wb-accent);
+  background: var(--wb-accent-soft);
+}
+
+.is-waiting .wb-status-label {
+  border-color: color-mix(in srgb, var(--wb-waiting) 48%, var(--wb-line));
+  color: var(--wb-waiting);
+  background: var(--wb-waiting-soft);
+}
+
+.is-failed .wb-status-label {
+  border-color: color-mix(in srgb, var(--wb-danger) 48%, var(--wb-line));
+  color: var(--wb-danger);
+  background: var(--wb-danger-soft);
+}
+
+.is-complete .wb-status-label {
+  border-color: color-mix(in srgb, var(--wb-complete) 48%, var(--wb-line));
+  color: var(--wb-complete);
+  background: var(--pc-success-soft);
+}
+
+.is-failed .wb-task-message,
+.is-failed .wb-task-progress > strong,
+.wb-report-content-state.is-error > svg,
+.wb-report-content-state.is-error strong,
+.wb-stats-state.is-error,
+.wb-report-state.is-error,
+.wb-report-parse-warning,
+.wb-field-error,
+.wb-inline-error {
+  color: var(--wb-danger);
+}
+
+.wb-management-report-row > strong.is-low,
+.wb-report-index-meta strong.is-low {
+  color: var(--wb-low);
+}
+
+.wb-compact-stage-track li {
+  min-height: 3px;
+  background: var(--wb-line-strong);
+}
+
+.wb-compact-stage-track li.is-current {
+  background: color-mix(in srgb, var(--wb-accent) 72%, var(--wb-surface));
+  box-shadow: inset 0 0 0 1px var(--wb-accent);
+}
+
+.wb-compact-stage-track li.is-complete {
+  background: var(--wb-accent);
+}
+
+.wb-markdown-panel,
+.wb-markdown-panel > .preview-scroll,
+.wb-markdown-scroll {
+  color: var(--wb-markdown-text);
+  background: var(--wb-markdown-bg);
+}
+
+.wb-markdown-panel .preview-empty {
+  color: var(--wb-markdown-muted);
+}
+
+.wb-markdown-panel .markdown-preview,
+.wb-markdown-panel .markdown-preview p,
+.wb-markdown-panel .markdown-preview li,
+.wb-markdown-panel .markdown-preview td,
+.wb-markdown-panel .markdown-preview th,
+.wb-markdown-scroll p,
+.wb-markdown-scroll li,
+.wb-markdown-scroll td,
+.wb-markdown-scroll th {
+  color: var(--wb-markdown-text);
+}
+
+.wb-markdown-panel .markdown-preview h1,
+.wb-markdown-panel .markdown-preview h2,
+.wb-markdown-panel .markdown-preview h3,
+.wb-markdown-panel .markdown-preview h4,
+.wb-markdown-panel .markdown-preview h5,
+.wb-markdown-panel .markdown-preview h6,
+.wb-markdown-scroll h1,
+.wb-markdown-scroll h2,
+.wb-markdown-scroll h3 {
+  color: var(--wb-text);
+}
+
+.wb-markdown-panel .markdown-preview blockquote,
+.wb-markdown-scroll blockquote {
+  border-color: var(--wb-quote-border);
+  color: var(--wb-markdown-muted);
+  background: var(--wb-quote-bg);
+}
+
+.wb-markdown-panel .markdown-preview a,
+.wb-markdown-scroll a {
+  color: var(--wb-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.wb-markdown-panel .markdown-preview img {
+  border-color: var(--wb-line);
+  background: var(--wb-control-bg-muted);
+}
+
+.wb-markdown-panel .markdown-preview :not(pre) > code,
+.wb-markdown-scroll :not(pre) > code {
+  border-color: color-mix(in srgb, var(--wb-accent) 34%, var(--wb-line));
+  color: var(--wb-inline-code-text);
+  background: var(--wb-inline-code-bg);
+}
+
+.wb-markdown-panel .markdown-code-block,
+.wb-markdown-panel .markdown-preview pre,
+.wb-markdown-scroll pre {
+  border-color: var(--wb-line);
+  color: var(--wb-code-text);
+  background: var(--wb-code-bg);
+}
+
+.wb-markdown-panel .markdown-code-language {
+  border-color: var(--wb-line);
+  color: var(--wb-markdown-muted);
+  background: var(--wb-code-header-bg);
+}
+
+.wb-markdown-panel .markdown-code-block code,
+.wb-markdown-scroll code {
+  color: var(--wb-code-text);
+}
+
+.wb-markdown-panel .markdown-preview th,
+.wb-markdown-scroll th {
+  color: var(--wb-text);
+  background: var(--wb-table-head-bg);
+}
+
+.wb-markdown-panel .markdown-preview th,
+.wb-markdown-panel .markdown-preview td,
+.wb-markdown-scroll th,
+.wb-markdown-scroll td {
+  border-color: var(--wb-line-strong);
+}
+
+.wb-markdown-panel .markdown-preview tr:nth-child(even) td {
+  background: var(--wb-table-row-bg);
+}
+
+.report-anchor-highlight,
+.report-issue-block-active {
+  outline: 2px solid var(--wb-focus);
+  outline-offset: 4px;
+  background: var(--wb-anchor-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wb-focus) 28%, transparent);
+}
+
+.wb-report-parse-warning,
+.wb-report-state.is-error {
+  border-color: color-mix(in srgb, var(--wb-danger) 40%, var(--wb-line));
+  background: var(--wb-danger-soft);
+}
+
+.wb-report-parse-warning span {
+  color: var(--wb-readable-muted);
+}
+
+.wb-feedback-form {
+  scrollbar-color: var(--wb-line-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.wb-feedback-description textarea {
+  min-height: 150px;
+}
+
+.wb-toast {
+  border-color: color-mix(in srgb, var(--wb-accent) 44%, var(--wb-line));
+  color: var(--wb-text);
+  background: color-mix(in srgb, var(--wb-accent) 14%, var(--wb-surface));
+  font-size: 13px;
+}
+
+.wb-toast > svg,
+.wb-toast-content > button {
+  color: var(--wb-accent);
 }

@@ -560,6 +560,7 @@ const buildPrintHtml = (body: string): string => `<!doctype html>
 <head>
   <meta charset="utf-8" />
   <style>
+    html, body { background: #ffffff; }
     body { color: #111827; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 14px; line-height: 1.7; margin: 32px; }
     h1, h2, h3, h4, h5, h6 { color: #111827; line-height: 1.35; margin: 24px 0 10px; }
     p, ul, ol, blockquote, table, pre { margin: 0 0 14px; }
