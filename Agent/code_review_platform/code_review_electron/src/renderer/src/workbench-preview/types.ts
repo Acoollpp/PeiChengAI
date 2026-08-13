@@ -110,7 +110,6 @@ export type WorkbenchTaskStats =
   | {
       status: 'ready'
       range: 'today'
-      running: number
       failedOrError: number
       success: number
     }

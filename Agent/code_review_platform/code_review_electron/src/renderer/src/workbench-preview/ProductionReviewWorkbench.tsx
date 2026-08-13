@@ -88,19 +88,12 @@ const stageLabels: Record<TaskStage, string> = {
   failed: '失败', cancelled: '已取消'
 }
 
-type TaskStatsSemanticState = 'local' | 'active' | `terminal:${TaskViewItem['status']}`
 const taskStatsTerminalStatuses = new Set<TaskViewItem['status']>([
-  'success', 'failed', 'environment_error', 'cancelled'
+  'success', 'failed', 'environment_error'
 ])
-const taskStatsSemanticState = (task: TaskViewItem): TaskStatsSemanticState => {
-  if (
-    task.localQueueState === 'queued' ||
-    task.isLocalOnly === true ||
-    (task.executeWith === 'retry' && task.localQueueState === 'starting')
-  ) return 'local'
-  if (taskStatsTerminalStatuses.has(task.status)) return `terminal:${task.status}`
-  return 'active'
-}
+type TaskStatsTerminalState = TaskViewItem['status'] | undefined
+const taskStatsTerminalState = (task: TaskViewItem): TaskStatsTerminalState =>
+  taskStatsTerminalStatuses.has(task.status) ? task.status : undefined
 
 const taskStage = (task: TaskViewItem): TaskStage => {
   if (task.localQueueState === 'queued') return 'waiting'
@@ -227,7 +220,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
   const reportListRequestRef = useRef(0)
   const reportContentRequestRef = useRef(new Map<string, number>())
   const mountedRef = useRef(true)
-  const observedTaskStatsStateRef = useRef(new Map<string, TaskStatsSemanticState>())
+  const observedTaskStatsStateRef = useRef(new Map<string, TaskStatsTerminalState>())
   const createTaskInFlightRef = useRef(false)
   const feedbackInFlightRef = useRef(false)
   const negativeFeedbackInFlightRef = useRef(new Set<string>())
@@ -298,7 +291,6 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
       setTaskStats({
         status: 'ready',
         range: 'today',
-        running: stats.running,
         failedOrError: stats.failed_or_error,
         success: stats.success
       })
@@ -325,23 +317,14 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
 
     queue.tasks.forEach((task) => {
       const taskId = task.localTaskId
-      const nextState = taskStatsSemanticState(task)
+      const nextState = taskStatsTerminalState(task)
       const previousState = observedStates.get(taskId)
+      const isNewTask = !observedStates.has(taskId)
       currentTaskIds.add(taskId)
       observedStates.set(taskId, nextState)
 
-      if (previousState === undefined) {
-        // 本地任务可能在一次提交批次内已收到首个服务端事件；历史任务没有执行载荷。
-        if (nextState !== 'local' && task.executePayload !== undefined) shouldRefresh = true
-        return
-      }
-      if (previousState === nextState) return
-      if (
-        previousState !== 'active' &&
-        nextState === 'active' &&
-        task.localQueueState === 'running'
-      ) shouldRefresh = true
-      if (nextState.startsWith('terminal:') && nextState !== 'terminal:cancelled') {
+      // 初次载入的历史终态不刷新；仅本次会话中新进入统计终态时更新今日统计。
+      if (!isNewTask && nextState !== undefined && nextState !== previousState) {
         shouldRefresh = true
       }
     })
