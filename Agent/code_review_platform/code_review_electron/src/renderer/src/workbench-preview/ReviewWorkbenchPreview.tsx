@@ -26,6 +26,9 @@ import remarkGfm from 'remark-gfm'
 
 import paceLogo from '../assets/pace-logo.png'
 import { MarkdownPreview } from '../components/MarkdownPreview'
+import { ThemeToggleButton } from '../components/ThemeToggleButton'
+import type { ClientTheme } from '../theme'
+import { DEFAULT_CLIENT_THEME } from '../theme'
 import { ReviewItemSelector } from './ReviewItemSelector'
 import { formatRevisionLabel, isRevisionValue, normalizeRevisionDigits } from './revision'
 import type {
@@ -44,6 +47,8 @@ import type {
 interface ReviewWorkbenchPreviewProps {
   adapter: WorkbenchAdapter
   environmentStatus?: ReactNode
+  theme?: ClientTheme
+  onToggleTheme?: () => void
 }
 
 interface FormErrors {
@@ -612,7 +617,12 @@ function FeedbackView({ adapter }: { adapter: WorkbenchAdapter }): React.JSX.Ele
   )
 }
 
-export function ReviewWorkbenchPreview({ adapter, environmentStatus }: ReviewWorkbenchPreviewProps): React.JSX.Element {
+export function ReviewWorkbenchPreview({
+  adapter,
+  environmentStatus,
+  theme = DEFAULT_CLIENT_THEME,
+  onToggleTheme = () => undefined
+}: ReviewWorkbenchPreviewProps): React.JSX.Element {
   const [viewModel, setViewModel] = useState<WorkbenchViewModel>(() => adapter.getViewModel())
   const [activeView, setActiveView] = useState<WorkbenchViewId>('task-management')
   const [draft, setDraft] = useState({ svnUrl: '', oldRevision: '', newRevision: '' })
@@ -727,6 +737,7 @@ export function ReviewWorkbenchPreview({ adapter, environmentStatus }: ReviewWor
         </nav>
         <div className="wb-user">
           <div><strong>{viewModel.userName}</strong><span>{viewModel.departmentName}</span></div>
+          <ThemeToggleButton theme={theme} onToggle={onToggleTheme} className="wb-theme-toggle" />
           <span className="wb-avatar" aria-hidden="true">{avatarText}</span>
         </div>
       </header>

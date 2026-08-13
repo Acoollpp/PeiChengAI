@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 
 import { createFixtureWorkbenchAdapter } from './workbench-preview/fixture-adapter'
 import { ReviewWorkbenchPreview } from './workbench-preview/ReviewWorkbenchPreview'
+import './styles.css'
 import './workbench-preview/workbench-preview.css'
 
 const adapter = createFixtureWorkbenchAdapter()

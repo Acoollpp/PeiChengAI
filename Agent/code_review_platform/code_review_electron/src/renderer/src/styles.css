@@ -1,10 +1,74 @@
 :root {
-  color: #202124;
-  background: #f5f7f9;
+  color: var(--pc-text);
+  background: var(--pc-bg);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  --pc-bg: #f5f7f9;
+  --pc-bg-elevated: #ffffff;
+  --pc-surface: #ffffff;
+  --pc-surface-raised: #f7fafb;
+  --pc-surface-hover: #edf5f3;
+  --pc-text: #18232b;
+  --pc-text-muted: #667780;
+  --pc-border: #d9e2e7;
+  --pc-border-strong: #bac8cf;
+  --pc-primary: #087f73;
+  --pc-primary-hover: #0a9082;
+  --pc-primary-text: #ffffff;
+  --pc-success: #0dac68;
+  --pc-success-soft: #e4f7ee;
+  --pc-waiting: #b56a00;
+  --pc-waiting-soft: #fff4df;
+  --pc-error: #c43d3d;
+  --pc-error-soft: #fff0ef;
+  --pc-focus: #087f73;
+  --pc-brand-red: #d93b35;
+  --pc-brand-blue: #1f5fa8;
+  --pc-auth-bg: #f1f5f9;
+  --pc-auth-card: rgb(255 255 255 / 88%);
+  --pc-auth-field-bg: #ffffff;
+  --pc-auth-field-border: #ccd6db;
+  --pc-auth-shadow: 0 30px 90px rgb(39 56 72 / 16%);
+  --pc-control-bg: rgb(255 255 255 / 84%);
+  --pc-control-hover-bg: #edf5f3;
+  --pc-control-border: #d9e2e7;
+  --pc-control-text: #34444e;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --pc-bg: #0b0f14;
+  --pc-bg-elevated: #111820;
+  --pc-surface: #111820;
+  --pc-surface-raised: #17212b;
+  --pc-surface-hover: #1d2a36;
+  --pc-text: #f5f7fb;
+  --pc-text-muted: rgb(245 247 251 / 62%);
+  --pc-border: rgb(255 255 255 / 12%);
+  --pc-border-strong: rgb(255 255 255 / 18%);
+  --pc-primary: #34d3bd;
+  --pc-primary-hover: #5de0ce;
+  --pc-primary-text: #06100f;
+  --pc-success: #16c784;
+  --pc-success-soft: rgb(22 199 132 / 16%);
+  --pc-waiting: #f0b45b;
+  --pc-waiting-soft: rgb(240 180 91 / 16%);
+  --pc-error: #ff7a7a;
+  --pc-error-soft: rgb(255 122 122 / 14%);
+  --pc-focus: #34d3bd;
+  --pc-brand-red: #ff625c;
+  --pc-brand-blue: #79b7ff;
+  --pc-auth-bg: #000000;
+  --pc-auth-card: rgb(26 27 32 / 74%);
+  --pc-auth-field-bg: rgb(8 10 12 / 72%);
+  --pc-auth-field-border: rgb(255 255 255 / 12%);
+  --pc-auth-shadow: 0 30px 90px rgb(0 0 0 / 42%);
+  --pc-control-bg: rgb(255 255 255 / 8%);
+  --pc-control-hover-bg: rgb(255 255 255 / 14%);
+  --pc-control-border: rgb(255 255 255 / 14%);
+  --pc-control-text: rgb(245 247 251 / 76%);
 }
 
 * {
@@ -33,21 +97,13 @@ button:disabled {
   opacity: 0.58;
 }
 
-button:not(:disabled) {
-  transition:
-    color 140ms ease,
-    background-color 140ms ease,
-    border-color 140ms ease,
-    box-shadow 140ms ease,
-    transform 140ms ease;
-}
-
 .app-shell {
   position: relative;
   overflow: hidden;
   min-height: 100vh;
   padding: 24px;
-  background: #000000;
+  color: var(--pc-text);
+  background: var(--pc-auth-bg);
 }
 
 .app-shell.production-shell {
@@ -79,6 +135,7 @@ button:not(:disabled) {
 }
 
 .auth-card {
+  position: relative;
   z-index: 1;
   width: min(480px, calc(100vw - 48px));
   min-height: 540px;
@@ -86,9 +143,40 @@ button:not(:disabled) {
   border-radius: 22px;
   padding: 44px 48px 42px;
   color: #f5f7fb;
-  background: rgb(26 27 32 / 74%);
-  box-shadow: 0 30px 90px rgb(0 0 0 / 42%);
+  background: var(--pc-auth-card);
+  box-shadow: var(--pc-auth-shadow);
   backdrop-filter: blur(18px);
+}
+
+html[data-theme="light"] .auth-card {
+  border-color: var(--pc-border);
+  color: var(--pc-text);
+}
+
+.theme-toggle-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--pc-control-border);
+  border-radius: 999px;
+  color: var(--pc-control-text);
+  background: var(--pc-control-bg);
+}
+
+.theme-toggle-button:hover:not(:disabled) {
+  background: var(--pc-control-hover-bg);
+}
+
+.theme-toggle-button:focus-visible {
+  outline: 2px solid var(--pc-focus);
+  outline-offset: 2px;
+}
+
+.auth-theme-toggle {
+  position: absolute;
+  top: 18px;
+  right: 18px;
 }
 
 .auth-brand {
@@ -186,6 +274,10 @@ h2 {
   color: rgb(245 247 251 / 48%);
 }
 
+html[data-theme="light"] .auth-field {
+  color: var(--pc-text-muted);
+}
+
 .field input,
 .field select {
   width: 100%;
@@ -210,14 +302,14 @@ h2 {
 .auth-field input,
 .auth-field select {
   min-height: 40px;
-  border-color: rgb(255 255 255 / 12%);
+  border-color: var(--pc-auth-field-border);
   border-radius: 8px;
-  color: #f5f7fb;
-  background: rgb(8 10 12 / 72%);
+  color: var(--pc-text);
+  background: var(--pc-auth-field-bg);
 }
 
 .auth-field select {
-  background-color: rgb(8 10 12 / 72%);
+  background-color: var(--pc-auth-field-bg);
   background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 16 16' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 6.25L8 9.75L11.5 6.25' stroke='%23C8D0D6' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-position: calc(100% - 12px) 50%;
   background-size: 16px 16px;
@@ -535,15 +627,15 @@ h2 {
 }
 
 .primary-button {
-  color: #ffffff;
-  background: #0dac68;
+  color: var(--pc-primary-text);
+  background: var(--pc-primary);
   box-shadow: 0 10px 22px rgb(13 172 104 / 18%);
 }
 
 .auth-card .primary-button {
   min-height: 40px;
   border-radius: 8px;
-  background: #0dac68;
+  background: var(--pc-primary);
 }
 
 .secondary-button {
@@ -560,7 +652,7 @@ h2 {
 
 .primary-button:hover:not(:disabled),
 .install-button:hover:not(:disabled) {
-  background: #12b978;
+  background: var(--pc-primary-hover);
   box-shadow: 0 14px 28px rgb(18 185 120 / 26%);
   transform: translateY(-1px);
 }
@@ -1569,7 +1661,6 @@ h2 {
   outline: 2px solid rgb(18 185 120 / 55%);
   outline-offset: 4px;
   background: rgb(18 185 120 / 10%);
-  transition: outline-color 160ms ease, background 160ms ease;
 }
 
 .report-issue-block {
@@ -1587,7 +1678,6 @@ h2 {
   outline: 2px solid rgb(18 185 120 / 55%);
   outline-offset: 2px;
   background: rgb(18 185 120 / 10%);
-  transition: outline-color 160ms ease, background 160ms ease;
 }
 
 .submit-feedback-dialog {

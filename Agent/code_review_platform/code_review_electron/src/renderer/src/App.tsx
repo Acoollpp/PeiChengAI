@@ -16,6 +16,13 @@ import { LoginPage } from './components/LoginPage'
 import { SvnBindingDialog } from './components/SvnBindingDialog'
 import { UpdateDialog } from './components/UpdateDialog'
 import { createLatestRequestRunner, type LatestRequestRunner } from './latest-request-runner'
+import {
+  applyClientTheme,
+  nextClientTheme,
+  readStoredClientTheme,
+  saveClientTheme,
+  type ClientTheme
+} from './theme'
 import { ProductionReviewWorkbench } from './workbench-preview/ProductionReviewWorkbench'
 
 type AuthSession = {
@@ -32,6 +39,11 @@ const fallbackEnvironment: EnvironmentCheckResult = {
 }
 
 export function App(): React.JSX.Element {
+  const [theme, setTheme] = useState<ClientTheme>(() => {
+    const storedTheme = readStoredClientTheme()
+    applyClientTheme(storedTheme)
+    return storedTheme
+  })
   const [session, setSession] = useState<AuthSession | null>(null)
   const [pendingDepartmentSession, setPendingDepartmentSession] =
     useState<PendingDepartmentSession | null>(null)
@@ -62,6 +74,19 @@ export function App(): React.JSX.Element {
     environmentCheckRunnerRef.current = createLatestRequestRunner()
   }
   const [forcedRetryAction, setForcedRetryAction] = useState<'download' | 'install'>('download')
+
+  useEffect(() => {
+    applyClientTheme(theme)
+  }, [theme])
+
+  const toggleTheme = useCallback((): void => {
+    setTheme((currentTheme) => {
+      const nextTheme = nextClientTheme(currentTheme)
+      applyClientTheme(nextTheme)
+      saveClientTheme(nextTheme)
+      return nextTheme
+    })
+  }, [])
 
   const checkEnvironment = useCallback(async (): Promise<void> => {
     await environmentCheckRunnerRef.current?.run(() => window.codeReview.checkEnvironment(), {
@@ -377,7 +402,12 @@ export function App(): React.JSX.Element {
   if (!session) {
     return (
       <main className="app-shell auth-shell">
-        <LoginPage onKeyLogin={authActions.keyLogin} onSvnLogin={authActions.svnLogin} />
+        <LoginPage
+          onKeyLogin={authActions.keyLogin}
+          onSvnLogin={authActions.svnLogin}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+        />
         {pendingDepartmentSession && (
           <DepartmentSelectionDialog
             departments={departments}
@@ -404,6 +434,8 @@ export function App(): React.JSX.Element {
         onInstallCodex={installCodex}
         onInstallSvn={installSvn}
         onInstallSkill={installSkill}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
       {needSvnBinding && (
         <SvnBindingDialog
