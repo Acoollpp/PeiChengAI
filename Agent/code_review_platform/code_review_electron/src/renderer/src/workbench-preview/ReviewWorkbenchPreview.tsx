@@ -171,11 +171,15 @@ const taskStageClass = (task: ReviewTaskViewModel): string => {
 const TaskTableRow = ({
   task,
   adapter,
-  catalog
+  catalog,
+  reportId,
+  onOpenReport
 }: {
   task: ReviewTaskViewModel
   adapter: WorkbenchAdapter
   catalog: ReviewItemDefinition[]
+  reportId?: string
+  onOpenReport: (reportId: string) => void
 }): React.JSX.Element => (
   <article className={`wb-task-table-row ${taskStageClass(task)}`} aria-label={`${task.id} ${task.title}`}>
     <div className="wb-task-identity">
@@ -227,6 +231,15 @@ const TaskTableRow = ({
           </button>
         </>
       )}
+      {task.stage === 'completed' && reportId && (
+        <button
+          className="wb-text-button"
+          type="button"
+          onClick={() => onOpenReport(reportId)}
+        >
+          查看报告
+        </button>
+      )}
       {['failed', 'cancelled'].includes(task.stage) && adapter.commands.hideTask && (
         <button
           className="wb-icon-button"
@@ -251,7 +264,7 @@ interface TaskManagementViewProps {
   environmentStatus?: ReactNode
 }
 
-type TaskLane = 'current' | 'attention'
+type TaskLane = 'current' | 'completed' | 'attention'
 
 function TaskManagementView({
   viewModel,
@@ -265,16 +278,28 @@ function TaskManagementView({
     ...runningTasks,
     ...[...waitingTasks].sort((left, right) => (left.queueIndex ?? 0) - (right.queueIndex ?? 0))
   ]
+  const completedTasks = viewModel.tasks.filter((task) => task.stage === 'completed')
   const failedTasks = viewModel.tasks.filter((task) => task.stage === 'failed')
   const automaticTaskLane: TaskLane =
-    currentTasks.length === 0 && failedTasks.length > 0 ? 'attention' : 'current'
+    currentTasks.length > 0
+      ? 'current'
+      : failedTasks.length > 0 ? 'attention' : completedTasks.length > 0 ? 'completed' : 'current'
   const [manualTaskLane, setManualTaskLane] = useState<TaskLane>()
   const selectedTaskLane = manualTaskLane ?? automaticTaskLane
+  const reportIdsByTaskId = new Map(
+    viewModel.reports.flatMap((report) => [
+      [report.taskId, report.id],
+      [report.id, report.id]
+    ] satisfies Array<[string, string]>)
+  )
 
   const selectTaskLane = (nextLane: TaskLane): void => {
     setManualTaskLane(nextLane)
   }
-  const visibleTasks = selectedTaskLane === 'current' ? currentTasks : failedTasks
+  const visibleTasks =
+    selectedTaskLane === 'current'
+      ? currentTasks
+      : selectedTaskLane === 'completed' ? completedTasks : failedTasks
   const failedCount = failedTasks.length
   const taskStats = viewModel.taskStats
   const serviceRunning = taskStats === undefined
@@ -286,6 +311,24 @@ function TaskManagementView({
   const serviceSuccess = taskStats === undefined
     ? viewModel.reports.length
     : taskStats.status === 'ready' ? taskStats.success : '—'
+  const emptyLaneCopy: Record<TaskLane, { title: string; description: string }> = {
+    current: {
+      title: '暂无当前任务',
+      description: '新任务会按本机队列顺序显示在这里。'
+    },
+    completed: {
+      title: '暂无已完成任务',
+      description: '成功生成报告的任务会在这里提供查看入口。'
+    },
+    attention: {
+      title: '暂无待处理失败任务',
+      description: '失败任务会保留完整原因和恢复操作。'
+    }
+  }
+  const openTaskReport = (reportId: string): void => {
+    void adapter.commands.openReport(reportId)
+    onOpenReportCenter()
+  }
 
   return (
     <section className="wb-workspace wb-task-management" aria-labelledby="workbench-title">
@@ -339,6 +382,17 @@ function TaskManagementView({
               当前任务 <span>{currentTasks.length}</span>
             </button>
             <button
+              id="completed-task-tab"
+              type="button"
+              role="tab"
+              aria-selected={selectedTaskLane === 'completed'}
+              aria-controls="completed-task-panel"
+              className={selectedTaskLane === 'completed' ? 'is-active' : ''}
+              onClick={() => selectTaskLane('completed')}
+            >
+              已完成任务 <span>{completedTasks.length}</span>
+            </button>
+            <button
               id="attention-task-tab"
               type="button"
               role="tab"
@@ -355,17 +409,24 @@ function TaskManagementView({
           <span>任务</span><span>状态</span><span>当前进度</span><span>更新</span><span>操作</span>
         </div>
         <div
-          id={selectedTaskLane === 'current' ? 'current-task-panel' : 'attention-task-panel'}
+          id={`${selectedTaskLane}-task-panel`}
           role="tabpanel"
-          aria-labelledby={selectedTaskLane === 'current' ? 'current-task-tab' : 'attention-task-tab'}
+          aria-labelledby={`${selectedTaskLane}-task-tab`}
           className="wb-task-lane-panel"
         >
           {visibleTasks.length === 0 ? (
-            <div className="wb-empty-band"><SearchX aria-hidden="true" /><div><strong>{selectedTaskLane === 'current' ? '暂无当前任务' : '暂无待处理失败任务'}</strong><span>{selectedTaskLane === 'current' ? '新任务会按本机队列顺序显示在这里。' : '失败任务会保留完整原因和恢复操作。'}</span></div></div>
+            <div className="wb-empty-band"><SearchX aria-hidden="true" /><div><strong>{emptyLaneCopy[selectedTaskLane].title}</strong><span>{emptyLaneCopy[selectedTaskLane].description}</span></div></div>
           ) : (
             <div className="wb-task-table-body">
               {visibleTasks.map((task) => (
-              <TaskTableRow key={task.id} task={task} adapter={adapter} catalog={viewModel.catalog} />
+                <TaskTableRow
+                  key={task.id}
+                  task={task}
+                  adapter={adapter}
+                  catalog={viewModel.catalog}
+                  reportId={reportIdsByTaskId.get(task.id)}
+                  onOpenReport={openTaskReport}
+                />
               ))}
             </div>
           )}

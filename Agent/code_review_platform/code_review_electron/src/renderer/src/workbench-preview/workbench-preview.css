@@ -2480,17 +2480,17 @@ input[type="checkbox"] {
 
 .wb-preview-controls button:hover:not(.is-active) {
   color: var(--wb-text-soft);
-  background: #ffffff;
+  background: var(--wb-surface-hover);
 }
 
 .wb-preview-controls button.is-active {
   color: var(--wb-accent);
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgb(24 35 43 / 10%);
+  background: var(--wb-surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 10%);
 }
 
 .wb-create-panel {
-  background: #ffffff;
+  background: var(--wb-surface);
 }
 
 .wb-task-management {
@@ -2499,7 +2499,7 @@ input[type="checkbox"] {
 
 .wb-overview {
   border: 1px solid var(--wb-line);
-  background: #ffffff;
+  background: var(--wb-surface);
 }
 
 .wb-overview > div,
@@ -2552,23 +2552,24 @@ input[type="checkbox"] {
 }
 
 .wb-band-heading {
-  background: #f7fafb;
+  background: var(--wb-surface-raised);
 }
 
 .wb-task-management .wb-task-section {
   grid-template-rows: auto auto minmax(0, 1fr);
   border-radius: 4px;
-  background: #ffffff;
+  background: var(--wb-surface);
 }
 
 .wb-task-lane-tabs {
   display: inline-flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 3px;
   border: 1px solid var(--wb-line);
   border-radius: 5px;
-  background: #eef3f5;
+  background: var(--wb-surface-raised);
 }
 
 .wb-task-lane-tabs button {
@@ -2600,11 +2601,11 @@ input[type="checkbox"] {
 
 .wb-task-lane-tabs button.is-active {
   color: var(--wb-accent);
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgb(24 35 43 / 10%);
+  background: var(--wb-surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
 }
 
-.wb-task-lane-tabs button[aria-selected="true"]:last-child {
+.wb-task-lane-tabs button[aria-selected="true"][id="attention-task-tab"] {
   color: var(--wb-danger);
 }
 
@@ -2624,11 +2625,11 @@ input[type="checkbox"] {
 
 .wb-task-table-row {
   min-height: 72px;
-  background: #ffffff;
+  background: var(--wb-surface);
 }
 
 .wb-task-table-row:hover {
-  background: #fafcfd;
+  background: var(--wb-surface-hover);
 }
 
 .wb-task-identity strong,
@@ -2653,13 +2654,38 @@ input[type="checkbox"] {
   color: var(--wb-danger);
 }
 
+.wb-task-table-row.is-complete {
+  border-left-color: var(--wb-complete);
+}
+
+.wb-task-table-row.is-complete .wb-task-progress > strong {
+  color: var(--wb-complete);
+}
+
+.wb-text-button {
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--wb-accent) 42%, var(--wb-line));
+  border-radius: 4px;
+  color: var(--wb-accent);
+  background: var(--wb-accent-soft);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.wb-text-button:hover:not(:disabled) {
+  border-color: var(--wb-accent);
+  background: color-mix(in srgb, var(--wb-accent) 24%, var(--wb-surface));
+}
+
 .wb-table-head {
   color: var(--wb-muted);
-  background: #f1f5f7;
+  background: var(--wb-surface-raised);
 }
 
 .wb-compact-stage-track li {
-  background: #c5d2d7;
+  background: var(--wb-line-strong);
 }
 
 .wb-selection-empty,
@@ -2668,7 +2694,7 @@ input[type="checkbox"] {
 .wb-file-row,
 .wb-feedback-file-list > div,
 .wb-drawer-note {
-  background: #f7fafb;
+  background: var(--wb-surface-raised);
 }
 
 .wb-selector,
@@ -2680,11 +2706,11 @@ input[type="checkbox"] {
 .wb-feedback-form,
 .wb-report-drawer {
   color: var(--wb-text);
-  background: #ffffff;
+  background: var(--wb-surface);
 }
 
 .wb-report-index {
-  background: #f7fafb;
+  background: var(--wb-surface-raised);
 }
 
 .wb-report-index button.is-active {
@@ -2730,13 +2756,13 @@ input[type="checkbox"] {
 
 .wb-feedback-description textarea {
   color: var(--wb-text);
-  background: #ffffff;
+  background: var(--wb-surface);
 }
 
 .wb-toast {
   color: var(--wb-text-soft);
-  background: #eaf6f3;
-  box-shadow: 0 12px 30px rgb(24 35 43 / 14%);
+  background: var(--wb-accent-soft);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 18%);
 }
 
 .wb-environment-inline .environment-box {
@@ -2744,14 +2770,14 @@ input[type="checkbox"] {
   border: 1px solid var(--wb-line);
   border-radius: 4px;
   color: var(--wb-text);
-  background: #ffffff;
+  background: var(--wb-surface);
   box-shadow: none;
 }
 
 .wb-environment-inline .environment-summary {
-  min-height: 46px;
+  min-height: 38px;
   gap: 10px;
-  padding: 7px 10px;
+  padding: 6px 10px;
 }
 
 .wb-environment-inline .environment-summary > div {
@@ -2771,20 +2797,20 @@ input[type="checkbox"] {
 
 .wb-environment-inline .dependency-alert-button.is-ready {
   color: var(--wb-accent);
-  border-color: #9bcfc8;
+  border-color: color-mix(in srgb, var(--wb-accent) 42%, var(--wb-line));
   background: var(--wb-accent-soft);
 }
 
 .wb-environment-inline .dependency-alert-button.is-warning {
   color: var(--wb-danger);
-  border-color: #e3aaaa;
+  border-color: color-mix(in srgb, var(--wb-danger) 42%, var(--wb-line));
   background: var(--wb-danger-soft);
 }
 
 .wb-environment-inline .dependency-alert-button.is-checking {
-  color: #327e9b;
-  border-color: #a7c9d7;
-  background: #edf7fa;
+  color: var(--wb-accent);
+  border-color: color-mix(in srgb, var(--wb-accent) 30%, var(--wb-line));
+  background: var(--wb-surface-raised);
 }
 
 .wb-environment-inline .status-pill {
@@ -2795,13 +2821,13 @@ input[type="checkbox"] {
 }
 
 .wb-environment-inline .status-ready {
-  color: #075f56;
+  color: var(--wb-accent);
   background: var(--wb-accent-soft);
 }
 
 .wb-environment-inline .status-checking {
-  color: #286b84;
-  background: #e6f3f7;
+  color: var(--wb-accent);
+  background: var(--wb-surface-raised);
 }
 
 .wb-environment-inline .status-missing_codex,
@@ -2812,7 +2838,7 @@ input[type="checkbox"] {
 }
 
 .wb-environment-inline .status-failed {
-  color: #8a4e00;
+  color: var(--wb-waiting);
   background: var(--wb-waiting-soft);
 }
 
@@ -2840,11 +2866,11 @@ input[type="checkbox"] {
 .wb-environment-inline .ghost-button {
   border: 1px solid var(--wb-line-strong);
   color: var(--wb-text-soft);
-  background: #ffffff;
+  background: var(--wb-surface);
 }
 
 .wb-environment-inline .install-button {
-  color: #ffffff;
+  color: var(--pc-primary-text);
   background: var(--wb-accent);
 }
 
@@ -2867,13 +2893,13 @@ input[type="checkbox"] {
 }
 
 .wb-environment-inline .dependency-card.is-ready {
-  border-color: #b5dcd7;
-  background: #f1f9f7;
+  border-color: color-mix(in srgb, var(--wb-accent) 30%, var(--wb-line));
+  background: var(--wb-accent-soft);
 }
 
 .wb-environment-inline .dependency-card.is-missing {
-  border-color: #e4b4a9;
-  background: #fff5f3;
+  border-color: color-mix(in srgb, var(--wb-danger) 30%, var(--wb-line));
+  background: var(--wb-danger-soft);
 }
 
 .wb-environment-inline .dependency-card strong {

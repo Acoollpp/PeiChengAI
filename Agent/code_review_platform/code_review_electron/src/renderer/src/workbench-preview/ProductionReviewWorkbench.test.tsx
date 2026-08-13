@@ -1048,13 +1048,14 @@ describe('ProductionReviewWorkbench', () => {
     await submitMinimalDs03Task('svn://server/success-without-report-path')
     await waitFor(() => expect(window.codeReview.getTodayTaskStats).toHaveBeenCalledTimes(2))
 
-    await waitFor(() => expect(screen.getByRole('tab', { name: '当前任务 0' })).toBeInTheDocument())
-    expect(screen.getByText('暂无当前任务')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('tab', { name: '已完成任务 1' })).toHaveAttribute('aria-selected', 'true'))
+    const completedRow = screen.getByRole('article', { name: /success-without-report-path/ })
+    expect(completedRow).toHaveTextContent('任务已完成，但未生成可查看的 Markdown 报告。')
     expect(window.codeReview.showTaskCompletionNotification).not.toHaveBeenCalled()
     expect(screen.queryByText(
       '任务 success-without-report-path 已完成，可查看报告。'
     )).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '查看报告' })).not.toBeInTheDocument()
+    expect(within(completedRow).queryByRole('button', { name: '查看报告' })).not.toBeInTheDocument()
   })
 
   it.each([
@@ -1124,6 +1125,67 @@ describe('ProductionReviewWorkbench', () => {
     })
     expect(await screen.findByText('准备工作区')).toBeInTheDocument()
     expect(screen.getByText('正在准备真实工作区')).toBeInTheDocument()
+  })
+
+  it('任务台显示服务端已完成任务，并仅对有 Markdown 路径的任务提供查看报告入口', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'success-without-report',
+          svn_url: 'svn://server/no-report',
+          old_revision: '1',
+          new_revision: '2',
+          status: 'success',
+          report_name: '无 Markdown 路径报告.md',
+          finished_at: '2026-08-06T08:00:00Z'
+        },
+        {
+          id: 'success-with-report-a',
+          svn_url: 'svn://server/report-a',
+          old_revision: '2',
+          new_revision: '3',
+          review_item_ids: ['DS-02'],
+          status: 'success',
+          report_name: '首个可读报告.md',
+          report_path: '/reports/report-a.md',
+          finished_at: '2026-08-06T08:05:00Z'
+        },
+        {
+          id: 'success-with-report-b',
+          svn_url: 'svn://server/report-b',
+          old_revision: '3',
+          new_revision: '4',
+          review_item_ids: ['DS-03'],
+          status: 'success',
+          report_name: '任务台跳转目标报告.md',
+          report_path: '/reports/report-b.md',
+          finished_at: '2026-08-06T08:10:00Z'
+        }
+      ],
+      count: 3
+    })
+
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await user.click(await screen.findByRole('tab', { name: '已完成任务 3' }))
+    expect(screen.queryByRole('article', { name: 'Markdown 报告预览' })).not.toBeInTheDocument()
+
+    const taskWithoutReport = screen.getByRole('article', { name: /success-without-report/ })
+    expect(taskWithoutReport).toHaveTextContent('任务已完成，但未生成可查看的 Markdown 报告。')
+    expect(within(taskWithoutReport).queryByRole('button', { name: '查看报告' })).not.toBeInTheDocument()
+
+    const taskWithReport = screen.getByRole('article', { name: /success-with-report-b/ })
+    expect(taskWithReport).toHaveTextContent('任务台跳转目标报告')
+    await waitFor(() => expect(window.codeReview.readTaskReport).toHaveBeenCalledWith('success-with-report-a'))
+    vi.mocked(window.codeReview.readTaskReport).mockClear()
+
+    await user.click(within(taskWithReport).getByRole('button', { name: '查看报告' }))
+
+    expect(await screen.findByRole('heading', { name: '报告中心' })).toBeInTheDocument()
+    await waitFor(() => expect(window.codeReview.readTaskReport).toHaveBeenCalledWith('success-with-report-b'))
+    const preview = screen.getByRole('article', { name: 'Markdown 报告预览' })
+    expect(within(preview).getByRole('heading', { name: 'DS-03 状态机审核报告' })).toBeInTheDocument()
   })
 
   it('同屏区分协议 1 无严重度摘要与历史严重度、历史未知摘要', async () => {

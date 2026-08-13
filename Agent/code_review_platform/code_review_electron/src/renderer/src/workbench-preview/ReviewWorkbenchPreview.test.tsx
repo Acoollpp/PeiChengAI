@@ -90,6 +90,50 @@ describe('ReviewWorkbenchPreview', () => {
     expect(screen.getByText('产品规格书在任务开始前已被移动，请重新选择材料后从头重试。')).toBeInTheDocument()
   })
 
+  it('只有已完成任务时初始选择已完成任务', () => {
+    const fixtureAdapter = createFixtureWorkbenchAdapter()
+    const adapter = {
+      ...fixtureAdapter,
+      getViewModel: () => {
+        const viewModel = fixtureAdapter.getViewModel()
+        return {
+          ...viewModel,
+          tasks: viewModel.tasks.filter((task) => task.stage === 'completed')
+        }
+      }
+    }
+
+    render(<ReviewWorkbenchPreview adapter={adapter} />)
+
+    expect(screen.getByRole('tab', { name: '已完成任务 1' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByLabelText('CR-240806-009 低压上下电状态机复核')).toBeInTheDocument()
+    expect(screen.queryByText('暂无当前任务')).not.toBeInTheDocument()
+  })
+
+  it('从已完成任务行查看报告时进入报告中心，任务管理页不内嵌 Markdown 预览', async () => {
+    const user = userEvent.setup()
+    const fixtureAdapter = createFixtureWorkbenchAdapter()
+    const openReport = vi.fn(fixtureAdapter.commands.openReport)
+    const adapter = {
+      ...fixtureAdapter,
+      commands: { ...fixtureAdapter.commands, openReport }
+    }
+
+    render(<ReviewWorkbenchPreview adapter={adapter} />)
+
+    await user.click(screen.getByRole('tab', { name: '已完成任务 1' }))
+    expect(screen.getByLabelText('CR-240806-009 低压上下电状态机复核')).toBeInTheDocument()
+    expect(screen.queryByRole('article', { name: 'Markdown 报告预览' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '低压上下电状态机复核' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '查看报告' }))
+
+    expect(openReport).toHaveBeenCalledWith('report-009')
+    expect(screen.getByRole('heading', { name: '报告中心' })).toBeInTheDocument()
+    const preview = screen.getByRole('article', { name: 'Markdown 报告预览' })
+    expect(within(preview).getByRole('heading', { name: '低压上下电状态机复核' })).toBeInTheDocument()
+  })
+
   it('失败任务提供移除按钮并调用隐藏命令', async () => {
     const user = userEvent.setup()
     const fixtureAdapter = createFixtureWorkbenchAdapter()
