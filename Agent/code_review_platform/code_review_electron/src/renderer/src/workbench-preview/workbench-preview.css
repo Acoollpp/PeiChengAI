@@ -1,26 +1,26 @@
 :root {
-  color: #18232b;
-  background: #f4f7f9;
+  color: var(--pc-text);
+  background: var(--pc-bg);
   font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --wb-bg: #f4f7f9;
-  --wb-surface: #ffffff;
-  --wb-surface-raised: #f7fafb;
-  --wb-surface-hover: #edf5f3;
-  --wb-line: #d9e2e7;
-  --wb-line-strong: #bac8cf;
-  --wb-text: #18232b;
-  --wb-text-soft: #34444e;
-  --wb-muted: #667780;
-  --wb-accent: #087f73;
-  --wb-accent-soft: #e1f1ee;
-  --wb-waiting: #b56a00;
-  --wb-waiting-soft: #fff4df;
-  --wb-danger: #c43d3d;
-  --wb-danger-soft: #fff0ef;
-  --wb-complete: #65777f;
-  --wb-focus: #087f73;
+  --wb-bg: var(--pc-bg);
+  --wb-surface: var(--pc-surface);
+  --wb-surface-raised: var(--pc-surface-raised);
+  --wb-surface-hover: var(--pc-surface-hover);
+  --wb-line: var(--pc-border);
+  --wb-line-strong: var(--pc-border-strong);
+  --wb-text: var(--pc-text);
+  --wb-text-soft: var(--pc-control-text);
+  --wb-muted: var(--pc-text-muted);
+  --wb-accent: var(--pc-primary);
+  --wb-accent-soft: color-mix(in srgb, var(--pc-primary) 16%, var(--pc-surface));
+  --wb-waiting: var(--pc-waiting);
+  --wb-waiting-soft: var(--pc-waiting-soft);
+  --wb-danger: var(--pc-error);
+  --wb-danger-soft: var(--pc-error-soft);
+  --wb-complete: var(--pc-success);
+  --wb-focus: var(--pc-focus);
   --wb-display: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
   --wb-utility: "Cascadia Mono", Consolas, "Microsoft YaHei UI", monospace;
 }
@@ -112,7 +112,7 @@ textarea:focus-visible {
   height: 64px;
   padding: 0 18px;
   border-bottom: 1px solid var(--wb-line);
-  background: #ffffff;
+  background: var(--wb-surface);
 }
 
 .wb-brand,
@@ -169,7 +169,7 @@ textarea:focus-visible {
   padding: 3px;
   border: 1px solid var(--wb-line);
   border-radius: 6px;
-  background: #eef3f5;
+  background: var(--wb-surface-raised);
 }
 
 .wb-preview-controls button {
@@ -191,6 +191,14 @@ textarea:focus-visible {
   justify-self: end;
   gap: 10px;
   text-align: right;
+}
+
+.wb-theme-toggle {
+  width: 30px;
+  height: 30px;
+  color: var(--wb-muted);
+  background: var(--wb-surface-raised);
+  border-color: var(--wb-line-strong);
 }
 
 .wb-user > div strong {

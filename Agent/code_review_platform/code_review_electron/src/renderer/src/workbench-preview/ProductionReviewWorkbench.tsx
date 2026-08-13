@@ -9,6 +9,7 @@ import type { CurrentUser } from '../../../shared/types'
 import type { EnvironmentCheckResult } from '../code-review-api'
 import { EnvironmentStatus } from '../components/EnvironmentStatus'
 import { extractDetailedHeadingOptions } from '../components/MarkdownPreview'
+import type { ClientTheme } from '../theme'
 import { useTaskQueue, type TaskViewItem } from '../hooks/useTaskQueue'
 import { ReviewWorkbenchPreview } from './ReviewWorkbenchPreview'
 import { formatRevisionLabel } from './revision'
@@ -42,6 +43,8 @@ interface ProductionReviewWorkbenchProps {
   onInstallCodex: () => Promise<void>
   onInstallSvn: () => Promise<void>
   onInstallSkill: () => Promise<void>
+  theme?: ClientTheme
+  onToggleTheme?: () => void
   catalogOverride?: ReviewItemDefinition[]
 }
 
@@ -205,7 +208,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
   const {
     currentUser, environment, isCheckingEnvironment, isInstallingSkillDuringCheck,
     isInstallingCodex, isInstallingSvn, onRefreshEnvironment, onInstallCodex,
-    onInstallSvn, onInstallSkill, catalogOverride
+    onInstallSvn, onInstallSkill, theme, onToggleTheme, catalogOverride
   } = props
   const catalog = catalogOverride ?? PRODUCTION_REVIEW_ITEM_CATALOG
   const [notice, setNotice] = useState<string>()
@@ -730,6 +733,8 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
   return <div className="wb-production-shell">
     <ReviewWorkbenchPreview
       adapter={adapter}
+      theme={theme}
+      onToggleTheme={onToggleTheme}
       environmentStatus={
       <EnvironmentStatus result={environment} isChecking={isCheckingEnvironment}
         isInstallingSkillDuringCheck={isInstallingSkillDuringCheck} isInstallingCodex={isInstallingCodex}

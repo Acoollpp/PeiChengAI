@@ -2,17 +2,27 @@ import { FormEvent, useEffect, useState } from 'react'
 
 import paceLogo from '../assets/pace-logo.png'
 import type { KeyLoginRequest, SvnLoginRequest } from '../code-review-api'
+import type { ClientTheme } from '../theme'
+import { DEFAULT_CLIENT_THEME } from '../theme'
 import { AdminContactDialog } from './AdminContactDialog'
 import { PasswordField } from './PasswordField'
+import { ThemeToggleButton } from './ThemeToggleButton'
 
 type LoginPageProps = {
   onKeyLogin: (payload: KeyLoginRequest) => Promise<void>
   onSvnLogin: (payload: SvnLoginRequest) => Promise<void>
+  theme?: ClientTheme
+  onToggleTheme?: () => void
 }
 
 type AuthMode = 'key' | 'svn'
 
-export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX.Element {
+export function LoginPage({
+  onKeyLogin,
+  onSvnLogin,
+  theme = DEFAULT_CLIENT_THEME,
+  onToggleTheme = () => undefined
+}: LoginPageProps): React.JSX.Element {
   const [mode, setMode] = useState<AuthMode>('key')
   const [serverUrl, setServerUrl] = useState('')
   const [accessKey, setAccessKey] = useState('')
@@ -111,6 +121,8 @@ export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX
 
   return (
     <section className="auth-card" aria-labelledby="auth-title">
+      <ThemeToggleButton theme={theme} onToggle={onToggleTheme} className="auth-theme-toggle" />
+
       <div className="auth-brand">
         <img className="auth-logo" src={paceLogo} alt="沛城科技" />
         <h1 id="auth-title">代码审查平台</h1>
