@@ -2,6 +2,13 @@ import { readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, resolve, sep } from 'node:path'
 
 import { BrowserWindow, type BrowserWindowConstructorOptions } from 'electron'
+import type { Root } from 'mdast'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
+import remarkGfm from 'remark-gfm'
+import type { Plugin } from 'unified'
 
 export interface GeneratePdfReportResult {
   status: 'ready'
@@ -45,14 +52,6 @@ const assertRelativeImagePath = (value: string): void => {
     throw new Error(`PDF生成失败：报告图片必须使用相对路径：${value}`)
   }
 }
-
-const escapeHtml = (value: string): string =>
-  value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
 
 const toPdfPath = (reportPath: string): string => reportPath.replace(/\.md$/i, '.pdf')
 
@@ -114,7 +113,8 @@ const readRequiredImage = async (
 type MarkdownImage = {
   alt: string
   rawImagePath: string
-  markup: string
+  targetStart: number
+  targetEnd: number
 }
 
 const parseMarkdownImageTarget = (value: string): string => {
@@ -312,7 +312,8 @@ const collectMarkdownImages = (markdown: string): MarkdownImage[] => {
     images.push({
       alt: markdown.slice(markerIndex + 2, altEnd),
       rawImagePath: parseMarkdownImageTarget(target),
-      markup: markdown.slice(markerIndex, targetEnd + 1)
+      targetStart: altEnd + 2,
+      targetEnd
     })
     index = targetEnd + 1
   }
@@ -335,225 +336,147 @@ const collectImageDataUrls = async (
   for (const imagePath of imagePaths) {
     const image = await readRequiredImage(reportDirectory, realReportDirectory, imagePath)
     dataUrls.set(image.rawImagePath, image.dataUrl)
+    dataUrls.set(safelyDecodePath(image.rawImagePath), image.dataUrl)
+    dataUrls.set(encodeURI(image.rawImagePath), image.dataUrl)
   }
   return dataUrls
 }
 
-const renderInline = (value: string, imageDataUrls: Map<string, string>): string => {
-  const codeTokens: string[] = []
-  let valueWithoutCode = ''
-  let index = 0
+type MarkdownTreeNode = {
+  type?: string
+  value?: unknown
+  children?: MarkdownTreeNode[]
+}
 
-  while (index < value.length) {
-    if (value[index] !== '`') {
-      valueWithoutCode += value[index]
-      index += 1
-      continue
+const isAllowedLink = (value: string): boolean => /^(?:https?:\/\/|mailto:)/i.test(value)
+
+const remarkControlledLineBreaks: Plugin<[], Root> = () => (tree) => {
+  const visit = (node: MarkdownTreeNode): void => {
+    if (!node.children) {
+      return
     }
 
-    const codeSpan = findCodeSpanEnd(value, index)
-    if (!codeSpan) {
-      valueWithoutCode += value[index]
-      index += 1
-      continue
-    }
-
-    const code = value.slice(codeSpan.delimiterEnd, codeSpan.closingIndex)
-    codeTokens.push(`<code>${escapeHtml(code)}</code>`)
-    valueWithoutCode += `\u0000CODE${codeTokens.length - 1}\u0000`
-    index = codeSpan.spanEnd
+    node.children = node.children.map((child) =>
+      child.type === 'html' && typeof child.value === 'string' && /^<br\s*\/?\s*>$/i.test(child.value)
+        ? { type: 'break' }
+        : child
+    )
+    node.children.forEach(visit)
   }
 
-  let html = escapeHtml(valueWithoutCode)
-  for (const image of collectMarkdownImages(maskInlineCode(value))) {
-    const resolvedSrc = imageDataUrls.get(image.rawImagePath) ?? image.rawImagePath
-    const imageHtml = `<img src="${escapeHtml(resolvedSrc)}" alt="${escapeHtml(image.alt)}" />`
-    html = html.replaceAll(escapeHtml(image.markup), imageHtml)
-  }
-  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|mailto:[^)\s]+)\)/g, (_match, text, href) => {
-    return `<a href="${escapeHtml(href)}">${escapeHtml(text)}</a>`
-  })
+  visit(tree as unknown as MarkdownTreeNode)
+}
 
-  return html
-    .replace(/&lt;br\s*\/?&gt;/gi, '<br />')
-    .replace(/\u0000CODE(\d+)\u0000/g, (_match, index: string) => codeTokens[Number(index)])
+const remarkRemoveTrailingThematicBreak: Plugin<[], Root> = () => (tree) => {
+  if (tree.children.at(-1)?.type === 'thematicBreak') {
+    tree.children.pop()
+  }
 }
 
 const isTableDivider = (line: string): boolean =>
   /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)
 
-const isThematicBreak = (line: string): boolean =>
-  /^[ ]{0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(line)
-
-const splitTableRow = (line: string): string[] => {
-  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '')
-  const cells: string[] = []
-  let current = ''
-  let isEscaped = false
+const escapeTableCodePipes = (line: string): string => {
+  let normalized = ''
   let index = 0
 
-  while (index < trimmed.length) {
-    const char = trimmed[index]
-
-    if (isEscaped) {
-      current += char
-      isEscaped = false
+  while (index < line.length) {
+    if (line[index] !== '`') {
+      normalized += line[index]
       index += 1
       continue
     }
 
-    if (char === '\\') {
-      if (trimmed[index + 1] === '|') {
-        isEscaped = true
-      } else {
-        current += char
-      }
+    const codeSpan = findCodeSpanEnd(line, index)
+    if (!codeSpan) {
+      normalized += line[index]
       index += 1
       continue
     }
 
-    if (char === '`') {
-      const codeSpan = findCodeSpanEnd(trimmed, index)
-      if (codeSpan) {
-        current += trimmed.slice(index, codeSpan.spanEnd)
-        index = codeSpan.spanEnd
-      } else {
-        current += char
-        index += 1
-      }
-      continue
-    }
-
-    if (char === '|') {
-      cells.push(current.trim())
-      current = ''
-      index += 1
-      continue
-    }
-
-    current += char
-    index += 1
+    const code = line.slice(index, codeSpan.spanEnd).replace(/(?<!\\)\|/g, '\\|')
+    normalized += code
+    index = codeSpan.spanEnd
   }
 
-  cells.push(current.trim())
-  return cells
+  return normalized
 }
 
-const renderMarkdownToHtml = (markdown: string, imageDataUrls: Map<string, string>): string => {
+const normalizeLegacyTableCodePipes = (markdown: string): string => {
   const lines = markdown.replaceAll('\r\n', '\n').split('\n')
-  const html: string[] = []
-  let index = 0
-  let lastContentIndex = lines.length - 1
 
-  while (lastContentIndex >= 0 && !lines[lastContentIndex].trim()) {
-    lastContentIndex -= 1
+  for (let index = 0; index + 1 < lines.length; index += 1) {
+    if (!lines[index].includes('|') || !isTableDivider(lines[index + 1])) {
+      continue
+    }
+
+    lines[index] = escapeTableCodePipes(lines[index])
+    index += 2
+    while (index < lines.length && lines[index].includes('|') && lines[index].trim()) {
+      lines[index] = escapeTableCodePipes(lines[index])
+      index += 1
+    }
+    index -= 1
   }
 
-  while (index < lines.length) {
-    const line = lines[index]
-
-    if (!line.trim()) {
-      index += 1
-      continue
-    }
-
-    const fence = getFenceMarker(line)
-    if (fence) {
-      const code: string[] = []
-      index += 1
-      while (index < lines.length && !isClosingFence(lines[index], fence)) {
-        code.push(lines[index])
-        index += 1
-      }
-      index += 1
-      html.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`)
-      continue
-    }
-
-    if (isThematicBreak(line)) {
-      if (index < lastContentIndex) {
-        html.push('<hr>')
-      }
-      index += 1
-      continue
-    }
-
-    const heading = /^(#{1,6})\s+(.+)$/.exec(line)
-    if (heading) {
-      const level = heading[1].length
-      html.push(`<h${level}>${renderInline(heading[2], imageDataUrls)}</h${level}>`)
-      index += 1
-      continue
-    }
-
-    if (index + 1 < lines.length && line.includes('|') && isTableDivider(lines[index + 1])) {
-      const headers = splitTableRow(line)
-      const rows: string[][] = []
-      index += 2
-      while (index < lines.length && lines[index].includes('|') && lines[index].trim()) {
-        rows.push(splitTableRow(lines[index]))
-        index += 1
-      }
-      html.push(
-        `<table><thead><tr>${headers
-          .map((cell) => `<th>${renderInline(cell, imageDataUrls)}</th>`)
-          .join('')}</tr></thead><tbody>${rows
-          .map(
-            (row) =>
-              `<tr>${row
-                .map((cell) => `<td>${renderInline(cell, imageDataUrls)}</td>`)
-                .join('')}</tr>`
-          )
-          .join('')}</tbody></table>`
-      )
-      continue
-    }
-
-    if (/^\s*[-*]\s+/.test(line)) {
-      const items: string[] = []
-      while (index < lines.length && /^\s*[-*]\s+/.test(lines[index])) {
-        items.push(lines[index].replace(/^\s*[-*]\s+/, ''))
-        index += 1
-      }
-      html.push(`<ul>${items.map((item) => `<li>${renderInline(item, imageDataUrls)}</li>`).join('')}</ul>`)
-      continue
-    }
-
-    if (/^\s*\d+\.\s+/.test(line)) {
-      const items: string[] = []
-      while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index])) {
-        items.push(lines[index].replace(/^\s*\d+\.\s+/, ''))
-        index += 1
-      }
-      html.push(`<ol>${items.map((item) => `<li>${renderInline(item, imageDataUrls)}</li>`).join('')}</ol>`)
-      continue
-    }
-
-    if (/^\s*>\s?/.test(line)) {
-      const quote: string[] = []
-      while (index < lines.length && /^\s*>\s?/.test(lines[index])) {
-        quote.push(lines[index].replace(/^\s*>\s?/, ''))
-        index += 1
-      }
-      html.push(`<blockquote>${quote.map((item) => renderInline(item, imageDataUrls)).join('<br />')}</blockquote>`)
-      continue
-    }
-
-    const paragraph: string[] = [line]
-    index += 1
-    while (index < lines.length && lines[index].trim()) {
-      paragraph.push(lines[index])
-      index += 1
-    }
-    html.push(
-      `<p>${paragraph
-        .map((paragraphLine) => renderInline(paragraphLine.trimEnd(), imageDataUrls))
-        .join('<br />')}</p>`
-    )
-  }
-
-  return html.join('\n')
+  return lines.join('\n')
 }
+
+const normalizeMarkdownImagePaths = (markdown: string): string => {
+  const images = collectMarkdownImages(maskNonImageMarkdown(markdown))
+  let normalized = ''
+  let cursor = 0
+
+  for (const image of images) {
+    const encodedImagePath = encodeURI(image.rawImagePath)
+    if (encodedImagePath === image.rawImagePath) {
+      continue
+    }
+
+    normalized += markdown.slice(cursor, image.targetStart)
+    normalized += encodedImagePath
+    cursor = image.targetEnd
+  }
+
+  return normalized + markdown.slice(cursor)
+}
+
+const createPdfComponents = (imageDataUrls: Map<string, string>): Components => ({
+  a: ({ children, href, node: _node, ...properties }) =>
+    href && isAllowedLink(href)
+      ? createElement('a', { ...properties, href }, children)
+      : createElement('span', undefined, children),
+  img: ({ alt, node: _node, src, ...properties }) => {
+    const dataUrl =
+      typeof src === 'string'
+        ? imageDataUrls.get(src) ?? imageDataUrls.get(safelyDecodePath(src))
+        : undefined
+    if (!dataUrl) {
+      throw new Error(`PDF生成失败：报告图片必须使用相对路径：${src ?? ''}`)
+    }
+
+    return createElement('img', { ...properties, alt, src: dataUrl })
+  }
+})
+
+const renderMarkdownToHtml = (markdown: string, imageDataUrls: Map<string, string>): string =>
+  renderToStaticMarkup(
+    createElement(
+      ReactMarkdown,
+      {
+        components: createPdfComponents(imageDataUrls),
+        remarkPlugins: [
+          remarkGfm,
+          remarkBreaks,
+          remarkControlledLineBreaks,
+          remarkRemoveTrailingThematicBreak
+        ],
+        skipHtml: true,
+        urlTransform: (url, key) => (key === 'href' && !isAllowedLink(url) ? '' : url)
+      },
+      normalizeMarkdownImagePaths(normalizeLegacyTableCodePipes(markdown))
+    )
+  )
 
 const buildPrintHtml = (body: string): string => `<!doctype html>
 <html lang="zh-CN">
@@ -571,7 +494,10 @@ const buildPrintHtml = (body: string): string => `<!doctype html>
     code { font-family: "SFMono-Regular", Consolas, monospace; }
     p code, li code, td code { background: #f3f4f6; color: #111827; padding: 1px 4px; }
     blockquote { border-left: 4px solid #10b981; color: #4b5563; padding: 8px 0 8px 12px; }
-    img { display: block; max-width: 100%; margin: 10px 0; }
+    strong { font-weight: 700; }
+    em { font-style: italic; }
+    del { color: #6b7280; text-decoration: line-through; }
+    img { display: block; max-width: 100%; height: auto; margin: 10px 0; break-inside: avoid; page-break-inside: avoid; }
     a { color: #0369a1; text-decoration: none; }
   </style>
 </head>
