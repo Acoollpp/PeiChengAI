@@ -100,7 +100,7 @@ describe('report pdf generator', () => {
 
     await generatePdfReport(reportPath, { createWindow })
 
-    expect(loadedHtml).toContain('<hr>')
+    expect(loadedHtml).toContain('<hr/>')
     expect(loadedHtml).not.toContain('<p>---</p>')
   })
 
@@ -474,7 +474,7 @@ describe('report pdf generator', () => {
 
     await generatePdfReport(reportPath, { createWindow })
 
-    expect(loadedHtml.match(/<br \/>/g) ?? []).toHaveLength(2)
+    expect(loadedHtml.match(/<br\s*\/>/g) ?? []).toHaveLength(2)
     expect(loadedHtml).not.toContain('&lt;br /&gt;')
   })
 
@@ -497,6 +497,97 @@ describe('report pdf generator', () => {
 
     await generatePdfReport(reportPath, { createWindow })
 
-    expect(loadedHtml.match(/<br \/>/g) ?? []).toHaveLength(1)
+    expect(loadedHtml.match(/<br\s*\/>/g) ?? []).toHaveLength(1)
+  })
+
+  it('renders standard Markdown and GFM inline syntax in headings, tables, and lists', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-pdf-gfm-inline-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    await writeFile(
+      reportPath,
+      [
+        '# **代码审查报告**',
+        '',
+        '**项目路径：** https://example.com/review',
+        '',
+        '| **字段** | 说明 |',
+        '| --- | --- |',
+        '| *状态* | ~~已废弃~~ |',
+        '',
+        '- **列表粗体**',
+        '- *列表斜体*',
+        '- ~~列表删除线~~',
+        '',
+        '`**代码中不是粗体**`',
+        '',
+        '第一行<br />第二行',
+        '',
+        '[安全链接](https://example.com) [受限链接](ftp://example.com)'
+      ].join('\n')
+    )
+    let loadedHtml = ''
+    const createWindow = vi.fn(() => ({
+      loadFile: vi.fn(async (path: string) => {
+        loadedHtml = await readFile(path, 'utf8')
+      }),
+      webContents: {
+        printToPDF: vi.fn(async () => Buffer.from('pdf-bytes'))
+      },
+      close: vi.fn()
+    }))
+
+    await generatePdfReport(reportPath, { createWindow })
+
+    expect(loadedHtml).toContain('<strong>代码审查报告</strong>')
+    expect(loadedHtml).toContain('<strong>项目路径：</strong>')
+    expect(loadedHtml).toContain('<em>状态</em>')
+    expect(loadedHtml).toContain('<del>已废弃</del>')
+    expect(loadedHtml).toContain('<li><strong>列表粗体</strong></li>')
+    expect(loadedHtml).toContain('<li><em>列表斜体</em></li>')
+    expect(loadedHtml).toContain('<code>**代码中不是粗体**</code>')
+    expect(loadedHtml).toMatch(/第一行<br\s*\/>\s*第二行/)
+    expect(loadedHtml).toContain('<a href="https://example.com">安全链接</a>')
+    expect(loadedHtml).not.toContain('ftp://example.com')
+    expect(loadedHtml).not.toContain('<p>**项目路径：**')
+  })
+
+  it('inlines relative SVG report images for PDF rendering', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-pdf-svg-'))
+    tempDirs.push(dir)
+    await mkdir(join(dir, 'images'), { recursive: true })
+    const reportPath = join(dir, '代码审查报告.md')
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360" viewBox="0 0 900 360"><rect width="900" height="360" fill="#ffffff"/><text x="24" y="48">代码对比</text></svg>'
+    await writeFile(reportPath, '![问题1代码对比](images/issue-01-diff.svg)\n')
+    await writeFile(join(dir, 'images', 'issue-01-diff.svg'), svg)
+    let loadedHtml = ''
+    const createWindow = vi.fn(() => ({
+      loadFile: vi.fn(async (path: string) => {
+        loadedHtml = await readFile(path, 'utf8')
+      }),
+      webContents: {
+        printToPDF: vi.fn(async () => Buffer.from('pdf-bytes'))
+      },
+      close: vi.fn()
+    }))
+
+    await generatePdfReport(reportPath, { createWindow })
+
+    expect(loadedHtml).toContain(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`)
+    expect(loadedHtml).toContain('alt="问题1代码对比"')
+    expect(loadedHtml).toContain('height: auto')
+    expect(loadedHtml).toContain('break-inside: avoid')
+  })
+
+  it('keeps SVG image path safety checks', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-pdf-svg-escape-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    await writeFile(reportPath, '![问题1代码对比](../issue-01-diff.svg)\n')
+
+    await expect(generatePdfReport(reportPath)).rejects.toThrow(
+      'PDF生成失败：报告图片路径不能指向报告目录外：../issue-01-diff.svg'
+    )
   })
 })
