@@ -1739,6 +1739,10 @@ input[type="checkbox"] {
   .wb-toast {
     animation: wb-rise-in 150ms ease-out;
   }
+
+  .wb-task-activity-spinner {
+    animation: wb-task-activity-spin 900ms linear infinite;
+  }
 }
 
 @keyframes wb-fade-in {
@@ -1747,6 +1751,10 @@ input[type="checkbox"] {
 
 @keyframes wb-rise-in {
   from { opacity: 0; transform: translateY(5px); }
+}
+
+@keyframes wb-task-activity-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* 2.0 三视图工作台 */
@@ -1927,7 +1935,31 @@ input[type="checkbox"] {
   gap: 6px;
 }
 
+.wb-task-activity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.wb-task-activity-spinner {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--wb-accent);
+}
+
 .wb-task-progress > strong {
+  overflow: hidden;
+  color: var(--wb-muted);
+  font-size: 11px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-task-activity > strong {
+  min-width: 0;
   overflow: hidden;
   color: var(--wb-muted);
   font-size: 11px;

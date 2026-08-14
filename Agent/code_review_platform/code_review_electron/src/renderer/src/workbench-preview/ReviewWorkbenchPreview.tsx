@@ -8,6 +8,7 @@ import {
   FileText,
   FolderSearch,
   ImagePlus,
+  LoaderCircle,
   MessageSquareText,
   Play,
   Plus,
@@ -65,6 +66,16 @@ const activeStages = [
   'running_review',
   'uploading_report'
 ]
+
+const activeProgressMessages = {
+  checking_environment: ['正在检查本机审查环境。', '环境检查进行中，请保持客户端打开。'],
+  preparing_workspace: ['正在准备任务专属工作区。', '正在整理本次审查输入。'],
+  running_review: ['正在执行审查规则与代码证据。', '审查正在继续，请保持客户端打开。'],
+  uploading_report: ['正在整理审查报告并上传。', '报告上传进行中，请保持客户端打开。']
+} as const
+
+const isActiveStage = (stage: ReviewTaskViewModel['stage']): stage is keyof typeof activeProgressMessages =>
+  activeStages.includes(stage)
 
 const severityLabels: Record<ReviewReportViewModel['highestSeverity'], string> = {
   high: '高风险',
@@ -180,7 +191,24 @@ const TaskTableRow = ({
   catalog: ReviewItemDefinition[]
   reportId?: string
   onOpenReport: (reportId: string) => void
-}): React.JSX.Element => (
+}): React.JSX.Element => {
+  const [activeMessageIndex, setActiveMessageIndex] = useState(0)
+  const activeStage = isActiveStage(task.stage) ? task.stage : undefined
+
+  useEffect(() => {
+    if (!activeStage) return
+    setActiveMessageIndex(0)
+    const intervalId = window.setInterval(() => {
+      setActiveMessageIndex((current) => (current + 1) % activeProgressMessages[activeStage].length)
+    }, 4000)
+    return () => window.clearInterval(intervalId)
+  }, [activeStage])
+
+  const progressMessage = activeStage
+    ? activeProgressMessages[activeStage][activeMessageIndex]
+    : task.queueIndex ? `本机等待第 ${task.queueIndex} 位` : task.message
+
+  return (
   <article className={`wb-task-table-row ${taskStageClass(task)}`} aria-label={`${task.id} ${task.title}`}>
     <div className="wb-task-identity">
       <strong title={task.title}>{task.title}</strong>
@@ -189,8 +217,13 @@ const TaskTableRow = ({
     </div>
     <span className="wb-status-label">{task.stageLabel}</span>
     <div className="wb-task-progress">
-      <strong>{task.queueIndex ? `本机等待第 ${task.queueIndex} 位` : task.message}</strong>
-      {activeStages.includes(task.stage) && (
+      {activeStage ? (
+        <div className="wb-task-activity" aria-live="polite">
+          <LoaderCircle className="wb-task-activity-spinner" aria-hidden="true" />
+          <strong>{progressMessage}</strong>
+        </div>
+      ) : <strong>{progressMessage}</strong>}
+      {activeStage && (
         <ol className="wb-compact-stage-track" aria-label={`${task.id} 执行阶段`}>
           {task.phaseTrack.map((phase) => (
             <li className={`is-${phase.state}`} key={phase.id} title={phase.label}><span /></li>
@@ -253,7 +286,8 @@ const TaskTableRow = ({
       )}
     </div>
   </article>
-)
+  )
+}
 
 interface TaskManagementViewProps {
   viewModel: WorkbenchViewModel
