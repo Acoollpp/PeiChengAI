@@ -20,7 +20,7 @@ import {
   Trash2,
   X
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -28,6 +28,7 @@ import remarkGfm from 'remark-gfm'
 import paceLogo from '../assets/pace-logo.png'
 import { MarkdownPreview } from '../components/MarkdownPreview'
 import { ThemeToggleButton } from '../components/ThemeToggleButton'
+import { readRecentSvnUrls } from '../recent-svn-urls'
 import type { ClientTheme } from '../theme'
 import { DEFAULT_CLIENT_THEME } from '../theme'
 import { ReviewItemSelector } from './ReviewItemSelector'
@@ -723,9 +724,67 @@ export function ReviewWorkbenchPreview({
   const [selectionTouched, setSelectionTouched] = useState(false)
   const [selectorOpen, setSelectorOpen] = useState(false)
   const [isCreatingTask, setIsCreatingTask] = useState(false)
+  // 最近 SVN 地址历史：挂载时读取一次，成功提交由 ProductionReviewWorkbench 写入。
+  const [recentSvnUrls, setRecentSvnUrls] = useState<string[]>(() => readRecentSvnUrls())
+  const [isSvnHistoryOpen, setIsSvnHistoryOpen] = useState(false)
+  const [activeSvnHistoryIndex, setActiveSvnHistoryIndex] = useState<number | null>(null)
   const createTaskInFlightRef = useRef(false)
   const selectorReturnFocusRef = useRef<HTMLButtonElement | null>(null)
   const selectorWasOpenRef = useRef(false)
+
+  // 按当前输入做忽略大小写的包含匹配；与历史完全一致时无需再提示，直接收起。
+  const visibleRecentSvnUrls = useMemo(() => {
+    const query = draft.svnUrl.trim().toLocaleLowerCase()
+    if (!query) {
+      return recentSvnUrls
+    }
+    if (recentSvnUrls.some((item) => item.toLocaleLowerCase() === query)) {
+      return []
+    }
+    return recentSvnUrls.filter((item) => item.toLocaleLowerCase().includes(query))
+  }, [draft.svnUrl, recentSvnUrls])
+  const showSvnHistory = isSvnHistoryOpen && visibleRecentSvnUrls.length > 0
+
+  const selectSvnHistoryItem = (selectedSvnUrl: string): void => {
+    setDraft((value) => ({ ...value, svnUrl: selectedSvnUrl }))
+    setActiveSvnHistoryIndex(null)
+    setIsSvnHistoryOpen(false)
+  }
+
+  // 历史列表的键盘导航：↑↓ 循环高亮，Enter 回填，Escape/Tab 收起。
+  const handleSvnHistoryKeyDown = (event: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (!showSvnHistory) {
+      return
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setActiveSvnHistoryIndex((currentIndex) =>
+        currentIndex === null
+          ? 0
+          : (currentIndex + 1) % visibleRecentSvnUrls.length
+      )
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setActiveSvnHistoryIndex((currentIndex) =>
+        currentIndex === null
+          ? visibleRecentSvnUrls.length - 1
+          : (currentIndex - 1 + visibleRecentSvnUrls.length) % visibleRecentSvnUrls.length
+      )
+      return
+    }
+    if (event.key === 'Enter' && activeSvnHistoryIndex !== null) {
+      event.preventDefault()
+      selectSvnHistoryItem(visibleRecentSvnUrls[activeSvnHistoryIndex])
+      return
+    }
+    // Escape/Tab 仅收起列表，不拦截默认行为（Tab 继续移动到旧 revision 输入框）。
+    if (event.key === 'Escape' || event.key === 'Tab') {
+      setActiveSvnHistoryIndex(null)
+      setIsSvnHistoryOpen(false)
+    }
+  }
 
   useEffect(() => adapter.subscribe(setViewModel), [adapter])
   useEffect(() => {
@@ -862,17 +921,65 @@ export function ReviewWorkbenchPreview({
           )}
 
           <div className="wb-form-fields">
-            <label className="wb-form-field">
-              <span>SVN 地址</span>
-              <input
-                value={draft.svnUrl}
-                aria-invalid={fieldTouched.svnUrl && Boolean(errors.svnUrl)}
-                placeholder="svn://server/repository/project"
-                onBlur={() => setFieldTouched((value) => ({ ...value, svnUrl: true }))}
-                onChange={(event) => setDraft((value) => ({ ...value, svnUrl: event.target.value }))}
-              />
+            {/* SVN 字段带最近地址历史下拉：不用 label 包裹输入，避免点击历史项触发 label 激活。 */}
+            <div className="wb-form-field wb-svn-url-field">
+              <label htmlFor="wb-svn-url-input">SVN 地址</label>
+              <div className="wb-svn-url-input-wrap">
+                <input
+                  id="wb-svn-url-input"
+                  value={draft.svnUrl}
+                  aria-invalid={fieldTouched.svnUrl && Boolean(errors.svnUrl)}
+                  placeholder="svn://server/repository/project"
+                  aria-haspopup="listbox"
+                  aria-expanded={showSvnHistory}
+                  aria-activedescendant={
+                    activeSvnHistoryIndex === null
+                      ? undefined
+                      : `wb-svn-url-history-option-${activeSvnHistoryIndex}`
+                  }
+                  onBlur={() => {
+                    setActiveSvnHistoryIndex(null)
+                    setIsSvnHistoryOpen(false)
+                    setFieldTouched((value) => ({ ...value, svnUrl: true }))
+                  }}
+                  onClick={() => {
+                    setActiveSvnHistoryIndex(null)
+                    setIsSvnHistoryOpen(true)
+                  }}
+                  onFocus={() => {
+                    setActiveSvnHistoryIndex(null)
+                    setIsSvnHistoryOpen(true)
+                  }}
+                  onKeyDown={handleSvnHistoryKeyDown}
+                  onChange={(event) => {
+                    setDraft((value) => ({ ...value, svnUrl: event.target.value }))
+                    setActiveSvnHistoryIndex(null)
+                    setIsSvnHistoryOpen(true)
+                  }}
+                />
+                {showSvnHistory ? (
+                  <div className="wb-svn-url-history" role="listbox" aria-label="最近 SVN 地址">
+                    {visibleRecentSvnUrls.map((recentSvnUrl, index) => (
+                      <button
+                        id={`wb-svn-url-history-option-${index}`}
+                        key={recentSvnUrl}
+                        type="button"
+                        tabIndex={-1}
+                        className="wb-svn-url-history-item"
+                        role="option"
+                        aria-selected={activeSvnHistoryIndex === index}
+                        // 阻止 mousedown 默认行为，防止点击历史项时输入框先失焦收起列表。
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => selectSvnHistoryItem(recentSvnUrl)}
+                      >
+                        {recentSvnUrl}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
               {fieldTouched.svnUrl && errors.svnUrl && <small className="wb-field-error" role="alert">{errors.svnUrl}</small>}
-            </label>
+            </div>
             <div className="wb-revision-row">
               <label className="wb-form-field">
                 <span>旧 revision</span>

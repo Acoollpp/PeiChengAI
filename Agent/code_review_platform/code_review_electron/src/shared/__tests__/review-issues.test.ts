@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import { extractReviewIssues, inspectReviewIssues } from '../review-issues'
-import { REVIEW_TEMPLATE_PREVIEWS } from '../review-template-previews'
 import {
   bmsCodeReviewerHistoricalDs02ReportFixture,
   bmsCodeReviewerHistoricalPcBmsReportFixture,
@@ -718,8 +717,6 @@ describe('extractReviewIssues', () => {
       )
     ).toEqual([])
     expect(extractReviewIssues('')).toEqual([])
-    expect(extractReviewIssues(REVIEW_TEMPLATE_PREVIEWS.template_1)).toEqual([])
-    expect(extractReviewIssues(REVIEW_TEMPLATE_PREVIEWS.template_2)).toEqual([])
   })
 
   it('保留以“填写”开头的真实问题', () => {

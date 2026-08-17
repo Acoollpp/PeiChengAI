@@ -3,7 +3,7 @@
 import '@testing-library/jest-dom/vitest'
 import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createFixtureWorkbenchAdapter } from './fixture-adapter'
 import { ReviewWorkbenchPreview } from './ReviewWorkbenchPreview'
@@ -444,5 +444,100 @@ describe('ReviewWorkbenchPreview', () => {
       .filter((name) => name !== '任务等待序号异常.png')
       .forEach((name) => expect(screen.getByText(name)).toBeInTheDocument())
     expect(screen.getAllByRole('button', { name: /^移除 / })).toHaveLength(4)
+  })
+})
+
+describe('ReviewWorkbenchPreview · SVN 地址历史', () => {
+  const seedRecentSvnUrls = (urls: string[]): void => {
+    localStorage.setItem('code-review:recent-svn-urls', JSON.stringify(urls))
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+  })
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it('聚焦 SVN 地址输入框时显示最近地址并可点击回填', async () => {
+    const user = userEvent.setup()
+    seedRecentSvnUrls(['https://svn.example.com/A', 'svn://server/legacy'])
+    render(<ReviewWorkbenchPreview adapter={createFixtureWorkbenchAdapter()} />)
+
+    const svnInput = screen.getByLabelText('SVN 地址')
+    await user.click(svnInput)
+
+    const history = screen.getByRole('listbox', { name: '最近 SVN 地址' })
+    expect(within(history).getAllByRole('option')).toHaveLength(2)
+
+    await user.click(within(history).getByRole('option', { name: 'svn://server/legacy' }))
+
+    expect(svnInput).toHaveValue('svn://server/legacy')
+    expect(screen.queryByRole('listbox', { name: '最近 SVN 地址' })).not.toBeInTheDocument()
+  })
+
+  it('输入 SVN 地址时只显示忽略大小写的包含匹配项，完全匹配时收起', async () => {
+    const user = userEvent.setup()
+    seedRecentSvnUrls(['https://svn.example.com/A', 'svn://server/legacy'])
+    render(<ReviewWorkbenchPreview adapter={createFixtureWorkbenchAdapter()} />)
+
+    const svnInput = screen.getByLabelText('SVN 地址')
+    await user.click(svnInput)
+    await user.type(svnInput, 'LEGACY')
+
+    const history = screen.getByRole('listbox', { name: '最近 SVN 地址' })
+    expect(within(history).getAllByRole('option')).toHaveLength(1)
+    expect(within(history).getByRole('option', { name: 'svn://server/legacy' })).toBeInTheDocument()
+
+    await user.clear(svnInput)
+    await user.type(svnInput, 'https://svn.example.com/A')
+
+    expect(screen.queryByRole('listbox', { name: '最近 SVN 地址' })).not.toBeInTheDocument()
+  })
+
+  it('使用上下方向键高亮历史地址并用 Enter 回填', async () => {
+    const user = userEvent.setup()
+    seedRecentSvnUrls(['https://svn.example.com/A', 'svn://server/legacy'])
+    render(<ReviewWorkbenchPreview adapter={createFixtureWorkbenchAdapter()} />)
+
+    const svnInput = screen.getByLabelText('SVN 地址')
+    await user.click(svnInput)
+    await user.keyboard('{ArrowDown}')
+
+    const history = screen.getByRole('listbox', { name: '最近 SVN 地址' })
+    expect(within(history).getByRole('option', { name: 'https://svn.example.com/A' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+
+    await user.keyboard('{ArrowDown}')
+    expect(within(history).getByRole('option', { name: 'svn://server/legacy' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+
+    await user.keyboard('{Enter}')
+
+    expect(svnInput).toHaveValue('svn://server/legacy')
+    expect(screen.queryByRole('listbox', { name: '最近 SVN 地址' })).not.toBeInTheDocument()
+  })
+
+  it('Escape 和 Tab 收起历史列表且 Tab 直接进入旧 revision', async () => {
+    const user = userEvent.setup()
+    seedRecentSvnUrls(['https://svn.example.com/A'])
+    render(<ReviewWorkbenchPreview adapter={createFixtureWorkbenchAdapter()} />)
+
+    const svnInput = screen.getByLabelText('SVN 地址')
+    await user.click(svnInput)
+    expect(screen.getByRole('listbox', { name: '最近 SVN 地址' })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('listbox', { name: '最近 SVN 地址' })).not.toBeInTheDocument()
+
+    await user.click(svnInput)
+    await user.keyboard('{Tab}')
+
+    expect(screen.queryByRole('listbox', { name: '最近 SVN 地址' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('旧 revision')).toHaveFocus()
   })
 })
