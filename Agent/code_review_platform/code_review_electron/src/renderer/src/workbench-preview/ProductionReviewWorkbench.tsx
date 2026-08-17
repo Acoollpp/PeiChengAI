@@ -11,6 +11,7 @@ import { EnvironmentStatus } from '../components/EnvironmentStatus'
 import { extractDetailedHeadingOptions } from '../components/MarkdownPreview'
 import type { ClientTheme } from '../theme'
 import { useTaskQueue, type TaskViewItem } from '../hooks/useTaskQueue'
+import { rememberRecentSvnUrl } from '../recent-svn-urls'
 import { ReviewWorkbenchPreview } from './ReviewWorkbenchPreview'
 import { formatRevisionLabel } from './revision'
 import { applyWorkbenchReviewItemPresentation } from './review-item-presentation'
@@ -512,6 +513,8 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
         return commandResult(message)
       }
       await queue.submitTask(payload)
+      // 仅在预检通过且成功入队后记录最近 SVN 地址；失败路径不污染历史。
+      rememberRecentSvnUrl(payload.svn_url)
       showNotice('任务已加入本机执行队列。')
       return commandResult('任务已加入本机执行队列。')
     } catch (error) {

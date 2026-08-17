@@ -204,11 +204,13 @@ const mockRendererForeground = (foreground: boolean): void => {
 beforeEach(() => {
   setupCodeReviewApi()
   mockRendererForeground(true)
+  localStorage.clear()
 })
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
   vi.restoreAllMocks()
+  localStorage.clear()
 })
 
 describe('ProductionReviewWorkbench', () => {
@@ -265,6 +267,26 @@ describe('ProductionReviewWorkbench', () => {
       expect(within(overview).getByText('正在执行').closest('div')).toHaveTextContent('1')
       expect(within(overview).getByText('本机等待').closest('div')).toHaveTextContent('0')
     })
+  })
+
+  it('成功创建任务后记录 SVN 地址到最近历史，预检失败时不记录', async () => {
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await submitMinimalDs03Task('svn://server/recent-history')
+    await waitFor(() => expect(window.codeReview.executeTask).toHaveBeenCalledTimes(1))
+    expect(JSON.parse(localStorage.getItem('code-review:recent-svn-urls') ?? '[]')).toEqual([
+      'svn://server/recent-history'
+    ])
+
+    vi.mocked(window.codeReview.preflightTask).mockResolvedValue({
+      status: 'invalid',
+      errors: { svn_url: 'SVN 地址无法访问' }
+    })
+    await submitMinimalDs03Task('svn://server/preflight-fail')
+
+    expect(JSON.parse(localStorage.getItem('code-review:recent-svn-urls') ?? '[]')).toEqual([
+      'svn://server/recent-history'
+    ])
   })
 
   it('总览的执行和等待计数始终取自当前 renderer 队列', async () => {
