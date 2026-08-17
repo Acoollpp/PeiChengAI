@@ -199,7 +199,7 @@ describe('registerIpcHandlers', () => {
     })
   })
 
-  it('按 DS-01 材料字段打开系统文件选择器并返回真实本地文件信息', async () => {
+  it('按 DS-06 材料字段打开系统文件选择器并返回真实本地文件信息', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'ipc-review-material-'))
     tempDirs.push(directory)
     const filePath = join(directory, '产品规格书.pdf')
@@ -212,7 +212,7 @@ describe('registerIpcHandlers', () => {
     )?.[1]
 
     await expect(handler({}, {
-      review_item_id: 'DS-01',
+      review_item_id: 'DS-06',
       field_id: 'product-spec'
     })).resolves.toEqual({
       status: 'selected',
@@ -890,8 +890,7 @@ describe('registerIpcHandlers', () => {
         id: 'DS-01',
         user_extra_rules: '仅核对协议导入',
         materials: [
-          { field_id: 'requirement-sheet', file_paths: ['/source/requirements.xlsx'] },
-          { field_id: 'product-spec', file_paths: ['/source/specification.pdf'] }
+          { field_id: 'requirement-sheet', file_paths: ['/source/requirements.xlsx'] }
         ]
       },
       { id: 'DS-02', user_extra_rules: '仅检查新增诊断代码' },
@@ -931,22 +930,21 @@ describe('registerIpcHandlers', () => {
         reviewItems: [
           expect.objectContaining({
             id: 'DS-01',
-            name: '变更点审查',
+            name: '需求变更审查',
             user_extra_rules: '仅核对协议导入',
             materials: expect.arrayContaining([
-              expect.objectContaining({ fieldId: 'requirement-sheet' }),
-              expect.objectContaining({ fieldId: 'product-spec' })
+              expect.objectContaining({ fieldId: 'requirement-sheet' })
             ])
           }),
           {
             id: 'DS-02',
-            name: '编码规范审核',
+            name: '编码规范审查',
             user_extra_rules: '仅检查新增诊断代码',
             materials: []
           },
           {
             id: 'DS-03',
-            name: '状态机审核',
+            name: 'MOS 充放电状态机审查',
             user_extra_rules: '仅检查休眠唤醒状态',
             materials: []
           }

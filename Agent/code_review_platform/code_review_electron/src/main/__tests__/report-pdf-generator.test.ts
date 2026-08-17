@@ -552,15 +552,15 @@ describe('report pdf generator', () => {
     expect(loadedHtml).not.toContain('<p>**项目路径：**')
   })
 
-  it('inlines relative SVG report images for PDF rendering', async () => {
+  it('inlines 新版 Skill images/issue-<NN>.svg report images for PDF rendering', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'report-pdf-svg-'))
     tempDirs.push(dir)
     await mkdir(join(dir, 'images'), { recursive: true })
     const reportPath = join(dir, '代码审查报告.md')
     const svg =
       '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360" viewBox="0 0 900 360"><rect width="900" height="360" fill="#ffffff"/><text x="24" y="48">代码对比</text></svg>'
-    await writeFile(reportPath, '![问题1代码对比](images/issue-01-diff.svg)\n')
-    await writeFile(join(dir, 'images', 'issue-01-diff.svg'), svg)
+    await writeFile(reportPath, '![问题1代码对比](images/issue-01.svg)\n')
+    await writeFile(join(dir, 'images', 'issue-01.svg'), svg)
     let loadedHtml = ''
     const createWindow = vi.fn(() => ({
       loadFile: vi.fn(async (path: string) => {
@@ -584,10 +584,10 @@ describe('report pdf generator', () => {
     const dir = await mkdtemp(join(tmpdir(), 'report-pdf-svg-escape-'))
     tempDirs.push(dir)
     const reportPath = join(dir, '代码审查报告.md')
-    await writeFile(reportPath, '![问题1代码对比](../issue-01-diff.svg)\n')
+    await writeFile(reportPath, '![问题1代码对比](../issue-01.svg)\n')
 
     await expect(generatePdfReport(reportPath)).rejects.toThrow(
-      'PDF生成失败：报告图片路径不能指向报告目录外：../issue-01-diff.svg'
+      'PDF生成失败：报告图片路径不能指向报告目录外：../issue-01.svg'
     )
   })
 })

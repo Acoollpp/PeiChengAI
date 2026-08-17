@@ -21,8 +21,8 @@ describe('MarkdownPreview', () => {
   beforeEach(() => {
     window.codeReview = {
       readReportAsset: vi.fn(async () => ({
-        dataUrl: 'data:image/png;base64,aW1hZ2U=',
-        contentType: 'image/png'
+        dataUrl: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+        contentType: 'image/svg+xml'
       }))
     } as never
   })
@@ -89,17 +89,17 @@ describe('MarkdownPreview', () => {
   it('使用报告路径加载相对图片', async () => {
     render(
       <MarkdownPreview
-        markdown="![问题截图](images/diagram.png)"
+        markdown="![问题 01 代码证据](images/issue-01.svg)"
         reportPath="/tmp/runtime/workspaces/task-1/代码审查报告.md"
       />
     )
 
-    const image = await screen.findByRole('img', { name: '问题截图' })
+    const image = await screen.findByRole('img', { name: '问题 01 代码证据' })
     expect(window.codeReview.readReportAsset).toHaveBeenCalledWith({
       reportPath: '/tmp/runtime/workspaces/task-1/代码审查报告.md',
-      assetPath: 'images/diagram.png'
+      assetPath: 'images/issue-01.svg'
     })
-    expect(image).toHaveAttribute('src', 'data:image/png;base64,aW1hZ2U=')
+    expect(image).toHaveAttribute('src', 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=')
   })
 
   it('相对图片加载完成后重新校准当前问题的顶部位置', async () => {

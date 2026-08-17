@@ -38,24 +38,23 @@ describe('ReviewItemSelector', () => {
     )
 
     expect(screen.getByPlaceholderText('搜索 ID、名称或分类')).toHaveFocus()
-    await user.click(screen.getByRole('checkbox', { name: '选择 DS-01 变更点审查' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-01 需求变更审查' }))
     await user.type(
       screen.getByLabelText('DS-01 额外规则'),
       '这是一段只属于 DS-01 的很长额外规则，用于验证详情切换后输入不会串到其他审查项。'
     )
     const fileButtons = screen.getAllByRole('button', { name: '选择文件' })
     await user.click(fileButtons[0])
-    await user.click(fileButtons[1])
 
     await user.click(screen.getByRole('button', { name: /DS-02.*编码规范审查/ }))
     expect(screen.getByLabelText('DS-02 额外规则')).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: /DS-01.*变更点审查/ }))
+    await user.click(screen.getByRole('button', { name: /DS-01.*需求变更审查/ }))
 
     expect(screen.getByLabelText('DS-01 额外规则')).toHaveValue(
       '这是一段只属于 DS-01 的很长额外规则，用于验证详情切换后输入不会串到其他审查项。'
     )
     expect(screen.getAllByText(/BMS_平台_V2.7_低压上下电与故障恢复产品开发需求表/).length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/PCH-BMS-SPEC-2026-08_整车控制器产品规格书/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/PCH-BMS-SPEC-2026-08_整车控制器产品规格书/)).not.toBeInTheDocument()
     const originalRequirementName = viewModel.sampleTask.selection['DS-01']?.materials[
       'requirement-sheet'
     ][0].name
@@ -71,8 +70,7 @@ describe('ReviewItemSelector', () => {
         'DS-01': expect.objectContaining({
           extraRules: expect.stringContaining('只属于 DS-01'),
           materials: {
-            'requirement-sheet': [expect.objectContaining({ name: expect.stringMatching(/\.xlsx$/) })],
-            'product-spec': [expect.objectContaining({ name: expect.stringMatching(/\.pdf$/) })]
+            'requirement-sheet': [expect.objectContaining({ name: expect.stringMatching(/\.xlsx$/) })]
           }
         })
       })
@@ -95,25 +93,26 @@ describe('ReviewItemSelector', () => {
     )
 
     expect(screen.getAllByText(
-      '重点依据产品开发需求表和产品规格书，核对代码变更是否完整、准确落实需求与规格。'
+      '重点依据产品开发需求表，核对代码变更是否完整、准确落实需求。'
     ).length).toBeGreaterThan(0)
     await user.type(screen.getByPlaceholderText('搜索 ID、名称或分类'), '控制逻辑专项审核')
-    expect(screen.getByText('状态机审查')).toBeInTheDocument()
+    expect(screen.getByText('MOS 充放电状态机审查')).toBeInTheDocument()
     expect(screen.queryByText('编码规范审查')).not.toBeInTheDocument()
     await user.clear(screen.getByPlaceholderText('搜索 ID、名称或分类'))
 
     await user.click(screen.getByRole('checkbox', { name: '选择日常提交审核全部审查项' }))
-    expect(screen.getByRole('dialog').querySelector('.wb-selector-count')).toHaveTextContent('已选 2 项')
+    expect(screen.getByRole('dialog').querySelector('.wb-selector-count')).toHaveTextContent('已选 3 项')
     await user.click(screen.getByRole('checkbox', { name: '仅看已选' }))
     const catalogList = screen.getByLabelText('审查项列表')
-    expect(within(catalogList).getByText('变更点审查')).toBeInTheDocument()
+    expect(within(catalogList).getByText('需求变更审查')).toBeInTheDocument()
     expect(within(catalogList).getByText('编码规范审查')).toBeInTheDocument()
-    expect(within(catalogList).queryByText('状态机审查')).not.toBeInTheDocument()
+    expect(within(catalogList).getByText('变更点风险检查')).toBeInTheDocument()
+    expect(within(catalogList).queryByText('MOS 充放电状态机审查')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '清空选择' }))
     expect(within(screen.getByLabelText('审查项列表')).getByText('没有匹配的审查项')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '显示全部' }))
-    expect(screen.getByText('状态机审查')).toBeInTheDocument()
+    expect(screen.getByText('MOS 充放电状态机审查')).toBeInTheDocument()
   })
 
   it('synthetic 多文件字段支持按顺序多选、移除并补选材料', async () => {

@@ -1,8 +1,8 @@
-export const REVIEW_ITEM_CATALOG_VERSION = 3
+export const REVIEW_ITEM_CATALOG_VERSION = 4
 
 export const BMS_CODE_REVIEW_SKILL_NAME = 'bms-code-reviewer'
 
-export type ReviewItemId = 'DS-01' | 'DS-02' | 'DS-03'
+export type ReviewItemId = 'DS-01' | 'DS-02' | 'DS-03' | 'DS-04' | 'DS-05' | 'DS-06'
 
 export interface ReviewItemMaterialFieldDefinition {
   id: string
@@ -62,14 +62,14 @@ export const REVIEW_ITEM_CATALOG: readonly ReviewItemDefinition[] = [
   {
     id: 'DS-01',
     category: {
-      id: 'requirements-and-change',
-      name: '需求与变更'
+      id: 'daily-submission',
+      name: '日常提交审核'
     },
-    name: '变更点审查',
-    summary: '核对两个真实 SVN revision 之间的代码变更是否完整承接产品需求。',
+    name: '需求变更审查',
+    summary: '核对两个真实 SVN revision 之间的代码变更是否完整承接产品开发需求表。',
     details: {
-      target: '建立需求、规格与代码变更之间的可追溯证据，识别漏改、错改和影响范围遗漏。',
-      process: '读取产品开发需求表的软件项和协议，核对产品规格书第五章，再结合双 revision 变更形成结论。',
+      target: '建立需求与代码变更之间的可追溯证据，识别漏改、错改和影响范围遗漏。',
+      process: '读取产品开发需求表的软件项和协议，再结合双 revision 变更形成结论。',
       specification: '必须提供真实的旧、新 revision；平台仅整理输入，审查证据模式由 bms-code-reviewer Skill 决定。'
     },
     sortOrder: 10,
@@ -82,24 +82,16 @@ export const REVIEW_ITEM_CATALOG: readonly ReviewItemDefinition[] = [
         required: true,
         multiple: false,
         allowedExtensions: ['.xlsx', '.xls']
-      },
-      {
-        id: 'product-spec',
-        name: '产品规格书',
-        description: '用于核对第五章基本参数设置和基本配置的 PDF 文件。',
-        required: true,
-        multiple: false,
-        allowedExtensions: ['.pdf']
       }
     ]
   },
   {
     id: 'DS-02',
     category: {
-      id: 'code-quality',
-      name: '代码质量'
+      id: 'daily-submission',
+      name: '日常提交审核'
     },
-    name: '编码规范审核',
+    name: '编码规范审查',
     summary: '检查本次审查范围内影响可靠性、可维护性与一致性的编码质量问题。',
     details: {
       target: '以可定位的代码证据识别编码质量偏差，为修复与复核提供清晰依据。',
@@ -113,19 +105,88 @@ export const REVIEW_ITEM_CATALOG: readonly ReviewItemDefinition[] = [
   {
     id: 'DS-03',
     category: {
-      id: 'design-safety',
-      name: '设计与安全'
+      id: 'control-logic',
+      name: '控制逻辑专项审核'
     },
-    name: '状态机审核',
-    summary: '检查状态条件、状态转换与最终控制输出是否一致。',
+    name: 'MOS 充放电状态机审查',
+    summary: '检查 MOS 充放电状态与受控输出一致性。',
     details: {
-      target: '对指定新 revision 的自研代码执行状态逻辑审查。',
-      process: '由 Skill 检查相关 if、switch、状态变量及控制输出调用路径。',
+      target: '对指定新 revision 的 MOS 充放电状态、状态转换和受控输出执行一致性审查。',
+      process: '由 Skill 检查相关 if、switch、状态变量及充放电 MOS 控制输出调用路径。',
       specification: '具体审查规则、证据模式和失败策略由 bms-code-reviewer Skill 维护。'
     },
     sortOrder: 30,
     enabled: true,
     materialFields: []
+  },
+  {
+    id: 'DS-04',
+    category: {
+      id: 'driver',
+      name: '驱动专项审核'
+    },
+    name: 'AFE 驱动审核',
+    summary: '依据一份或多份芯片规格书 PDF 审查 AFE 驱动配置、寄存器访问和异常处理。',
+    details: {
+      target: '核对 AFE 驱动实现与芯片规格书约束，识别寄存器、时序、异常处理和边界配置风险。',
+      process: '读取用户提供的芯片规格书 PDF，由 Skill 决定证据范围、审查流程和问题判定。',
+      specification: '可连续选择多份 PDF 芯片规格书；具体审查规则、证据模式和失败策略由 bms-code-reviewer Skill 维护。'
+    },
+    sortOrder: 40,
+    enabled: true,
+    materialFields: [
+      {
+        id: 'chip-specs',
+        name: '芯片规格书',
+        description: '用于核对 AFE 驱动配置、寄存器和时序约束的一份或多份 PDF 文件。',
+        required: true,
+        multiple: true,
+        allowedExtensions: ['.pdf']
+      }
+    ]
+  },
+  {
+    id: 'DS-05',
+    category: {
+      id: 'daily-submission',
+      name: '日常提交审核'
+    },
+    name: '变更点风险检查',
+    summary: '基于新旧 revision 对变更点执行开放性风险检查。',
+    details: {
+      target: '识别代码变更本身引入的功能、可靠性、边界条件和回归风险。',
+      process: '读取任务公共输入和用户额外规则，由 Skill 确定审查范围、执行检查并形成结论。',
+      specification: '无需专项材料；具体审查规则、证据模式和失败策略由 bms-code-reviewer Skill 维护。'
+    },
+    sortOrder: 50,
+    enabled: true,
+    materialFields: []
+  },
+  {
+    id: 'DS-06',
+    category: {
+      id: 'spec-consistency',
+      name: '规格一致性审核'
+    },
+    name: '规格书审查',
+    summary: '依据产品规格书 PDF 审查指定新 revision 的参数与配置一致性。',
+    details: {
+      target: '核对产品规格书中的参数、配置与新 revision 实现，识别不一致和遗漏。',
+      process: '读取产品规格书 PDF，由 Skill 根据当前审查项规则建立证据并形成结论。',
+      specification: '必须提供一份 PDF 产品规格书；具体审查规则、证据模式和失败策略由 bms-code-reviewer Skill 维护。'
+    },
+    sortOrder: 60,
+    enabled: true,
+    materialFields: [
+      {
+        id: 'product-spec',
+        name: '产品规格书',
+        description: '用于核对指定新 revision 参数与配置一致性的 PDF 文件。',
+        required: true,
+        multiple: false,
+        allowedExtensions: ['.pdf']
+      }
+    ]
   }
 ] as const
 

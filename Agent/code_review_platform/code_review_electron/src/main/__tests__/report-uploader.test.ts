@@ -234,6 +234,36 @@ describe('report uploader', () => {
     )
   })
 
+  it('上传新版 Skill images/issue-<NN>.svg 代码图片并保持相对路径和 MIME', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-issue-svg-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const imagePath = join(dir, 'images', 'issue-01.svg')
+    const svg = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360"><rect width="900" height="360" fill="#fff"/><text x="24" y="48">issue 01</text></svg>'
+    )
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, `# 代码审查报告\n\n![问题 01 代码证据](images/issue-01.svg)\n`)
+    await writeFile(imagePath, svg)
+
+    await uploadReportFile(api, 'token-123', 'task-issue-svg', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-issue-svg',
+      expect.objectContaining({
+        assets: [{
+          relative_path: 'images/issue-01.svg',
+          content: svg,
+          content_type: 'image/svg+xml'
+        }]
+      })
+    )
+  })
+
   it('上传真实 PC-BMS 报告时提交三个有序问题快照', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'report-uploader-pc-bms-'))
     tempDirs.push(dir)

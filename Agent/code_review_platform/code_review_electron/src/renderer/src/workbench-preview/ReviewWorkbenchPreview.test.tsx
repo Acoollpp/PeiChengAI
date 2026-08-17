@@ -60,7 +60,9 @@ describe('ReviewWorkbenchPreview', () => {
     )
     expect(screen.queryByText('AI 代码审查')).not.toBeInTheDocument()
     expect(screen.getByText('王', { selector: '.wb-avatar' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /选择 DS-03、DS-02、DS-01/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', {
+      name: /选择 DS-06、DS-05、DS-04、DS-03、DS-02、DS-01/
+    })).toBeInTheDocument()
   })
 
   it('旧 adapter 不提供统计字段时继续显示原有本地计数', () => {
@@ -227,7 +229,7 @@ describe('ReviewWorkbenchPreview', () => {
     expect(screen.getByText('可以创建')).toBeInTheDocument()
     const selectionSection = screen.getByRole('heading', { name: '审查项' }).closest('section')
     expect(selectionSection).not.toBeNull()
-    expect(within(selectionSection as HTMLElement).getByText('DS-01').closest('.wb-selected-item')).toHaveTextContent('2 个材料文件已就绪')
+    expect(within(selectionSection as HTMLElement).getByText('DS-01').closest('.wb-selected-item')).toHaveTextContent('1 个材料文件已就绪')
 
     await user.click(screen.getByRole('button', { name: '创建审查任务' }))
 
@@ -241,19 +243,19 @@ describe('ReviewWorkbenchPreview', () => {
     render(<ReviewWorkbenchPreview adapter={adapter} />)
 
     await user.click(screen.getByRole('button', { name: '选择' }))
-    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审查' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 MOS 充放电状态机审查' }))
     await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
     const selectionSection = screen.getByRole('heading', { name: '审查项' }).closest('section')
     expect(selectionSection).not.toBeNull()
-    expect(within(selectionSection as HTMLElement).getByText('DS-03').closest('.wb-selected-item')).toHaveTextContent('状态机审查')
+    expect(within(selectionSection as HTMLElement).getByText('DS-03').closest('.wb-selected-item')).toHaveTextContent('MOS 充放电状态机审查')
 
     await user.click(screen.getByRole('button', { name: '调整' }))
-    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审查' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-03 MOS 充放电状态机审查' }))
     await user.click(screen.getByRole('checkbox', { name: '选择 DS-02 编码规范审查' }))
     await user.click(screen.getByRole('button', { name: '取消' }))
 
     await user.click(screen.getByRole('button', { name: '调整' }))
-    expect(screen.getByRole('checkbox', { name: '选择 DS-03 状态机审查' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: '选择 DS-03 MOS 充放电状态机审查' })).toBeChecked()
     expect(screen.getByRole('checkbox', { name: '选择 DS-02 编码规范审查' })).not.toBeChecked()
   })
 

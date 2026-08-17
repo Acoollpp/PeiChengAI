@@ -22,50 +22,58 @@ afterEach(async () => {
 })
 
 describe('prepareReviewTaskMaterials', () => {
-  it('一次校验真实 Excel/PDF 后复制到 DS-01 任务工作区', async () => {
+  it('一次校验真实 Excel 后复制到 DS-01 任务工作区', async () => {
     const root = await makeTemporaryDirectory()
     const sourceDirectory = join(root, 'source')
     await mkdir(sourceDirectory)
     const requirementPath = join(sourceDirectory, '产品开发需求表.xlsx')
-    const specificationPath = join(sourceDirectory, '产品规格书.pdf')
     await writeFile(requirementPath, 'xlsx-content')
-    await writeFile(specificationPath, 'pdf-content')
     const reviewItems = resolveReviewItemInputs([{
       id: 'DS-01',
       user_extra_rules: '只核对本次变更范围',
       materials: [
-        { field_id: 'requirement-sheet', file_paths: [requirementPath] },
-        { field_id: 'product-spec', file_paths: [specificationPath] }
+        { field_id: 'requirement-sheet', file_paths: [requirementPath] }
       ]
     }])
 
     const prepared = await prepareReviewTaskMaterials(reviewItems, join(root, 'workspace', 'materials'))
 
     expect(prepared[0].materials.map((material) => material.filePaths[0])).toEqual([
-      join(root, 'workspace', 'materials', 'DS-01', 'requirement-sheet', '产品开发需求表.xlsx'),
-      join(root, 'workspace', 'materials', 'DS-01', 'product-spec', '产品规格书.pdf')
+      join(root, 'workspace', 'materials', 'DS-01', 'requirement-sheet', '产品开发需求表.xlsx')
     ])
     await expect(readFile(prepared[0].materials[0].filePaths[0], 'utf8')).resolves.toBe('xlsx-content')
-    await expect(readFile(prepared[0].materials[1].filePaths[0], 'utf8')).resolves.toBe('pdf-content')
   })
 
-  it('组合任务只为 DS-01 复制材料，DS-03 不产生材料目录', async () => {
+  it('组合任务只为有材料的 DS-01、DS-04、DS-06 复制材料，DS-05 不产生材料目录', async () => {
     const root = await makeTemporaryDirectory()
     const requirementPath = join(root, '组合审查需求表.xlsx')
+    const afeAPath = join(root, 'AFE-A.pdf')
+    const afeBPath = join(root, 'AFE-B.pdf')
     const specificationPath = join(root, '组合审查规格书.pdf')
     const destinationRoot = join(root, 'workspace', 'materials')
     await writeFile(requirementPath, 'xlsx-content')
+    await writeFile(afeAPath, 'afe-a')
+    await writeFile(afeBPath, 'afe-b')
     await writeFile(specificationPath, 'pdf-content')
     const reviewItems = resolveReviewItemInputs([
       {
         id: 'DS-01',
         user_extra_rules: '只核对需求变更',
         materials: [
-          { field_id: 'requirement-sheet', file_paths: [requirementPath] },
-          { field_id: 'product-spec', file_paths: [specificationPath] }
+          { field_id: 'requirement-sheet', file_paths: [requirementPath] }
         ]
       },
-      { id: 'DS-03', user_extra_rules: '只检查故障恢复状态' }
+      {
+        id: 'DS-04',
+        user_extra_rules: '只检查 AFE 驱动',
+        materials: [{ field_id: 'chip-specs', file_paths: [afeAPath, afeBPath] }]
+      },
+      {
+        id: 'DS-06',
+        user_extra_rules: '只核对规格参数',
+        materials: [{ field_id: 'product-spec', file_paths: [specificationPath] }]
+      },
+      { id: 'DS-05', user_extra_rules: '只检查变更风险' }
     ])
 
     const prepared = await prepareReviewTaskMaterials(reviewItems, destinationRoot)
@@ -73,26 +81,42 @@ describe('prepareReviewTaskMaterials', () => {
     expect(prepared).toEqual([
       expect.objectContaining({
         id: 'DS-01',
-        user_extra_rules: '只核对需求变更',
-        materials: [
-          expect.objectContaining({ filePaths: [join(destinationRoot, 'DS-01', 'requirement-sheet', '组合审查需求表.xlsx')] }),
-          expect.objectContaining({ filePaths: [join(destinationRoot, 'DS-01', 'product-spec', '组合审查规格书.pdf')] })
-        ]
-      }),
-      {
-        id: 'DS-03',
-        name: '状态机审核',
-        user_extra_rules: '只检查故障恢复状态',
-        materials: []
+          user_extra_rules: '只核对需求变更',
+          materials: [
+            expect.objectContaining({ filePaths: [join(destinationRoot, 'DS-01', 'requirement-sheet', '组合审查需求表.xlsx')] })
+          ]
+        }),
+        expect.objectContaining({
+          id: 'DS-04',
+          user_extra_rules: '只检查 AFE 驱动',
+          materials: [
+            expect.objectContaining({ filePaths: [
+              join(destinationRoot, 'DS-04', 'chip-specs', 'AFE-A.pdf'),
+              join(destinationRoot, 'DS-04', 'chip-specs', 'AFE-B.pdf')
+            ] })
+          ]
+        }),
+        expect.objectContaining({
+          id: 'DS-06',
+          user_extra_rules: '只核对规格参数',
+          materials: [
+            expect.objectContaining({ filePaths: [join(destinationRoot, 'DS-06', 'product-spec', '组合审查规格书.pdf')] })
+          ]
+        }),
+        {
+          id: 'DS-05',
+          name: '变更点风险检查',
+          user_extra_rules: '只检查变更风险',
+          materials: []
       }
     ])
-    await expect(stat(join(destinationRoot, 'DS-03'))).rejects.toThrow()
+    await expect(stat(join(destinationRoot, 'DS-05'))).rejects.toThrow()
   })
 
   it('一次返回必填缺失、错误扩展名、文件缺失和不可读错误，且不复制任何文件', async () => {
     const root = await makeTemporaryDirectory()
     const wrongExtensionPath = join(root, '需求表.txt')
-    const unreadablePdfPath = join(root, '产品规格书.pdf')
+    const unreadablePdfPath = join(root, '芯片规格书.pdf')
     const missingPdfPath = join(root, '不存在.pdf')
     await writeFile(wrongExtensionPath, 'not-excel')
     await writeFile(unreadablePdfPath, 'pdf')
@@ -110,8 +134,13 @@ describe('prepareReviewTaskMaterials', () => {
       ...resolveReviewItemInputs([{
         id: 'DS-01',
         materials: [
-          { field_id: 'requirement-sheet', file_paths: [wrongExtensionPath] },
-          { field_id: 'product-spec', file_paths: [unreadablePdfPath] }
+          { field_id: 'requirement-sheet', file_paths: [wrongExtensionPath] }
+        ]
+      },
+      {
+        id: 'DS-04',
+        materials: [
+          { field_id: 'chip-specs', file_paths: [unreadablePdfPath] }
         ]
       }]),
       {
@@ -144,7 +173,7 @@ describe('prepareReviewTaskMaterials', () => {
         open: openMaterial,
         stat: inspectMaterial
       })
-    ).rejects.toThrow(/产品开发需求表仅支持 \.xlsx、\.xls 文件.*产品规格书不可读.*缺少的必填材料为必填项.*已删除材料不存在/)
+    ).rejects.toThrow(/产品开发需求表仅支持 \.xlsx、\.xls 文件.*芯片规格书不可读.*缺少的必填材料为必填项.*已删除材料不存在/)
     expect(inspectMaterial).toHaveBeenCalledWith(missingPdfPath)
     expect(openMaterial).toHaveBeenCalledWith(unreadablePdfPath, 'r')
     expect(copyFile).not.toHaveBeenCalled()
