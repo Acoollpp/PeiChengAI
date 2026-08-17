@@ -15,56 +15,29 @@ import type {
 } from './types'
 import { formatRevisionLabel } from './revision'
 import { applyWorkbenchReviewItemPresentation } from './review-item-presentation'
+import { REVIEW_ITEM_CATALOG } from '../../../shared/review-items'
 
-const catalog: ReviewItemDefinition[] = ([
-  {
-    id: 'DS-01',
-    category: '需求与变更',
-    name: '变更点审查',
-    summary: '核对两个真实 SVN revision 之间的代码变更是否完整承接产品需求。',
-    goal: '建立需求、规格与代码变更之间的可追溯证据，识别漏改、错改和影响范围遗漏。',
-    process: ['读取产品开发需求表的软件项', '核对产品规格书第五章', '结合双 revision 变更形成结论'],
-    specification: '必须提供真实的旧、新 revision；平台仅整理输入，审查证据模式由 Skill 决定。',
-    materialFields: [
-      {
-        id: 'requirement-sheet',
-        label: '产品开发需求表',
-        description: '包含本次变更软件项的 Excel 文件',
-        required: true,
-        extensions: ['.xlsx', '.xls'],
-        multiplicity: 'single'
-      },
-      {
-        id: 'product-spec',
-        label: '产品规格书',
-        description: '用于核对需求和第五章内容的 PDF 文件',
-        required: true,
-        extensions: ['.pdf'],
-        multiplicity: 'single'
-      }
-    ]
-  },
-  {
-    id: 'DS-02',
-    category: '代码质量',
-    name: '编码规范审核',
-    summary: '检查命名、边界处理、资源使用和可维护性等编码规范问题。',
-    goal: '以明确的代码证据识别影响可靠性和维护成本的规范偏差。',
-    process: ['定位本次审查范围', '按 Skill 内正式规则检查代码', '输出可定位的问题与修改建议'],
-    specification: '可由 Skill 根据旧 revision 选择双版本或新版本全量证据模式，无需专项材料。',
-    materialFields: []
-  },
-  {
-    id: 'DS-03',
-    category: '可靠性',
-    name: '状态机审核',
-    summary: '检查状态定义、转换条件、异常分支及边界事件处理是否完整。',
-    goal: '发现状态无法到达、转换条件冲突、异常路径缺失及事件处理不一致。',
-    process: ['识别状态与事件', '核对转换和守卫条件', '检查异常与恢复路径'],
-    specification: '固定使用新 revision 全量审查；旧 revision 原样传递，不依赖额外材料。',
-    materialFields: []
-  }
-] satisfies ReviewItemDefinition[]).map(applyWorkbenchReviewItemPresentation)
+const catalog: ReviewItemDefinition[] = REVIEW_ITEM_CATALOG
+  .filter((item) => item.enabled)
+  .sort((left, right) => left.sortOrder - right.sortOrder)
+  .map((item): ReviewItemDefinition => ({
+    id: item.id,
+    category: item.category.name,
+    name: item.name,
+    summary: item.summary,
+    goal: item.details.target,
+    process: [item.details.process],
+    specification: item.details.specification,
+    materialFields: item.materialFields.map((field) => ({
+      id: field.id,
+      label: field.name,
+      description: field.description,
+      required: field.required,
+      extensions: [...field.allowedExtensions],
+      multiplicity: field.multiple ? 'multiple' : 'single'
+    }))
+  }))
+  .map(applyWorkbenchReviewItemPresentation)
 
 const phaseOrder: Array<Exclude<TaskStage, 'waiting' | 'failed' | 'cancelled'>> = [
   'checking_environment',
@@ -348,15 +321,27 @@ const fixtureFiles: Record<string, MaterialFileView[]> = {
       sizeLabel: '1.9 MB'
     }
   ],
-  'DS-01:product-spec': [
+  'DS-04:chip-specs': [
+    {
+      id: 'file-afe-spec-bq76952',
+      name: 'BQ76952_16S_AFE_芯片规格书_RevC.pdf',
+      sizeLabel: '5.4 MB'
+    },
+    {
+      id: 'file-afe-spec-adbms1818',
+      name: 'ADBMS1818_菊链采样AFE_芯片规格书_RevB.pdf',
+      sizeLabel: '6.1 MB'
+    }
+  ],
+  'DS-06:product-spec': [
     {
       id: 'file-spec-long',
-      name: 'PCH-BMS-SPEC-2026-08_整车控制器产品规格书_第五章_状态机及故障处理正式发布版.pdf',
+      name: 'PCH-BMS-SPEC-2026-08_整车控制器产品规格书_正式发布版.pdf',
       sizeLabel: '8.6 MB'
     },
     {
       id: 'file-spec-replacement',
-      name: 'PCH-BMS-SPEC-2026-08_整车控制器产品规格书_第五章_二次会签发布版.pdf',
+      name: 'PCH-BMS-SPEC-2026-08_整车控制器产品规格书_二次会签发布版.pdf',
       sizeLabel: '8.8 MB'
     }
   ]
@@ -392,8 +377,7 @@ const makeState = (scenario: PreviewScenario): WorkbenchViewModel => ({
         itemId: 'DS-01',
         extraRules: '重点检查低压上下电、故障恢复与充电状态交叉切换时，所有守卫条件是否使用同一组故障快照，并核对跨模块回调的清理时机。',
         materials: {
-          'requirement-sheet': [clone(fixtureFiles['DS-01:requirement-sheet'][0])],
-          'product-spec': [clone(fixtureFiles['DS-01:product-spec'][0])]
+          'requirement-sheet': [clone(fixtureFiles['DS-01:requirement-sheet'][0])]
         }
       },
       'DS-03': {

@@ -100,6 +100,22 @@ describe('fixture workbench adapter', () => {
     expect(replacement.name).not.toBe(currentFile?.name)
   })
 
+  it('为 DS-04 多芯片规格书和 DS-06 产品规格书提供预览材料 fixture', async () => {
+    const adapter = createFixtureWorkbenchAdapter()
+
+    const firstChipSpec = await adapter.commands.chooseMaterial('DS-04', 'chip-specs', [])
+    const secondChipSpec = await adapter.commands.chooseMaterial(
+      'DS-04',
+      'chip-specs',
+      firstChipSpec ? [firstChipSpec.id] : []
+    )
+    const productSpec = await adapter.commands.chooseMaterial('DS-06', 'product-spec', [])
+
+    expect(firstChipSpec?.name).toMatch(/芯片规格书.*\.pdf$/)
+    expect(secondChipSpec?.id).not.toBe(firstChipSpec?.id)
+    expect(productSpec?.name).toMatch(/产品规格书.*\.pdf$/)
+  })
+
   it('连续选择五张反馈截图时保持唯一，耗尽后明确拒绝', async () => {
     const adapter = createFixtureWorkbenchAdapter()
     const selectedIds: string[] = []

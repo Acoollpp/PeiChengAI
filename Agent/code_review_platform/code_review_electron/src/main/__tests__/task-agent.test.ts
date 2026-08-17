@@ -427,7 +427,7 @@ describe('executeReviewTask', () => {
         reviewItems: [
           {
             id: 'DS-03',
-            name: '状态机审核',
+            name: 'MOS 充放电状态机审查',
             user_extra_rules: '重点检查休眠唤醒状态',
             materials: []
           }
@@ -505,7 +505,7 @@ describe('executeReviewTask', () => {
       newRevision: 'R42',
       reviewItems: [{
         id: 'DS-02',
-        name: '编码规范审核',
+        name: '编码规范审查',
         user_extra_rules: '只检查本次新增诊断代码',
         materials: []
       }]
@@ -515,7 +515,7 @@ describe('executeReviewTask', () => {
       newRevision: 'R42',
       reviewItems: [{
         id: 'DS-02',
-        name: '编码规范审核',
+        name: '编码规范审查',
         user_extra_rules: '只检查本次新增诊断代码',
         materials: []
       }]
@@ -529,7 +529,6 @@ describe('executeReviewTask', () => {
     const reportPath = join(cwd, 'DS-01_审查报告.md')
     const imagesDir = join(cwd, 'images')
     const requirementSource = '/local/source/产品开发需求表.xlsx'
-    const specificationSource = '/local/source/产品规格书.pdf'
     const legacyRequirementSource = '/legacy/source/不得上传的需求表.xlsx'
     const request = {
       svn_url: 'svn://repo/ds01',
@@ -541,8 +540,7 @@ describe('executeReviewTask', () => {
         id: 'DS-01',
         user_extra_rules: '仅核对协议导入',
         materials: [
-          { field_id: 'requirement-sheet', file_paths: [requirementSource] },
-          { field_id: 'product-spec', file_paths: [specificationSource] }
+          { field_id: 'requirement-sheet', file_paths: [requirementSource] }
         ]
       }]
     }
@@ -554,7 +552,6 @@ describe('executeReviewTask', () => {
       skill_name: 'bms-code-reviewer'
     })
     const requirementCopy = join(cwd, 'materials', 'DS-01', 'requirement-sheet', '产品开发需求表.xlsx')
-    const specificationCopy = join(cwd, 'materials', 'DS-01', 'product-spec', '产品规格书.pdf')
     const dependencies: TaskAgentDependencies = withPdfDependencies({
       api: {
         createTask: vi.fn(async () => serverTask),
@@ -572,7 +569,7 @@ describe('executeReviewTask', () => {
           ...item,
           materials: item.materials.map((material) => ({
             ...material,
-            filePaths: [material.fieldId === 'requirement-sheet' ? requirementCopy : specificationCopy]
+            filePaths: [requirementCopy]
           }))
         }))
       })),
@@ -600,8 +597,7 @@ describe('executeReviewTask', () => {
       reviewItems: [expect.objectContaining({
         id: 'DS-01',
         materials: [
-          expect.objectContaining({ fieldId: 'requirement-sheet', filePaths: [requirementSource] }),
-          expect.objectContaining({ fieldId: 'product-spec', filePaths: [specificationSource] })
+          expect.objectContaining({ fieldId: 'requirement-sheet', filePaths: [requirementSource] })
         ]
       })]
     }))
@@ -610,8 +606,7 @@ describe('executeReviewTask', () => {
         id: 'DS-01',
         user_extra_rules: '仅核对协议导入',
         materials: [
-          expect.objectContaining({ filePaths: [requirementCopy] }),
-          expect.objectContaining({ filePaths: [specificationCopy] })
+          expect.objectContaining({ filePaths: [requirementCopy] })
         ]
       })]
     }))
@@ -626,9 +621,7 @@ describe('executeReviewTask', () => {
     const reportPath = join(cwd, '组合审查报告.md')
     const imagesDir = join(cwd, 'images')
     const requirementSource = '/local/source/组合审查需求表.xlsx'
-    const specificationSource = '/local/source/组合审查规格书.pdf'
     const requirementCopy = join(cwd, 'materials', 'DS-01', 'requirement-sheet', '组合审查需求表.xlsx')
-    const specificationCopy = join(cwd, 'materials', 'DS-01', 'product-spec', '组合审查规格书.pdf')
     const multiRequest = {
       svn_url: 'svn://repo/multi-items',
       old_revision: '120',
@@ -638,8 +631,7 @@ describe('executeReviewTask', () => {
           id: 'DS-01',
           user_extra_rules: '只核对协议导入',
           materials: [
-            { field_id: 'requirement-sheet', file_paths: [requirementSource] },
-            { field_id: 'product-spec', file_paths: [specificationSource] }
+            { field_id: 'requirement-sheet', file_paths: [requirementSource] }
           ]
         },
         { id: 'DS-03', user_extra_rules: '只检查故障恢复状态' }
@@ -669,7 +661,7 @@ describe('executeReviewTask', () => {
           ...item,
           materials: item.materials.map((material) => ({
             ...material,
-            filePaths: [material.fieldId === 'requirement-sheet' ? requirementCopy : specificationCopy]
+            filePaths: [requirementCopy]
           }))
         }))
       })),
@@ -702,13 +694,12 @@ describe('executeReviewTask', () => {
           id: 'DS-01',
           user_extra_rules: '只核对协议导入',
           materials: [
-            expect.objectContaining({ filePaths: [requirementCopy] }),
-            expect.objectContaining({ filePaths: [specificationCopy] })
+            expect.objectContaining({ filePaths: [requirementCopy] })
           ]
         }),
         {
           id: 'DS-03',
-          name: '状态机审核',
+          name: 'MOS 充放电状态机审查',
           user_extra_rules: '只检查故障恢复状态',
           materials: []
         }
@@ -730,8 +721,7 @@ describe('executeReviewTask', () => {
         {
           id: 'DS-01',
           materials: [
-            { field_id: 'requirement-sheet', file_paths: ['/source/requirements.xlsx'] },
-            { field_id: 'product-spec', file_paths: ['/source/specification.pdf'] }
+            { field_id: 'requirement-sheet', file_paths: ['/source/requirements.xlsx'] }
           ]
         },
         { id: 'DS-03' }
@@ -795,17 +785,14 @@ describe('executeReviewTask', () => {
     const reportPath = join(cwd, 'DS-01_重试审查报告.md')
     const imagesDir = join(cwd, 'images')
     const requirementSource = '/local/source/重试需求表.xlsx'
-    const specificationSource = '/local/source/重试规格书.pdf'
     const legacyRequirementSource = '/legacy/source/不得复制的旧需求表.xls'
     const requirementCopy = join(cwd, 'materials', 'DS-01', 'requirement-sheet', '重试需求表.xlsx')
-    const specificationCopy = join(cwd, 'materials', 'DS-01', 'product-spec', '重试规格书.pdf')
     const reviewItems = [
       {
         id: 'DS-01',
         user_extra_rules: '从头重新核对协议导入',
         materials: [
-          { field_id: 'requirement-sheet', file_paths: [requirementSource] },
-          { field_id: 'product-spec', file_paths: [specificationSource] }
+          { field_id: 'requirement-sheet', file_paths: [requirementSource] }
         ]
       },
       { id: 'DS-03', user_extra_rules: '从头重新核对故障恢复' }
@@ -837,7 +824,7 @@ describe('executeReviewTask', () => {
           ...item,
           materials: item.materials.map((material) => ({
             ...material,
-            filePaths: [material.fieldId === 'requirement-sheet' ? requirementCopy : specificationCopy]
+            filePaths: [requirementCopy]
           }))
         }))
       })),
@@ -889,9 +876,7 @@ describe('executeReviewTask', () => {
     expect(workspaceCalls).not.toContain(legacyRequirementSource)
     expect(codexCalls).not.toContain(legacyRequirementSource)
     expect(codexCalls).not.toContain(requirementSource)
-    expect(codexCalls).not.toContain(specificationSource)
     expect(codexCalls).toContain(requirementCopy)
-    expect(codexCalls).toContain(specificationCopy)
     expect(dependencies.uploadRequirementFile).not.toHaveBeenCalled()
   })
 
@@ -904,7 +889,7 @@ describe('executeReviewTask', () => {
       checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
       preflightSvn: vi.fn(),
       prepareWorkspace: vi.fn(async () => {
-        throw new Error('审查材料无效：DS-01 产品规格书不存在，请重新选择。')
+        throw new Error('审查材料无效：DS-01 产品开发需求表不存在，请重新选择。')
       }),
       runCodex: vi.fn(),
       uploadReport: vi.fn()
@@ -914,20 +899,19 @@ describe('executeReviewTask', () => {
       review_items: [{
         id: 'DS-01',
         materials: [
-          { field_id: 'requirement-sheet', file_paths: ['/source/requirements.xlsx'] },
-          { field_id: 'product-spec', file_paths: ['/source/missing.pdf'] }
+          { field_id: 'requirement-sheet', file_paths: ['/source/missing.xlsx'] }
         ]
       }]
     }
 
     await expect(
       executeReviewTask({ token: 'token-123', request: invalidRequest }, dependencies)
-    ).rejects.toThrow('DS-01 产品规格书不存在')
+    ).rejects.toThrow('DS-01 产品开发需求表不存在')
     expect(dependencies.runCodex).not.toHaveBeenCalled()
     expect(dependencies.uploadRequirementFile).not.toHaveBeenCalled()
     expect(dependencies.api.updateTaskStatus).toHaveBeenLastCalledWith('token-123', 'task-1', {
       status: 'failed',
-      error_message: '审查材料无效：DS-01 产品规格书不存在，请重新选择。'
+      error_message: '审查材料无效：DS-01 产品开发需求表不存在，请重新选择。'
     })
   })
 
@@ -1653,7 +1637,7 @@ describe('defaultRunCodex', () => {
 
   it('逐项审查提示词包含证据工作目录', async () => {
     const prompt = await runWithEvidenceDir([
-      { id: 'DS-03', name: '状态机审核', materials: [] }
+      { id: 'DS-03', name: 'MOS 充放电状态机审查', materials: [] }
     ])
 
     expect(prompt).toContain('证据工作目录：C:\\crv\\e\\6fcddf8b')
