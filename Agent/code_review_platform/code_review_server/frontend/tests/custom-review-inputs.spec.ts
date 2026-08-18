@@ -31,13 +31,20 @@ const customReviewInput = {
   created_at: "2026-08-18T10:00:00+08:00",
 }
 
-async function mockAdmin(page: import("@playwright/test").Page) {
+async function mockCurrentUser(
+  page: import("@playwright/test").Page,
+  user = adminUser,
+) {
   await page.addInitScript(() => {
     localStorage.setItem("access_token", "test-token")
   })
   await page.route("**/api/v1/users/me", async (route) => {
-    await route.fulfill({ contentType: "application/json", json: adminUser })
+    await route.fulfill({ contentType: "application/json", json: user })
   })
+}
+
+async function mockAdmin(page: import("@playwright/test").Page) {
+  await mockCurrentUser(page, adminUser)
 }
 
 test("管理端可筛选、查看并导出自定义审查输入", async ({ page }) => {
@@ -95,6 +102,16 @@ test("管理端可筛选、查看并导出自定义审查输入", async ({ page 
   await page.getByLabel("部门").fill("研发部")
   await page.getByLabel("SVN 地址").fill("project")
   await page.getByLabel("版本号").fill("101")
+  await page.getByLabel("审查模式").click()
+  await page.getByRole("option", { name: "全量代码审查" }).click()
+  await page.getByLabel("Word 材料").click()
+  await page.getByRole("option", { name: "Word：已提供" }).click()
+  await page.getByLabel("Excel 材料").click()
+  await page.getByRole("option", { name: "Excel：未提供" }).click()
+  await page.getByLabel("PDF 材料").click()
+  await page.getByRole("option", { name: "PDF：已提供" }).click()
+  await page.getByLabel("任务状态").click()
+  await page.getByRole("option", { name: "失败" }).click()
   await page.getByRole("button", { name: "搜索" }).click()
   await expect
     .poll(() => listRequestUrl)
@@ -107,6 +124,11 @@ test("管理端可筛选、查看并导出自定义审查输入", async ({ page 
   )
   expect(listRequestUrl).toContain("svn_url=project")
   expect(listRequestUrl).toContain("revision=101")
+  expect(listRequestUrl).toContain("mode=new_revision_full")
+  expect(listRequestUrl).toContain("has_word_material=true")
+  expect(listRequestUrl).toContain("has_excel_material=false")
+  expect(listRequestUrl).toContain("has_pdf_material=true")
+  expect(listRequestUrl).toContain("status=failed")
 
   await page.getByRole("button", { name: "查看自定义审查输入详情" }).click()
   const dialog = page.getByRole("dialog")
@@ -146,4 +168,50 @@ test("自定义审查输入页显示空结果和加载失败状态", async ({ pa
   await page.getByLabel("规则关键词").fill("失败测试")
   await page.getByRole("button", { name: "搜索" }).click()
   await expect(page.getByRole("alert")).toContainText("自定义审查输入加载失败")
+})
+
+test("普通用户没有统计入口且路由会被拦截", async ({ page }) => {
+  await mockCurrentUser(page, { ...adminUser, role: "user" })
+  let inputStatsRequested = false
+  await page.route(
+    "**/api/v1/review-tasks/custom-review-inputs?**",
+    async (route) => {
+      inputStatsRequested = true
+      await route.fulfill({
+        contentType: "application/json",
+        json: { data: [], count: 0 },
+      })
+    },
+  )
+
+  await page.goto("/")
+  await expect(
+    page.getByText("自定义审查输入统计", { exact: true }),
+  ).toHaveCount(0)
+  await page.goto("/admin/custom-review-inputs")
+  await expect(page).toHaveURL(/\/$/)
+  expect(inputStatsRequested).toBe(false)
+})
+
+test("自定义审查输入页在列表响应前显示加载状态", async ({ page }) => {
+  await mockAdmin(page)
+  let releaseResponse: (() => void) | undefined
+  const responseGate = new Promise<void>((resolve) => {
+    releaseResponse = resolve
+  })
+  await page.route(
+    "**/api/v1/review-tasks/custom-review-inputs?**",
+    async (route) => {
+      await responseGate
+      await route.fulfill({
+        contentType: "application/json",
+        json: { data: [customReviewInput], count: 1 },
+      })
+    },
+  )
+
+  await page.goto("/admin/custom-review-inputs")
+  await expect(page.getByText("加载中...")).toBeVisible()
+  releaseResponse?.()
+  await expect(page.getByText("统计用户")).toBeVisible()
 })

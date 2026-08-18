@@ -5987,6 +5987,20 @@ def test_custom_review_inputs_enforce_management_scope_and_ignore_empty_history(
     same_task = _create_custom_review_task(
         client, same_headers, rule="本部门规则", old_revision="501", new_revision="502"
     )
+    cancelled_task = _create_custom_review_task(
+        client,
+        same_headers,
+        rule="已取消任务规则",
+        old_revision="503",
+        new_revision="504",
+    )
+    cancelled_response = client.patch(
+        f"{settings.API_V1_STR}/review-tasks/{cancelled_task['id']}/status",
+        headers=same_headers,
+        json={"status": "cancelled"},
+    )
+    assert cancelled_response.status_code == 200
+    assert cancelled_response.json()["status"] == "cancelled"
     other_task = _create_custom_review_task(
         client,
         other_headers,
@@ -6014,9 +6028,12 @@ def test_custom_review_inputs_enforce_management_scope_and_ignore_empty_history(
         headers=department_admin_headers,
     )
     assert own_scope_response.status_code == 200
-    assert [item["id"] for item in own_scope_response.json()["data"]] == [
-        same_task["id"]
-    ]
+    own_scope_ids = {item["id"] for item in own_scope_response.json()["data"]}
+    assert own_scope_ids == {same_task["id"], cancelled_task["id"]}
+    assert any(
+        item["id"] == cancelled_task["id"] and item["status"] == "cancelled"
+        for item in own_scope_response.json()["data"]
+    )
 
     forbidden_detail = client.get(
         f"{settings.API_V1_STR}/review-tasks/custom-review-inputs/{other_task['id']}",
@@ -6028,8 +6045,35 @@ def test_custom_review_inputs_enforce_management_scope_and_ignore_empty_history(
         headers=department_admin_headers,
     )
     workbook = load_workbook(BytesIO(scoped_export.content))
-    assert workbook["自定义审查输入统计"].max_row == 2
-    assert workbook["自定义审查输入统计"].cell(2, 13).value == "本部门规则"
+    sheet = workbook["自定义审查输入统计"]
+    assert sheet.max_row == 3
+    assert {sheet.cell(row, 13).value for row in (2, 3)} == {
+        "本部门规则",
+        "已取消任务规则",
+    }
+    assert "cancelled" in {sheet.cell(row, 12).value for row in (2, 3)}
+    workbook.close()
+
+    deleted_response = client.delete(
+        f"{settings.API_V1_STR}/review-tasks/{same_task['id']}",
+        headers=same_headers,
+    )
+    assert deleted_response.status_code == 200
+    after_delete_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/custom-review-inputs",
+        headers=department_admin_headers,
+    )
+    assert [item["id"] for item in after_delete_response.json()["data"]] == [
+        cancelled_task["id"]
+    ]
+    after_delete_export = client.get(
+        f"{settings.API_V1_STR}/review-tasks/custom-review-inputs/export",
+        headers=department_admin_headers,
+    )
+    workbook = load_workbook(BytesIO(after_delete_export.content))
+    sheet = workbook["自定义审查输入统计"]
+    assert sheet.max_row == 2
+    assert sheet.cell(2, 13).value == "已取消任务规则"
     workbook.close()
 
     for path in (

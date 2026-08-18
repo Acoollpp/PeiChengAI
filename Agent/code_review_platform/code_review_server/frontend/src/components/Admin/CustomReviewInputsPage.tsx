@@ -3,7 +3,13 @@ import { Eye, FileSpreadsheet, Loader2, Search, X } from "lucide-react"
 import { type FormEvent, useState } from "react"
 import { toast } from "sonner"
 
-import { OpenAPI, type ReviewTaskStatus } from "@/client"
+import {
+  type CustomReviewInputPublic,
+  type CustomReviewMode,
+  OpenAPI,
+  type ReviewTaskStatus,
+  ReviewTasksService,
+} from "@/client"
 import {
   formatReviewTaskDateTime,
   ReviewTaskStatusBadge,
@@ -37,32 +43,7 @@ import {
 import useAuth from "@/hooks/useAuth"
 import { hasPlatformAdminPrivileges } from "@/lib/authz"
 
-type CustomReviewMode = "dual_revision" | "new_revision_full"
 type MaterialFilter = "all" | "provided" | "not_provided"
-
-type CustomReviewInput = {
-  id: string
-  user_id: string
-  user_name: string | null
-  svn_username: string | null
-  department_id: string | null
-  department_name: string | null
-  svn_url: string
-  old_revision: string
-  new_revision: string
-  custom_review_rule: string
-  custom_review_mode: CustomReviewMode | null
-  has_custom_review_word_material: boolean | null
-  has_custom_review_excel_material: boolean | null
-  has_custom_review_pdf_material: boolean | null
-  status: ReviewTaskStatus
-  created_at: string | null
-}
-
-type CustomReviewInputsResponse = {
-  data: CustomReviewInput[]
-  count: number
-}
 
 type CustomReviewInputFilters = {
   keyword: string
@@ -111,11 +92,11 @@ const materialOptions = [
   { value: "not_provided", label: "未提供" },
 ] as const
 
-function materialLabel(value: boolean | null) {
+function materialLabel(value: boolean | null | undefined) {
   return value === true ? "已提供" : "未提供"
 }
 
-function modeLabel(value: CustomReviewMode | null) {
+function modeLabel(value: CustomReviewMode | null | undefined) {
   if (value === "dual_revision") return "变更代码审查"
   if (value === "new_revision_full") return "全量代码审查"
   return "-"
@@ -149,29 +130,28 @@ function buildCustomReviewInputSearchParams(filters: CustomReviewInputFilters) {
   return params
 }
 
-function authHeaders() {
-  const token = localStorage.getItem("access_token")
-  return token ? { Authorization: `Bearer ${token}` } : undefined
-}
-
 async function readCustomReviewInputs(filters: CustomReviewInputFilters) {
-  const params = buildCustomReviewInputSearchParams(filters)
-  params.set("limit", "200")
-  const response = await fetch(
-    `${OpenAPI.BASE}/api/v1/review-tasks/custom-review-inputs?${params.toString()}`,
-    { headers: authHeaders() },
-  )
-  if (!response.ok) throw new Error("Failed to load custom review inputs")
-  return response.json() as Promise<CustomReviewInputsResponse>
+  const materialFilterValue = (value: MaterialFilter) =>
+    value === "all" ? undefined : value === "provided"
+  return ReviewTasksService.readCustomReviewInputs({
+    limit: 200,
+    keyword: filters.keyword.trim() || undefined,
+    createdFrom: filters.createdFrom || undefined,
+    createdTo: filters.createdTo || undefined,
+    userName: filters.userName.trim() || undefined,
+    departmentName: filters.departmentName.trim() || undefined,
+    svnUrl: filters.svnUrl.trim() || undefined,
+    revision: filters.revision.trim() || undefined,
+    mode: filters.mode === "all" ? undefined : filters.mode,
+    hasWordMaterial: materialFilterValue(filters.wordMaterial),
+    hasExcelMaterial: materialFilterValue(filters.excelMaterial),
+    hasPdfMaterial: materialFilterValue(filters.pdfMaterial),
+    status: filters.status === "all" ? undefined : filters.status,
+  })
 }
 
 async function readCustomReviewInput(taskId: string) {
-  const response = await fetch(
-    `${OpenAPI.BASE}/api/v1/review-tasks/custom-review-inputs/${taskId}`,
-    { headers: authHeaders() },
-  )
-  if (!response.ok) throw new Error("Failed to load custom review input")
-  return response.json() as Promise<CustomReviewInput>
+  return ReviewTasksService.readCustomReviewInput({ taskId })
 }
 
 function exportFileName(contentDisposition: string | null) {
@@ -190,9 +170,12 @@ function exportFileName(contentDisposition: string | null) {
 
 async function exportCustomReviewInputs(filters: CustomReviewInputFilters) {
   const params = buildCustomReviewInputSearchParams(filters)
+  const token = localStorage.getItem("access_token")
   const response = await fetch(
     `${OpenAPI.BASE}/api/v1/review-tasks/custom-review-inputs/export?${params.toString()}`,
-    { headers: authHeaders() },
+    {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    },
   )
   if (!response.ok) throw new Error("Failed to export custom review inputs")
   const objectUrl = URL.createObjectURL(await response.blob())
@@ -210,7 +193,7 @@ function MaterialBadge({
   value,
 }: {
   label: string
-  value: boolean | null
+  value: boolean | null | undefined
 }) {
   return (
     <Badge variant={value ? "default" : "secondary"}>
@@ -233,7 +216,7 @@ function CustomReviewInputDetailDialog({
     queryFn: () => readCustomReviewInput(taskId as string),
     enabled: open && taskId !== null,
   })
-  const input = detailQuery.data
+  const input: CustomReviewInputPublic | undefined = detailQuery.data
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
