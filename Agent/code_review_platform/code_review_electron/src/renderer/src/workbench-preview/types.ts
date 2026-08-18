@@ -1,4 +1,4 @@
-import type { ReviewItemId } from '../../../shared/review-items'
+import type { CustomReviewMode, ReviewItemId } from '../../../shared/review-items'
 
 export type { ReviewItemId } from '../../../shared/review-items'
 
@@ -11,6 +11,8 @@ export interface MaterialFieldDefinition {
   required: boolean
   extensions: string[]
   multiplicity: MaterialMultiplicity
+  maxFiles?: number
+  maxFileBytes?: number
 }
 
 export interface ReviewItemDefinition {
@@ -22,17 +24,24 @@ export interface ReviewItemDefinition {
   process: string[]
   specification: string
   materialFields: MaterialFieldDefinition[]
+  customReview?: {
+    modes: CustomReviewMode[]
+    maxRuleLength: number
+    maxTotalMaterialBytes: number
+  }
 }
 
 export interface MaterialFileView {
   id: string
   name: string
   sizeLabel: string
+  sizeBytes?: number
 }
 
 export interface ReviewItemInput {
   itemId: ReviewItemId
   extraRules: string
+  customMode?: CustomReviewMode
   materials: Record<string, MaterialFileView[]>
 }
 

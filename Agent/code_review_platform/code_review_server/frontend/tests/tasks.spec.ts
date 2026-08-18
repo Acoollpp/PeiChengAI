@@ -497,6 +497,66 @@ test.describe("Issue feedback task details", () => {
     })
   }
 
+  test("普通用户在自己的任务详情查看 DS-99 规则和模式，不显示材料信息", async ({
+    page,
+  }) => {
+    const taskId = "10000000-0000-0000-0000-000000000099"
+    const normalUser = {
+      ...currentUser,
+      id: "33333333-3333-3333-3333-333333333333",
+      full_name: "普通审查用户",
+      role: "user",
+      is_superuser: false,
+    }
+    const task = issueFeedbackTask(taskId, "普通审查用户", {
+      user_id: normalUser.id,
+      review_item_ids: ["DS-99"],
+      custom_review_rule: "保护条件必须具有明确恢复路径。",
+      custom_review_mode: "new_revision_full",
+      has_custom_review_word_material: true,
+      has_custom_review_excel_material: false,
+      has_custom_review_pdf_material: true,
+    })
+
+    await mockCurrentUser(page, normalUser)
+    await page.route("**/api/v1/review-tasks?**", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: { data: [task], count: 1 },
+      })
+    })
+    await page.route(`**/api/v1/review-tasks/${taskId}`, async (route) => {
+      await route.fulfill({ contentType: "application/json", json: task })
+    })
+    await page.route(
+      `**/api/v1/review-tasks/${taskId}/issues`,
+      async (route) => {
+        await route.fulfill({
+          contentType: "application/json",
+          json: { data: [], count: 0, evaluated_count: 0 },
+        })
+      },
+    )
+
+    await page.goto("/tasks/review")
+    await page
+      .getByRole("row")
+      .filter({ hasText: "普通审查用户" })
+      .getByRole("button", { name: "查看任务详情" })
+      .click()
+
+    const detail = page.getByTestId("custom-review-input-detail")
+    await expect(detail).toBeVisible()
+    await expect(detail.getByText("全量代码审查模式")).toBeVisible()
+    await expect(
+      detail.getByText("保护条件必须具有明确恢复路径。"),
+    ).toBeVisible()
+    await expect(detail).not.toContainText("Word 材料")
+    await expect(detail).not.toContainText("Excel 材料")
+    await expect(detail).not.toContainText("PDF 材料")
+    await expect(detail).not.toContainText("/local/")
+  })
+
   test("Task management exports issue feedback Excel with authentication", async ({
     page,
   }) => {

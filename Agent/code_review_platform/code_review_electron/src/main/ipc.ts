@@ -979,6 +979,9 @@ export const registerIpcHandlers = (
       if (!fileStat?.isFile()) {
         throw new Error(`${reviewItem.id} ${field.name}不存在或不是文件，请重新选择。`)
       }
+      if (field.maxFileBytes && fileStat.size > field.maxFileBytes) {
+        throw new Error(`${reviewItem.id} ${field.name}单个文件不能超过 20 MB。`)
+      }
 
       return {
         status: 'selected',

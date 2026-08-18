@@ -398,12 +398,38 @@ export const executeReviewTask = async (
       review_items: _localReviewItems,
       requirement_file_path: _legacyRequirementFilePath,
       requirement_file_name: _legacyRequirementFileName,
+      custom_review_rule: _customReviewRule,
+      custom_review_mode: _customReviewMode,
+      has_custom_review_word_material: _hasCustomReviewWordMaterial,
+      has_custom_review_excel_material: _hasCustomReviewExcelMaterial,
+      has_custom_review_pdf_material: _hasCustomReviewPdfMaterial,
       ...serverRequest
     } = input.request
+    const customReview = reviewItems.find((item) => item.id === 'DS-99')
+    if (
+      customReview?.custom_mode === 'dual_revision' &&
+      /^r?0$/i.test(input.request.old_revision.trim())
+    ) {
+      throw new Error('DS-99 变更代码审查模式不能使用旧 revision 0 或 r0。')
+    }
+    const customMaterialFieldIds = new Set(
+      customReview?.materials
+        .filter((material) => material.filePaths.length > 0)
+        .map((material) => material.fieldId) ?? []
+    )
     createRequest = {
       ...serverRequest,
       skill_name: BMS_CODE_REVIEW_SKILL_NAME,
-      review_item_ids: reviewItems.map((item) => item.id)
+      review_item_ids: reviewItems.map((item) => item.id),
+      ...(customReview
+        ? {
+            custom_review_rule: customReview.user_extra_rules,
+            custom_review_mode: customReview.custom_mode,
+            has_custom_review_word_material: customMaterialFieldIds.has('word-materials'),
+            has_custom_review_excel_material: customMaterialFieldIds.has('excel-materials'),
+            has_custom_review_pdf_material: customMaterialFieldIds.has('pdf-materials')
+          }
+        : {})
     }
   }
   const task = toReviewTask(await dependencies.api.createTask(input.token, createRequest))

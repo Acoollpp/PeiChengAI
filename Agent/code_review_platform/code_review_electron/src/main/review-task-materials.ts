@@ -10,11 +10,18 @@ export interface PrepareReviewMaterialsDependencies {
   copyFile?: (source: string, destination: string) => Promise<void>
   mkdir?: (path: string, options: { recursive: true }) => Promise<string | undefined>
   open?: (path: string, flags: string) => Promise<{ close: () => Promise<void> }>
-  stat?: (path: string) => Promise<{ isFile: () => boolean }>
+  stat?: (path: string) => Promise<{ isFile: () => boolean, size: number }>
+}
+
+interface MaterialValidationResult {
+  errors: string[]
+  size: number
 }
 
 const formatExtensions = (extensions: readonly string[]): string =>
   extensions.join('、')
+
+const formatBytes = (bytes: number): string => `${Math.round(bytes / (1024 * 1024))} MB`
 
 const reserveDestinationName = (sourcePath: string, reservedNames: Set<string>): string => {
   const sourceName = basename(sourcePath)
@@ -35,18 +42,22 @@ const validateMaterial = async (
   itemId: string,
   material: ResolvedReviewItemMaterialInput,
   dependencies: Pick<PrepareReviewMaterialsDependencies, 'open' | 'stat'>
-): Promise<string[]> => {
+): Promise<MaterialValidationResult> => {
   const errors: string[] = []
   const label = `${itemId} ${material.name}`
 
   if (material.required && material.filePaths.length === 0) {
     errors.push(`${label}为必填项`)
-    return errors
+    return { errors, size: 0 }
   }
   if (!material.multiple && material.filePaths.length > 1) {
     errors.push(`${label}只能选择一个文件`)
   }
+  if (material.maxFiles && material.filePaths.length > material.maxFiles) {
+    errors.push(`${label}最多只能选择 ${material.maxFiles} 个文件`)
+  }
 
+  let totalSize = 0
   for (const sourcePath of material.filePaths) {
     const trimmedPath = sourcePath.trim()
     if (!trimmedPath) {
@@ -68,6 +79,10 @@ const validateMaterial = async (
       errors.push(`${label}路径不是文件，请重新选择`)
       continue
     }
+    totalSize += sourceStat.size
+    if (material.maxFileBytes && sourceStat.size > material.maxFileBytes) {
+      errors.push(`${label}单个文件不能超过 ${formatBytes(material.maxFileBytes)}`)
+    }
 
     const handle = await dependencies.open!(trimmedPath, 'r').catch(() => undefined)
     if (!handle) {
@@ -77,7 +92,7 @@ const validateMaterial = async (
     await handle.close()
   }
 
-  return errors
+  return { errors, size: totalSize }
 }
 
 export const prepareReviewTaskMaterials = async (
@@ -91,15 +106,29 @@ export const prepareReviewTaskMaterials = async (
     open: dependencies.open ?? open,
     stat: dependencies.stat ?? stat
   }
-  const validationErrors = (
-    await Promise.all(
-      reviewItems.flatMap((item) =>
-        item.materials.map((material) =>
-          validateMaterial(item.id, material, resolvedDependencies)
-        )
-      )
+  const validations = await Promise.all(
+    reviewItems.flatMap((item) =>
+      item.materials.map(async (material) => ({
+        itemId: item.id,
+        result: await validateMaterial(item.id, material, resolvedDependencies)
+      }))
     )
-  ).flat()
+  )
+  const validationErrors = validations.flatMap(({ result }) => result.errors)
+  const totalBytesByItemId = new Map<string, number>()
+  validations.forEach(({ itemId, result }) => {
+    totalBytesByItemId.set(itemId, (totalBytesByItemId.get(itemId) ?? 0) + result.size)
+  })
+  reviewItems.forEach((item) => {
+    if (
+      item.maxTotalMaterialBytes &&
+      (totalBytesByItemId.get(item.id) ?? 0) > item.maxTotalMaterialBytes
+    ) {
+      validationErrors.push(
+        `${item.id} 专项材料总大小不能超过 ${formatBytes(item.maxTotalMaterialBytes)}`
+      )
+    }
+  })
 
   if (validationErrors.length > 0) {
     throw new Error(`审查材料无效：${[...new Set(validationErrors)].join('；')}。`)

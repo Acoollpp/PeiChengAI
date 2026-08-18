@@ -1760,6 +1760,87 @@ describe('defaultPrepareWorkspace', () => {
     await expect(readFile(workspace.requirementFilePath!, 'utf8')).resolves.toBe('excel-content')
     await rm(sourceDir, { recursive: true, force: true })
   })
+  it('DS-99 只向服务端写入输入快照，并将本地材料留在工作区执行链路', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-ds99-'))
+    const reportPath = join(cwd, 'DS-99_审查报告.md')
+    const localMaterialPath = '/local/private/custom-rule.pdf'
+    const workspaceMaterialPath = join(cwd, 'materials', 'DS-99', 'pdf-materials', 'custom-rule.pdf')
+    const request = {
+      svn_url: 'svn://repo/ds99', old_revision: '120', new_revision: '130',
+      review_items: [{
+        id: 'DS-99', user_extra_rules: '保护条件必须具有明确恢复路径。',
+        custom_mode: 'dual_revision' as const,
+        materials: [{ field_id: 'pdf-materials', file_paths: [localMaterialPath] }]
+      }]
+    }
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => makeTask({
+          svn_url: request.svn_url, old_revision: request.old_revision,
+          new_revision: request.new_revision, review_item_ids: ['DS-99']
+        })),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      prepareWorkspace: vi.fn(async (input: Parameters<TaskAgentDependencies['prepareWorkspace']>[0]) => ({
+        cwd, reportPath, imagesDir: join(cwd, 'images'),
+        reviewItems: input.reviewItems?.map((item) => ({
+          ...item,
+          materials: item.materials.map((material) => ({
+            ...material, filePaths: [workspaceMaterialPath]
+          }))
+        }))
+      })),
+      runCodex: vi.fn(async () => writeFile(reportPath, '# DS-99 report\n')),
+      uploadReport: vi.fn()
+    })
+
+    await expect(executeReviewTask({ token: 'token-123', request }, dependencies)).resolves.toMatchObject({
+      taskId: 'task-1', status: 'success'
+    })
+
+    expect(dependencies.api.createTask).toHaveBeenCalledWith('token-123', {
+      svn_url: request.svn_url,
+      old_revision: request.old_revision,
+      new_revision: request.new_revision,
+      skill_name: 'bms-code-reviewer',
+      review_item_ids: ['DS-99'],
+      custom_review_rule: '保护条件必须具有明确恢复路径。',
+      custom_review_mode: 'dual_revision',
+      has_custom_review_word_material: false,
+      has_custom_review_excel_material: false,
+      has_custom_review_pdf_material: true
+    })
+    expect(JSON.stringify(vi.mocked(dependencies.api.createTask).mock.calls)).not.toContain(localMaterialPath)
+    expect(dependencies.runCodex).toHaveBeenCalledWith(expect.objectContaining({
+      reviewItems: [expect.objectContaining({
+        id: 'DS-99', custom_mode: 'dual_revision',
+        materials: expect.arrayContaining([
+          expect.objectContaining({ filePaths: [workspaceMaterialPath] })
+        ])
+      })]
+    }))
+    await rm(cwd, { recursive: true, force: true })
+  })
+
+  it('DS-99 变更代码审查模式在旧 revision 为零时不创建服务端任务', async () => {
+    const createTask = vi.fn()
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: { createTask, updateTaskStatus: vi.fn() },
+      checkEnvironment: vi.fn(), prepareWorkspace: vi.fn(), runCodex: vi.fn(), uploadReport: vi.fn()
+    })
+
+    await expect(executeReviewTask({
+      token: 'token-123',
+      request: {
+        svn_url: 'svn://repo/ds99', old_revision: ' R0 ', new_revision: '130',
+        review_items: [{
+          id: 'DS-99', user_extra_rules: '检查保护条件', custom_mode: 'dual_revision'
+        }]
+      }
+    }, dependencies)).rejects.toThrow('DS-99 变更代码审查模式不能使用旧 revision 0 或 r0。')
+    expect(createTask).not.toHaveBeenCalled()
+  })
 })
 
 describe('prepareRequirementFile', () => {

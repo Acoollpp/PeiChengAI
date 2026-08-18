@@ -112,6 +112,8 @@ export type ClientUpdatePolicyUpdate = {
     minimum_supported_release_id?: (string | null);
 };
 
+export type CustomReviewMode = 'dual_revision' | 'new_revision_full';
+
 export type DepartmentCreate = {
     name: string;
     description?: (string | null);
@@ -306,6 +308,11 @@ export type ReviewTaskCreate = {
     old_revision: string;
     new_revision: string;
     review_item_ids?: Array<(string)>;
+    custom_review_rule?: (string | null);
+    custom_review_mode?: (CustomReviewMode | null);
+    has_custom_review_word_material?: (boolean | null);
+    has_custom_review_excel_material?: (boolean | null);
+    has_custom_review_pdf_material?: (boolean | null);
     template_key?: (string | null);
     skill_name?: (string | null);
     focus_direction_id?: (string | null);
@@ -357,6 +364,11 @@ export type ReviewTaskPublic = {
     old_revision: string;
     new_revision: string;
     review_item_ids?: Array<(string)>;
+    custom_review_rule?: (string | null);
+    custom_review_mode?: (CustomReviewMode | null);
+    has_custom_review_word_material?: (boolean | null);
+    has_custom_review_excel_material?: (boolean | null);
+    has_custom_review_pdf_material?: (boolean | null);
     template_key?: (string | null);
     skill_name?: (string | null);
     department_id?: (string | null);

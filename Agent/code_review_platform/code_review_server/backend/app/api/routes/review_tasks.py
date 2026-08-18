@@ -29,6 +29,7 @@ from app.api.deps import (
     has_admin_privileges,
 )
 from app.models import (
+    CustomReviewMode,
     Department,
     ReviewIssueSeverity,
     ReviewTask,
@@ -808,6 +809,33 @@ def create_review_task(
     if len(set(normalized_review_item_ids)) != len(normalized_review_item_ids):
         raise HTTPException(status_code=400, detail="审查项 ID 不能重复")
 
+    has_custom_review = "DS-99" in normalized_review_item_ids
+    custom_review_fields = (
+        task_in.custom_review_rule,
+        task_in.custom_review_mode,
+        task_in.has_custom_review_word_material,
+        task_in.has_custom_review_excel_material,
+        task_in.has_custom_review_pdf_material,
+    )
+    normalized_custom_review_rule: str | None = None
+    if has_custom_review:
+        normalized_custom_review_rule = (task_in.custom_review_rule or "").strip()
+        if not normalized_custom_review_rule:
+            raise HTTPException(status_code=400, detail="DS-99 自定义审查必须填写规则正文")
+        if len(normalized_custom_review_rule) > 1200:
+            raise HTTPException(
+                status_code=400, detail="DS-99 自定义审查规则正文不能超过 1200 个字符"
+            )
+        if task_in.custom_review_mode not in {
+            CustomReviewMode.dual_revision,
+            CustomReviewMode.new_revision_full,
+        }:
+            raise HTTPException(status_code=400, detail="DS-99 自定义审查模式无效")
+        if any(value is None for value in custom_review_fields[2:]):
+            raise HTTPException(status_code=400, detail="DS-99 自定义审查材料状态缺失")
+    elif any(value is not None for value in custom_review_fields):
+        raise HTTPException(status_code=400, detail="未选择 DS-99 时不能提交自定义审查输入")
+
     normalized_old_revision = _normalize_revision(task_in.old_revision)
     new_revision = _normalize_revision(task_in.new_revision)
     old_revision_number = int(normalized_old_revision[1:])
@@ -833,6 +861,17 @@ def create_review_task(
             ),
             "new_revision": new_revision,
             "review_item_ids": normalized_review_item_ids,
+            "custom_review_rule": normalized_custom_review_rule,
+            "custom_review_mode": task_in.custom_review_mode if has_custom_review else None,
+            "has_custom_review_word_material": (
+                task_in.has_custom_review_word_material if has_custom_review else None
+            ),
+            "has_custom_review_excel_material": (
+                task_in.has_custom_review_excel_material if has_custom_review else None
+            ),
+            "has_custom_review_pdf_material": (
+                task_in.has_custom_review_pdf_material if has_custom_review else None
+            ),
             "department_id": department.id if department else None,
             "department_name": department.name if department else None,
             "focus_direction_snapshot": task_in.focus_direction_snapshot,

@@ -651,6 +651,12 @@ export const ClientUpdatePolicyUpdateSchema = {
     title: 'ClientUpdatePolicyUpdate'
 } as const;
 
+export const CustomReviewModeSchema = {
+    type: 'string',
+    enum: ['dual_revision', 'new_revision_full'],
+    title: 'CustomReviewMode'
+} as const;
+
 export const DepartmentCreateSchema = {
     properties: {
         name: {
@@ -1680,6 +1686,61 @@ export const ReviewTaskCreateSchema = {
             maxItems: 32,
             title: 'Review Item Ids'
         },
+        custom_review_rule: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1200
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Custom Review Rule'
+        },
+        custom_review_mode: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/CustomReviewMode'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        has_custom_review_word_material: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Has Custom Review Word Material'
+        },
+        has_custom_review_excel_material: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Has Custom Review Excel Material'
+        },
+        has_custom_review_pdf_material: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Has Custom Review Pdf Material'
+        },
         template_key: {
             anyOf: [
                 {
@@ -1985,6 +2046,61 @@ export const ReviewTaskPublicSchema = {
             },
             type: 'array',
             title: 'Review Item Ids'
+        },
+        custom_review_rule: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1200
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Custom Review Rule'
+        },
+        custom_review_mode: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/CustomReviewMode'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        has_custom_review_word_material: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Has Custom Review Word Material'
+        },
+        has_custom_review_excel_material: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Has Custom Review Excel Material'
+        },
+        has_custom_review_pdf_material: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Has Custom Review Pdf Material'
         },
         template_key: {
             anyOf: [

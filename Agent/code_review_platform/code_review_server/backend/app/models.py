@@ -39,6 +39,11 @@ class ReviewTaskStatus(str, Enum):
     cancelled = "cancelled"
 
 
+class CustomReviewMode(str, Enum):
+    dual_revision = "dual_revision"
+    new_revision_full = "new_revision_full"
+
+
 class ReviewIssueSeverity(str, Enum):
     high = "high"
     medium = "medium"
@@ -356,6 +361,11 @@ class ReviewTask(SQLModel, table=True):
     old_revision: str = Field(max_length=255)
     new_revision: str = Field(max_length=255)
     review_item_ids: list[str] = Field(default_factory=list, sa_type=JSONB)
+    custom_review_rule: str | None = Field(default=None, max_length=1200)
+    custom_review_mode: CustomReviewMode | None = Field(default=None)
+    has_custom_review_word_material: bool | None = Field(default=None)
+    has_custom_review_excel_material: bool | None = Field(default=None)
+    has_custom_review_pdf_material: bool | None = Field(default=None)
     template_key: str | None = Field(default=None, max_length=64)
     skill_name: str | None = Field(default=None, max_length=255)
     department_id: uuid.UUID | None = Field(
@@ -531,6 +541,11 @@ class ReviewTaskCreate(SQLModel):
     old_revision: str = Field(min_length=1, max_length=255)
     new_revision: str = Field(min_length=1, max_length=255)
     review_item_ids: list[str] = Field(default_factory=list, max_length=32)
+    custom_review_rule: str | None = Field(default=None, max_length=1200)
+    custom_review_mode: CustomReviewMode | None = None
+    has_custom_review_word_material: bool | None = None
+    has_custom_review_excel_material: bool | None = None
+    has_custom_review_pdf_material: bool | None = None
     template_key: str | None = Field(default=None, max_length=64)
     skill_name: str | None = Field(default=None, max_length=255)
     focus_direction_id: uuid.UUID | None = None
@@ -623,6 +638,11 @@ class ReviewTaskPublic(SQLModel):
     old_revision: str
     new_revision: str
     review_item_ids: list[str] = Field(default_factory=list)
+    custom_review_rule: str | None = Field(default=None, max_length=1200)
+    custom_review_mode: CustomReviewMode | None = None
+    has_custom_review_word_material: bool | None = None
+    has_custom_review_excel_material: bool | None = None
+    has_custom_review_pdf_material: bool | None = None
     template_key: str | None = Field(default=None, max_length=64)
     skill_name: str | None = Field(default=None, max_length=255)
     department_id: uuid.UUID | None = None

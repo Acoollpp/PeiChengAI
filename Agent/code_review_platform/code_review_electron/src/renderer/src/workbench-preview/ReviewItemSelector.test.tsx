@@ -101,18 +101,52 @@ describe('ReviewItemSelector', () => {
     await user.clear(screen.getByPlaceholderText('搜索 ID、名称或分类'))
 
     await user.click(screen.getByRole('checkbox', { name: '选择日常提交审核全部审查项' }))
-    expect(screen.getByRole('dialog').querySelector('.wb-selector-count')).toHaveTextContent('已选 3 项')
+    expect(screen.getByRole('dialog').querySelector('.wb-selector-count')).toHaveTextContent('已选 4 项')
     await user.click(screen.getByRole('checkbox', { name: '仅看已选' }))
     const catalogList = screen.getByLabelText('审查项列表')
     expect(within(catalogList).getByText('需求变更审查')).toBeInTheDocument()
     expect(within(catalogList).getByText('编码规范审查')).toBeInTheDocument()
     expect(within(catalogList).getByText('变更点风险检查')).toBeInTheDocument()
+    expect(within(catalogList).getByText('规格书审查')).toBeInTheDocument()
     expect(within(catalogList).queryByText('MOS 充放电状态机审查')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '清空选择' }))
     expect(within(screen.getByLabelText('审查项列表')).getByText('没有匹配的审查项')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '显示全部' }))
     expect(screen.getByText('MOS 充放电状态机审查')).toBeInTheDocument()
+  })
+
+  it('DS-99 要求规则和模式，并将选择结果限定在自身输入中', async () => {
+    const user = userEvent.setup()
+    const adapter = createFixtureWorkbenchAdapter()
+    const viewModel = adapter.getViewModel()
+    const onConfirm = vi.fn<(selection: ReviewSelection) => void>()
+
+    render(
+      <ReviewItemSelector
+        catalog={viewModel.catalog}
+        initialSelection={{}}
+        commands={adapter.commands}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+      />
+    )
+
+    await user.click(screen.getByRole('checkbox', { name: '选择 DS-99 自定义审查' }))
+    await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('DS-99 自定义审查必须填写规则正文。')
+
+    await user.type(screen.getByLabelText('DS-99 额外规则'), '保护条件必须具有明确恢复路径。')
+    await user.click(screen.getByLabelText('变更代码审查模式'))
+    await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
+
+    expect(onConfirm).toHaveBeenCalledWith({
+      'DS-99': expect.objectContaining({
+        itemId: 'DS-99',
+        extraRules: '保护条件必须具有明确恢复路径。',
+        customMode: 'dual_revision'
+      })
+    })
   })
 
   it('synthetic 多文件字段支持按顺序多选、移除并补选材料', async () => {

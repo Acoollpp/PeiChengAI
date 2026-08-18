@@ -34,8 +34,19 @@ const catalog: ReviewItemDefinition[] = REVIEW_ITEM_CATALOG
       description: field.description,
       required: field.required,
       extensions: [...field.allowedExtensions],
-      multiplicity: field.multiple ? 'multiple' : 'single'
-    }))
+      multiplicity: field.multiple ? 'multiple' : 'single',
+      ...(field.maxFiles ? { maxFiles: field.maxFiles } : {}),
+      ...(field.maxFileBytes ? { maxFileBytes: field.maxFileBytes } : {})
+    })),
+    ...(item.customReview
+      ? {
+          customReview: {
+            modes: [...item.customReview.modes],
+            maxRuleLength: item.customReview.maxRuleLength,
+            maxTotalMaterialBytes: item.customReview.maxTotalMaterialBytes
+          }
+        }
+      : {})
   }))
   .map(applyWorkbenchReviewItemPresentation)
 

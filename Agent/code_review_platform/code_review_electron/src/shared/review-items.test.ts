@@ -8,8 +8,8 @@ import {
 } from './review-items'
 
 describe('审查项目录', () => {
-  it('以稳定顺序发布 DS-01 到 DS-06 的正式元数据和材料定义', () => {
-    expect(REVIEW_ITEM_CATALOG_VERSION).toBe(4)
+  it('以稳定顺序发布 DS-01 到 DS-06 及 DS-99 的正式元数据和材料定义', () => {
+    expect(REVIEW_ITEM_CATALOG_VERSION).toBe(5)
     expect(BMS_CODE_REVIEW_SKILL_NAME).toBe('bms-code-reviewer')
     expect(REVIEW_ITEM_CATALOG.map((item) => ({
       id: item.id,
@@ -81,7 +81,7 @@ describe('审查项目录', () => {
       }),
       expect.objectContaining({
         id: 'DS-06',
-        category: '规格一致性审核',
+        category: '日常提交审核',
         name: '规格书审查',
         sortOrder: 60,
         enabled: true,
@@ -92,12 +92,22 @@ describe('审查项目录', () => {
           multiple: false,
           allowedExtensions: ['.pdf']
         }]
+      }),
+      expect.objectContaining({
+        id: 'DS-99',
+        category: '自定义审查',
+        name: '自定义审查',
+        sortOrder: 99,
+        materialFields: [
+          expect.objectContaining({ id: 'word-materials', allowedExtensions: ['.docx'], multiple: true }),
+          expect.objectContaining({ id: 'excel-materials', allowedExtensions: ['.xls', '.xlsx'], multiple: true }),
+          expect.objectContaining({ id: 'pdf-materials', allowedExtensions: ['.pdf'], multiple: true })
+        ]
       })
     ])
     expect(REVIEW_ITEM_CATALOG.map((item) => item.id)).toEqual([
-      'DS-01', 'DS-02', 'DS-03', 'DS-04', 'DS-05', 'DS-06'
+      'DS-01', 'DS-02', 'DS-03', 'DS-04', 'DS-05', 'DS-06', 'DS-99'
     ])
-    expect(REVIEW_ITEM_CATALOG.map((item) => item.id as string)).not.toContain('DS-99')
   })
 
   it('解析逐项额外规则并拒绝空选择、重复项和未知项', () => {
@@ -108,9 +118,34 @@ describe('审查项目录', () => {
     expect(() => resolveReviewItemInputs([{ id: 'DS-03' }, { id: 'DS-03' }])).toThrow(
       '审查项 DS-03 不能重复选择。'
     )
+  })
+
+  it('DS-99 要求规则和模式，并隔离三类自定义材料', () => {
     expect(() => resolveReviewItemInputs([{ id: 'DS-99' }])).toThrow(
-      '审查项 DS-99 不存在或未启用。'
+      'DS-99 自定义审查必须填写规则正文。'
     )
+    expect(() => resolveReviewItemInputs([{
+      id: 'DS-99', user_extra_rules: '检查保护条件'
+    }])).toThrow('DS-99 自定义审查必须选择证据模式。')
+    expect(() => resolveReviewItemInputs([{
+      id: 'DS-99', user_extra_rules: 'x'.repeat(1201), custom_mode: 'dual_revision'
+    }])).toThrow('DS-99 自定义审查规则正文不能超过 1200 个字符。')
+
+    expect(resolveReviewItemInputs([{
+      id: 'DS-99',
+      user_extra_rules: '  检查所有保护条件均有明确复位路径。  ',
+      custom_mode: 'new_revision_full',
+      materials: [{ field_id: 'word-materials', file_paths: ['/input/rule.docx'] }]
+    }])).toEqual([expect.objectContaining({
+      id: 'DS-99',
+      user_extra_rules: '检查所有保护条件均有明确复位路径。',
+      custom_mode: 'new_revision_full',
+      maxTotalMaterialBytes: 100 * 1024 * 1024,
+      materials: expect.arrayContaining([expect.objectContaining({
+        fieldId: 'word-materials', maxFiles: 10, maxFileBytes: 20 * 1024 * 1024,
+        filePaths: ['/input/rule.docx']
+      })])
+    })])
   })
 
   it('把 DS-01 原始本地路径绑定到需求表材料字段', () => {

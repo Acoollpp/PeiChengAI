@@ -113,22 +113,32 @@ export function ReviewItemSelector({
     }
   }
 
-  const chooseMaterial = async (fieldId: string, multiple: boolean): Promise<void> => {
+  const chooseMaterial = async (
+    field: ReviewItemDefinition['materialFields'][number]
+  ): Promise<void> => {
     setMaterialError('')
     try {
-      const currentFiles = activeInput.materials[fieldId] ?? []
+      const currentFiles = activeInput.materials[field.id] ?? []
+      if (field.maxFiles && currentFiles.length >= field.maxFiles) {
+        setMaterialError(`${field.label}最多只能选择 ${field.maxFiles} 个文件。`)
+        return
+      }
       const file = await commands.chooseMaterial(
         activeItem.id,
-        fieldId,
+        field.id,
         currentFiles.map((value) => value.id)
       )
       if (!file) return
+      if (field.maxFileBytes && file.sizeBytes && file.sizeBytes > field.maxFileBytes) {
+        setMaterialError(`${field.label}单个文件不能超过 20 MB。`)
+        return
+      }
       updateInput(activeItem.id, (input) => ({
         ...input,
         materials: {
           ...input.materials,
-          [fieldId]: multiple
-            ? [...(input.materials[fieldId] ?? []).filter((value) => value.id !== file.id), file]
+          [field.id]: field.multiplicity === 'multiple'
+            ? [...(input.materials[field.id] ?? []).filter((value) => value.id !== file.id), file]
             : [file]
         }
       }))
@@ -138,6 +148,37 @@ export function ReviewItemSelector({
   }
 
   const confirm = (): void => {
+    const customItem = catalog.find((item) => item.id === 'DS-99')
+    const customInput = inputs['DS-99']
+    if (customItem && selectedIds.has('DS-99')) {
+      const rule = customInput?.extraRules.trim() ?? ''
+      if (!rule) {
+        setActiveId('DS-99')
+        setMaterialError('DS-99 自定义审查必须填写规则正文。')
+        return
+      }
+      if (rule.length > (customItem.customReview?.maxRuleLength ?? 1200)) {
+        setActiveId('DS-99')
+        setMaterialError('DS-99 自定义审查规则正文不能超过 1200 个字符。')
+        return
+      }
+      if (!customInput?.customMode) {
+        setActiveId('DS-99')
+        setMaterialError('DS-99 自定义审查必须选择证据模式。')
+        return
+      }
+      const totalMaterialBytes = Object.values(customInput.materials)
+        .flat()
+        .reduce((total, file) => total + (file.sizeBytes ?? 0), 0)
+      if (
+        customItem.customReview &&
+        totalMaterialBytes > customItem.customReview.maxTotalMaterialBytes
+      ) {
+        setActiveId('DS-99')
+        setMaterialError('DS-99 三类材料总大小不能超过 100 MB。')
+        return
+      }
+    }
     const confirmed: ReviewSelection = {}
     selectedIds.forEach((itemId) => {
       confirmed[itemId] = inputs[itemId] ?? makeEmptyInput(itemId)
@@ -333,23 +374,63 @@ export function ReviewItemSelector({
               <section className="wb-detail-input-section">
                 <div className="wb-section-heading">
                   <div>
-                    <h4>本次额外规则</h4>
-                    <p>只作用于 {activeItem.id}，不会传递给其他审查项。</p>
+                    <h4>{activeItem.customReview ? '自定义审查规则' : '本次额外规则'}</h4>
+                    <p>{activeItem.customReview
+                      ? '规则只作用于 DS-99，是该审查项唯一的判定依据。'
+                      : `只作用于 ${activeItem.id}，不会传递给其他审查项。`}</p>
                   </div>
-                  <span>可选</span>
+                  <span>{activeItem.customReview ? '必填' : '可选'}</span>
                 </div>
                 <textarea
                   aria-label={`${activeItem.id} 额外规则`}
                   value={activeInput.extraRules}
                   disabled={!selectedIds.has(activeItem.id)}
-                  maxLength={1200}
-                  placeholder={selectedIds.has(activeItem.id) ? '例如：重点检查休眠唤醒与故障恢复交叉路径。' : '先加入本次审查后填写'}
+                  maxLength={activeItem.customReview?.maxRuleLength ?? 1200}
+                  placeholder={selectedIds.has(activeItem.id)
+                    ? (activeItem.customReview ? '例如：关键保护条件必须在所有状态分支中保持一致。' : '例如：重点检查休眠唤醒与故障恢复交叉路径。')
+                    : '先加入本次审查后填写'}
                   onChange={(event) =>
                     updateInput(activeItem.id, (input) => ({ ...input, extraRules: event.target.value }))
                   }
                 />
-                <span className="wb-character-count">{activeInput.extraRules.length}/1200</span>
+                <span className="wb-character-count">{activeInput.extraRules.length}/{activeItem.customReview?.maxRuleLength ?? 1200}</span>
               </section>
+
+              {activeItem.customReview && (
+                <section className="wb-detail-input-section">
+                  <div className="wb-section-heading">
+                    <div>
+                      <h4>证据模式</h4>
+                      <p>模式仅用于 DS-99，并会由客户端写入 Skill 可识别的声明行。</p>
+                    </div>
+                    <span>必选</span>
+                  </div>
+                  <label>
+                    <input
+                      type="radio"
+                      name="ds99-custom-mode"
+                      checked={activeInput.customMode === 'dual_revision'}
+                      disabled={!selectedIds.has(activeItem.id)}
+                      onChange={() => updateInput(activeItem.id, (input) => ({
+                        ...input, customMode: 'dual_revision'
+                      }))}
+                    />
+                    变更代码审查模式
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="ds99-custom-mode"
+                      checked={activeInput.customMode === 'new_revision_full'}
+                      disabled={!selectedIds.has(activeItem.id)}
+                      onChange={() => updateInput(activeItem.id, (input) => ({
+                        ...input, customMode: 'new_revision_full'
+                      }))}
+                    />
+                    全量代码审查模式
+                  </label>
+                </section>
+              )}
 
               <section className="wb-detail-input-section">
                 <div className="wb-section-heading">
@@ -376,7 +457,7 @@ export function ReviewItemSelector({
                               {field.required && <span className="wb-required">必填</span>}
                               <p>{field.description}</p>
                             </div>
-                            <span>{field.extensions.join(' / ')} · {field.multiplicity === 'single' ? '单文件' : '多文件'}</span>
+                            <span>{field.extensions.join(' / ')} · {field.multiplicity === 'single' ? '单文件' : '多文件'}{field.maxFiles ? ` · 最多 ${field.maxFiles} 份` : ''}{field.maxFileBytes ? ' · 单份最大 20 MB' : ''}</span>
                           </div>
                           {files.map((file) => (
                             <div className="wb-file-row" key={file.id}>
@@ -404,7 +485,7 @@ export function ReviewItemSelector({
                             className="wb-file-button"
                             type="button"
                             disabled={!selectedIds.has(activeItem.id)}
-                            onClick={() => void chooseMaterial(field.id, field.multiplicity === 'multiple')}
+                            onClick={() => void chooseMaterial(field)}
                           >
                             <FolderOpen aria-hidden="true" />
                             {files.length > 0 && field.multiplicity === 'single' ? '更换文件' : '选择文件'}
