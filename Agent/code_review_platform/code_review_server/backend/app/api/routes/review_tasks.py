@@ -27,8 +27,11 @@ from app.api.deps import (
     SessionDep,
     ensure_department_admin_has_department,
     has_admin_privileges,
+    has_management_privileges,
 )
 from app.models import (
+    CustomReviewInputPublic,
+    CustomReviewInputsPublic,
     CustomReviewMode,
     Department,
     ReviewIssueSeverity,
@@ -80,6 +83,36 @@ ISSUE_FEEDBACK_EXPORT_HEADERS = (
     "审查问题反馈",
 )
 ISSUE_FEEDBACK_EXPORT_COLUMN_WIDTHS = (18, 12, 42, 12, 12, 42, 56, 14, 56)
+CUSTOM_REVIEW_INPUT_EXPORT_HEADERS = (
+    "提交时间",
+    "用户",
+    "SVN账号",
+    "部门",
+    "SVN地址",
+    "旧版本号",
+    "新版本号",
+    "审查模式",
+    "已提供Word材料",
+    "已提供Excel材料",
+    "已提供PDF材料",
+    "任务状态",
+    "自定义审查规则",
+)
+CUSTOM_REVIEW_INPUT_EXPORT_COLUMN_WIDTHS = (
+    22,
+    18,
+    18,
+    18,
+    44,
+    12,
+    12,
+    18,
+    16,
+    16,
+    16,
+    18,
+    80,
+)
 EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 _REVISION_RE = re.compile(r"^r?(\d+)$")
@@ -247,6 +280,157 @@ def _task_read_scope_filters(
         return [ReviewTask.department_id == current_user.department_id]
     return [ReviewTask.user_id == current_user.id]
 
+
+def _custom_review_input_scope_filters(
+    *, session: SessionDep, current_user: CurrentUser
+) -> list[Any]:
+    if not has_management_privileges(current_user):
+        raise HTTPException(status_code=403, detail="没有足够权限")
+    if current_user.role == UserRole.department_admin:
+        _ensure_department_admin_active_department(
+            session=session, current_user=current_user
+        )
+        return [ReviewTask.department_id == current_user.department_id]
+    return []
+
+
+def _parse_created_date(value: str | None, *, is_end: bool) -> datetime | None:
+    if not value or not value.strip():
+        return None
+    try:
+        local_date = date.fromisoformat(value.strip())
+    except ValueError:
+        raise HTTPException(
+            status_code=422, detail="日期格式必须为 YYYY-MM-DD"
+        ) from None
+    local_datetime = datetime.combine(
+        local_date + timedelta(days=1) if is_end else local_date,
+        time.min,
+        tzinfo=TASK_STATS_TIMEZONE,
+    )
+    return local_datetime.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _custom_review_input_filters(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    keyword: str | None = None,
+    created_from: str | None = None,
+    created_to: str | None = None,
+    user_name: str | None = None,
+    department_name: str | None = None,
+    svn_url: str | None = None,
+    revision: str | None = None,
+    mode: CustomReviewMode | None = None,
+    has_word_material: bool | None = None,
+    has_excel_material: bool | None = None,
+    has_pdf_material: bool | None = None,
+    status: ReviewTaskStatus | None = None,
+) -> list[Any]:
+    filters = [
+        *_custom_review_input_scope_filters(session=session, current_user=current_user),
+        col(ReviewTask.custom_review_rule).is_not(None),
+        func.length(func.trim(col(ReviewTask.custom_review_rule))) > 0,
+    ]
+    normalized_keyword = keyword.strip() if keyword else ""
+    if normalized_keyword:
+        filters.append(
+            col(ReviewTask.custom_review_rule).ilike(f"%{normalized_keyword}%")
+        )
+    normalized_user_name = user_name.strip() if user_name else ""
+    if normalized_user_name:
+        filters.append(
+            or_(
+                col(User.full_name).ilike(f"%{normalized_user_name}%"),
+                col(User.svn_username).ilike(f"%{normalized_user_name}%"),
+            )
+        )
+    normalized_department_name = department_name.strip() if department_name else ""
+    if normalized_department_name:
+        filters.append(
+            col(ReviewTask.department_name).ilike(f"%{normalized_department_name}%")
+        )
+    normalized_svn_url = svn_url.strip() if svn_url else ""
+    if normalized_svn_url:
+        filters.append(col(ReviewTask.svn_url).ilike(f"%{normalized_svn_url}%"))
+    normalized_revision = revision.strip() if revision else ""
+    if normalized_revision:
+        filters.append(
+            or_(
+                col(ReviewTask.old_revision).ilike(f"%{normalized_revision}%"),
+                col(ReviewTask.new_revision).ilike(f"%{normalized_revision}%"),
+            )
+        )
+    created_from_datetime = _parse_created_date(created_from, is_end=False)
+    if created_from_datetime is not None:
+        filters.append(col(ReviewTask.created_at) >= created_from_datetime)
+    created_to_datetime = _parse_created_date(created_to, is_end=True)
+    if created_to_datetime is not None:
+        filters.append(col(ReviewTask.created_at) < created_to_datetime)
+    if mode is not None:
+        filters.append(col(ReviewTask.custom_review_mode) == mode)
+    if has_word_material is not None:
+        filters.append(
+            col(ReviewTask.has_custom_review_word_material) == has_word_material
+        )
+    if has_excel_material is not None:
+        filters.append(
+            col(ReviewTask.has_custom_review_excel_material) == has_excel_material
+        )
+    if has_pdf_material is not None:
+        filters.append(
+            col(ReviewTask.has_custom_review_pdf_material) == has_pdf_material
+        )
+    if status is not None:
+        filters.append(col(ReviewTask.status) == status)
+    return filters
+
+
+def _custom_review_input_public(
+    task: ReviewTask, user: User | None
+) -> CustomReviewInputPublic:
+    return CustomReviewInputPublic.model_validate(
+        task,
+        update={
+            "user_name": user.full_name if user else None,
+            "svn_username": user.svn_username if user else None,
+        },
+    )
+
+
+def _custom_review_material_label(value: bool | None) -> str:
+    return "已提供" if value is True else "未提供"
+
+
+def _custom_review_export_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    aware_value = (
+        value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    )
+    return aware_value.astimezone(TASK_STATS_TIMEZONE).replace(tzinfo=None)
+
+
+def _style_custom_review_input_sheet(sheet: Any) -> None:
+    sheet.freeze_panes = "A2"
+    sheet.sheet_view.showGridLines = False
+    sheet.auto_filter.ref = f"A1:M{max(sheet.max_row, 1)}"
+    sheet.row_dimensions[1].height = 28
+    header_fill = PatternFill(fill_type="solid", fgColor="1F4E78")
+    for cell in sheet[1]:
+        cell.fill = header_fill
+        cell.font = Font(name="微软雅黑", size=10, bold=True, color="FFFFFF")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    for index, width in enumerate(CUSTOM_REVIEW_INPUT_EXPORT_COLUMN_WIDTHS, start=1):
+        sheet.column_dimensions[chr(64 + index)].width = width
+    row_border = Border(bottom=Side(style="thin", color="D9E2F3"))
+    for row in sheet.iter_rows(min_row=2):
+        sheet.row_dimensions[row[0].row].height = 42
+        for cell in row:
+            cell.font = Font(name="微软雅黑", size=10)
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            cell.border = row_border
 
 def _issue_feedback_export_date(value: datetime | None) -> date | None:
     if value is None:
@@ -954,6 +1138,172 @@ def read_review_tasks(
         ],
         count=count,
     )
+
+
+@router.get("/custom-review-inputs", response_model=CustomReviewInputsPublic)
+def read_custom_review_inputs(
+    session: SessionDep,
+    current_user: CurrentUser,
+    skip: int = 0,
+    limit: int = 100,
+    keyword: str | None = None,
+    created_from: str | None = None,
+    created_to: str | None = None,
+    user_name: str | None = None,
+    department_name: str | None = None,
+    svn_url: str | None = None,
+    revision: str | None = None,
+    mode: CustomReviewMode | None = None,
+    has_word_material: bool | None = None,
+    has_excel_material: bool | None = None,
+    has_pdf_material: bool | None = None,
+    status: ReviewTaskStatus | None = None,
+) -> CustomReviewInputsPublic:
+    filters = _custom_review_input_filters(
+        session=session,
+        current_user=current_user,
+        keyword=keyword,
+        created_from=created_from,
+        created_to=created_to,
+        user_name=user_name,
+        department_name=department_name,
+        svn_url=svn_url,
+        revision=revision,
+        mode=mode,
+        has_word_material=has_word_material,
+        has_excel_material=has_excel_material,
+        has_pdf_material=has_pdf_material,
+        status=status,
+    )
+    count = session.exec(
+        select(func.count())
+        .select_from(ReviewTask)
+        .outerjoin(User, col(ReviewTask.user_id) == col(User.id))
+        .where(*filters)
+    ).one()
+    rows = session.exec(
+        select(ReviewTask, User)
+        .outerjoin(User, col(ReviewTask.user_id) == col(User.id))
+        .where(*filters)
+        .order_by(col(ReviewTask.created_at).desc(), col(ReviewTask.id).desc())
+        .offset(skip)
+        .limit(limit)
+    ).all()
+    return CustomReviewInputsPublic(
+        data=[_custom_review_input_public(task, user) for task, user in rows],
+        count=count,
+    )
+
+
+@router.get(
+    "/custom-review-inputs/export",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {EXCEL_MEDIA_TYPE: {}},
+            "description": "自定义审查输入统计 Excel 文件",
+        }
+    },
+)
+def export_custom_review_inputs(
+    session: SessionDep,
+    current_user: CurrentUser,
+    keyword: str | None = None,
+    created_from: str | None = None,
+    created_to: str | None = None,
+    user_name: str | None = None,
+    department_name: str | None = None,
+    svn_url: str | None = None,
+    revision: str | None = None,
+    mode: CustomReviewMode | None = None,
+    has_word_material: bool | None = None,
+    has_excel_material: bool | None = None,
+    has_pdf_material: bool | None = None,
+    status: ReviewTaskStatus | None = None,
+) -> StreamingResponse:
+    filters = _custom_review_input_filters(
+        session=session,
+        current_user=current_user,
+        keyword=keyword,
+        created_from=created_from,
+        created_to=created_to,
+        user_name=user_name,
+        department_name=department_name,
+        svn_url=svn_url,
+        revision=revision,
+        mode=mode,
+        has_word_material=has_word_material,
+        has_excel_material=has_excel_material,
+        has_pdf_material=has_pdf_material,
+        status=status,
+    )
+    rows = session.exec(
+        select(ReviewTask, User)
+        .outerjoin(User, col(ReviewTask.user_id) == col(User.id))
+        .where(*filters)
+        .order_by(col(ReviewTask.created_at).desc(), col(ReviewTask.id).desc())
+    ).all()
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "自定义审查输入统计"
+    sheet.append(list(CUSTOM_REVIEW_INPUT_EXPORT_HEADERS))
+    for task, user in rows:
+        sheet.append(
+            [
+                _custom_review_export_datetime(task.created_at),
+                user.full_name if user else None,
+                user.svn_username if user else None,
+                task.department_name,
+                task.svn_url,
+                task.old_revision,
+                task.new_revision,
+                task.custom_review_mode.value
+                if task.custom_review_mode is not None
+                else None,
+                _custom_review_material_label(task.has_custom_review_word_material),
+                _custom_review_material_label(task.has_custom_review_excel_material),
+                _custom_review_material_label(task.has_custom_review_pdf_material),
+                task.status.value,
+                task.custom_review_rule,
+            ]
+        )
+        # 自定义输入可能以公式字符开头，导出时必须固定为普通字符串。
+        for cell in sheet[sheet.max_row]:
+            if isinstance(cell.value, str):
+                cell.data_type = "s"
+    _style_custom_review_input_sheet(sheet)
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    output.seek(0)
+    file_name = f"自定义审查输入统计_{_utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type=EXCEL_MEDIA_TYPE,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(file_name)}",
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
+
+
+@router.get("/custom-review-inputs/{task_id}", response_model=CustomReviewInputPublic)
+def read_custom_review_input(
+    session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
+) -> CustomReviewInputPublic:
+    filters = _custom_review_input_filters(
+        session=session,
+        current_user=current_user,
+    )
+    row = session.exec(
+        select(ReviewTask, User)
+        .outerjoin(User, col(ReviewTask.user_id) == col(User.id))
+        .where(col(ReviewTask.id) == task_id, *filters)
+    ).one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="自定义审查输入不存在")
+    task, user = row
+    return _custom_review_input_public(task, user)
 
 
 @router.get(

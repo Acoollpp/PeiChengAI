@@ -131,6 +131,39 @@ def _create_review_task(
     return response.json()
 
 
+def _create_custom_review_task(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    rule: str,
+    old_revision: str = "1",
+    new_revision: str = "2",
+    mode: str = "dual_revision",
+    has_word_material: bool = False,
+    has_excel_material: bool = False,
+    has_pdf_material: bool = False,
+    svn_url: str = "https://svn.example.com/custom-review/trunk",
+) -> dict:
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=headers,
+        json={
+            "svn_url": svn_url,
+            "old_revision": old_revision,
+            "new_revision": new_revision,
+            "skill_name": "bms-code-reviewer",
+            "review_item_ids": ["DS-99"],
+            "custom_review_rule": rule,
+            "custom_review_mode": mode,
+            "has_custom_review_word_material": has_word_material,
+            "has_custom_review_excel_material": has_excel_material,
+            "has_custom_review_pdf_material": has_pdf_material,
+        },
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
 def _create_new_protocol_task_with_issue(
     client: TestClient,
     headers: dict[str, str],
@@ -5825,3 +5858,186 @@ def test_weekly_insights_uses_previous_week_and_current_user_scope(
     by_subcategory = {item["subcategory"]: item for item in content["categories"]}
     assert by_subcategory["超时重发审核"]["useful_count"] == 1
     assert by_subcategory["Flash操作审核"]["useful_count"] == 1
+
+
+def test_custom_review_inputs_superuser_filters_and_export_share_scope(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    department = _create_department(db, f"自定义统计部门-{random_lower_string()}")
+    member_headers, member = _create_department_user(
+        client=client,
+        db=db,
+        department=department,
+        full_name="自定义统计用户",
+        svn_username="custom-stat-user",
+    )
+    matched_task = _create_custom_review_task(
+        client,
+        member_headers,
+        rule="保护条件必须具有明确恢复路径",
+        old_revision="201",
+        new_revision="202",
+        has_word_material=True,
+        has_excel_material=False,
+        has_pdf_material=True,
+        svn_url="https://svn.example.com/custom-stat/matched",
+    )
+    matched_record = db.get(ReviewTask, UUID(matched_task["id"]))
+    assert matched_record is not None
+    matched_record.status = ReviewTaskStatus.failed
+    db.add(matched_record)
+    db.commit()
+
+    _create_custom_review_task(
+        client,
+        member_headers,
+        rule="其他自定义规则",
+        old_revision="301",
+        new_revision="302",
+        mode="new_revision_full",
+        svn_url="https://svn.example.com/custom-stat/other",
+    )
+    _create_review_task(client, member_headers, old_revision="401")
+
+    today = datetime.now(TASK_STATS_TIMEZONE).date().isoformat()
+    query = {
+        "keyword": "恢复路径",
+        "created_from": today,
+        "created_to": today,
+        "user_name": member.full_name,
+        "department_name": department.name,
+        "svn_url": "matched",
+        "revision": "201",
+        "mode": "dual_revision",
+        "has_word_material": "true",
+        "has_excel_material": "false",
+        "has_pdf_material": "true",
+        "status": "failed",
+    }
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/custom-review-inputs",
+        headers=superuser_token_headers,
+        params=query,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["count"] == 1
+    record = content["data"][0]
+    assert record["id"] == matched_task["id"]
+    assert record["custom_review_rule"] == "保护条件必须具有明确恢复路径"
+    assert record["user_name"] == member.full_name
+    assert record["department_name"] == department.name
+    assert record["status"] == "failed"
+
+    detail_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/custom-review-inputs/{matched_task['id']}",
+        headers=superuser_token_headers,
+    )
+    assert detail_response.status_code == 200
+    assert detail_response.json()["custom_review_rule"] == record["custom_review_rule"]
+
+    export_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/custom-review-inputs/export",
+        headers=superuser_token_headers,
+        params=query,
+    )
+    assert export_response.status_code == 200
+    workbook = load_workbook(BytesIO(export_response.content))
+    sheet = workbook["自定义审查输入统计"]
+    assert sheet.max_row == 2
+    assert sheet.cell(2, 13).value == "保护条件必须具有明确恢复路径"
+    assert sheet.cell(2, 9).value == "已提供"
+    assert sheet.cell(2, 10).value == "未提供"
+    assert sheet.cell(2, 11).value == "已提供"
+    workbook.close()
+
+
+def test_custom_review_inputs_enforce_management_scope_and_ignore_empty_history(
+    client: TestClient,
+    db: Session,
+) -> None:
+    department_a = _create_department(db, f"自定义范围A-{random_lower_string()}")
+    department_b = _create_department(db, f"自定义范围B-{random_lower_string()}")
+    department_admin_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_a,
+        role=UserRole.department_admin,
+    )
+    same_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_a,
+        full_name="本部门自定义用户",
+    )
+    other_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_b,
+        full_name="其他部门自定义用户",
+    )
+    normal_headers, _ = _create_department_user(
+        client=client,
+        db=db,
+        department=department_a,
+    )
+    same_task = _create_custom_review_task(
+        client, same_headers, rule="本部门规则", old_revision="501", new_revision="502"
+    )
+    other_task = _create_custom_review_task(
+        client,
+        other_headers,
+        rule="其他部门规则",
+        old_revision="601",
+        new_revision="602",
+    )
+    empty_history = _create_review_task(client, same_headers, old_revision="701")
+    empty_record = db.get(ReviewTask, UUID(empty_history["id"]))
+    assert empty_record is not None
+    empty_record.custom_review_rule = "   "
+    db.add(empty_record)
+    db.commit()
+
+    scoped_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/custom-review-inputs",
+        headers=department_admin_headers,
+        params={"department_name": department_b.name},
+    )
+    assert scoped_response.status_code == 200
+    assert scoped_response.json()["count"] == 0
+
+    own_scope_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/custom-review-inputs",
+        headers=department_admin_headers,
+    )
+    assert own_scope_response.status_code == 200
+    assert [item["id"] for item in own_scope_response.json()["data"]] == [
+        same_task["id"]
+    ]
+
+    forbidden_detail = client.get(
+        f"{settings.API_V1_STR}/review-tasks/custom-review-inputs/{other_task['id']}",
+        headers=department_admin_headers,
+    )
+    assert forbidden_detail.status_code == 404
+    scoped_export = client.get(
+        f"{settings.API_V1_STR}/review-tasks/custom-review-inputs/export",
+        headers=department_admin_headers,
+    )
+    workbook = load_workbook(BytesIO(scoped_export.content))
+    assert workbook["自定义审查输入统计"].max_row == 2
+    assert workbook["自定义审查输入统计"].cell(2, 13).value == "本部门规则"
+    workbook.close()
+
+    for path in (
+        "/custom-review-inputs",
+        "/custom-review-inputs/export",
+        f"/custom-review-inputs/{same_task['id']}",
+    ):
+        response = client.get(
+            f"{settings.API_V1_STR}/review-tasks{path}", headers=normal_headers
+        )
+        assert response.status_code == 403

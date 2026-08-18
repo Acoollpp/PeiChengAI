@@ -112,6 +112,30 @@ export type ClientUpdatePolicyUpdate = {
     minimum_supported_release_id?: (string | null);
 };
 
+export type CustomReviewInputPublic = {
+    id: string;
+    user_id: string;
+    user_name?: (string | null);
+    svn_username?: (string | null);
+    department_id?: (string | null);
+    department_name?: (string | null);
+    svn_url: string;
+    old_revision: string;
+    new_revision: string;
+    custom_review_rule: string;
+    custom_review_mode?: (CustomReviewMode | null);
+    has_custom_review_word_material?: (boolean | null);
+    has_custom_review_excel_material?: (boolean | null);
+    has_custom_review_pdf_material?: (boolean | null);
+    status: ReviewTaskStatus;
+    created_at?: (string | null);
+};
+
+export type CustomReviewInputsPublic = {
+    data: Array<CustomReviewInputPublic>;
+    count: number;
+};
+
 export type CustomReviewMode = 'dual_revision' | 'new_revision_full';
 
 export type DepartmentCreate = {
@@ -880,6 +904,48 @@ export type ReviewTasksReadReviewTasksData = {
 };
 
 export type ReviewTasksReadReviewTasksResponse = (ReviewTasksPublic);
+
+export type ReviewTasksReadCustomReviewInputsData = {
+    createdFrom?: (string | null);
+    createdTo?: (string | null);
+    departmentName?: (string | null);
+    hasExcelMaterial?: (boolean | null);
+    hasPdfMaterial?: (boolean | null);
+    hasWordMaterial?: (boolean | null);
+    keyword?: (string | null);
+    limit?: number;
+    mode?: (CustomReviewMode | null);
+    revision?: (string | null);
+    skip?: number;
+    status?: (ReviewTaskStatus | null);
+    svnUrl?: (string | null);
+    userName?: (string | null);
+};
+
+export type ReviewTasksReadCustomReviewInputsResponse = (CustomReviewInputsPublic);
+
+export type ReviewTasksExportCustomReviewInputsData = {
+    createdFrom?: (string | null);
+    createdTo?: (string | null);
+    departmentName?: (string | null);
+    hasExcelMaterial?: (boolean | null);
+    hasPdfMaterial?: (boolean | null);
+    hasWordMaterial?: (boolean | null);
+    keyword?: (string | null);
+    mode?: (CustomReviewMode | null);
+    revision?: (string | null);
+    status?: (ReviewTaskStatus | null);
+    svnUrl?: (string | null);
+    userName?: (string | null);
+};
+
+export type ReviewTasksExportCustomReviewInputsResponse = (unknown);
+
+export type ReviewTasksReadCustomReviewInputData = {
+    taskId: string;
+};
+
+export type ReviewTasksReadCustomReviewInputResponse = (CustomReviewInputPublic);
 
 export type ReviewTasksExportReviewTaskIssueFeedbackResponse = (unknown);
 

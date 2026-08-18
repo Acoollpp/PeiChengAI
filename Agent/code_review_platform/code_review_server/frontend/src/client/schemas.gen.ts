@@ -651,6 +651,162 @@ export const ClientUpdatePolicyUpdateSchema = {
     title: 'ClientUpdatePolicyUpdate'
 } as const;
 
+export const CustomReviewInputPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        user_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'User Id'
+        },
+        user_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'User Name'
+        },
+        svn_username: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Svn Username'
+        },
+        department_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Department Id'
+        },
+        department_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Department Name'
+        },
+        svn_url: {
+            type: 'string',
+            title: 'Svn Url'
+        },
+        old_revision: {
+            type: 'string',
+            title: 'Old Revision'
+        },
+        new_revision: {
+            type: 'string',
+            title: 'New Revision'
+        },
+        custom_review_rule: {
+            type: 'string',
+            title: 'Custom Review Rule'
+        },
+        custom_review_mode: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/CustomReviewMode'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        has_custom_review_word_material: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Has Custom Review Word Material'
+        },
+        has_custom_review_excel_material: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Has Custom Review Excel Material'
+        },
+        has_custom_review_pdf_material: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Has Custom Review Pdf Material'
+        },
+        status: {
+            '$ref': '#/components/schemas/ReviewTaskStatus'
+        },
+        created_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'user_id', 'svn_url', 'old_revision', 'new_revision', 'custom_review_rule', 'status'],
+    title: 'CustomReviewInputPublic'
+} as const;
+
+export const CustomReviewInputsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/CustomReviewInputPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'CustomReviewInputsPublic'
+} as const;
+
 export const CustomReviewModeSchema = {
     type: 'string',
     enum: ['dual_revision', 'new_revision_full'],

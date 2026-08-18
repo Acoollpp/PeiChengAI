@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { CchSyncSyncCchUsersResponse, ClientReleasesReadClientReleasesData, ClientReleasesReadClientReleasesResponse, ClientReleasesUploadClientReleaseData, ClientReleasesUploadClientReleaseResponse, ClientReleasesActivateClientReleaseData, ClientReleasesActivateClientReleaseResponse, ClientReleasesReadClientUpdatePolicyData, ClientReleasesReadClientUpdatePolicyResponse, ClientReleasesUpdateClientUpdatePolicyData, ClientReleasesUpdateClientUpdatePolicyResponse, ClientReleasesCheckClientUpdatePolicyData, ClientReleasesCheckClientUpdatePolicyResponse, ClientReleasesDownloadLatestYmlData, ClientReleasesDownloadLatestYmlResponse, ClientReleasesDownloadReleaseFileData, ClientReleasesDownloadReleaseFileResponse, CredentialsReadMySvnCredentialResponse, CredentialsUpdateMySvnCredentialData, CredentialsUpdateMySvnCredentialResponse, DepartmentsReadDepartmentsData, DepartmentsReadDepartmentsResponse, DepartmentsCreateDepartmentData, DepartmentsCreateDepartmentResponse, DepartmentsReadAvailableDepartmentsResponse, DepartmentsUpdateDepartmentData, DepartmentsUpdateDepartmentResponse, DepartmentsDeleteDepartmentData, DepartmentsDeleteDepartmentResponse, FeedbackCreateFeedbackData, FeedbackCreateFeedbackResponse, FeedbackReadFeedbackData, FeedbackReadFeedbackResponse, FeedbackReadFeedbackStatsData, FeedbackReadFeedbackStatsResponse, FeedbackReadFeedbackByIdData, FeedbackReadFeedbackByIdResponse, FeedbackReadFeedbackScreenshotData, FeedbackReadFeedbackScreenshotResponse, FeedbackReadFeedbackScreenshotByIdData, FeedbackReadFeedbackScreenshotByIdResponse, FeedbackUpdateFeedbackStatusData, FeedbackUpdateFeedbackStatusResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginSvnAccountData, LoginLoginSvnAccountResponse, LoginLoginWithKeyData, LoginLoginWithKeyResponse, LoginTestTokenResponse, PrivateCreateUserData, PrivateCreateUserResponse, ReviewFocusDirectionsReadReviewFocusDirectionsData, ReviewFocusDirectionsReadReviewFocusDirectionsResponse, ReviewFocusDirectionsCreateReviewFocusDirectionData, ReviewFocusDirectionsCreateReviewFocusDirectionResponse, ReviewFocusDirectionsReadUsageStatsData, ReviewFocusDirectionsReadUsageStatsResponse, ReviewFocusDirectionsUpdateUsageStateData, ReviewFocusDirectionsUpdateUsageStateResponse, ReviewFocusDirectionsExportUsageStatsData, ReviewFocusDirectionsExportUsageStatsResponse, ReviewFocusDirectionsCreateReviewFocusDirectionFromUsageData, ReviewFocusDirectionsCreateReviewFocusDirectionFromUsageResponse, ReviewFocusDirectionsUpdateReviewFocusDirectionData, ReviewFocusDirectionsUpdateReviewFocusDirectionResponse, ReviewFocusDirectionsDeleteReviewFocusDirectionData, ReviewFocusDirectionsDeleteReviewFocusDirectionResponse, ReviewTasksCreateReviewTaskData, ReviewTasksCreateReviewTaskResponse, ReviewTasksReadReviewTasksData, ReviewTasksReadReviewTasksResponse, ReviewTasksExportReviewTaskIssueFeedbackResponse, ReviewTasksReadReviewTaskStatsData, ReviewTasksReadReviewTaskStatsResponse, ReviewTasksReadReviewTaskWeeklyInsightsResponse, ReviewTasksSubmitReviewTaskReportFeedbackData, ReviewTasksSubmitReviewTaskReportFeedbackResponse, ReviewTasksReadReviewTaskData, ReviewTasksReadReviewTaskResponse, ReviewTasksDeleteReviewTaskData, ReviewTasksDeleteReviewTaskResponse, ReviewTasksUpdateReviewTaskStatusData, ReviewTasksUpdateReviewTaskStatusResponse, ReviewTasksUploadReviewTaskReportData, ReviewTasksUploadReviewTaskReportResponse, ReviewTasksReadReviewTaskReportData, ReviewTasksReadReviewTaskReportResponse, ReviewTasksReadReviewTaskIssuesData, ReviewTasksReadReviewTaskIssuesResponse, ReviewTasksUpdateReviewTaskIssueFeedbackDraftData, ReviewTasksUpdateReviewTaskIssueFeedbackDraftResponse, ReviewTasksReadReviewTaskAssetData, ReviewTasksReadReviewTaskAssetResponse, ReviewTasksUploadReviewTaskPdfReportData, ReviewTasksUploadReviewTaskPdfReportResponse, ReviewTasksUploadReviewTaskRequirementFileData, ReviewTasksUploadReviewTaskRequirementFileResponse, ReviewTasksDownloadReviewTaskReportData, ReviewTasksDownloadReviewTaskReportResponse, ReviewTasksDownloadReviewTaskPdfReportData, ReviewTasksDownloadReviewTaskPdfReportResponse, SkillsReadSkillsData, SkillsReadSkillsResponse, SkillsUploadSkillData, SkillsUploadSkillResponse, SkillsActivateSkillData, SkillsActivateSkillResponse, SkillsDeactivateSkillData, SkillsDeactivateSkillResponse, SkillsReadActiveSkillsResponse, SkillsDownloadActiveSkillResponse, SkillsDownloadSkillData, SkillsDownloadSkillResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdateUserMeDepartmentData, UsersUpdateUserMeDepartmentResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { CchSyncSyncCchUsersResponse, ClientReleasesReadClientReleasesData, ClientReleasesReadClientReleasesResponse, ClientReleasesUploadClientReleaseData, ClientReleasesUploadClientReleaseResponse, ClientReleasesActivateClientReleaseData, ClientReleasesActivateClientReleaseResponse, ClientReleasesReadClientUpdatePolicyData, ClientReleasesReadClientUpdatePolicyResponse, ClientReleasesUpdateClientUpdatePolicyData, ClientReleasesUpdateClientUpdatePolicyResponse, ClientReleasesCheckClientUpdatePolicyData, ClientReleasesCheckClientUpdatePolicyResponse, ClientReleasesDownloadLatestYmlData, ClientReleasesDownloadLatestYmlResponse, ClientReleasesDownloadReleaseFileData, ClientReleasesDownloadReleaseFileResponse, CredentialsReadMySvnCredentialResponse, CredentialsUpdateMySvnCredentialData, CredentialsUpdateMySvnCredentialResponse, DepartmentsReadDepartmentsData, DepartmentsReadDepartmentsResponse, DepartmentsCreateDepartmentData, DepartmentsCreateDepartmentResponse, DepartmentsReadAvailableDepartmentsResponse, DepartmentsUpdateDepartmentData, DepartmentsUpdateDepartmentResponse, DepartmentsDeleteDepartmentData, DepartmentsDeleteDepartmentResponse, FeedbackCreateFeedbackData, FeedbackCreateFeedbackResponse, FeedbackReadFeedbackData, FeedbackReadFeedbackResponse, FeedbackReadFeedbackStatsData, FeedbackReadFeedbackStatsResponse, FeedbackReadFeedbackByIdData, FeedbackReadFeedbackByIdResponse, FeedbackReadFeedbackScreenshotData, FeedbackReadFeedbackScreenshotResponse, FeedbackReadFeedbackScreenshotByIdData, FeedbackReadFeedbackScreenshotByIdResponse, FeedbackUpdateFeedbackStatusData, FeedbackUpdateFeedbackStatusResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginSvnAccountData, LoginLoginSvnAccountResponse, LoginLoginWithKeyData, LoginLoginWithKeyResponse, LoginTestTokenResponse, PrivateCreateUserData, PrivateCreateUserResponse, ReviewFocusDirectionsReadReviewFocusDirectionsData, ReviewFocusDirectionsReadReviewFocusDirectionsResponse, ReviewFocusDirectionsCreateReviewFocusDirectionData, ReviewFocusDirectionsCreateReviewFocusDirectionResponse, ReviewFocusDirectionsReadUsageStatsData, ReviewFocusDirectionsReadUsageStatsResponse, ReviewFocusDirectionsUpdateUsageStateData, ReviewFocusDirectionsUpdateUsageStateResponse, ReviewFocusDirectionsExportUsageStatsData, ReviewFocusDirectionsExportUsageStatsResponse, ReviewFocusDirectionsCreateReviewFocusDirectionFromUsageData, ReviewFocusDirectionsCreateReviewFocusDirectionFromUsageResponse, ReviewFocusDirectionsUpdateReviewFocusDirectionData, ReviewFocusDirectionsUpdateReviewFocusDirectionResponse, ReviewFocusDirectionsDeleteReviewFocusDirectionData, ReviewFocusDirectionsDeleteReviewFocusDirectionResponse, ReviewTasksCreateReviewTaskData, ReviewTasksCreateReviewTaskResponse, ReviewTasksReadReviewTasksData, ReviewTasksReadReviewTasksResponse, ReviewTasksReadCustomReviewInputsData, ReviewTasksReadCustomReviewInputsResponse, ReviewTasksExportCustomReviewInputsData, ReviewTasksExportCustomReviewInputsResponse, ReviewTasksReadCustomReviewInputData, ReviewTasksReadCustomReviewInputResponse, ReviewTasksExportReviewTaskIssueFeedbackResponse, ReviewTasksReadReviewTaskStatsData, ReviewTasksReadReviewTaskStatsResponse, ReviewTasksReadReviewTaskWeeklyInsightsResponse, ReviewTasksSubmitReviewTaskReportFeedbackData, ReviewTasksSubmitReviewTaskReportFeedbackResponse, ReviewTasksReadReviewTaskData, ReviewTasksReadReviewTaskResponse, ReviewTasksDeleteReviewTaskData, ReviewTasksDeleteReviewTaskResponse, ReviewTasksUpdateReviewTaskStatusData, ReviewTasksUpdateReviewTaskStatusResponse, ReviewTasksUploadReviewTaskReportData, ReviewTasksUploadReviewTaskReportResponse, ReviewTasksReadReviewTaskReportData, ReviewTasksReadReviewTaskReportResponse, ReviewTasksReadReviewTaskIssuesData, ReviewTasksReadReviewTaskIssuesResponse, ReviewTasksUpdateReviewTaskIssueFeedbackDraftData, ReviewTasksUpdateReviewTaskIssueFeedbackDraftResponse, ReviewTasksReadReviewTaskAssetData, ReviewTasksReadReviewTaskAssetResponse, ReviewTasksUploadReviewTaskPdfReportData, ReviewTasksUploadReviewTaskPdfReportResponse, ReviewTasksUploadReviewTaskRequirementFileData, ReviewTasksUploadReviewTaskRequirementFileResponse, ReviewTasksDownloadReviewTaskReportData, ReviewTasksDownloadReviewTaskReportResponse, ReviewTasksDownloadReviewTaskPdfReportData, ReviewTasksDownloadReviewTaskPdfReportResponse, SkillsReadSkillsData, SkillsReadSkillsResponse, SkillsUploadSkillData, SkillsUploadSkillResponse, SkillsActivateSkillData, SkillsActivateSkillResponse, SkillsDeactivateSkillData, SkillsDeactivateSkillResponse, SkillsReadActiveSkillsResponse, SkillsDownloadActiveSkillResponse, SkillsDownloadSkillData, SkillsDownloadSkillResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdateUserMeDepartmentData, UsersUpdateUserMeDepartmentResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class CchSyncService {
     /**
@@ -213,7 +213,7 @@ export class CredentialsService {
             url: '/api/v1/me/svn-credential'
         });
     }
-    
+
     /**
      * Update My Svn Credential
      * @param data The data for the request.
@@ -256,7 +256,7 @@ export class DepartmentsService {
             }
         });
     }
-    
+
     /**
      * Create Department
      * @param data The data for the request.
@@ -275,7 +275,7 @@ export class DepartmentsService {
             }
         });
     }
-    
+
     /**
      * Read Available Departments
      * @returns DepartmentsPublic Successful Response
@@ -287,7 +287,7 @@ export class DepartmentsService {
             url: '/api/v1/departments/available'
         });
     }
-    
+
     /**
      * Update Department
      * @param data The data for the request.
@@ -310,7 +310,7 @@ export class DepartmentsService {
             }
         });
     }
-    
+
     /**
      * Delete Department
      * @param data The data for the request.
@@ -351,7 +351,7 @@ export class FeedbackService {
             }
         });
     }
-    
+
     /**
      * Read Feedback
      * @param data The data for the request.
@@ -379,7 +379,7 @@ export class FeedbackService {
             }
         });
     }
-    
+
     /**
      * Read Feedback Stats
      * @param data The data for the request.
@@ -399,7 +399,7 @@ export class FeedbackService {
             }
         });
     }
-    
+
     /**
      * Read Feedback By Id
      * @param data The data for the request.
@@ -419,7 +419,7 @@ export class FeedbackService {
             }
         });
     }
-    
+
     /**
      * Read Feedback Screenshot
      * @param data The data for the request.
@@ -439,7 +439,7 @@ export class FeedbackService {
             }
         });
     }
-    
+
     /**
      * Read Feedback Screenshot By Id
      * @param data The data for the request.
@@ -461,7 +461,7 @@ export class FeedbackService {
             }
         });
     }
-    
+
     /**
      * Update Feedback Status
      * @param data The data for the request.
@@ -509,7 +509,7 @@ export class ItemsService {
             }
         });
     }
-    
+
     /**
      * Create Item
      * Create new item.
@@ -529,7 +529,7 @@ export class ItemsService {
             }
         });
     }
-    
+
     /**
      * Read Item
      * Get item by ID.
@@ -550,7 +550,7 @@ export class ItemsService {
             }
         });
     }
-    
+
     /**
      * Update Item
      * Update an item.
@@ -574,7 +574,7 @@ export class ItemsService {
             }
         });
     }
-    
+
     /**
      * Delete Item
      * Delete an item.
@@ -617,7 +617,7 @@ export class LoginService {
             }
         });
     }
-    
+
     /**
      * Login With Key
      * Authenticate with a locally stored API key.
@@ -637,7 +637,7 @@ export class LoginService {
             }
         });
     }
-    
+
     /**
      * Test Token
      * Test access token.
@@ -704,7 +704,7 @@ export class ReviewFocusDirectionsService {
             }
         });
     }
-    
+
     /**
      * Create Review Focus Direction
      * @param data The data for the request.
@@ -723,7 +723,7 @@ export class ReviewFocusDirectionsService {
             }
         });
     }
-    
+
     /**
      * Read Usage Stats
      * @param data The data for the request.
@@ -749,7 +749,7 @@ export class ReviewFocusDirectionsService {
             }
         });
     }
-    
+
     /**
      * Update Usage State
      * @param data The data for the request.
@@ -768,7 +768,7 @@ export class ReviewFocusDirectionsService {
             }
         });
     }
-    
+
     /**
      * Export Usage Stats
      * @param data The data for the request.
@@ -794,7 +794,7 @@ export class ReviewFocusDirectionsService {
             }
         });
     }
-    
+
     /**
      * Create Review Focus Direction From Usage
      * @param data The data for the request.
@@ -813,7 +813,7 @@ export class ReviewFocusDirectionsService {
             }
         });
     }
-    
+
     /**
      * Update Review Focus Direction
      * @param data The data for the request.
@@ -836,7 +836,7 @@ export class ReviewFocusDirectionsService {
             }
         });
     }
-    
+
     /**
      * Delete Review Focus Direction
      * @param data The data for the request.
@@ -877,7 +877,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Read Review Tasks
      * @param data The data for the request.
@@ -911,7 +911,115 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
+    /**
+     * Read Custom Review Inputs
+     * @param data The data for the request.
+     * @param data.skip
+     * @param data.limit
+     * @param data.keyword
+     * @param data.createdFrom
+     * @param data.createdTo
+     * @param data.userName
+     * @param data.departmentName
+     * @param data.svnUrl
+     * @param data.revision
+     * @param data.mode
+     * @param data.hasWordMaterial
+     * @param data.hasExcelMaterial
+     * @param data.hasPdfMaterial
+     * @param data.status
+     * @returns CustomReviewInputsPublic Successful Response
+     * @throws ApiError
+     */
+    public static readCustomReviewInputs(data: ReviewTasksReadCustomReviewInputsData = {}): CancelablePromise<ReviewTasksReadCustomReviewInputsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/review-tasks/custom-review-inputs',
+            query: {
+                skip: data.skip,
+                limit: data.limit,
+                keyword: data.keyword,
+                created_from: data.createdFrom,
+                created_to: data.createdTo,
+                user_name: data.userName,
+                department_name: data.departmentName,
+                svn_url: data.svnUrl,
+                revision: data.revision,
+                mode: data.mode,
+                has_word_material: data.hasWordMaterial,
+                has_excel_material: data.hasExcelMaterial,
+                has_pdf_material: data.hasPdfMaterial,
+                status: data.status
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Export Custom Review Inputs
+     * @param data The data for the request.
+     * @param data.keyword
+     * @param data.createdFrom
+     * @param data.createdTo
+     * @param data.userName
+     * @param data.departmentName
+     * @param data.svnUrl
+     * @param data.revision
+     * @param data.mode
+     * @param data.hasWordMaterial
+     * @param data.hasExcelMaterial
+     * @param data.hasPdfMaterial
+     * @param data.status
+     * @returns unknown 自定义审查输入统计 Excel 文件
+     * @throws ApiError
+     */
+    public static exportCustomReviewInputs(data: ReviewTasksExportCustomReviewInputsData = {}): CancelablePromise<ReviewTasksExportCustomReviewInputsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/review-tasks/custom-review-inputs/export',
+            query: {
+                keyword: data.keyword,
+                created_from: data.createdFrom,
+                created_to: data.createdTo,
+                user_name: data.userName,
+                department_name: data.departmentName,
+                svn_url: data.svnUrl,
+                revision: data.revision,
+                mode: data.mode,
+                has_word_material: data.hasWordMaterial,
+                has_excel_material: data.hasExcelMaterial,
+                has_pdf_material: data.hasPdfMaterial,
+                status: data.status
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Read Custom Review Input
+     * @param data The data for the request.
+     * @param data.taskId
+     * @returns CustomReviewInputPublic Successful Response
+     * @throws ApiError
+     */
+    public static readCustomReviewInput(data: ReviewTasksReadCustomReviewInputData): CancelablePromise<ReviewTasksReadCustomReviewInputResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/review-tasks/custom-review-inputs/{task_id}',
+            path: {
+                task_id: data.taskId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
     /**
      * Export Review Task Issue Feedback
      * @returns unknown 逐问题反馈 Excel 文件
@@ -943,7 +1051,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Read Review Task Weekly Insights
      * @returns ReviewTaskWeeklyInsightsPublic Successful Response
@@ -978,7 +1086,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Read Review Task
      * @param data The data for the request.
@@ -998,7 +1106,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Delete Review Task
      * @param data The data for the request.
@@ -1018,7 +1126,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Update Review Task Status
      * @param data The data for the request.
@@ -1041,7 +1149,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Upload Review Task Report
      * @param data The data for the request.
@@ -1064,7 +1172,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Read Review Task Report
      * @param data The data for the request.
@@ -1084,7 +1192,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Read Review Task Issues
      * @param data The data for the request.
@@ -1174,7 +1282,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Upload Review Task Requirement File
      * @param data The data for the request.
@@ -1197,7 +1305,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Download Review Task Report
      * @param data The data for the request.
@@ -1217,7 +1325,7 @@ export class ReviewTasksService {
             }
         });
     }
-    
+
     /**
      * Download Review Task Pdf Report
      * @param data The data for the request.
@@ -1261,7 +1369,7 @@ export class SkillsService {
             }
         });
     }
-    
+
     /**
      * Upload Skill
      * @param data The data for the request.
@@ -1280,7 +1388,7 @@ export class SkillsService {
             }
         });
     }
-    
+
     /**
      * Activate Skill
      * @param data The data for the request.
@@ -1300,7 +1408,7 @@ export class SkillsService {
             }
         });
     }
-    
+
     /**
      * Deactivate Skill
      * @param data The data for the request.
@@ -1320,7 +1428,7 @@ export class SkillsService {
             }
         });
     }
-    
+
     /**
      * Read Active Skills
      * @returns SkillPackagesPublic Successful Response
@@ -1332,7 +1440,7 @@ export class SkillsService {
             url: '/api/v1/skills/active'
         });
     }
-    
+
     /**
      * Download Active Skill
      * @returns unknown Successful Response
@@ -1344,7 +1452,7 @@ export class SkillsService {
             url: '/api/v1/skills/active/download'
         });
     }
-    
+
     /**
      * Download Skill
      * @param data The data for the request.
@@ -1391,7 +1499,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Create User
      * Create new user.
@@ -1411,7 +1519,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Read User Me
      * Get current user.
@@ -1424,7 +1532,7 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-    
+
     /**
      * Delete User Me
      * Delete own user.
@@ -1437,7 +1545,7 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-    
+
     /**
      * Update User Me
      * Update own user.
@@ -1457,7 +1565,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Update User Me Department
      * Bind current user's department once.
@@ -1477,7 +1585,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Read User By Id
      * Get a specific user by id.
@@ -1498,7 +1606,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Update User
      * Update a user.
@@ -1522,7 +1630,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Delete User
      * Delete a user.
@@ -1566,7 +1674,7 @@ export class UtilsService {
             }
         });
     }
-    
+
     /**
      * Health Check
      * @returns boolean Successful Response
