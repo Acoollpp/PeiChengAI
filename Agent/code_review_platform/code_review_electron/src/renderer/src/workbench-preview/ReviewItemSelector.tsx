@@ -12,6 +12,7 @@ import type {
 interface ReviewItemSelectorProps {
   catalog: ReviewItemDefinition[]
   initialSelection: ReviewSelection
+  oldRevision?: string
   commands: Pick<WorkbenchCommands, 'chooseMaterial'>
   onConfirm: (selection: ReviewSelection) => void
   onCancel: () => void
@@ -28,6 +29,7 @@ const cloneSelection = (selection: ReviewSelection): ReviewSelection => structur
 export function ReviewItemSelector({
   catalog,
   initialSelection,
+  oldRevision = '',
   commands,
   onConfirm,
   onCancel
@@ -69,6 +71,20 @@ export function ReviewItemSelector({
 
   const activeItem = catalog.find((item) => item.id === activeId) ?? catalog[0]
   const activeInput = inputs[activeItem.id] ?? makeEmptyInput(activeItem.id)
+  const isDualRevisionUnavailable = /^r?0$/i.test(oldRevision.trim())
+  const isDualRevisionSelected =
+    !isDualRevisionUnavailable && activeInput.customMode === 'dual_revision'
+
+  useEffect(() => {
+    if (!isDualRevisionUnavailable || inputs['DS-99']?.customMode !== 'dual_revision') return
+    setInputs((current) => ({
+      ...current,
+      'DS-99': {
+        ...(current['DS-99'] ?? makeEmptyInput('DS-99')),
+        customMode: undefined
+      }
+    }))
+  }, [inputs, isDualRevisionUnavailable])
 
   const updateInput = (itemId: ReviewItemId, update: (input: ReviewItemInput) => ReviewItemInput) => {
     setInputs((current) => ({
@@ -400,35 +416,50 @@ export function ReviewItemSelector({
                 <section className="wb-detail-input-section">
                   <div className="wb-section-heading">
                     <div>
-                      <h4>证据模式</h4>
-                      <p>模式仅用于 DS-99，并会由客户端写入 Skill 可识别的声明行。</p>
+                      <h4>审查模式</h4>
+                      <p>选择本次审查关注代码变更，或检查指定新版本的完整代码。</p>
                     </div>
                     <span>必选</span>
                   </div>
-                  <label>
-                    <input
-                      type="radio"
-                      name="ds99-custom-mode"
-                      checked={activeInput.customMode === 'dual_revision'}
-                      disabled={!selectedIds.has(activeItem.id)}
-                      onChange={() => updateInput(activeItem.id, (input) => ({
-                        ...input, customMode: 'dual_revision'
-                      }))}
-                    />
-                    变更代码审查模式
-                  </label>
-                  <label>
-                    <input
-                      type="radio"
-                      name="ds99-custom-mode"
-                      checked={activeInput.customMode === 'new_revision_full'}
-                      disabled={!selectedIds.has(activeItem.id)}
-                      onChange={() => updateInput(activeItem.id, (input) => ({
-                        ...input, customMode: 'new_revision_full'
-                      }))}
-                    />
-                    全量代码审查模式
-                  </label>
+                  <div className="wb-mode-options" role="radiogroup" aria-label="审查模式">
+                    <label className={`wb-mode-option${isDualRevisionSelected ? ' is-selected' : ''}${isDualRevisionUnavailable ? ' is-disabled' : ''}`}>
+                      <input
+                        className="wb-mode-radio"
+                        type="radio"
+                        name="ds99-custom-mode"
+                        checked={isDualRevisionSelected}
+                        disabled={!selectedIds.has(activeItem.id) || isDualRevisionUnavailable}
+                        onChange={() => updateInput(activeItem.id, (input) => ({
+                          ...input, customMode: 'dual_revision'
+                        }))}
+                      />
+                      <span className="wb-mode-check" aria-hidden="true"><Check /></span>
+                      <span className="wb-mode-copy">
+                        <strong>变更代码审查</strong>
+                        <small>聚焦旧、新 revision 之间的代码变更，适合核对本次提交风险。</small>
+                        {isDualRevisionUnavailable && <small className="wb-mode-disabled-hint">旧 revision 为 0 时不能使用此模式。</small>}
+                        {isDualRevisionSelected && <em>已选</em>}
+                      </span>
+                    </label>
+                    <label className={`wb-mode-option${activeInput.customMode === 'new_revision_full' ? ' is-selected' : ''}`}>
+                      <input
+                        className="wb-mode-radio"
+                        type="radio"
+                        name="ds99-custom-mode"
+                        checked={activeInput.customMode === 'new_revision_full'}
+                        disabled={!selectedIds.has(activeItem.id)}
+                        onChange={() => updateInput(activeItem.id, (input) => ({
+                          ...input, customMode: 'new_revision_full'
+                        }))}
+                      />
+                      <span className="wb-mode-check" aria-hidden="true"><Check /></span>
+                      <span className="wb-mode-copy">
+                        <strong>全量代码审查</strong>
+                        <small>检查指定新 revision 的完整代码，适合没有可比较旧版本的场景。</small>
+                        {activeInput.customMode === 'new_revision_full' && <em>已选</em>}
+                      </span>
+                    </label>
+                  </div>
                 </section>
               )}
 

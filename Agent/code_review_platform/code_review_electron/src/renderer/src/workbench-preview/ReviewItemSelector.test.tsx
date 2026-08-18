@@ -116,7 +116,7 @@ describe('ReviewItemSelector', () => {
     expect(screen.getByText('MOS 充放电状态机审查')).toBeInTheDocument()
   })
 
-  it('DS-99 要求规则和模式，并将选择结果限定在自身输入中', async () => {
+  it('DS-99 以可点击模式卡片选择审查方式，并将结果限定在自身输入中', async () => {
     const user = userEvent.setup()
     const adapter = createFixtureWorkbenchAdapter()
     const viewModel = adapter.getViewModel()
@@ -137,7 +137,14 @@ describe('ReviewItemSelector', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('DS-99 自定义审查必须填写规则正文。')
 
     await user.type(screen.getByLabelText('DS-99 额外规则'), '保护条件必须具有明确恢复路径。')
-    await user.click(screen.getByLabelText('变更代码审查模式'))
+    const dualRevisionMode = screen.getByRole('radio', { name: /变更代码审查/ })
+    const fullRevisionMode = screen.getByRole('radio', { name: /全量代码审查/ })
+    expect(dualRevisionMode.closest('.wb-mode-option')).toHaveTextContent('聚焦旧、新 revision 之间的代码变更')
+    expect(fullRevisionMode.closest('.wb-mode-option')).toHaveTextContent('检查指定新 revision 的完整代码')
+    await user.click(dualRevisionMode)
+    expect(dualRevisionMode).toBeChecked()
+    expect(dualRevisionMode.closest('.wb-mode-option')).toHaveClass('is-selected')
+    expect(dualRevisionMode.closest('.wb-mode-option')).toHaveTextContent('已选')
     await user.click(screen.getByRole('button', { name: '完成选择（1）' }))
 
     expect(onConfirm).toHaveBeenCalledWith({
@@ -147,6 +154,34 @@ describe('ReviewItemSelector', () => {
         customMode: 'dual_revision'
       })
     })
+  })
+
+  it('旧 revision 为 0 时禁用变更代码审查模式，并保留全量代码审查可选', async () => {
+    const user = userEvent.setup()
+    const adapter = createFixtureWorkbenchAdapter()
+    const viewModel = adapter.getViewModel()
+
+    render(
+      <ReviewItemSelector
+        catalog={viewModel.catalog}
+        initialSelection={{ 'DS-99': {
+          itemId: 'DS-99', extraRules: '检查保护条件。', materials: {}
+        } }}
+        oldRevision=" r0 "
+        commands={adapter.commands}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    const dualRevisionMode = screen.getByRole('radio', { name: /变更代码审查/ })
+    const fullRevisionMode = screen.getByRole('radio', { name: /全量代码审查/ })
+    expect(dualRevisionMode).toBeDisabled()
+    expect(dualRevisionMode.closest('.wb-mode-option')).toHaveClass('is-disabled')
+    expect(dualRevisionMode.closest('.wb-mode-option')).toHaveTextContent('旧 revision 为 0 时不能使用此模式。')
+    expect(fullRevisionMode).not.toBeDisabled()
+    await user.click(fullRevisionMode)
+    expect(fullRevisionMode).toBeChecked()
   })
 
   it('synthetic 多文件字段支持按顺序多选、移除并补选材料', async () => {
