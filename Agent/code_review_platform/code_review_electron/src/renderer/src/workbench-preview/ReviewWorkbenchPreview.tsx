@@ -32,6 +32,7 @@ import { readRecentSvnUrls } from '../recent-svn-urls'
 import type { ClientTheme } from '../theme'
 import { DEFAULT_CLIENT_THEME } from '../theme'
 import { ReviewItemSelector } from './ReviewItemSelector'
+import { CustomReviewRetryDialog } from './CustomReviewRetryDialog'
 import { formatRevisionLabel, isRevisionValue, normalizeRevisionDigits } from './revision'
 import type {
   CreateTaskCommand,
@@ -1107,6 +1108,10 @@ export function ReviewWorkbenchPreview({
             closeSelector()
           }}
         />
+      )}
+
+      {viewModel.customReviewRetry && (
+        <CustomReviewRetryDialog retry={viewModel.customReviewRetry} commands={adapter.commands} />
       )}
 
       {viewModel.notice && (

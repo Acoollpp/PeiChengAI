@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { BMS_CODE_REVIEW_SKILL_NAME, REVIEW_ITEM_CATALOG } from '../../../shared/review-items'
+import { getCustomReviewRetrySnapshot } from '../../../shared/custom-review-retry'
 import {
   analyzeLoadedReviewReport,
   summarizeReviewReport
@@ -225,6 +226,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
   const [taskStats, setTaskStats] = useState<WorkbenchTaskStats>({ status: 'loading' })
   const [reportListState, setReportListState] = useState<WorkbenchReportListState>({ status: 'loading' })
   const [reportContentStates, setReportContentStates] = useState<Record<string, ReportContentState>>({})
+  const [pendingCustomReviewRetryTaskId, setPendingCustomReviewRetryTaskId] = useState<string>()
   const reportContentStatesRef = useRef<Record<string, ReportContentState>>({})
   const selectedReportIdRef = useRef<string | undefined>(undefined)
   const requestedViewSequenceRef = useRef(0)
@@ -572,9 +574,41 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
     async retryTask(taskId) {
       const task = findTask(taskId)
       if (!task) return commandResult('未找到任务。')
+      if (getCustomReviewRetrySnapshot(task)) {
+        setPendingCustomReviewRetryTaskId(task.id)
+        const message = '请重新选择原任务已提供的 DS-99 材料；规则和模式将保持不变。'
+        showNotice(message)
+        return commandResult(message)
+      }
       await queue.retryTask(task)
       showNotice(`任务 ${task.id} 已加入本机重试队列。`)
       return commandResult(`任务 ${task.id} 已加入本机重试队列。`)
+    },
+    async confirmCustomReviewRetry(taskId, materials) {
+      const task = findTask(taskId)
+      const snapshot = task ? getCustomReviewRetrySnapshot(task) : undefined
+      if (!task || !snapshot) {
+        return commandResult('原任务的 DS-99 输入快照不完整，请新建审查任务。')
+      }
+      const reviewItems = [{
+        id: 'DS-99' as const,
+        user_extra_rules: snapshot.rule,
+        custom_mode: snapshot.mode,
+        ...(snapshot.requiredMaterialFieldIds.length > 0 ? {
+          materials: snapshot.requiredMaterialFieldIds.map((fieldId) => ({
+            field_id: fieldId,
+            file_paths: (materials[fieldId] ?? []).map((file) => file.id)
+          }))
+        } : {})
+      }]
+      await queue.retryTask({ ...task, review_items: reviewItems })
+      setPendingCustomReviewRetryTaskId(undefined)
+      showNotice(`任务 ${task.id} 已按原 DS-99 规则加入本机重试队列。`)
+      return commandResult(`任务 ${task.id} 已按原 DS-99 规则加入本机重试队列。`)
+    },
+    async cancelCustomReviewRetry() {
+      setPendingCustomReviewRetryTaskId(undefined)
+      return commandResult('已取消 DS-99 重试。')
     },
     async advanceTasks() { return commandResult('生产任务阶段由真实执行事件更新。') },
     async reloadTaskStats() {
@@ -720,6 +754,24 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
     }
   }), [createTask, findTask, loadReportList, loadTaskStats, queue.cancelTask, queue.hideTask, queue.retryTask, queue.setTaskReportContent, queue.setTaskReportFeedback, selectReport, showNotice])
 
+  const pendingCustomReviewRetry = pendingCustomReviewRetryTaskId
+    ? queue.tasks.find((task) => task.id === pendingCustomReviewRetryTaskId)
+    : undefined
+  const pendingCustomReviewRetrySnapshot = pendingCustomReviewRetry
+    ? getCustomReviewRetrySnapshot(pendingCustomReviewRetry)
+    : undefined
+  const customReviewRetry = pendingCustomReviewRetry && pendingCustomReviewRetrySnapshot
+    ? {
+        taskId: pendingCustomReviewRetry.id,
+        rule: pendingCustomReviewRetrySnapshot.rule,
+        mode: pendingCustomReviewRetrySnapshot.mode,
+        materialFields: (catalog.find((item) => item.id === 'DS-99')?.materialFields ?? [])
+          .filter((field) => pendingCustomReviewRetrySnapshot.requiredMaterialFieldIds.includes(
+            field.id as typeof pendingCustomReviewRetrySnapshot.requiredMaterialFieldIds[number]
+          ))
+      }
+    : undefined
+
   const viewModel: WorkbenchViewModel = {
     productName: 'AI 代码审查', previewLabel: '2.0 工作台',
     userName: currentUser.full_name || currentUser.svn_username || '当前用户',
@@ -732,7 +784,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
       toReportViewModel(task, reportContentStates[task.id])
     ),
     selectedReportId, notice, noticeAction, activeFeedbackAnchorId, feedbackAnchorScrollRequest,
-    mode: 'production', canCreateTask, requestedView, taskStats, reportListState,
+    mode: 'production', canCreateTask, requestedView, customReviewRetry, taskStats, reportListState,
     ...(!canCreateTask ? { taskCreationDisabledReason: '本地环境就绪后才可发起审查。' } : {})
   }
   const viewModelRef = useRef(viewModel); viewModelRef.current = viewModel

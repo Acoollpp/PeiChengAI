@@ -1637,6 +1637,51 @@ describe('ProductionReviewWorkbench', () => {
     expect(screen.queryByRole('heading', { name: '报告 B' })).not.toBeInTheDocument()
   })
 
+  it('DS-99 跨会话重试锁定原规则和模式，并要求重新选择原有材料', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [{
+        id: 'ds99-failed', svn_url: 'svn://server/ds99', old_revision: '2', new_revision: '3',
+        review_item_ids: ['DS-99'], status: 'failed', error_message: '执行失败',
+        custom_review_rule: '保护状态必须具备恢复路径。', custom_review_mode: 'dual_revision',
+        has_custom_review_word_material: true, has_custom_review_excel_material: false,
+        has_custom_review_pdf_material: false
+      }],
+      count: 1
+    })
+    vi.mocked(window.codeReview.selectReviewMaterialFile).mockResolvedValueOnce({
+      status: 'selected', filePath: '/retry/规则.docx', fileName: '规则.docx', fileSize: 1024
+    })
+    vi.mocked(window.codeReview.retryTask).mockResolvedValueOnce({ taskId: 'ds99-failed', status: 'failed' })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await user.click(await screen.findByRole('tab', { name: /待处理失败任务 1/ }))
+    await user.click(screen.getByRole('button', { name: '从头重试 ds99-failed' }))
+
+    expect(window.codeReview.retryTask).not.toHaveBeenCalled()
+    expect(await screen.findByRole('dialog', { name: '补充重试材料' })).toBeInTheDocument()
+    expect(screen.getByLabelText('原审查规则（不可修改）')).toHaveValue('保护状态必须具备恢复路径。')
+    expect(screen.getByLabelText('原审查规则（不可修改）')).toHaveAttribute('readonly')
+    expect(screen.getByText('变更代码审查模式')).toBeInTheDocument()
+    expect(screen.queryByText('Excel 材料')).not.toBeInTheDocument()
+    expect(screen.queryByText('PDF 材料')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '选择材料' }))
+    expect(window.codeReview.selectReviewMaterialFile).toHaveBeenCalledWith({
+      review_item_id: 'DS-99', field_id: 'word-materials'
+    })
+    await user.click(screen.getByRole('button', { name: '按原规则重试' }))
+    await waitFor(() => expect(window.codeReview.retryTask).toHaveBeenCalledWith({
+      task_id: 'ds99-failed', client_task_id: 'ds99-failed',
+      old_revision: '2', new_revision: '3', requirement_file_path: undefined,
+      review_items: [{
+        id: 'DS-99', user_extra_rules: '保护状态必须具备恢复路径。',
+        custom_mode: 'dual_revision',
+        materials: [{ field_id: 'word-materials', file_paths: ['/retry/规则.docx'] }]
+      }]
+    }))
+  })
+
   it('把生产任务取消和跨会话失败任务重试交给本地队列', async () => {
     const user = userEvent.setup()
     const cancelRequest = createDeferred<Awaited<ReturnType<CodeReviewApi['cancelTask']>>>()

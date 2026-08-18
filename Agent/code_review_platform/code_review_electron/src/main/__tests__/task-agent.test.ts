@@ -1215,6 +1215,98 @@ describe('executeReviewTask', () => {
     ])
   })
 
+  it('重试完整 DS-99 快照时强制使用原规则、模式和材料类型', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-ds99-retry-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '代码审查报告.md')
+    const failedTask = makeTask({
+      id: 'task-ds99-retry',
+      review_item_ids: ['DS-99'],
+      custom_review_rule: '保护状态必须具备恢复路径。',
+      custom_review_mode: 'dual_revision',
+      has_custom_review_word_material: true,
+      has_custom_review_excel_material: false,
+      has_custom_review_pdf_material: false,
+      status: 'failed'
+    })
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(),
+        readTask: vi.fn(async () => failedTask),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      preflightSvn: vi.fn(),
+      prepareWorkspace: vi.fn(async (input) => ({
+        cwd,
+        reportPath,
+        imagesDir: join(cwd, 'images'),
+        reviewItems: input.reviewItems
+      })),
+      runCodex: vi.fn(async () => {
+        await writeFile(reportPath, '# DS-99 重试报告\n')
+      }),
+      uploadReport: vi.fn()
+    })
+
+    await expect(retryReviewTask({
+      token: 'token-123',
+      taskId: failedTask.id,
+      reviewItems: [{
+        id: 'DS-99',
+        user_extra_rules: '保护状态必须具备恢复路径。',
+        custom_mode: 'dual_revision',
+        materials: [{ field_id: 'word-materials', file_paths: ['/retry/规则.docx'] }]
+      }]
+    }, dependencies)).resolves.toMatchObject({ taskId: failedTask.id, status: 'success' })
+
+    expect(dependencies.api.createTask).not.toHaveBeenCalled()
+    expect(dependencies.prepareWorkspace).toHaveBeenCalledWith(expect.objectContaining({
+      reviewItems: expect.arrayContaining([expect.objectContaining({
+        id: 'DS-99',
+        user_extra_rules: '保护状态必须具备恢复路径。',
+        custom_mode: 'dual_revision',
+        materials: expect.arrayContaining([
+          expect.objectContaining({ fieldId: 'word-materials', filePaths: ['/retry/规则.docx'] })
+        ])
+      })])
+    }))
+  })
+
+  it('重试完整 DS-99 快照时缺少原有材料会在执行前失败', async () => {
+    const failedTask = makeTask({
+      id: 'task-ds99-missing-material',
+      review_item_ids: ['DS-99'],
+      custom_review_rule: '保护状态必须具备恢复路径。',
+      custom_review_mode: 'dual_revision',
+      has_custom_review_word_material: true,
+      has_custom_review_excel_material: false,
+      has_custom_review_pdf_material: false,
+      status: 'failed'
+    })
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(),
+        readTask: vi.fn(async () => failedTask),
+        updateTaskStatus: vi.fn()
+      },
+      checkEnvironment: vi.fn(),
+      prepareWorkspace: vi.fn(),
+      runCodex: vi.fn(),
+      uploadReport: vi.fn()
+    })
+
+    await expect(retryReviewTask({
+      token: 'token-123',
+      taskId: failedTask.id,
+      reviewItems: [{ id: 'DS-99', custom_mode: 'dual_revision' }]
+    }, dependencies)).rejects.toThrow('必须重新选择原任务提供过的 word-materials 材料')
+
+    expect(dependencies.api.updateTaskStatus).not.toHaveBeenCalled()
+    expect(dependencies.checkEnvironment).not.toHaveBeenCalled()
+    expect(dependencies.prepareWorkspace).not.toHaveBeenCalled()
+  })
+
   it('重试阶段事件只在对应服务端状态落库后发出', async () => {
     const checkingStarted = createDeferred<void>()
     const checkingPersisted = createDeferred<void>()

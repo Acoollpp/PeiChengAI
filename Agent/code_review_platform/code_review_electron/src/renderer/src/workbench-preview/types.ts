@@ -47,6 +47,13 @@ export interface ReviewItemInput {
 
 export type ReviewSelection = Partial<Record<ReviewItemId, ReviewItemInput>>
 
+export interface CustomReviewRetryViewModel {
+  taskId: string
+  rule: string
+  mode: NonNullable<CustomReviewMode>
+  materialFields: MaterialFieldDefinition[]
+}
+
 export type TaskStage =
   | 'waiting'
   | 'checking_environment'
@@ -149,6 +156,7 @@ export interface WorkbenchViewModel {
   canCreateTask?: boolean
   taskCreationDisabledReason?: string
   requestedView?: { id: WorkbenchViewId; requestId: number }
+  customReviewRetry?: CustomReviewRetryViewModel
   taskStats?: WorkbenchTaskStats
   reportListState?: WorkbenchReportListState
 }
@@ -169,6 +177,11 @@ export interface WorkbenchCommands {
   createTask(input: CreateTaskCommand): Promise<PreviewCommandResult>
   cancelTask(taskId: string): Promise<PreviewCommandResult>
   retryTask(taskId: string): Promise<PreviewCommandResult>
+  confirmCustomReviewRetry?(
+    taskId: string,
+    materials: Record<string, MaterialFileView[]>
+  ): Promise<PreviewCommandResult>
+  cancelCustomReviewRetry?(): Promise<PreviewCommandResult>
   advanceTasks(): Promise<PreviewCommandResult>
   reloadTaskStats?(): Promise<PreviewCommandResult>
   reloadReportList?(): Promise<PreviewCommandResult>

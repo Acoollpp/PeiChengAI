@@ -1689,6 +1689,115 @@ input[type="checkbox"] {
   gap: 8px;
 }
 
+.wb-custom-retry-dialog {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.wb-custom-retry-content {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  overflow-y: auto;
+}
+
+.wb-custom-retry-guidance {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--wb-accent);
+  color: var(--wb-readable-muted);
+  background: var(--wb-accent-soft);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.wb-rule-field,
+.wb-custom-retry-mode,
+.wb-custom-retry-materials {
+  display: grid;
+  gap: 7px;
+}
+
+.wb-rule-field > span,
+.wb-custom-retry-mode > span,
+.wb-custom-retry-materials > div > span {
+  color: var(--wb-muted);
+  font-size: 11px;
+}
+
+.wb-rule-field textarea {
+  resize: vertical;
+  min-height: 96px;
+  padding: 9px;
+  border: 1px solid var(--wb-line);
+  border-radius: 4px;
+  color: var(--wb-text);
+  background: var(--wb-control-bg-muted);
+  font: inherit;
+  line-height: 1.55;
+}
+
+.wb-custom-retry-mode {
+  padding: 10px 12px;
+  border: 1px solid var(--wb-line);
+  background: var(--wb-surface-raised);
+}
+
+.wb-custom-retry-mode strong {
+  font-size: 13px;
+}
+
+.wb-custom-retry-materials > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.wb-custom-retry-materials small {
+  color: var(--wb-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.wb-custom-retry-materials .wb-material-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px 12px;
+}
+
+.wb-custom-retry-materials .wb-material-field > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.wb-custom-retry-materials .wb-material-file {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto 28px;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 7px;
+  border: 1px solid var(--wb-line);
+  background: var(--wb-surface);
+}
+
+.wb-custom-retry-materials .wb-material-file > svg {
+  width: 14px;
+  color: var(--wb-accent);
+}
+
+.wb-custom-retry-materials .wb-material-file > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+}
+
+.wb-custom-retry-materials .wb-material-file small {
+  white-space: nowrap;
+}
+
 .wb-report-drawer {
   position: fixed;
   z-index: 60;

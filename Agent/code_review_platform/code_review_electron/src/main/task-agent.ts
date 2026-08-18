@@ -26,6 +26,10 @@ import { CODEX_REVIEW_LOG_FILE_NAME } from './task-log'
 import { buildBmsReviewTaskPrompt } from './review-task-prompt'
 import { prepareReviewTaskMaterials } from './review-task-materials'
 import {
+  buildCustomReviewRetryInputs,
+  getCustomReviewRetrySnapshot
+} from '../shared/custom-review-retry'
+import {
   BMS_CODE_REVIEW_SKILL_NAME,
   resolveReviewItemInputs,
   type ResolvedReviewItemInput,
@@ -458,11 +462,18 @@ export const retryReviewTask = async (
     throw new Error('当前服务端客户端不支持读取审查任务')
   }
   const task = toReviewTask(await dependencies.api.readTask(input.token, input.taskId))
-  const reviewItems = input.reviewItems
-    ? resolveReviewItemInputs(input.reviewItems)
-    : task.review_item_ids?.length
-      ? resolveReviewItemInputs(task.review_item_ids.map((id) => ({ id })))
-      : undefined
+  const customReviewSnapshot = getCustomReviewRetrySnapshot(task)
+  const reviewItems = customReviewSnapshot
+    ? resolveReviewItemInputs(
+        buildCustomReviewRetryInputs(task, customReviewSnapshot, input.reviewItems)
+      )
+    : input.reviewItems
+      ? resolveReviewItemInputs(input.reviewItems)
+      : task.review_item_ids?.includes('DS-99')
+        ? undefined
+        : task.review_item_ids?.length
+          ? resolveReviewItemInputs(task.review_item_ids.map((id) => ({ id })))
+          : undefined
   return runExistingReviewTask({
     token: input.token,
     task,
