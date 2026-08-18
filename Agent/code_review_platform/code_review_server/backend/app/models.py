@@ -680,6 +680,30 @@ class ReviewTasksPublic(SQLModel):
     count: int
 
 
+class CustomReviewInputPublic(SQLModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    user_name: str | None = None
+    svn_username: str | None = None
+    department_id: uuid.UUID | None = None
+    department_name: str | None = None
+    svn_url: str
+    old_revision: str
+    new_revision: str
+    custom_review_rule: str
+    custom_review_mode: CustomReviewMode | None = None
+    has_custom_review_word_material: bool | None = None
+    has_custom_review_excel_material: bool | None = None
+    has_custom_review_pdf_material: bool | None = None
+    status: ReviewTaskStatus
+    created_at: datetime | None = None
+
+
+class CustomReviewInputsPublic(SQLModel):
+    data: list[CustomReviewInputPublic]
+    count: int
+
+
 class ReviewTaskReportUserStatsPublic(SQLModel):
     user_name: str | None = None
     svn_username: str | None = None

@@ -22,6 +22,7 @@ import { Route as LayoutAdminUsersRouteImport } from './routes/_layout/admin.use
 import { Route as LayoutAdminTasksRouteImport } from './routes/_layout/admin.tasks'
 import { Route as LayoutAdminSkillsRouteImport } from './routes/_layout/admin.skills'
 import { Route as LayoutAdminReviewFocusDirectionsRouteImport } from './routes/_layout/admin.review-focus-directions'
+import { Route as LayoutAdminCustomReviewInputsRouteImport } from './routes/_layout/admin.custom-review-inputs'
 import { Route as LayoutAdminClientReleasesRouteImport } from './routes/_layout/admin.client-releases'
 import { Route as LayoutAdminTasksReviewRouteImport } from './routes/_layout/admin.tasks.review'
 
@@ -90,6 +91,12 @@ const LayoutAdminReviewFocusDirectionsRoute =
     path: '/review-focus-directions',
     getParentRoute: () => LayoutAdminRoute,
   } as any)
+const LayoutAdminCustomReviewInputsRoute =
+  LayoutAdminCustomReviewInputsRouteImport.update({
+    id: '/custom-review-inputs',
+    path: '/custom-review-inputs',
+    getParentRoute: () => LayoutAdminRoute,
+  } as any)
 const LayoutAdminClientReleasesRoute =
   LayoutAdminClientReleasesRouteImport.update({
     id: '/client-releases',
@@ -110,6 +117,7 @@ export interface FileRoutesByFullPath {
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
   '/admin/client-releases': typeof LayoutAdminClientReleasesRoute
+  '/admin/custom-review-inputs': typeof LayoutAdminCustomReviewInputsRoute
   '/admin/review-focus-directions': typeof LayoutAdminReviewFocusDirectionsRoute
   '/admin/skills': typeof LayoutAdminSkillsRoute
   '/admin/tasks': typeof LayoutAdminTasksRouteWithChildren
@@ -125,6 +133,7 @@ export interface FileRoutesByTo {
   '/settings': typeof LayoutSettingsRoute
   '/': typeof LayoutIndexRoute
   '/admin/client-releases': typeof LayoutAdminClientReleasesRoute
+  '/admin/custom-review-inputs': typeof LayoutAdminCustomReviewInputsRoute
   '/admin/review-focus-directions': typeof LayoutAdminReviewFocusDirectionsRoute
   '/admin/skills': typeof LayoutAdminSkillsRoute
   '/admin/tasks': typeof LayoutAdminTasksRouteWithChildren
@@ -143,6 +152,7 @@ export interface FileRoutesById {
   '/_layout/settings': typeof LayoutSettingsRoute
   '/_layout/': typeof LayoutIndexRoute
   '/_layout/admin/client-releases': typeof LayoutAdminClientReleasesRoute
+  '/_layout/admin/custom-review-inputs': typeof LayoutAdminCustomReviewInputsRoute
   '/_layout/admin/review-focus-directions': typeof LayoutAdminReviewFocusDirectionsRoute
   '/_layout/admin/skills': typeof LayoutAdminSkillsRoute
   '/_layout/admin/tasks': typeof LayoutAdminTasksRouteWithChildren
@@ -161,6 +171,7 @@ export interface FileRouteTypes {
     | '/items'
     | '/settings'
     | '/admin/client-releases'
+    | '/admin/custom-review-inputs'
     | '/admin/review-focus-directions'
     | '/admin/skills'
     | '/admin/tasks'
@@ -176,6 +187,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/'
     | '/admin/client-releases'
+    | '/admin/custom-review-inputs'
     | '/admin/review-focus-directions'
     | '/admin/skills'
     | '/admin/tasks'
@@ -193,6 +205,7 @@ export interface FileRouteTypes {
     | '/_layout/settings'
     | '/_layout/'
     | '/_layout/admin/client-releases'
+    | '/_layout/admin/custom-review-inputs'
     | '/_layout/admin/review-focus-directions'
     | '/_layout/admin/skills'
     | '/_layout/admin/tasks'
@@ -300,6 +313,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminReviewFocusDirectionsRouteImport
       parentRoute: typeof LayoutAdminRoute
     }
+    '/_layout/admin/custom-review-inputs': {
+      id: '/_layout/admin/custom-review-inputs'
+      path: '/custom-review-inputs'
+      fullPath: '/admin/custom-review-inputs'
+      preLoaderRoute: typeof LayoutAdminCustomReviewInputsRouteImport
+      parentRoute: typeof LayoutAdminRoute
+    }
     '/_layout/admin/client-releases': {
       id: '/_layout/admin/client-releases'
       path: '/client-releases'
@@ -330,6 +350,7 @@ const LayoutAdminTasksRouteWithChildren =
 
 interface LayoutAdminRouteChildren {
   LayoutAdminClientReleasesRoute: typeof LayoutAdminClientReleasesRoute
+  LayoutAdminCustomReviewInputsRoute: typeof LayoutAdminCustomReviewInputsRoute
   LayoutAdminReviewFocusDirectionsRoute: typeof LayoutAdminReviewFocusDirectionsRoute
   LayoutAdminSkillsRoute: typeof LayoutAdminSkillsRoute
   LayoutAdminTasksRoute: typeof LayoutAdminTasksRouteWithChildren
@@ -339,6 +360,7 @@ interface LayoutAdminRouteChildren {
 
 const LayoutAdminRouteChildren: LayoutAdminRouteChildren = {
   LayoutAdminClientReleasesRoute: LayoutAdminClientReleasesRoute,
+  LayoutAdminCustomReviewInputsRoute: LayoutAdminCustomReviewInputsRoute,
   LayoutAdminReviewFocusDirectionsRoute: LayoutAdminReviewFocusDirectionsRoute,
   LayoutAdminSkillsRoute: LayoutAdminSkillsRoute,
   LayoutAdminTasksRoute: LayoutAdminTasksRouteWithChildren,

@@ -1,5 +1,6 @@
 import {
   Briefcase,
+  FileSpreadsheet,
   Home,
   Library,
   ListChecks,
@@ -60,6 +61,11 @@ const adminItems: Item[] = [
         title: "代码审查任务管理",
         path: "/tasks/review",
       },
+      {
+        icon: FileSpreadsheet,
+        title: "自定义审查输入统计",
+        path: "/admin/custom-review-inputs",
+      },
     ],
   },
   { icon: Library, title: "Skill库", path: "/admin/skills" },
@@ -83,6 +89,11 @@ const departmentAdminItems: Item[] = [
         icon: ListChecks,
         title: "代码审查任务管理",
         path: "/tasks/review",
+      },
+      {
+        icon: FileSpreadsheet,
+        title: "自定义审查输入统计",
+        path: "/admin/custom-review-inputs",
       },
     ],
   },
