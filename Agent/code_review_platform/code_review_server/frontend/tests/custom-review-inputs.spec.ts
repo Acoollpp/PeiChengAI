@@ -85,6 +85,10 @@ test("管理端可筛选、查看并导出自定义审查输入", async ({ page 
     page.getByRole("heading", { name: "自定义审查输入统计" }),
   ).toBeVisible()
   await expect(page.getByText("统计用户")).toBeVisible()
+  const inputRow = page.getByRole("row").filter({ hasText: "统计用户" })
+  await expect(inputRow.getByText("Word：已提供")).toBeVisible()
+  await expect(inputRow.getByText("Excel：未提供")).toBeVisible()
+  await expect(inputRow.getByText("PDF：已提供")).toBeVisible()
 
   await page.getByLabel("规则关键词").fill("恢复路径")
   await page.getByLabel("用户").fill("统计用户")

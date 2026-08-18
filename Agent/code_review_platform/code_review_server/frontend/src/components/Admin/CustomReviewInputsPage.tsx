@@ -205,10 +205,16 @@ async function exportCustomReviewInputs(filters: CustomReviewInputFilters) {
   URL.revokeObjectURL(objectUrl)
 }
 
-function MaterialBadge({ value }: { value: boolean | null }) {
+function MaterialBadge({
+  label,
+  value,
+}: {
+  label: string
+  value: boolean | null
+}) {
   return (
     <Badge variant={value ? "default" : "secondary"}>
-      {materialLabel(value)}
+      {label}：{materialLabel(value)}
     </Badge>
   )
 }
@@ -593,12 +599,15 @@ export function CustomReviewInputsPage() {
                     <TableCell>
                       <div className="flex gap-1">
                         <MaterialBadge
+                          label="Word"
                           value={input.has_custom_review_word_material}
                         />
                         <MaterialBadge
+                          label="Excel"
                           value={input.has_custom_review_excel_material}
                         />
                         <MaterialBadge
+                          label="PDF"
                           value={input.has_custom_review_pdf_material}
                         />
                       </div>
