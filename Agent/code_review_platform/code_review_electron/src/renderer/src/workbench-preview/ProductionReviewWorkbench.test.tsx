@@ -1682,6 +1682,45 @@ describe('ProductionReviewWorkbench', () => {
     }))
   })
 
+  it('DS-99 重试材料总大小超过 100 MB 时不进入队列', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [{
+        id: 'ds99-oversized', svn_url: 'svn://server/ds99', old_revision: '2', new_revision: '3',
+        review_item_ids: ['DS-99'], status: 'failed', error_message: '执行失败',
+        custom_review_rule: '保护状态必须具备恢复路径。', custom_review_mode: 'dual_revision',
+        has_custom_review_word_material: true, has_custom_review_excel_material: false,
+        has_custom_review_pdf_material: false
+      }],
+      count: 1
+    })
+    const twentyMegabytes = 20 * 1024 * 1024
+    vi.mocked(window.codeReview.selectReviewMaterialFile).mockResolvedValueOnce({
+      status: 'selected', filePath: '/retry/规则-1.docx', fileName: '规则-1.docx', fileSize: twentyMegabytes
+    }).mockResolvedValueOnce({
+      status: 'selected', filePath: '/retry/规则-2.docx', fileName: '规则-2.docx', fileSize: twentyMegabytes
+    }).mockResolvedValueOnce({
+      status: 'selected', filePath: '/retry/规则-3.docx', fileName: '规则-3.docx', fileSize: twentyMegabytes
+    }).mockResolvedValueOnce({
+      status: 'selected', filePath: '/retry/规则-4.docx', fileName: '规则-4.docx', fileSize: twentyMegabytes
+    }).mockResolvedValueOnce({
+      status: 'selected', filePath: '/retry/规则-5.docx', fileName: '规则-5.docx', fileSize: twentyMegabytes
+    }).mockResolvedValueOnce({
+      status: 'selected', filePath: '/retry/规则-6.docx', fileName: '规则-6.docx', fileSize: twentyMegabytes
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await user.click(await screen.findByRole('tab', { name: /待处理失败任务 1/ }))
+    await user.click(screen.getByRole('button', { name: '从头重试 ds99-oversized' }))
+    for (let index = 0; index < 6; index += 1) {
+      await user.click(screen.getByRole('button', { name: '选择材料' }))
+    }
+    await user.click(screen.getByRole('button', { name: '按原规则重试' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('DS-99 三类材料总大小不能超过 100 MB。')
+    expect(window.codeReview.retryTask).not.toHaveBeenCalled()
+  })
+
   it('把生产任务取消和跨会话失败任务重试交给本地队列', async () => {
     const user = userEvent.setup()
     const cancelRequest = createDeferred<Awaited<ReturnType<CodeReviewApi['cancelTask']>>>()

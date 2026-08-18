@@ -469,11 +469,9 @@ export const retryReviewTask = async (
       )
     : input.reviewItems
       ? resolveReviewItemInputs(input.reviewItems)
-      : task.review_item_ids?.includes('DS-99')
-        ? undefined
-        : task.review_item_ids?.length
-          ? resolveReviewItemInputs(task.review_item_ids.map((id) => ({ id })))
-          : undefined
+      : task.review_item_ids?.length
+        ? resolveReviewItemInputs(task.review_item_ids.map((id) => ({ id })))
+        : undefined
   return runExistingReviewTask({
     token: input.token,
     task,

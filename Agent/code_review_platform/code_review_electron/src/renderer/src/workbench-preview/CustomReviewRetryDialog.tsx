@@ -57,6 +57,13 @@ export function CustomReviewRetryDialog({
       setError(`请重新选择原任务提供过的${missing.label}。`)
       return
     }
+    const totalMaterialBytes = retry.materialFields
+      .flatMap((field) => materials[field.id] ?? [])
+      .reduce((total, file) => total + (file.sizeBytes ?? 0), 0)
+    if (totalMaterialBytes > 100 * 1024 * 1024) {
+      setError('DS-99 三类材料总大小不能超过 100 MB。')
+      return
+    }
     if (!commands.confirmCustomReviewRetry) return
     setIsSubmitting(true)
     try {

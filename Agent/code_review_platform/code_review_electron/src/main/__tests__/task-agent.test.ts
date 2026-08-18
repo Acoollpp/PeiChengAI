@@ -1307,6 +1307,40 @@ describe('executeReviewTask', () => {
     expect(dependencies.prepareWorkspace).not.toHaveBeenCalled()
   })
 
+  it('历史 DS-99 快照字段不完整时仍按基线解析 BMS 所选审查项，不回退通用提示词', async () => {
+    const historicalTask = makeTask({
+      id: 'task-ds99-historical',
+      review_item_ids: ['DS-99'],
+      custom_review_rule: '历史任务规则。',
+      custom_review_mode: 'dual_revision',
+      has_custom_review_word_material: true,
+      has_custom_review_excel_material: null,
+      has_custom_review_pdf_material: false,
+      skill_name: 'bms-code-reviewer',
+      status: 'failed'
+    })
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(),
+        readTask: vi.fn(async () => historicalTask),
+        updateTaskStatus: vi.fn()
+      },
+      checkEnvironment: vi.fn(),
+      prepareWorkspace: vi.fn(),
+      runCodex: vi.fn(),
+      uploadReport: vi.fn()
+    })
+
+    await expect(retryReviewTask({
+      token: 'token-123',
+      taskId: historicalTask.id
+    }, dependencies)).rejects.toThrow('DS-99 自定义审查必须填写规则正文。')
+
+    expect(dependencies.checkEnvironment).not.toHaveBeenCalled()
+    expect(dependencies.prepareWorkspace).not.toHaveBeenCalled()
+    expect(dependencies.runCodex).not.toHaveBeenCalled()
+  })
+
   it('重试阶段事件只在对应服务端状态落库后发出', async () => {
     const checkingStarted = createDeferred<void>()
     const checkingPersisted = createDeferred<void>()
