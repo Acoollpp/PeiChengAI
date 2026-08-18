@@ -1,4 +1,5 @@
 import type { ReviewTemplateKey } from './review-templates'
+import type { CustomReviewMode } from './review-items'
 
 export type EnvironmentStatus =
   | 'ready'
@@ -69,6 +70,11 @@ export interface ReviewTask {
   old_revision: string
   new_revision: string
   review_item_ids?: string[] | null
+  custom_review_rule?: string | null
+  custom_review_mode?: CustomReviewMode | null
+  has_custom_review_word_material?: boolean | null
+  has_custom_review_excel_material?: boolean | null
+  has_custom_review_pdf_material?: boolean | null
   template_key?: ReviewTemplateKey
   skill_name?: string
   department_id?: string | null

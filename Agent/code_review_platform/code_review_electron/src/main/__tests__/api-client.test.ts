@@ -90,6 +90,39 @@ describe('ApiClient', () => {
     })
   })
 
+  it('提交 DS-99 快照时不序列化本地审查项材料路径', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'task-99' }))
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    await client.createTask('token-123', {
+      svn_url: 'svn://repo/project',
+      old_revision: '12',
+      new_revision: '14',
+      review_items: [{
+        id: 'DS-99',
+        user_extra_rules: '保护条件必须具有明确恢复路径。',
+        custom_mode: 'dual_revision',
+        materials: [{ field_id: 'pdf-materials', file_paths: ['/local/private/rule.pdf'] }]
+      }],
+      review_item_ids: ['DS-99'],
+      custom_review_rule: '保护条件必须具有明确恢复路径。',
+      custom_review_mode: 'dual_revision',
+      has_custom_review_word_material: false,
+      has_custom_review_excel_material: false,
+      has_custom_review_pdf_material: true
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    expect(body).toEqual(expect.objectContaining({
+      review_item_ids: ['DS-99'],
+      custom_review_rule: '保护条件必须具有明确恢复路径。',
+      custom_review_mode: 'dual_revision',
+      has_custom_review_pdf_material: true
+    }))
+    expect(JSON.stringify(body)).not.toContain('/local/private/rule.pdf')
+    expect(body).not.toHaveProperty('review_items')
+  })
+
   it('serializes review template fields when creating a review task', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'task-1' }))
     const client = new ApiClient('https://server.example', fetchMock)

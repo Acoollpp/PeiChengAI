@@ -1,5 +1,5 @@
 import type { ReviewTemplateKey } from '../shared/review-templates'
-import type { SelectedReviewItemInput } from '../shared/review-items'
+import type { CustomReviewMode, SelectedReviewItemInput } from '../shared/review-items'
 import { REVIEW_REPORT_FILE_NAME } from '../shared/report-artifacts'
 import type {
   ClientUpdatePolicy,
@@ -43,6 +43,11 @@ export interface CreateTaskRequest {
   requirement_file_name?: string
   focus_direction_id?: string
   focus_direction_snapshot?: string
+  custom_review_rule?: string
+  custom_review_mode?: CustomReviewMode
+  has_custom_review_word_material?: boolean
+  has_custom_review_excel_material?: boolean
+  has_custom_review_pdf_material?: boolean
 }
 
 export interface UpdateTaskStatusRequest {

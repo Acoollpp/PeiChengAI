@@ -52,8 +52,15 @@ export const buildBmsReviewTaskPrompt = ({
   }
 
   const reviewItemSections = reviewItems.map((item) => {
-    const extraRules = item.user_extra_rules?.trim() || '无'
     const materials = item.materials.filter((material) => material.filePaths.length > 0)
+    const extraRules = item.id === 'DS-99'
+      ? [
+          `模式：${item.custom_mode ?? '未声明'}`,
+          `材料：${materials.map((material) => material.name).join('、') || '无'}`,
+          '',
+          item.user_extra_rules?.trim() || '无'
+        ].join('\n')
+      : item.user_extra_rules?.trim() || '无'
     const materialLines = materials.length === 0
       ? ['- 专项材料：无']
       : [
@@ -73,7 +80,10 @@ export const buildBmsReviewTaskPrompt = ({
     return [
       `### ${item.id}：${item.name}`,
       `- 用户额外规则：${extraRules}`,
-      ...materialLines
+      ...materialLines,
+      ...(item.id === 'DS-99'
+        ? ['- 上述专项材料只属于 DS-99 自定义审查，不得供其他审查项使用。']
+        : [])
     ].join('\n')
   })
 

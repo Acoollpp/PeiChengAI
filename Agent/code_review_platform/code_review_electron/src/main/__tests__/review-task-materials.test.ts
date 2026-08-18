@@ -324,4 +324,36 @@ describe('prepareReviewTaskMaterials', () => {
       prepareReviewTaskMaterials(reviewItems, join(root, 'retry-run'))
     ).rejects.toThrow('产品规格书不存在，请重新选择')
   })
+
+  it('阻止 DS-99 超过每类数量和总材料大小的本地材料', async () => {
+    const tooManyWordFiles = Array.from({ length: 11 }, (_, index) => `/source/rule-${index}.docx`)
+    const oversizedTotalFiles = Array.from({ length: 6 }, (_, index) => `/source/spec-${index}.pdf`)
+    const reviewItems: ResolvedReviewItemInput[] = [{
+      id: 'DS-99',
+      name: '自定义审查',
+      user_extra_rules: '保护条件必须具备恢复路径。',
+      custom_mode: 'new_revision_full',
+      maxTotalMaterialBytes: 100 * 1024 * 1024,
+      materials: [
+        {
+          fieldId: 'word-materials', name: 'Word 材料', required: false, multiple: true,
+          allowedExtensions: ['.docx'], maxFiles: 10, maxFileBytes: 20 * 1024 * 1024,
+          filePaths: tooManyWordFiles
+        },
+        {
+          fieldId: 'pdf-materials', name: 'PDF 材料', required: false, multiple: true,
+          allowedExtensions: ['.pdf'], maxFiles: 10, maxFileBytes: 20 * 1024 * 1024,
+          filePaths: oversizedTotalFiles
+        }
+      ]
+    }]
+
+    await expect(prepareReviewTaskMaterials(reviewItems, '/workspace', {
+      copyFile: vi.fn(),
+      open: vi.fn(async () => ({ close: vi.fn() })),
+      stat: vi.fn(async () => ({ isFile: () => true, size: 20 * 1024 * 1024 }))
+    })).rejects.toThrow(
+      'DS-99 Word 材料最多只能选择 10 个文件；DS-99 专项材料总大小不能超过 100 MB'
+    )
+  })
 })

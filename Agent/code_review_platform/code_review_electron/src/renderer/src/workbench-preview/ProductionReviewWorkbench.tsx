@@ -66,8 +66,19 @@ export const PRODUCTION_REVIEW_ITEM_CATALOG: ReviewItemDefinition[] = REVIEW_ITE
       description: field.description,
       required: field.required,
       extensions: [...field.allowedExtensions],
-      multiplicity: field.multiple ? 'multiple' : 'single'
-    }))
+      multiplicity: field.multiple ? 'multiple' : 'single',
+      ...(field.maxFiles ? { maxFiles: field.maxFiles } : {}),
+      ...(field.maxFileBytes ? { maxFileBytes: field.maxFileBytes } : {})
+    })),
+    ...(item.customReview
+      ? {
+          customReview: {
+            modes: [...item.customReview.modes],
+            maxRuleLength: item.customReview.maxRuleLength,
+            maxTotalMaterialBytes: item.customReview.maxTotalMaterialBytes
+          }
+        }
+      : {})
   }))
   .map(applyWorkbenchReviewItemPresentation)
 const productionReviewItemIds = new Set<ReviewItemId>(
@@ -480,6 +491,24 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
       showNotice('生产任务包含不存在或未启用的审查项。')
       return commandResult('生产任务包含不存在或未启用的审查项。')
     }
+    const customReviewInput = input.selection['DS-99']
+    if (selectedIds.includes('DS-99')) {
+      if (!customReviewInput?.extraRules.trim()) {
+        showNotice('DS-99 自定义审查必须填写规则正文。')
+        return commandResult('DS-99 自定义审查必须填写规则正文。')
+      }
+      if (!customReviewInput.customMode) {
+        showNotice('DS-99 自定义审查必须选择证据模式。')
+        return commandResult('DS-99 自定义审查必须选择证据模式。')
+      }
+      if (
+        customReviewInput.customMode === 'dual_revision' &&
+        /^r?0$/i.test(input.oldRevision.trim())
+      ) {
+        showNotice('DS-99 变更代码审查模式不能使用旧 revision 0 或 r0。')
+        return commandResult('DS-99 变更代码审查模式不能使用旧 revision 0 或 r0。')
+      }
+    }
     if (!canCreateTask) {
       showNotice('本地环境就绪后才可发起审查。')
       return commandResult('本地环境就绪后才可发起审查。')
@@ -497,6 +526,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
           ...(selectedInput?.extraRules.trim()
             ? { user_extra_rules: selectedInput.extraRules.trim() }
             : {}),
+          ...(selectedInput?.customMode ? { custom_mode: selectedInput.customMode } : {}),
           ...(materials.length > 0 ? { materials } : {})
         }
       }),
@@ -680,7 +710,8 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
       return {
         id: result.filePath,
         name: result.fileName,
-        sizeLabel: formatFileSize(result.fileSize)
+        sizeLabel: formatFileSize(result.fileSize),
+        sizeBytes: result.fileSize
       }
     },
     async dismissNotice() {

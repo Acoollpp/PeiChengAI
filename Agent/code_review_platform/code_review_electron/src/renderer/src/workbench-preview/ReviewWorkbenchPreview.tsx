@@ -1098,6 +1098,7 @@ export function ReviewWorkbenchPreview({
         <ReviewItemSelector
           catalog={viewModel.catalog}
           initialSelection={selection}
+          oldRevision={draft.oldRevision}
           commands={adapter.commands}
           onCancel={closeSelector}
           onConfirm={(nextSelection) => {

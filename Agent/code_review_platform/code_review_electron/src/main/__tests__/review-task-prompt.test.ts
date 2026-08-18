@@ -260,4 +260,37 @@ describe('buildBmsReviewTaskPrompt', () => {
     expect(ds03Section).toContain('专项材料：无')
     expect(ds03Section).not.toContain('只检查本次新增诊断代码')
   })
+
+  it('DS-99 在自身规则中声明模式和材料，并隔离本地工作区文件', () => {
+    const materialPath = '/runtime/workspaces/task-ds99/materials/DS-99/pdf-materials/rule.pdf'
+    const prompt = buildBmsReviewTaskPrompt({
+      svnUrl: 'svn://example.com/bms/custom',
+      oldRevision: 'r120',
+      newRevision: 'r130',
+      reviewItems: [
+        {
+          id: 'DS-99',
+          name: '自定义审查',
+          user_extra_rules: '保护条件必须具有明确的恢复路径。',
+          custom_mode: 'dual_revision',
+          materials: [{
+            fieldId: 'pdf-materials', name: 'PDF 材料', required: false,
+            multiple: true, allowedExtensions: ['.pdf'], filePaths: [materialPath]
+          }]
+        },
+        { id: 'DS-03', name: 'MOS 充放电状态机审查', materials: [] }
+      ],
+      reportPath: '/runtime/workspaces/task-ds99/report.md'
+    })
+
+    const ds99Start = prompt.indexOf('### DS-99：自定义审查')
+    const ds03Start = prompt.indexOf('### DS-03：MOS 充放电状态机审查')
+    const ds99Section = prompt.slice(ds99Start, ds03Start)
+    expect(ds99Section).toContain('模式：dual_revision')
+    expect(ds99Section).toContain('材料：PDF 材料')
+    expect(ds99Section).toContain('保护条件必须具有明确的恢复路径。')
+    expect(ds99Section).toContain(materialPath)
+    expect(ds99Section).toContain('上述专项材料只属于 DS-99 自定义审查')
+    expect(prompt.slice(ds03Start)).not.toContain(materialPath)
+  })
 })

@@ -48,6 +48,17 @@ function formatRevisionRange(task: ReviewTaskPublic) {
   return `${task.old_revision} → ${task.new_revision}`
 }
 
+function customReviewModeLabel(mode: ReviewTaskPublic["custom_review_mode"]) {
+  switch (mode) {
+    case "dual_revision":
+      return "变更代码审查模式"
+    case "new_revision_full":
+      return "全量代码审查模式"
+    default:
+      return "未记录"
+  }
+}
+
 function DetailField({
   label,
   value,
@@ -233,6 +244,7 @@ function TaskDetailContent({
     : task.feedback_submitted_at
       ? 100
       : 0
+  const customReviewRule = task.custom_review_rule?.trim()
 
   const handleDownloadPdf = async () => {
     setIsDownloadingPdf(true)
@@ -278,6 +290,27 @@ function TaskDetailContent({
             className="md:col-span-4"
           />
         </dl>
+
+        {customReviewRule ? (
+          <section
+            className="mt-5 border-l-2 border-primary/40 bg-muted/30 px-4 py-3"
+            data-testid="custom-review-input-detail"
+          >
+            <h2 className="text-sm font-semibold">自定义审查输入</h2>
+            <dl className="mt-3 grid gap-4 md:grid-cols-4">
+              <DetailField
+                label="审查模式"
+                value={customReviewModeLabel(task.custom_review_mode)}
+              />
+              <div className="md:col-span-4">
+                <dt className="text-xs text-muted-foreground">规则正文</dt>
+                <dd className="mt-1 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">
+                  {customReviewRule}
+                </dd>
+              </div>
+            </dl>
+          </section>
+        ) : null}
 
         <div className="mt-5 flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-[18rem] flex-1">

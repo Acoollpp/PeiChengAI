@@ -61,7 +61,7 @@ describe('ReviewWorkbenchPreview', () => {
     expect(screen.queryByText('AI 代码审查')).not.toBeInTheDocument()
     expect(screen.getByText('王', { selector: '.wb-avatar' })).toBeInTheDocument()
     expect(screen.getByRole('button', {
-      name: /选择 DS-06、DS-05、DS-04、DS-03、DS-02、DS-01/
+      name: /选择 DS-99、DS-06、DS-05、DS-04、DS-03、DS-02、DS-01/
     })).toBeInTheDocument()
   })
 

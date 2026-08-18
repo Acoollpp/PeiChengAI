@@ -476,6 +476,84 @@ def test_create_review_task_stores_and_returns_review_item_ids(
     assert read_response.json()["review_item_ids"] == ["DS-01", "DS-03"]
 
 
+def test_create_review_task_stores_ds99_input_snapshot_without_material_metadata(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+        json={
+            "svn_url": "svn://repo/custom-review",
+            "old_revision": "r12",
+            "new_revision": "r14",
+            "skill_name": "bms-code-reviewer",
+            "review_item_ids": ["DS-03", "DS-99"],
+            "custom_review_rule": "  保护条件必须具有明确恢复路径。  ",
+            "custom_review_mode": "dual_revision",
+            "has_custom_review_word_material": True,
+            "has_custom_review_excel_material": False,
+            "has_custom_review_pdf_material": True,
+        },
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["review_item_ids"] == ["DS-03", "DS-99"]
+    assert content["custom_review_rule"] == "保护条件必须具有明确恢复路径。"
+    assert content["custom_review_mode"] == "dual_revision"
+    assert content["has_custom_review_word_material"] is True
+    assert content["has_custom_review_excel_material"] is False
+    assert content["has_custom_review_pdf_material"] is True
+    task = db.get(ReviewTask, UUID(content["id"]))
+    assert task is not None
+    assert task.custom_review_rule == "保护条件必须具有明确恢复路径。"
+    assert task.has_custom_review_word_material is True
+
+
+@pytest.mark.parametrize(
+    "payload, detail",
+    [
+        (
+            {"review_item_ids": ["DS-99"]},
+            "DS-99 自定义审查必须填写规则正文",
+        ),
+        (
+            {
+                "review_item_ids": ["DS-99"],
+                "custom_review_rule": "检查保护条件",
+                "custom_review_mode": "new_revision_full",
+            },
+            "DS-99 自定义审查材料状态缺失",
+        ),
+        (
+            {"custom_review_rule": "不应脱离 DS-99 保存"},
+            "未选择 DS-99 时不能提交自定义审查输入",
+        ),
+    ],
+)
+def test_create_review_task_validates_ds99_snapshot_contract(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    payload: dict[str, object],
+    detail: str,
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+        json={
+            "svn_url": "svn://repo/custom-review",
+            "old_revision": "r12",
+            "new_revision": "r14",
+            **payload,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == detail
+
+
 def test_read_legacy_review_task_uses_database_default_for_review_item_ids(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
@@ -533,6 +611,11 @@ def test_create_review_task_legacy_payload_returns_new_fields_as_empty(
     assert response.status_code == 200
     content = response.json()
     assert content["review_item_ids"] == []
+    assert content["custom_review_rule"] is None
+    assert content["custom_review_mode"] is None
+    assert content["has_custom_review_word_material"] is None
+    assert content["has_custom_review_excel_material"] is None
+    assert content["has_custom_review_pdf_material"] is None
     assert content["department_id"] is None
     assert content["department_name"] is None
     assert content["focus_direction_id"] is None

@@ -1,8 +1,17 @@
-export const REVIEW_ITEM_CATALOG_VERSION = 4
+export const REVIEW_ITEM_CATALOG_VERSION = 5
 
 export const BMS_CODE_REVIEW_SKILL_NAME = 'bms-code-reviewer'
 
-export type ReviewItemId = 'DS-01' | 'DS-02' | 'DS-03' | 'DS-04' | 'DS-05' | 'DS-06'
+export type ReviewItemId =
+  | 'DS-01'
+  | 'DS-02'
+  | 'DS-03'
+  | 'DS-04'
+  | 'DS-05'
+  | 'DS-06'
+  | 'DS-99'
+
+export type CustomReviewMode = 'dual_revision' | 'new_revision_full'
 
 export interface ReviewItemMaterialFieldDefinition {
   id: string
@@ -11,6 +20,8 @@ export interface ReviewItemMaterialFieldDefinition {
   required: boolean
   multiple: boolean
   allowedExtensions: readonly string[]
+  maxFiles?: number
+  maxFileBytes?: number
 }
 
 export interface ReviewItemDefinition {
@@ -29,6 +40,11 @@ export interface ReviewItemDefinition {
   sortOrder: number
   enabled: boolean
   materialFields: readonly ReviewItemMaterialFieldDefinition[]
+  customReview?: {
+    modes: readonly CustomReviewMode[]
+    maxRuleLength: number
+    maxTotalMaterialBytes: number
+  }
 }
 
 export interface SelectedReviewItemMaterialInput {
@@ -39,6 +55,7 @@ export interface SelectedReviewItemMaterialInput {
 export interface SelectedReviewItemInput {
   id: string
   user_extra_rules?: string
+  custom_mode?: CustomReviewMode
   materials?: SelectedReviewItemMaterialInput[]
 }
 
@@ -48,14 +65,18 @@ export interface ResolvedReviewItemMaterialInput {
   required: boolean
   multiple: boolean
   allowedExtensions: readonly string[]
+  maxFiles?: number
+  maxFileBytes?: number
   filePaths: string[]
 }
 
 export interface ResolvedReviewItemInput {
   id: string
   user_extra_rules?: string
+  custom_mode?: CustomReviewMode
   name: string
   materials: ResolvedReviewItemMaterialInput[]
+  maxTotalMaterialBytes?: number
 }
 
 export const REVIEW_ITEM_CATALOG: readonly ReviewItemDefinition[] = [
@@ -165,8 +186,8 @@ export const REVIEW_ITEM_CATALOG: readonly ReviewItemDefinition[] = [
   {
     id: 'DS-06',
     category: {
-      id: 'spec-consistency',
-      name: '规格一致性审核'
+      id: 'daily-submission',
+      name: '日常提交审核'
     },
     name: '规格书审查',
     summary: '依据产品规格书 PDF 审查指定新 revision 的参数与配置一致性。',
@@ -185,6 +206,59 @@ export const REVIEW_ITEM_CATALOG: readonly ReviewItemDefinition[] = [
         required: true,
         multiple: false,
         allowedExtensions: ['.pdf']
+      }
+    ]
+  },
+  {
+    id: 'DS-99',
+    category: {
+      id: 'custom-review',
+      name: '自定义审查'
+    },
+    name: '自定义审查',
+    summary: '依据本次填写的规则，对指定代码范围执行独立审查。',
+    details: {
+      target: '逐条核对本次填写的自定义规则，不加载其他审查项的规则或历史经验。',
+      process: '选择证据模式，按需提供本地材料，由 Skill 依据规则正文执行审查。',
+      specification: '规则正文必填，最多 1200 字；必须选择变更代码审查或全量代码审查模式。材料仅在本机任务工作区使用。'
+    },
+    sortOrder: 99,
+    enabled: true,
+    customReview: {
+      modes: ['dual_revision', 'new_revision_full'],
+      maxRuleLength: 1200,
+      maxTotalMaterialBytes: 100 * 1024 * 1024
+    },
+    materialFields: [
+      {
+        id: 'word-materials',
+        name: 'Word 材料',
+        description: '可选；仅作为 DS-99 自定义审查的本地参考材料。',
+        required: false,
+        multiple: true,
+        allowedExtensions: ['.docx'],
+        maxFiles: 10,
+        maxFileBytes: 20 * 1024 * 1024
+      },
+      {
+        id: 'excel-materials',
+        name: 'Excel 材料',
+        description: '可选；仅作为 DS-99 自定义审查的本地参考材料。',
+        required: false,
+        multiple: true,
+        allowedExtensions: ['.xls', '.xlsx'],
+        maxFiles: 10,
+        maxFileBytes: 20 * 1024 * 1024
+      },
+      {
+        id: 'pdf-materials',
+        name: 'PDF 材料',
+        description: '可选；仅作为 DS-99 自定义审查的本地参考材料。',
+        required: false,
+        multiple: true,
+        allowedExtensions: ['.pdf'],
+        maxFiles: 10,
+        maxFileBytes: 20 * 1024 * 1024
       }
     ]
   }
@@ -218,8 +292,24 @@ export const resolveReviewItemInputs = (
     }
 
     const userExtraRules = input.user_extra_rules?.trim()
-    if (userExtraRules && userExtraRules.length > 4096) {
+    const customReview = definition.customReview
+    if (customReview && !userExtraRules) {
+      throw new Error('DS-99 自定义审查必须填写规则正文。')
+    }
+    if (customReview && userExtraRules && userExtraRules.length > customReview.maxRuleLength) {
+      throw new Error(`DS-99 自定义审查规则正文不能超过 ${customReview.maxRuleLength} 个字符。`)
+    }
+    if (!customReview && userExtraRules && userExtraRules.length > 4096) {
       throw new Error(`审查项 ${input.id} 的用户额外规则不能超过 4096 个字符。`)
+    }
+    if (customReview && !input.custom_mode) {
+      throw new Error('DS-99 自定义审查必须选择证据模式。')
+    }
+    if (customReview && input.custom_mode && !customReview.modes.includes(input.custom_mode)) {
+      throw new Error('DS-99 自定义审查模式无效。')
+    }
+    if (!customReview && input.custom_mode) {
+      throw new Error(`审查项 ${input.id} 不支持自定义审查模式。`)
     }
 
     const providedMaterials = input.materials ?? []
@@ -231,6 +321,10 @@ export const resolveReviewItemInputs = (
       if (!definition.materialFields.some((field) => field.id === material.field_id)) {
         throw new Error(`审查项 ${input.id} 不支持材料字段 ${material.field_id}。`)
       }
+      const field = definition.materialFields.find((candidate) => candidate.id === material.field_id)!
+      if (field.maxFiles && material.file_paths.length > field.maxFiles) {
+        throw new Error(`${input.id} ${field.name}最多只能选择 ${field.maxFiles} 个文件。`)
+      }
       materialInputsByFieldId.set(material.field_id, material)
     }
 
@@ -238,14 +332,18 @@ export const resolveReviewItemInputs = (
       id: definition.id,
       name: definition.name,
       ...(userExtraRules ? { user_extra_rules: userExtraRules } : {}),
+      ...(input.custom_mode ? { custom_mode: input.custom_mode } : {}),
       materials: definition.materialFields.map((field) => ({
         fieldId: field.id,
         name: field.name,
         required: field.required,
         multiple: field.multiple,
         allowedExtensions: field.allowedExtensions,
+        ...(field.maxFiles ? { maxFiles: field.maxFiles } : {}),
+        ...(field.maxFileBytes ? { maxFileBytes: field.maxFileBytes } : {}),
         filePaths: [...(materialInputsByFieldId.get(field.id)?.file_paths ?? [])]
-      }))
+      })),
+      ...(customReview ? { maxTotalMaterialBytes: customReview.maxTotalMaterialBytes } : {})
     })
   }
 
