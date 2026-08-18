@@ -358,10 +358,29 @@ test.describe("Admin task navigation", () => {
     ).toBeVisible()
   })
 
-  test("Admin task table shows report feedback columns and useful text title", async ({
+  test("Admin task table keeps feedback status but omits useful text column", async ({
     page,
   }) => {
-    await logInWithKey(page, testApiKey)
+    await page.route("**/api/v1/auth/key-login", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: { access_token: "test-token", token_type: "bearer" },
+      })
+    })
+    await page.route("**/api/v1/users/me", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: {
+          id: "22222222-2222-2222-2222-222222222222",
+          full_name: "反馈管理员",
+          svn_username: "feedback_admin",
+          role: "admin",
+          is_active: true,
+          is_superuser: true,
+        },
+      })
+    })
+    await logInWithKey(page, "mock-api-key")
 
     await page.route("**/api/v1/review-tasks?**", async (route) => {
       await route.fulfill({
@@ -416,11 +435,13 @@ test.describe("Admin task navigation", () => {
     ).toBeVisible()
     await expect(
       page.getByRole("columnheader", { name: "反馈内容" }),
-    ).toBeVisible()
-    await expect(page.getByText("有帮助")).toBeVisible()
-    await expect(page.getByText("未反馈")).toBeVisible()
-    const usefulCell = page.getByTitle("1. 空指针风险\n2. 越界访问风险")
-    await expect(usefulCell).toBeVisible()
+    ).toHaveCount(0)
+    const taskTable = page.getByRole("table")
+    await expect(taskTable.getByText("有帮助", { exact: true })).toBeVisible()
+    await expect(taskTable.getByText("未反馈", { exact: true })).toBeVisible()
+    await expect(page.getByTitle("1. 空指针风险\n2. 越界访问风险")).toHaveCount(
+      0,
+    )
 
     await page.setViewportSize({ width: 1600, height: 900 })
     await expect(
