@@ -102,17 +102,6 @@ const reportFeedbackOptions = [
   { value: "none", label: "未反馈" },
 ] as const
 
-function formatUsefulIssuesSummary(value?: string | null) {
-  if (!value?.trim()) {
-    return "-"
-  }
-  return value
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .join("；")
-}
-
 async function readReviewTasks(
   filters: ReviewTaskFilters,
   canFilterUsers: boolean,
@@ -335,30 +324,6 @@ function createReviewTaskColumns({
 
         return (
           <ReportFeedbackHelpfulBadge helpful={task.report_feedback_helpful} />
-        )
-      },
-    },
-    {
-      accessorKey: "report_feedback_useful_issues_text",
-      header: "反馈内容",
-      cell: ({ row }) => {
-        const task = row.original
-        const usefulIssuesText = task.report_feedback_useful_issues_text
-
-        return (
-          <div
-            className="max-w-xs truncate text-muted-foreground"
-            title={
-              task.feedback_protocol_version !== 1
-                ? usefulIssuesText || undefined
-                : undefined
-            }
-          >
-            {task.feedback_protocol_version !== 1 &&
-            task.report_feedback_helpful
-              ? formatUsefulIssuesSummary(usefulIssuesText)
-              : "-"}
-          </div>
         )
       },
     },
