@@ -17,6 +17,21 @@ export interface CustomReviewRetrySnapshot {
   requiredMaterialFieldIds: CustomReviewMaterialFieldId[]
 }
 
+const customReviewSnapshotValues = (task: ReviewTask) => [
+  task.custom_review_rule,
+  task.custom_review_mode,
+  task.has_custom_review_word_material,
+  task.has_custom_review_excel_material,
+  task.has_custom_review_pdf_material
+]
+
+export const hasPartialCustomReviewRetrySnapshot = (task: ReviewTask): boolean => {
+  if (!task.review_item_ids?.includes(CUSTOM_REVIEW_ITEM_ID)) return false
+  const values = customReviewSnapshotValues(task)
+  const allAbsent = values.every((value) => value === null || value === undefined)
+  return !allAbsent && !getCustomReviewRetrySnapshot(task)
+}
+
 const customMaterialAvailability: Record<
   CustomReviewMaterialFieldId,
   keyof Pick<
@@ -62,11 +77,23 @@ export const buildCustomReviewRetryInputs = (
   snapshot: CustomReviewRetrySnapshot,
   inputs: readonly SelectedReviewItemInput[] | undefined
 ): SelectedReviewItemInput[] => {
-  if (!inputs || inputs.length !== 1 || inputs[0]?.id !== CUSTOM_REVIEW_ITEM_ID) {
-    throw new Error('DS-99 重试只能补充原任务已使用的材料类型；如需修改审查范围，请新建任务。')
+  const originalItemIds = task.review_item_ids ?? [CUSTOM_REVIEW_ITEM_ID]
+  if (!inputs || inputs.length !== originalItemIds.length) {
+    throw new Error('DS-99 重试必须保留原任务的审查项；如需修改审查范围，请新建任务。')
   }
 
-  const input = inputs[0]
+  const inputById = new Map<string, SelectedReviewItemInput>()
+  for (const candidate of inputs) {
+    if (!originalItemIds.includes(candidate.id) || inputById.has(candidate.id)) {
+      throw new Error('DS-99 重试不能修改原任务的审查项；如需修改审查范围，请新建任务。')
+    }
+    inputById.set(candidate.id, candidate)
+  }
+  if (inputById.size !== originalItemIds.length || !inputById.has(CUSTOM_REVIEW_ITEM_ID)) {
+    throw new Error('DS-99 重试必须保留原任务的审查项；如需修改审查范围，请新建任务。')
+  }
+
+  const input = inputById.get(CUSTOM_REVIEW_ITEM_ID)!
   if (input.user_extra_rules?.trim() && input.user_extra_rules.trim() !== snapshot.rule) {
     throw new Error('DS-99 重试必须使用原任务的审查规则；如需修改规则，请新建任务。')
   }
@@ -109,6 +136,12 @@ export const buildCustomReviewRetryInputs = (
         }
       : {})
   }
-  const originalItemIds = task.review_item_ids ?? [CUSTOM_REVIEW_ITEM_ID]
-  return originalItemIds.map((itemId) => itemId === CUSTOM_REVIEW_ITEM_ID ? customInput : { id: itemId })
+  return originalItemIds.map((itemId) => {
+    if (itemId === CUSTOM_REVIEW_ITEM_ID) return customInput
+    const fixedInput = inputById.get(itemId)!
+    if (fixedInput.user_extra_rules?.trim() || fixedInput.custom_mode) {
+      throw new Error(`DS-99 重试不能修改 ${itemId} 的规则或模式；如需修改，请新建任务。`)
+    }
+    return fixedInput
+  })
 }

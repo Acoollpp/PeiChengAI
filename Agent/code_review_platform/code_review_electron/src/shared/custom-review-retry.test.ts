@@ -36,17 +36,9 @@ describe('DS-99 跨会话重试快照', () => {
     const source = task({ review_item_ids: ['DS-03', 'DS-99'] })
     const snapshot = getCustomReviewRetrySnapshot(source)!
 
-    expect(buildCustomReviewRetryInputs(source, snapshot, [{
-      id: 'DS-99',
-      user_extra_rules: snapshot.rule,
-      custom_mode: snapshot.mode,
-      materials: [
-        { field_id: 'word-materials', file_paths: ['/retry/规则.docx'] },
-        { field_id: 'pdf-materials', file_paths: ['/retry/规格书.pdf'] }
-      ]
-    }])).toEqual([
+    expect(buildCustomReviewRetryInputs(source, snapshot, [
       { id: 'DS-03' },
-      expect.objectContaining({
+      {
         id: 'DS-99',
         user_extra_rules: '保护状态必须有明确恢复路径。',
         custom_mode: 'dual_revision',
@@ -54,7 +46,18 @@ describe('DS-99 跨会话重试快照', () => {
           { field_id: 'word-materials', file_paths: ['/retry/规则.docx'] },
           { field_id: 'pdf-materials', file_paths: ['/retry/规格书.pdf'] }
         ]
-      })
+      }
+    ])).toEqual([
+      { id: 'DS-03' },
+      {
+        id: 'DS-99',
+        user_extra_rules: '保护状态必须有明确恢复路径。',
+        custom_mode: 'dual_revision',
+        materials: [
+          { field_id: 'word-materials', file_paths: ['/retry/规则.docx'] },
+          { field_id: 'pdf-materials', file_paths: ['/retry/规格书.pdf'] }
+        ]
+      }
     ])
   })
 

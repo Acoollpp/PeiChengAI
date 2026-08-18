@@ -27,7 +27,8 @@ import { buildBmsReviewTaskPrompt } from './review-task-prompt'
 import { prepareReviewTaskMaterials } from './review-task-materials'
 import {
   buildCustomReviewRetryInputs,
-  getCustomReviewRetrySnapshot
+  getCustomReviewRetrySnapshot,
+  hasPartialCustomReviewRetrySnapshot
 } from '../shared/custom-review-retry'
 import {
   BMS_CODE_REVIEW_SKILL_NAME,
@@ -463,13 +464,23 @@ export const retryReviewTask = async (
   }
   const task = toReviewTask(await dependencies.api.readTask(input.token, input.taskId))
   const customReviewSnapshot = getCustomReviewRetrySnapshot(task)
+  const hasPartialCustomReviewSnapshot = hasPartialCustomReviewRetrySnapshot(task)
+  if (!customReviewSnapshot && hasPartialCustomReviewSnapshot) {
+    throw new Error('DS-99 历史任务输入快照不完整，无法安全重试，请新建审查任务。')
+  }
+  const isLegacyCustomReviewTask =
+    !customReviewSnapshot &&
+    !hasPartialCustomReviewSnapshot &&
+    task.review_item_ids?.includes('DS-99')
   const reviewItems = customReviewSnapshot
     ? resolveReviewItemInputs(
         buildCustomReviewRetryInputs(task, customReviewSnapshot, input.reviewItems)
       )
     : input.reviewItems
       ? resolveReviewItemInputs(input.reviewItems)
-      : task.review_item_ids?.length
+      : isLegacyCustomReviewTask
+        ? undefined
+        : task.review_item_ids?.length
         ? resolveReviewItemInputs(task.review_item_ids.map((id) => ({ id })))
         : undefined
   return runExistingReviewTask({

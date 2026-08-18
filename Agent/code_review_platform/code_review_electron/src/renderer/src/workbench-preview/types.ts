@@ -52,6 +52,7 @@ export interface CustomReviewRetryViewModel {
   rule: string
   mode: NonNullable<CustomReviewMode>
   materialFields: MaterialFieldDefinition[]
+  fixedReviewItems: Array<Pick<ReviewItemDefinition, 'id' | 'name' | 'materialFields'>>
 }
 
 export type TaskStage =
@@ -179,7 +180,8 @@ export interface WorkbenchCommands {
   retryTask(taskId: string): Promise<PreviewCommandResult>
   confirmCustomReviewRetry?(
     taskId: string,
-    materials: Record<string, MaterialFileView[]>
+    customMaterials: Record<string, MaterialFileView[]>,
+    fixedMaterials: Record<string, Record<string, MaterialFileView[]>>
   ): Promise<PreviewCommandResult>
   cancelCustomReviewRetry?(): Promise<PreviewCommandResult>
   advanceTasks(): Promise<PreviewCommandResult>

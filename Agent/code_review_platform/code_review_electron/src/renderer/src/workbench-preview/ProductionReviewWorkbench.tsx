@@ -584,23 +584,31 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
       showNotice(`任务 ${task.id} 已加入本机重试队列。`)
       return commandResult(`任务 ${task.id} 已加入本机重试队列。`)
     },
-    async confirmCustomReviewRetry(taskId, materials) {
+    async confirmCustomReviewRetry(taskId, customMaterials, fixedMaterials) {
       const task = findTask(taskId)
       const snapshot = task ? getCustomReviewRetrySnapshot(task) : undefined
       if (!task || !snapshot) {
         return commandResult('原任务的 DS-99 输入快照不完整，请新建审查任务。')
       }
-      const reviewItems = [{
-        id: 'DS-99' as const,
-        user_extra_rules: snapshot.rule,
-        custom_mode: snapshot.mode,
-        ...(snapshot.requiredMaterialFieldIds.length > 0 ? {
-          materials: snapshot.requiredMaterialFieldIds.map((fieldId) => ({
-            field_id: fieldId,
-            file_paths: (materials[fieldId] ?? []).map((file) => file.id)
-          }))
-        } : {})
-      }]
+      const reviewItems = (task.review_item_ids ?? ['DS-99']).map((itemId) => {
+        if (itemId === 'DS-99') {
+          return {
+            id: 'DS-99' as const,
+            user_extra_rules: snapshot.rule,
+            custom_mode: snapshot.mode,
+            ...(snapshot.requiredMaterialFieldIds.length > 0 ? {
+              materials: snapshot.requiredMaterialFieldIds.map((fieldId) => ({
+                field_id: fieldId,
+                file_paths: (customMaterials[fieldId] ?? []).map((file) => file.id)
+              }))
+            } : {})
+          }
+        }
+        const materials = Object.entries(fixedMaterials[itemId] ?? {})
+          .filter(([, files]) => files.length > 0)
+          .map(([fieldId, files]) => ({ field_id: fieldId, file_paths: files.map((file) => file.id) }))
+        return { id: itemId, ...(materials.length > 0 ? { materials } : {}) }
+      })
       await queue.retryTask({ ...task, review_items: reviewItems })
       setPendingCustomReviewRetryTaskId(undefined)
       showNotice(`任务 ${task.id} 已按原 DS-99 规则加入本机重试队列。`)
@@ -768,7 +776,12 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
         materialFields: (catalog.find((item) => item.id === 'DS-99')?.materialFields ?? [])
           .filter((field) => pendingCustomReviewRetrySnapshot.requiredMaterialFieldIds.includes(
             field.id as typeof pendingCustomReviewRetrySnapshot.requiredMaterialFieldIds[number]
-          ))
+          )),
+        fixedReviewItems: (pendingCustomReviewRetry.review_item_ids ?? [])
+          .filter((itemId) => itemId !== 'DS-99')
+          .map((itemId) => catalog.find((item) => item.id === itemId))
+          .filter((item): item is ReviewItemDefinition => Boolean(item))
+          .map((item) => ({ id: item.id, name: item.name, materialFields: item.materialFields }))
       }
     : undefined
 

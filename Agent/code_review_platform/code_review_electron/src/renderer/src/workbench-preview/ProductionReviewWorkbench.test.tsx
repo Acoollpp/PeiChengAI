@@ -1721,6 +1721,54 @@ describe('ProductionReviewWorkbench', () => {
     expect(window.codeReview.retryTask).not.toHaveBeenCalled()
   })
 
+  it('DS-99 与 DS-01 组合重试时分别重选自定义和固定材料', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [{
+        id: 'ds99-ds01', svn_url: 'svn://server/ds99', old_revision: '2', new_revision: '3',
+        review_item_ids: ['DS-99', 'DS-01'], status: 'failed', error_message: '执行失败',
+        custom_review_rule: '保护状态必须具备恢复路径。', custom_review_mode: 'dual_revision',
+        has_custom_review_word_material: true, has_custom_review_excel_material: false,
+        has_custom_review_pdf_material: false
+      }],
+      count: 1
+    })
+    vi.mocked(window.codeReview.selectReviewMaterialFile).mockResolvedValueOnce({
+      status: 'selected', filePath: '/retry/规则.docx', fileName: '规则.docx', fileSize: 1024
+    }).mockResolvedValueOnce({
+      status: 'selected', filePath: '/retry/需求.xlsx', fileName: '需求.xlsx', fileSize: 2048
+    })
+    vi.mocked(window.codeReview.retryTask).mockResolvedValueOnce({ taskId: 'ds99-ds01', status: 'failed' })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await user.click(await screen.findByRole('tab', { name: /待处理失败任务 1/ }))
+    await user.click(screen.getByRole('button', { name: '从头重试 ds99-ds01' }))
+    expect(screen.getByLabelText('DS-01 固定材料')).toBeInTheDocument()
+
+    const materialButtons = screen.getAllByRole('button', { name: '选择材料' })
+    await user.click(materialButtons[0])
+    await user.click(materialButtons[1])
+    expect(window.codeReview.selectReviewMaterialFile).toHaveBeenNthCalledWith(1, {
+      review_item_id: 'DS-99', field_id: 'word-materials'
+    })
+    expect(window.codeReview.selectReviewMaterialFile).toHaveBeenNthCalledWith(2, {
+      review_item_id: 'DS-01', field_id: 'requirement-sheet'
+    })
+    await user.click(screen.getByRole('button', { name: '按原规则重试' }))
+
+    await waitFor(() => expect(window.codeReview.retryTask).toHaveBeenCalledWith({
+      task_id: 'ds99-ds01', client_task_id: 'ds99-ds01',
+      old_revision: '2', new_revision: '3', requirement_file_path: undefined,
+      review_items: [
+        {
+          id: 'DS-99', user_extra_rules: '保护状态必须具备恢复路径。', custom_mode: 'dual_revision',
+          materials: [{ field_id: 'word-materials', file_paths: ['/retry/规则.docx'] }]
+        },
+        { id: 'DS-01', materials: [{ field_id: 'requirement-sheet', file_paths: ['/retry/需求.xlsx'] }] }
+      ]
+    }))
+  })
+
   it('把生产任务取消和跨会话失败任务重试交给本地队列', async () => {
     const user = userEvent.setup()
     const cancelRequest = createDeferred<Awaited<ReturnType<CodeReviewApi['cancelTask']>>>()
