@@ -1721,6 +1721,28 @@ describe('ProductionReviewWorkbench', () => {
     expect(window.codeReview.retryTask).not.toHaveBeenCalled()
   })
 
+  it('DS-99 快照部分缺失时明确提示新建任务且不进入重试队列', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [{
+        id: 'ds99-partial', svn_url: 'svn://server/ds99', old_revision: '2', new_revision: '3',
+        review_item_ids: ['DS-99'], status: 'failed', error_message: '执行失败',
+        custom_review_rule: '保护状态必须具备恢复路径。', custom_review_mode: 'dual_revision',
+        has_custom_review_word_material: true, has_custom_review_excel_material: null,
+        has_custom_review_pdf_material: false
+      }],
+      count: 1
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await user.click(await screen.findByRole('tab', { name: /待处理失败任务 1/ }))
+    await user.click(screen.getByRole('button', { name: '从头重试 ds99-partial' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('历史任务输入快照不完整，请新建任务。')
+    expect(screen.queryByRole('dialog', { name: '补充重试材料' })).not.toBeInTheDocument()
+    expect(window.codeReview.retryTask).not.toHaveBeenCalled()
+  })
+
   it('DS-99 与 DS-01 组合重试时分别重选自定义和固定材料', async () => {
     const user = userEvent.setup()
     vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({

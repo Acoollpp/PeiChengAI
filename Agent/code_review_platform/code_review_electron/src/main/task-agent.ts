@@ -464,6 +464,13 @@ export const retryReviewTask = async (
   }
   const task = toReviewTask(await dependencies.api.readTask(input.token, input.taskId))
   const customReviewSnapshot = getCustomReviewRetrySnapshot(task)
+  const oldRevision = input.oldRevision ?? task.old_revision
+  if (
+    customReviewSnapshot?.mode === 'dual_revision' &&
+    /^r?0$/i.test(oldRevision.trim())
+  ) {
+    throw new Error('DS-99 变更代码审查模式不能使用旧 revision 0 或 r0。')
+  }
   const hasPartialCustomReviewSnapshot = hasPartialCustomReviewRetrySnapshot(task)
   if (!customReviewSnapshot && hasPartialCustomReviewSnapshot) {
     throw new Error('DS-99 历史任务输入快照不完整，无法安全重试，请新建审查任务。')
@@ -487,7 +494,7 @@ export const retryReviewTask = async (
     token: input.token,
     task,
     reviewItems,
-    oldRevision: input.oldRevision,
+    oldRevision,
     newRevision: input.newRevision,
     requirementFilePath: reviewItems ? undefined : input.requirementFilePath,
     restartMessage: '任务重新启动',

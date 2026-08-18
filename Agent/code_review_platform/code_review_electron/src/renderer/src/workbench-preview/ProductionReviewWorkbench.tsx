@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { BMS_CODE_REVIEW_SKILL_NAME, REVIEW_ITEM_CATALOG } from '../../../shared/review-items'
-import { getCustomReviewRetrySnapshot } from '../../../shared/custom-review-retry'
+import {
+  getCustomReviewRetrySnapshot,
+  hasPartialCustomReviewRetrySnapshot
+} from '../../../shared/custom-review-retry'
 import {
   analyzeLoadedReviewReport,
   summarizeReviewReport
@@ -574,6 +577,11 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
     async retryTask(taskId) {
       const task = findTask(taskId)
       if (!task) return commandResult('未找到任务。')
+      if (hasPartialCustomReviewRetrySnapshot(task)) {
+        const message = '历史任务输入快照不完整，请新建任务。'
+        showNotice(message)
+        return commandResult(message)
+      }
       if (getCustomReviewRetrySnapshot(task)) {
         setPendingCustomReviewRetryTaskId(task.id)
         const message = '请重新选择原任务已提供的 DS-99 材料；规则和模式将保持不变。'

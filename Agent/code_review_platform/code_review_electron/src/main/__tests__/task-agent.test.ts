@@ -1315,6 +1315,47 @@ describe('executeReviewTask', () => {
     expect(dependencies.prepareWorkspace).not.toHaveBeenCalled()
   })
 
+  it('DS-99 变更代码重试使用最终旧 revision 拒绝 0 和 r0', async () => {
+    const failedTask = makeTask({
+      id: 'task-ds99-r0-retry',
+      old_revision: '10',
+      review_item_ids: ['DS-99'],
+      custom_review_rule: '保护状态必须具备恢复路径。',
+      custom_review_mode: 'dual_revision',
+      has_custom_review_word_material: false,
+      has_custom_review_excel_material: false,
+      has_custom_review_pdf_material: false,
+      status: 'failed'
+    })
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(),
+        readTask: vi.fn(async () => failedTask),
+        updateTaskStatus: vi.fn()
+      },
+      checkEnvironment: vi.fn(),
+      prepareWorkspace: vi.fn(),
+      runCodex: vi.fn(),
+      uploadReport: vi.fn()
+    })
+
+    await expect(retryReviewTask({
+      token: 'token-123',
+      taskId: failedTask.id,
+      oldRevision: 'r0',
+      reviewItems: [{
+        id: 'DS-99',
+        user_extra_rules: '保护状态必须具备恢复路径。',
+        custom_mode: 'dual_revision'
+      }]
+    }, dependencies)).rejects.toThrow('DS-99 变更代码审查模式不能使用旧 revision 0 或 r0。')
+
+    expect(dependencies.api.updateTaskStatus).not.toHaveBeenCalled()
+    expect(dependencies.checkEnvironment).not.toHaveBeenCalled()
+    expect(dependencies.prepareWorkspace).not.toHaveBeenCalled()
+    expect(dependencies.runCodex).not.toHaveBeenCalled()
+  })
+
   it('DS-99 五个快照字段全空时沿用原 Skill 重试链路', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-ds99-legacy-'))
     tempDirs.push(cwd)
