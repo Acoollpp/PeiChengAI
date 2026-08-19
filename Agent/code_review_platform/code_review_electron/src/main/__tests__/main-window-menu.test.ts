@@ -5,6 +5,7 @@ describe('main window menu', () => {
     vi.resetModules()
     const setApplicationMenu = vi.fn()
     const whenReady = vi.fn(() => Promise.resolve())
+    const appendSwitch = vi.fn()
     const on = vi.fn()
     const loadFile = vi.fn()
     const loadURL = vi.fn()
@@ -57,6 +58,7 @@ describe('main window menu', () => {
 
     vi.doMock('electron', () => ({
       app: {
+        commandLine: { appendSwitch },
         whenReady,
         on,
         quit: vi.fn(),
@@ -82,6 +84,14 @@ describe('main window menu', () => {
     await Promise.resolve()
 
     const { app } = await import('electron')
+    expect(appendSwitch).toHaveBeenNthCalledWith(1, 'disable-gpu')
+    expect(appendSwitch).toHaveBeenNthCalledWith(2, 'disable-software-rasterizer')
+    expect(appendSwitch.mock.invocationCallOrder[0]).toBeLessThan(
+      whenReady.mock.invocationCallOrder[0]
+    )
+    expect(appendSwitch.mock.invocationCallOrder[1]).toBeLessThan(
+      whenReady.mock.invocationCallOrder[0]
+    )
     expect(app.setAppUserModelId).toHaveBeenCalledWith('com.peicheng.code-review')
     expect(setApplicationMenu).toHaveBeenCalledWith(null)
     expect(registerIpcHandlers).toHaveBeenCalledWith({
@@ -127,6 +137,7 @@ describe('main window menu', () => {
     vi.resetModules()
     const setApplicationMenu = vi.fn()
     const whenReady = vi.fn(() => Promise.resolve())
+    const appendSwitch = vi.fn()
     const on = vi.fn()
     const loadFile = vi.fn()
     const loadURL = vi.fn()
@@ -152,6 +163,7 @@ describe('main window menu', () => {
 
     vi.doMock('electron', () => ({
       app: {
+        commandLine: { appendSwitch },
         whenReady,
         on,
         quit: vi.fn(),
@@ -194,6 +206,7 @@ describe('main window menu', () => {
     vi.resetModules()
     const setApplicationMenu = vi.fn()
     const whenReady = vi.fn(() => Promise.resolve())
+    const appendSwitch = vi.fn()
     const on = vi.fn()
     const loadFile = vi.fn()
     const loadURL = vi.fn()
@@ -218,6 +231,7 @@ describe('main window menu', () => {
 
     vi.doMock('electron', () => ({
       app: {
+        commandLine: { appendSwitch },
         whenReady,
         on,
         quit: vi.fn(),
