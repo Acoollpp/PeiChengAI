@@ -26,6 +26,9 @@ let mainWindow: BrowserWindow | undefined
 let reportFeedbackWindowManager: ReportFeedbackWindowManager | undefined
 let reviewTaskRuntime: ReviewTaskRuntime | undefined
 
+app.commandLine.appendSwitch('disable-gpu')
+app.commandLine.appendSwitch('disable-software-rasterizer')
+
 const cancelAllReviewTaskRuns = (): Promise<void> =>
   reviewTaskRuntime?.cancelAll() ?? Promise.resolve()
 
