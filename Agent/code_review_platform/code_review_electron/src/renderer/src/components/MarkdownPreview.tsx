@@ -29,7 +29,8 @@ export type ReportHeadingOption = {
 
 type MarkdownPreviewProps = {
   markdown: string
-  reportPath?: string
+  taskId?: string
+  localReportPath?: string
   activeFeedbackAnchorId?: string
   feedbackAnchorScrollRequest?: {
     anchorId: string
@@ -207,13 +208,15 @@ class MarkdownErrorBoundary extends Component<
 
 function ReportImage({
   alt,
+  taskId,
   onLoad,
-  reportPath,
+  localReportPath,
   src
 }: {
   alt?: string
+  taskId?: string
   onLoad?: () => void
-  reportPath?: string
+  localReportPath?: string
   src?: string
 }): React.JSX.Element {
   const [resolvedSrc, setResolvedSrc] = useState<string | undefined>(() =>
@@ -228,14 +231,18 @@ function ReportImage({
       return
     }
 
-    if (!reportPath) {
+    if (!localReportPath && !taskId) {
       setResolvedSrc(undefined)
       return
     }
 
     setResolvedSrc(undefined)
     window.codeReview
-      .readReportAsset({ reportPath, assetPath: decodeAssetPath(src) })
+      .readReportAsset({
+        ...(taskId ? { taskId } : {}),
+        ...(localReportPath ? { localReportPath } : {}),
+        assetPath: decodeAssetPath(src)
+      })
       .then((asset) => {
         if (isMounted) {
           setResolvedSrc(asset.dataUrl)
@@ -250,14 +257,15 @@ function ReportImage({
     return () => {
       isMounted = false
     }
-  }, [reportPath, src])
+  }, [localReportPath, src, taskId])
 
   return <img src={resolvedSrc} alt={alt ?? ''} onLoad={onLoad} />
 }
 
 export function MarkdownPreview({
   markdown,
-  reportPath,
+  taskId,
+  localReportPath,
   activeFeedbackAnchorId,
   feedbackAnchorScrollRequest
 }: MarkdownPreviewProps): React.JSX.Element {
@@ -497,7 +505,8 @@ export function MarkdownPreview({
                 <ReportImage
                   alt={alt}
                   src={src}
-                  reportPath={reportPath}
+                  taskId={taskId}
+                  localReportPath={localReportPath}
                   onLoad={scrollToFeedbackAnchor}
                 />
               )

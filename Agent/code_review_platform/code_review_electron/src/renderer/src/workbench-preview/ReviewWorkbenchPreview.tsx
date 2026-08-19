@@ -580,7 +580,8 @@ function ReportCenterView({
               {adapter.getViewModel().mode === 'production'
                 ? <MarkdownPreview
                     markdown={selectedReport.markdown}
-                    reportPath={selectedReport.reportPath}
+                    taskId={selectedReport.taskId}
+                    localReportPath={selectedReport.localReportPath}
                     activeFeedbackAnchorId={adapter.getViewModel().activeFeedbackAnchorId}
                     feedbackAnchorScrollRequest={adapter.getViewModel().feedbackAnchorScrollRequest}
                   />

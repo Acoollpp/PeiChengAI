@@ -208,7 +208,8 @@ export interface OpenPdfReportResult {
 }
 
 export interface ReadReportAssetRequest {
-  reportPath: string
+  taskId?: string
+  localReportPath?: string
   assetPath: string
 }
 

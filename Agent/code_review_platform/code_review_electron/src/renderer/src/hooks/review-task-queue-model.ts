@@ -19,6 +19,7 @@ export type TaskViewItem = ReviewTask & {
   requirement_file_path?: string
   review_items?: SelectedReviewItemInput[]
   reportMarkdown?: string
+  localReportPath?: string
   pdfPath?: string
   isLocalOnly?: boolean
   isLocallyExecuting?: boolean
@@ -130,6 +131,7 @@ const preserveLocalFields = (existing: TaskViewItem, serverTask: ReviewTask): Ta
   review_items: existing.origin === 'local-run' ? existing.review_items : undefined,
   // Markdown 正文和本地 PDF fallback 从不出现在 task:list 中，刷新服务端权威字段时必须保留 Renderer 缓存。
   reportMarkdown: existing.reportMarkdown,
+  localReportPath: existing.localReportPath,
   pdfPath: existing.pdfPath,
   codex_log: existing.origin === 'local-run' ? existing.codex_log : serverTask.codex_log,
   codex_log_path:
@@ -276,7 +278,7 @@ const completeRun = (
     new_revision: latest.new_revision,
     status: result.status,
     report_path:
-      serverTask?.report_path ?? serverShadow?.report_path ?? result.reportPath ?? latest.report_path,
+      serverTask?.report_path ?? serverShadow?.report_path ?? latest.report_path,
     pdf_report_name:
       serverTask?.pdf_report_name ??
       serverShadow?.pdf_report_name ??
@@ -285,6 +287,7 @@ const completeRun = (
     codex_log_path: result.codexLogPath ?? latest.codex_log_path,
     codex_log: latest.codex_log,
     reportMarkdown: result.reportMarkdown ?? latest.reportMarkdown,
+    localReportPath: result.reportPath ?? latest.localReportPath,
     pdfPath: result.pdfPath ?? latest.pdfPath,
     requirement_file_path: latest.requirement_file_path,
     review_items: latest.review_items,
@@ -358,6 +361,7 @@ export const applyReviewTaskQueueCommand = (
         error_message: undefined,
         progress_message: '等待重试',
         reportMarkdown: undefined,
+        localReportPath: undefined,
         report_path: undefined,
         pdf_report_name: undefined,
         pdfPath: undefined,

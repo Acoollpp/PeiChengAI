@@ -1911,13 +1911,39 @@ describe('registerIpcHandlers', () => {
 
     await expect(
       assetHandler({}, {
-        reportPath,
+        taskId: 'task-local',
+        localReportPath: reportPath,
         assetPath: 'images/diagram.png'
       })
     ).resolves.toEqual({
       dataUrl: `data:image/png;base64,${Buffer.from('png-bytes').toString('base64')}`,
       contentType: 'image/png'
     })
+  })
+
+  it('本地报告图片缺失时通过当前登录凭据回读服务端资产且不落盘', async () => {
+    const downloadReportAsset = vi.fn(async () => Uint8Array.from([1, 2, 3]).buffer)
+    const api = { downloadReportAsset }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' }))
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({ api: api as never, authStore: authStore as never })
+
+    const assetHandler = handleMock.mock.calls.find(([channel]) => channel === 'report:asset')?.[1]
+
+    await expect(
+      assetHandler({}, {
+        taskId: 'task-remote',
+        localReportPath: '/missing/workspaces/task-remote/代码审查报告.md',
+        assetPath: 'images/issue-01.svg'
+      })
+    ).resolves.toEqual({
+      dataUrl: `data:image/svg+xml;base64,${Buffer.from([1, 2, 3]).toString('base64')}`,
+      contentType: 'image/svg+xml'
+    })
+    expect(downloadReportAsset).toHaveBeenCalledWith('token-123', 'task-remote', 'images/issue-01.svg')
   })
 
   it('returns the server-scoped task page without rewriting its total count', async () => {

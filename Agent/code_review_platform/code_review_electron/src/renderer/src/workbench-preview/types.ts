@@ -101,6 +101,7 @@ export interface ReviewReportViewModel {
   contentStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'parse_error'
   contentMessage?: string
   reportPath?: string
+  localReportPath?: string
   feedbackProtocolVersion?: number | null
   feedbackSubmittedAt?: string | null
   reportFeedbackHelpful?: boolean | null

@@ -86,20 +86,41 @@ describe('MarkdownPreview', () => {
     expect(screen.queryByRole('link', { name: '锚点' })).not.toBeInTheDocument()
   })
 
-  it('使用报告路径加载相对图片', async () => {
+  it('使用本地报告路径加载相对图片', async () => {
     render(
       <MarkdownPreview
         markdown="![问题 01 代码证据](images/issue-01.svg)"
-        reportPath="/tmp/runtime/workspaces/task-1/代码审查报告.md"
+        localReportPath="/tmp/runtime/workspaces/task-1/代码审查报告.md"
       />
     )
 
     const image = await screen.findByRole('img', { name: '问题 01 代码证据' })
     expect(window.codeReview.readReportAsset).toHaveBeenCalledWith({
-      reportPath: '/tmp/runtime/workspaces/task-1/代码审查报告.md',
+      localReportPath: '/tmp/runtime/workspaces/task-1/代码审查报告.md',
       assetPath: 'images/issue-01.svg'
     })
     expect(image).toHaveAttribute('src', 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=')
+  })
+
+  it('服务端图片资产不可用时仍显示 Markdown 正文', async () => {
+    vi.mocked(window.codeReview.readReportAsset).mockRejectedValueOnce(
+      new Error('图片资产不存在')
+    )
+
+    render(
+      <MarkdownPreview
+        markdown={'# 审查报告\n\n![问题证据](images/issue-01.svg)\n\n正文仍可查看。'}
+        taskId="task-remote"
+      />
+    )
+
+    await waitFor(() => expect(window.codeReview.readReportAsset).toHaveBeenCalledWith({
+      taskId: 'task-remote',
+      assetPath: 'images/issue-01.svg'
+    }))
+    expect(screen.getByRole('heading', { name: '审查报告', level: 1 })).toBeInTheDocument()
+    expect(screen.getByText('正文仍可查看。')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '问题证据' })).not.toHaveAttribute('src')
   })
 
   it('相对图片加载完成后重新校准当前问题的顶部位置', async () => {
@@ -113,7 +134,7 @@ describe('MarkdownPreview', () => {
     const { container, rerender } = render(
       <MarkdownPreview
         markdown={markdown}
-        reportPath="/reports/review.md"
+        localReportPath="/reports/review.md"
         activeFeedbackAnchorId="report-option-3"
       />
     )
@@ -137,7 +158,7 @@ describe('MarkdownPreview', () => {
     rerender(
       <MarkdownPreview
         markdown={markdown}
-        reportPath="/reports/review.md"
+        localReportPath="/reports/review.md"
         activeFeedbackAnchorId="report-option-3"
         feedbackAnchorScrollRequest={{ anchorId: 'report-option-3', requestId: 1 }}
       />
@@ -153,7 +174,7 @@ describe('MarkdownPreview', () => {
     rerender(
       <MarkdownPreview
         markdown={markdown}
-        reportPath="/reports/review.md"
+        localReportPath="/reports/review.md"
         activeFeedbackAnchorId="report-option-3"
         feedbackAnchorScrollRequest={{ anchorId: 'report-option-3', requestId: 2 }}
       />
@@ -379,7 +400,7 @@ describe('MarkdownPreview', () => {
           '### 2. 越界访问风险',
           '- **问题描述：** 下标缺少边界判断。'
         ].join('\n')}
-        reportPath="/reports/review.md"
+        localReportPath="/reports/review.md"
         activeFeedbackAnchorId="report-option-2"
       />
     )
