@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -15,6 +15,19 @@ const notificationIsSupportedMock = vi.hoisted(() => vi.fn(() => true))
 const notificationShowMock = vi.hoisted(() => vi.fn())
 const notificationOnMock = vi.hoisted(() => vi.fn())
 const notificationOnceMock = vi.hoisted(() => vi.fn())
+
+const runtimePathsFor = (runtimeRoot: string) => {
+  const workspacesDir = join(runtimeRoot, 'workspaces')
+  return {
+    runtimeRoot,
+    skillPackagesDir: join(runtimeRoot, 'skill-packages'),
+    skillManifestPath: join(runtimeRoot, 'skill-packages', 'manifest.json'),
+    workspacesDir,
+    workspaceForTask: (taskId: string) => join(workspacesDir, taskId),
+    reportPathForTask: (taskId: string) => join(workspacesDir, taskId, '代码审查报告.md'),
+    imagesDirForTask: (taskId: string) => join(workspacesDir, taskId, 'images')
+  }
+}
 
 const NotificationMock = vi.fn(function NotificationMock() {
   return {
@@ -1895,17 +1908,18 @@ describe('registerIpcHandlers', () => {
   })
 
   it('reads report image assets relative to a Chinese-named report file', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'ipc-report-asset-'))
-    tempDirs.push(cwd)
-    const reportPath = join(cwd, '代码审查报告.md')
-    const imagePath = join(cwd, 'images', 'diagram.png')
-    await mkdir(join(cwd, 'images'), { recursive: true })
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-report-asset-'))
+    tempDirs.push(runtimeRoot)
+    const runtimePaths = runtimePathsFor(runtimeRoot)
+    const reportPath = runtimePaths.reportPathForTask('task-local')
+    const imagePath = join(runtimePaths.workspaceForTask('task-local'), 'images', 'diagram.png')
+    await mkdir(join(runtimePaths.workspaceForTask('task-local'), 'images'), { recursive: true })
     await writeFile(reportPath, '![流程图](images/diagram.png)\n')
     await writeFile(imagePath, Buffer.from('png-bytes'))
 
     const { registerIpcHandlers } = await import('../ipc')
 
-    registerIpcHandlers()
+    registerIpcHandlers({ runtimePaths })
 
     const assetHandler = handleMock.mock.calls.find(([channel]) => channel === 'report:asset')?.[1]
 
@@ -1913,6 +1927,7 @@ describe('registerIpcHandlers', () => {
       assetHandler({}, {
         taskId: 'task-local',
         localReportPath: reportPath,
+        reportPath: join(runtimeRoot, 'ignored', '旧报告.md'),
         assetPath: 'images/diagram.png'
       })
     ).resolves.toEqual({
@@ -1922,6 +1937,10 @@ describe('registerIpcHandlers', () => {
   })
 
   it('本地报告图片缺失时通过当前登录凭据回读服务端资产且不落盘', async () => {
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-report-asset-fallback-'))
+    tempDirs.push(runtimeRoot)
+    const runtimePaths = runtimePathsFor(runtimeRoot)
+    await mkdir(runtimePaths.workspaceForTask('task-remote'), { recursive: true })
     const downloadReportAsset = vi.fn(async () => Uint8Array.from([1, 2, 3]).buffer)
     const api = { downloadReportAsset }
     const authStore = {
@@ -1929,14 +1948,14 @@ describe('registerIpcHandlers', () => {
     }
     const { registerIpcHandlers } = await import('../ipc')
 
-    registerIpcHandlers({ api: api as never, authStore: authStore as never })
+    registerIpcHandlers({ api: api as never, authStore: authStore as never, runtimePaths })
 
     const assetHandler = handleMock.mock.calls.find(([channel]) => channel === 'report:asset')?.[1]
 
     await expect(
       assetHandler({}, {
         taskId: 'task-remote',
-        localReportPath: '/missing/workspaces/task-remote/代码审查报告.md',
+        localReportPath: runtimePaths.reportPathForTask('task-remote'),
         assetPath: 'images/issue-01.svg'
       })
     ).resolves.toEqual({
@@ -1944,6 +1963,106 @@ describe('registerIpcHandlers', () => {
       contentType: 'image/svg+xml'
     })
     expect(downloadReportAsset).toHaveBeenCalledWith('token-123', 'task-remote', 'images/issue-01.svg')
+  })
+
+  it('兼容旧 reportPath 请求并限制在运行时任务工作区内', async () => {
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-report-asset-legacy-'))
+    tempDirs.push(runtimeRoot)
+    const runtimePaths = runtimePathsFor(runtimeRoot)
+    const reportPath = runtimePaths.reportPathForTask('legacy-task')
+    const imagePath = join(runtimePaths.workspaceForTask('legacy-task'), 'images', 'diagram.png')
+    await mkdir(join(runtimePaths.workspaceForTask('legacy-task'), 'images'), { recursive: true })
+    await writeFile(reportPath, '![流程图](images/diagram.png)\n')
+    await writeFile(imagePath, Buffer.from('legacy-png'))
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({ runtimePaths })
+    const assetHandler = handleMock.mock.calls.find(([channel]) => channel === 'report:asset')?.[1]
+
+    await expect(assetHandler({}, {
+      reportPath,
+      assetPath: 'images/diagram.png'
+    })).resolves.toEqual({
+      dataUrl: `data:image/png;base64,${Buffer.from('legacy-png').toString('base64')}`,
+      contentType: 'image/png'
+    })
+  })
+
+  it('拒绝报告图片路径穿越，且不触发远端回读', async () => {
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-report-asset-traversal-'))
+    tempDirs.push(runtimeRoot)
+    const runtimePaths = runtimePathsFor(runtimeRoot)
+    const downloadReportAsset = vi.fn()
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: { downloadReportAsset } as never,
+      authStore: { load: vi.fn() } as never,
+      runtimePaths
+    })
+    const assetHandler = handleMock.mock.calls.find(([channel]) => channel === 'report:asset')?.[1]
+
+    await expect(assetHandler({}, {
+      taskId: 'task-1',
+      localReportPath: runtimePaths.reportPathForTask('task-1'),
+      assetPath: 'images/../secret.svg'
+    })).rejects.toThrow('报告图片路径无效')
+    expect(downloadReportAsset).not.toHaveBeenCalled()
+  })
+
+  it('拒绝指向任务工作区外的本地报告路径，且不触发远端回读', async () => {
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-report-asset-outside-'))
+    tempDirs.push(runtimeRoot)
+    const runtimePaths = runtimePathsFor(runtimeRoot)
+    const outsideReportPath = join(runtimeRoot, 'outside', '代码审查报告.md')
+    await mkdir(join(runtimeRoot, 'outside', 'images'), { recursive: true })
+    await writeFile(outsideReportPath, '# 报告')
+    await writeFile(join(runtimeRoot, 'outside', 'images', 'issue.svg'), '<svg />')
+    const downloadReportAsset = vi.fn()
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: { downloadReportAsset } as never,
+      authStore: { load: vi.fn() } as never,
+      runtimePaths
+    })
+    const assetHandler = handleMock.mock.calls.find(([channel]) => channel === 'report:asset')?.[1]
+
+    await expect(assetHandler({}, {
+      taskId: 'task-1',
+      localReportPath: outsideReportPath,
+      assetPath: 'images/issue.svg'
+    })).rejects.toThrow('本地报告资源路径无效')
+    expect(downloadReportAsset).not.toHaveBeenCalled()
+  })
+
+  it('拒绝通过符号链接读取任务工作区外的报告图片', async () => {
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'ipc-report-asset-symlink-'))
+    tempDirs.push(runtimeRoot)
+    const runtimePaths = runtimePathsFor(runtimeRoot)
+    const taskWorkspace = runtimePaths.workspaceForTask('task-1')
+    const outsideDirectory = join(runtimeRoot, 'outside')
+    await mkdir(join(taskWorkspace, 'images'), { recursive: true })
+    await mkdir(outsideDirectory, { recursive: true })
+    await writeFile(runtimePaths.reportPathForTask('task-1'), '# 报告')
+    await writeFile(join(outsideDirectory, 'issue.svg'), '<svg />')
+    await symlink(join(outsideDirectory, 'issue.svg'), join(taskWorkspace, 'images', 'issue.svg'))
+    const downloadReportAsset = vi.fn()
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: { downloadReportAsset } as never,
+      authStore: { load: vi.fn() } as never,
+      runtimePaths
+    })
+    const assetHandler = handleMock.mock.calls.find(([channel]) => channel === 'report:asset')?.[1]
+
+    await expect(assetHandler({}, {
+      taskId: 'task-1',
+      localReportPath: runtimePaths.reportPathForTask('task-1'),
+      assetPath: 'images/issue.svg'
+    })).rejects.toThrow('本地报告资源路径无效')
+    expect(downloadReportAsset).not.toHaveBeenCalled()
   })
 
   it('returns the server-scoped task page without rewriting its total count', async () => {

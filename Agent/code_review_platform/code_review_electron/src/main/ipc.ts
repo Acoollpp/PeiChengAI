@@ -137,6 +137,7 @@ const activeNotifications = new Set<Notification>()
 interface ReadReportAssetRequest {
   taskId?: string
   localReportPath?: string
+  reportPath?: string
   assetPath: string
 }
 
@@ -338,15 +339,21 @@ const resolveReportFileName = (
 }
 
 const reportAssetContentType = (assetPath: string): string => {
-  if (isAbsolute(assetPath)) {
-    throw new Error('Report asset must be a relative path')
+  const parts = assetPath.split(/[\\/]+/)
+  if (
+    isAbsolute(assetPath) ||
+    parts.length < 2 ||
+    parts[0] !== 'images' ||
+    parts.some((part) => !part || part === '.' || part === '..')
+  ) {
+    throw new Error('报告图片路径无效')
   }
 
   const extension = extname(assetPath).toLowerCase()
   const contentType = imageContentTypes[extension]
 
   if (!contentType) {
-    throw new Error('Unsupported report asset type')
+    throw new Error('不支持的报告图片类型')
   }
 
   return contentType
@@ -362,33 +369,75 @@ const toReportAssetResult = (
   contentType
 })
 
-const readLocalReportAsset = async (
+const resolveTrustedLocalReportAsset = async (
   localReportPath: string,
   assetPath: string,
-  contentType: string
-): Promise<ReadReportAssetResult> => {
+  taskId: string | undefined,
+  runtimePaths: RuntimePaths
+): Promise<string | undefined> => {
+  const workspacesDirectory = resolve(runtimePaths.workspacesDir)
   const reportDirectory = resolve(dirname(localReportPath))
   const assetFilePath = resolve(reportDirectory, assetPath)
+  const taskWorkspace = taskId
+    ? resolveTrustedTaskWorkspace(taskId, runtimePaths).taskWorkspace
+    : resolve(join(
+        workspacesDirectory,
+        reportDirectory.slice(workspacesDirectory.length + 1).split(sep)[0] ?? ''
+      ))
 
-  if (!isInsideDirectory(assetFilePath, reportDirectory)) {
-    throw new Error('Report asset is outside the report directory')
+  if (
+    reportDirectory === workspacesDirectory ||
+    !isInsideDirectory(reportDirectory, workspacesDirectory) ||
+    taskWorkspace === workspacesDirectory ||
+    !isInsideDirectory(reportDirectory, taskWorkspace) ||
+    !isInsideDirectory(assetFilePath, taskWorkspace)
+  ) {
+    throw new Error('本地报告资源路径无效')
   }
 
-  const content = await readFile(assetFilePath)
-  return toReportAssetResult(content, contentType)
+  try {
+    const [realWorkspacesDirectory, realTaskWorkspace, realAssetFilePath] = await Promise.all([
+      realpath(workspacesDirectory),
+      realpath(taskWorkspace),
+      realpath(assetFilePath)
+    ])
+    if (
+      !isInsideDirectory(realTaskWorkspace, realWorkspacesDirectory) ||
+      !isInsideDirectory(realAssetFilePath, realTaskWorkspace)
+    ) {
+      throw new Error('本地报告资源路径无效')
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === '本地报告资源路径无效') {
+      throw error
+    }
+    return undefined
+  }
+
+  return assetFilePath
 }
 
 const readReportAsset = async (
-  { taskId, localReportPath, assetPath }: ReadReportAssetRequest,
+  { taskId, localReportPath, reportPath, assetPath }: ReadReportAssetRequest,
+  runtimePaths: RuntimePaths,
   downloadRemoteAsset: (taskId: string, assetPath: string) => Promise<ArrayBuffer>
 ): Promise<ReadReportAssetResult> => {
   const contentType = reportAssetContentType(assetPath)
+  const normalizedLocalReportPath = localReportPath ?? reportPath
 
-  if (localReportPath) {
-    try {
-      return await readLocalReportAsset(localReportPath, assetPath, contentType)
-    } catch {
-      // 本地工作区可能被清理、迁移或受加密软件影响，继续尝试服务端资产。
+  if (normalizedLocalReportPath) {
+    const localAssetPath = await resolveTrustedLocalReportAsset(
+      normalizedLocalReportPath,
+      assetPath,
+      taskId,
+      runtimePaths
+    )
+    if (localAssetPath) {
+      try {
+        return toReportAssetResult(await readFile(localAssetPath), contentType)
+      } catch {
+        // 本地工作区可能受加密软件影响，继续尝试服务端资产。
+      }
     }
   }
 
@@ -1409,7 +1458,7 @@ export const registerIpcHandlers = (
   )
 
   ipcMain.handle('report:asset', async (_event, payload: ReadReportAssetRequest) =>
-    readReportAsset(payload, async (taskId, assetPath) => {
+    readReportAsset(payload, await loadRuntimePaths(), async (taskId, assetPath) => {
       const token = await loadAccessToken(authStore)
       const taskApi = await createApiClient()
       return taskApi.downloadReportAsset(token, taskId, assetPath)

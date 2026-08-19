@@ -265,6 +265,21 @@ describe('preload codeReview API', () => {
     })
   })
 
+  it('保留旧 reportPath 报告资源 IPC 请求', async () => {
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+
+    await api.readReportAsset({
+      reportPath: '/tmp/runtime/workspaces/task-1/代码审查报告.md',
+      assetPath: 'images/diagram.png'
+    })
+
+    expect(invokeMock).toHaveBeenCalledWith('report:asset', {
+      reportPath: '/tmp/runtime/workspaces/task-1/代码审查报告.md',
+      assetPath: 'images/diagram.png'
+    })
+  })
+
   it('invokes PDF report IPC with task id and local PDF path', async () => {
     await import('./index')
     const api = exposeInMainWorldMock.mock.calls[0][1]
