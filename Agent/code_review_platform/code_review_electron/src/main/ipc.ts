@@ -135,7 +135,9 @@ interface OpenPdfReportResult {
 const activeNotifications = new Set<Notification>()
 
 interface ReadReportAssetRequest {
-  reportPath: string
+  taskId?: string
+  localReportPath?: string
+  reportPath?: string
   assetPath: string
 }
 
@@ -336,33 +338,114 @@ const resolveReportFileName = (
   return { fileName: trimmedFileName, isValidProvidedName: true }
 }
 
-const readReportAsset = async ({
-  reportPath,
-  assetPath
-}: ReadReportAssetRequest): Promise<ReadReportAssetResult> => {
-  if (isAbsolute(assetPath)) {
-    throw new Error('Report asset must be a relative path')
+const reportAssetContentType = (assetPath: string): string => {
+  const parts = assetPath.split(/[\\/]+/)
+  if (
+    isAbsolute(assetPath) ||
+    parts.length < 2 ||
+    parts[0] !== 'images' ||
+    parts.some((part) => !part || part === '.' || part === '..')
+  ) {
+    throw new Error('报告图片路径无效')
   }
 
-  const reportDirectory = resolve(dirname(reportPath))
-  const assetFilePath = resolve(reportDirectory, assetPath)
-
-  if (!isInsideDirectory(assetFilePath, reportDirectory)) {
-    throw new Error('Report asset is outside the report directory')
-  }
-
-  const extension = extname(assetFilePath).toLowerCase()
+  const extension = extname(assetPath).toLowerCase()
   const contentType = imageContentTypes[extension]
 
   if (!contentType) {
-    throw new Error('Unsupported report asset type')
+    throw new Error('不支持的报告图片类型')
   }
 
-  const content = await readFile(assetFilePath)
-  return {
-    dataUrl: `data:${contentType};base64,${content.toString('base64')}`,
-    contentType
+  return contentType
+}
+
+const toReportAssetResult = (
+  content: Uint8Array | ArrayBuffer,
+  contentType: string
+): ReadReportAssetResult => ({
+  dataUrl: `data:${contentType};base64,${Buffer.from(
+    content instanceof ArrayBuffer ? new Uint8Array(content) : content
+  ).toString('base64')}`,
+  contentType
+})
+
+const resolveTrustedLocalReportAsset = async (
+  localReportPath: string,
+  assetPath: string,
+  taskId: string | undefined,
+  runtimePaths: RuntimePaths
+): Promise<string | undefined> => {
+  const workspacesDirectory = resolve(runtimePaths.workspacesDir)
+  const reportDirectory = resolve(dirname(localReportPath))
+  const assetFilePath = resolve(reportDirectory, assetPath)
+  const taskWorkspace = taskId
+    ? resolveTrustedTaskWorkspace(taskId, runtimePaths).taskWorkspace
+    : resolve(join(
+        workspacesDirectory,
+        reportDirectory.slice(workspacesDirectory.length + 1).split(sep)[0] ?? ''
+      ))
+
+  if (
+    reportDirectory === workspacesDirectory ||
+    !isInsideDirectory(reportDirectory, workspacesDirectory) ||
+    taskWorkspace === workspacesDirectory ||
+    !isInsideDirectory(reportDirectory, taskWorkspace) ||
+    !isInsideDirectory(assetFilePath, taskWorkspace)
+  ) {
+    throw new Error('本地报告资源路径无效')
   }
+
+  try {
+    const [realWorkspacesDirectory, realTaskWorkspace, realAssetFilePath] = await Promise.all([
+      realpath(workspacesDirectory),
+      realpath(taskWorkspace),
+      realpath(assetFilePath)
+    ])
+    if (
+      !isInsideDirectory(realTaskWorkspace, realWorkspacesDirectory) ||
+      !isInsideDirectory(realAssetFilePath, realTaskWorkspace)
+    ) {
+      throw new Error('本地报告资源路径无效')
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === '本地报告资源路径无效') {
+      throw error
+    }
+    return undefined
+  }
+
+  return assetFilePath
+}
+
+const readReportAsset = async (
+  { taskId, localReportPath, reportPath, assetPath }: ReadReportAssetRequest,
+  runtimePaths: RuntimePaths,
+  downloadRemoteAsset: (taskId: string, assetPath: string) => Promise<ArrayBuffer>
+): Promise<ReadReportAssetResult> => {
+  const contentType = reportAssetContentType(assetPath)
+  const normalizedLocalReportPath = localReportPath ?? reportPath
+
+  if (normalizedLocalReportPath) {
+    const localAssetPath = await resolveTrustedLocalReportAsset(
+      normalizedLocalReportPath,
+      assetPath,
+      taskId,
+      runtimePaths
+    )
+    if (localAssetPath) {
+      try {
+        return toReportAssetResult(await readFile(localAssetPath), contentType)
+      } catch {
+        // 本地工作区可能受加密软件影响，继续尝试服务端资产。
+      }
+    }
+  }
+
+  if (!taskId) {
+    throw new Error('Report task ID is required when local asset is unavailable')
+  }
+
+  return toReportAssetResult(await downloadRemoteAsset(taskId, assetPath), contentType)
 }
 
 const sendToRenderer = (
@@ -1374,8 +1457,12 @@ export const registerIpcHandlers = (
     requireReportFeedbackManager(getReportFeedbackWindowManager).close(event.sender.id)
   )
 
-  ipcMain.handle('report:asset', (_event, payload: ReadReportAssetRequest) =>
-    readReportAsset(payload)
+  ipcMain.handle('report:asset', async (_event, payload: ReadReportAssetRequest) =>
+    readReportAsset(payload, await loadRuntimePaths(), async (taskId, assetPath) => {
+      const token = await loadAccessToken(authStore)
+      const taskApi = await createApiClient()
+      return taskApi.downloadReportAsset(token, taskId, assetPath)
+    })
   )
 
   ipcMain.handle('report:download-current', async (_event, taskId?: string): Promise<DownloadCurrentReportResult> => {

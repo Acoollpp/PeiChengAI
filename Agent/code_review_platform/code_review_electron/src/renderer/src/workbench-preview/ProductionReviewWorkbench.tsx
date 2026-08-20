@@ -151,11 +151,12 @@ const taskTitle = (task: TaskViewItem): string => {
   return `${repositoryName(task.svn_url)} · ${formatRevisionLabel(task.old_revision)} → ${formatRevisionLabel(task.new_revision)}`
 }
 const hasReadableMarkdownReport = (
-  task: Pick<TaskViewItem, 'status' | 'report_path'>
+  task: Pick<TaskViewItem, 'status' | 'report_path' | 'localReportPath'>
 ): boolean =>
   task.status === 'success' &&
-  typeof task.report_path === 'string' &&
-  task.report_path.trim().length > 0
+  [task.report_path, task.localReportPath].some(
+    (reportPath) => typeof reportPath === 'string' && reportPath.trim().length > 0
+  )
 const toTaskViewModel = (task: TaskViewItem): ReviewTaskViewModel => {
   const stage = taskStage(task)
   const message = stage === 'completed' && !hasReadableMarkdownReport(task)
@@ -198,6 +199,7 @@ const toReportViewModel = (
     contentStatus,
     contentMessage: contentState?.contentMessage ?? loadedAnalysis?.message,
     reportPath: task.report_path,
+    localReportPath: task.localReportPath,
     feedbackProtocolVersion: task.feedback_protocol_version,
     feedbackSubmittedAt: task.feedback_submitted_at,
     reportFeedbackHelpful: task.report_feedback_helpful

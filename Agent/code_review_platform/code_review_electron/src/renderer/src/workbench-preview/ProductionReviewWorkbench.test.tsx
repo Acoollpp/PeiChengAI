@@ -1600,7 +1600,7 @@ describe('ProductionReviewWorkbench', () => {
     render(<ProductionReviewWorkbench {...productionProps} />)
     await user.click(await screen.findByRole('button', { name: '报告中心' }))
     await waitFor(() => expect(window.codeReview.readReportAsset).toHaveBeenCalledWith({
-      reportPath: '/reports/asset/report.md', assetPath: 'images/issue-01.svg'
+      taskId: 'asset-task', assetPath: 'images/issue-01.svg'
     }))
     expect(await screen.findByRole('img', { name: '问题 01 代码证据' })).toHaveAttribute(
       'src', 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4='

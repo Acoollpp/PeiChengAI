@@ -113,6 +113,7 @@ describe('ReviewTaskQueueModel', () => {
         status: 'success',
         issue_count: 3,
         feedback_protocol_version: 1,
+        report_path: '/server/report.md',
         pdf_report_name: '服务端报告.pdf'
       })
     ]
@@ -135,7 +136,8 @@ describe('ReviewTaskQueueModel', () => {
         review_items: reviewItems,
         requirement_file_path: '/local/requirements.xlsx',
         reportMarkdown: '# 本地报告',
-        report_path: '/local/report.md',
+        report_path: '/server/report.md',
+        localReportPath: '/local/report.md',
         issue_count: 3,
         feedback_protocol_version: 1,
         pdf_report_name: '服务端报告.pdf'
