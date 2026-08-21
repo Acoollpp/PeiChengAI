@@ -578,7 +578,7 @@ test.describe("Issue feedback task details", () => {
     await expect(detail).not.toContainText("/local/")
   })
 
-  test("Task management exports issue feedback Excel with authentication", async ({
+  test("Task management exports issue feedback Excel with the applied start date", async ({
     page,
   }) => {
     await mockCurrentUser(page, {
@@ -588,6 +588,7 @@ test.describe("Issue feedback task details", () => {
       is_superuser: false,
     })
     let exportAuthorization = ""
+    const exportUrls: string[] = []
     await page.route("**/api/v1/review-tasks?**", async (route) => {
       await route.fulfill({
         contentType: "application/json",
@@ -595,9 +596,10 @@ test.describe("Issue feedback task details", () => {
       })
     })
     await page.route(
-      "**/api/v1/review-tasks/issue-feedback/export",
+      "**/api/v1/review-tasks/issue-feedback/export*",
       async (route) => {
         exportAuthorization = route.request().headers().authorization || ""
+        exportUrls.push(route.request().url())
         await route.fulfill({
           contentType:
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -617,6 +619,8 @@ test.describe("Issue feedback task details", () => {
     })
     await expect(exportButton).toBeVisible()
 
+    await page.getByLabel("开始时间").fill("2026-08-14")
+    await page.getByRole("button", { name: "搜索" }).click()
     const downloadPromise = page.waitForEvent("download")
     await exportButton.click()
     const download = await downloadPromise
@@ -625,6 +629,23 @@ test.describe("Issue feedback task details", () => {
       "问题反馈明细_20260730_103000.xlsx",
     )
     expect(exportAuthorization).toBe("Bearer test-token")
+    expect(new URL(exportUrls[0]).searchParams.get("started_from")).toBe(
+      "2026-08-14",
+    )
+
+    await page.getByLabel("开始时间").fill("2026-08-15")
+    const unsavedDownloadPromise = page.waitForEvent("download")
+    await exportButton.click()
+    await unsavedDownloadPromise
+    expect(new URL(exportUrls[1]).searchParams.get("started_from")).toBe(
+      "2026-08-14",
+    )
+
+    await page.getByRole("button", { name: "重置" }).click()
+    const resetDownloadPromise = page.waitForEvent("download")
+    await exportButton.click()
+    await resetDownloadPromise
+    expect(new URL(exportUrls[2]).searchParams.has("started_from")).toBe(false)
   })
 
   test("List distinguishes new feedback states and preserves legacy feedback", async ({

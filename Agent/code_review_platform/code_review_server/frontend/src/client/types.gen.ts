@@ -947,6 +947,10 @@ export type ReviewTasksReadCustomReviewInputData = {
 
 export type ReviewTasksReadCustomReviewInputResponse = (CustomReviewInputPublic);
 
+export type ReviewTasksExportReviewTaskIssueFeedbackData = {
+    startedFrom?: (string | null);
+};
+
 export type ReviewTasksExportReviewTaskIssueFeedbackResponse = (unknown);
 
 export type ReviewTasksReadReviewTaskStatsData = {
