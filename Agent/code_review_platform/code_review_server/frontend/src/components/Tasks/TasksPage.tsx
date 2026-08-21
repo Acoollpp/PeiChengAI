@@ -196,14 +196,18 @@ function issueFeedbackExportFileName(contentDisposition: string | null) {
   return `问题反馈明细_${new Date().toISOString().slice(0, 10)}.xlsx`
 }
 
-async function exportIssueFeedbackExcel() {
+async function exportIssueFeedbackExcel(startedFrom: string) {
   const token = localStorage.getItem("access_token")
-  const response = await fetch(
-    `${OpenAPI.BASE}/api/v1/review-tasks/issue-feedback/export`,
-    {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    },
-  )
+  const query = new URLSearchParams()
+  if (startedFrom) {
+    query.set("started_from", startedFrom)
+  }
+  const exportUrl = `${OpenAPI.BASE}/api/v1/review-tasks/issue-feedback/export${
+    query.size ? `?${query}` : ""
+  }`
+  const response = await fetch(exportUrl, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  })
   if (!response.ok) {
     throw new Error("Failed to export issue feedback")
   }
@@ -559,7 +563,7 @@ export function TasksPage() {
   const handleExportIssueFeedback = async () => {
     setIsExportingIssueFeedback(true)
     try {
-      await exportIssueFeedbackExcel()
+      await exportIssueFeedbackExcel(filters.startedFrom)
     } catch {
       toast.error("问题反馈 Excel 导出失败，请稍后重试")
     } finally {

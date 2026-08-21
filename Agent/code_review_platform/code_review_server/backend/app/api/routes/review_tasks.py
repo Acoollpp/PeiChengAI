@@ -77,12 +77,13 @@ ISSUE_FEEDBACK_EXPORT_HEADERS = (
     "SVN路径",
     "旧版本号",
     "新版本号",
+    "选择的审查项",
     "AI报告问题原文",
     "问题描述原文",
     "是否有帮助",
     "审查问题反馈",
 )
-ISSUE_FEEDBACK_EXPORT_COLUMN_WIDTHS = (18, 12, 42, 12, 12, 42, 56, 14, 56)
+ISSUE_FEEDBACK_EXPORT_COLUMN_WIDTHS = (18, 12, 42, 12, 12, 38, 42, 56, 14, 56)
 CUSTOM_REVIEW_INPUT_EXPORT_HEADERS = (
     "提交时间",
     "用户",
@@ -116,6 +117,16 @@ CUSTOM_REVIEW_INPUT_EXPORT_COLUMN_WIDTHS = (
 EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 _REVISION_RE = re.compile(r"^r?(\d+)$")
+EXCEL_ILLEGAL_CHARACTERS_RE = re.compile(r"[\x00-\x08\x0B-\x0C\x0E-\x1F]")
+REVIEW_ITEM_EXPORT_NAMES = {
+    "DS-01": "需求变更审查",
+    "DS-02": "编码规范审查",
+    "DS-03": "MOS 充放电状态机审查",
+    "DS-04": "AFE 驱动审核",
+    "DS-05": "变更点风险检查",
+    "DS-06": "规格书审查",
+    "DS-99": "自定义审查",
+}
 
 _RUNNING_STATUSES = {
     ReviewTaskStatus.checking_environment,
@@ -432,6 +443,7 @@ def _style_custom_review_input_sheet(sheet: Any) -> None:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             cell.border = row_border
 
+
 def _issue_feedback_export_date(value: datetime | None) -> date | None:
     if value is None:
         return None
@@ -449,11 +461,41 @@ def _issue_feedback_export_label(helpful: bool | None) -> str:
     return "未反馈"
 
 
+def _issue_feedback_review_items_label(review_item_ids: list[str]) -> str:
+    if not review_item_ids:
+        return "未记录"
+    return "；".join(
+        f"{item_id} {REVIEW_ITEM_EXPORT_NAMES[item_id]}"
+        if item_id in REVIEW_ITEM_EXPORT_NAMES
+        else item_id
+        for item_id in review_item_ids
+    )
+
+
+def _issue_feedback_excel_text(
+    value: str,
+    *,
+    task_id: uuid.UUID,
+    issue_id: uuid.UUID,
+    field_name: str,
+) -> str:
+    cleaned, count = EXCEL_ILLEGAL_CHARACTERS_RE.subn("", value)
+    if count:
+        logger.warning(
+            "清理问题反馈Excel非法字符 task_id=%s issue_id=%s field=%s count=%d",
+            task_id,
+            issue_id,
+            field_name,
+            count,
+        )
+    return cleaned
+
+
 def _style_issue_feedback_sheet(sheet: Any) -> None:
     sheet.freeze_panes = "A2"
     sheet.sheet_view.showGridLines = False
-    sheet.auto_filter.ref = f"A1:I{max(sheet.max_row, 1)}"
-    sheet.print_area = f"A1:I{max(sheet.max_row, 1)}"
+    sheet.auto_filter.ref = f"A1:J{max(sheet.max_row, 1)}"
+    sheet.print_area = f"A1:J{max(sheet.max_row, 1)}"
     sheet.print_title_rows = "1:1"
     sheet.page_setup.orientation = sheet.ORIENTATION_LANDSCAPE
     sheet.page_setup.paperSize = sheet.PAPERSIZE_A3
@@ -482,7 +524,7 @@ def _style_issue_feedback_sheet(sheet: Any) -> None:
             cell.border = row_border
             if cell.row % 2 == 0:
                 cell.fill = alternate_fill
-        for column_index in (2, 4, 5, 8):
+        for column_index in (2, 4, 5, 9):
             row[column_index - 1].alignment = Alignment(
                 horizontal="center",
                 vertical="top",
@@ -1005,7 +1047,9 @@ def create_review_task(
     if has_custom_review:
         normalized_custom_review_rule = (task_in.custom_review_rule or "").strip()
         if not normalized_custom_review_rule:
-            raise HTTPException(status_code=400, detail="DS-99 自定义审查必须填写规则正文")
+            raise HTTPException(
+                status_code=400, detail="DS-99 自定义审查必须填写规则正文"
+            )
         if len(normalized_custom_review_rule) > 1200:
             raise HTTPException(
                 status_code=400, detail="DS-99 自定义审查规则正文不能超过 1200 个字符"
@@ -1018,7 +1062,9 @@ def create_review_task(
         if any(value is None for value in custom_review_fields[2:]):
             raise HTTPException(status_code=400, detail="DS-99 自定义审查材料状态缺失")
     elif any(value is not None for value in custom_review_fields):
-        raise HTTPException(status_code=400, detail="未选择 DS-99 时不能提交自定义审查输入")
+        raise HTTPException(
+            status_code=400, detail="未选择 DS-99 时不能提交自定义审查输入"
+        )
 
     normalized_old_revision = _normalize_revision(task_in.old_revision)
     new_revision = _normalize_revision(task_in.new_revision)
@@ -1046,7 +1092,9 @@ def create_review_task(
             "new_revision": new_revision,
             "review_item_ids": normalized_review_item_ids,
             "custom_review_rule": normalized_custom_review_rule,
-            "custom_review_mode": task_in.custom_review_mode if has_custom_review else None,
+            "custom_review_mode": task_in.custom_review_mode
+            if has_custom_review
+            else None,
             "has_custom_review_word_material": (
                 task_in.has_custom_review_word_material if has_custom_review else None
             ),
@@ -1319,11 +1367,15 @@ def read_custom_review_input(
 def export_review_task_issue_feedback(
     session: SessionDep,
     current_user: CurrentUser,
+    started_from: str | None = None,
 ) -> StreamingResponse:
     task_filters = [
         *_task_read_scope_filters(session=session, current_user=current_user),
         ReviewTask.feedback_protocol_version == 1,
     ]
+    started_from_datetime = _parse_started_from(started_from)
+    if started_from_datetime is not None:
+        task_filters.append(col(ReviewTask.started_at) >= started_from_datetime)
     task_ids = list(session.exec(select(ReviewTask.id).where(*task_filters)).all())
     source_consistency_states = _review_issue_source_consistency_states_by_task_ids(
         session=session,
@@ -1358,17 +1410,32 @@ def export_review_task_issue_feedback(
     sheet.title = "问题反馈明细"
     sheet.append(list(ISSUE_FEEDBACK_EXPORT_HEADERS))
     for task, user, issue in rows:
+        row_values: list[tuple[Any, str]] = [
+            (user.full_name or user.svn_username or "-", "submitter"),
+            (_issue_feedback_export_date(task.created_at), "created_at"),
+            (task.svn_url, "svn_url"),
+            (task.old_revision, "old_revision"),
+            (task.new_revision, "new_revision"),
+            (
+                _issue_feedback_review_items_label(task.review_item_ids),
+                "review_item_ids",
+            ),
+            (issue.issue_text, "issue_text"),
+            (issue.description_text, "description_text"),
+            (_issue_feedback_export_label(issue.helpful), "helpful"),
+            (issue.feedback_text or None, "feedback_text"),
+        ]
         sheet.append(
             [
-                user.full_name or user.svn_username or "-",
-                _issue_feedback_export_date(task.created_at),
-                task.svn_url,
-                task.old_revision,
-                task.new_revision,
-                issue.issue_text,
-                issue.description_text,
-                _issue_feedback_export_label(issue.helpful),
-                issue.feedback_text or None,
+                _issue_feedback_excel_text(
+                    value,
+                    task_id=task.id,
+                    issue_id=issue.id,
+                    field_name=field_name,
+                )
+                if isinstance(value, str)
+                else value
+                for value, field_name in row_values
             ]
         )
         # 防止问题原文或用户反馈被 Excel 解释为公式。

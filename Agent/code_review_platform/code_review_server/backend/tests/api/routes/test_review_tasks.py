@@ -2749,7 +2749,175 @@ def test_问题快照读取遵循普通用户部门管理员和系统管理员�
     assert forbidden_response.status_code == 403
 
 
-def test_逐问题反馈Excel固定九列并排除历史报告级反馈(
+def test_逐问题反馈Excel清理XML非法字符但保留合法空白(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    task, issue = _create_new_protocol_task_with_issue(
+        client,
+        normal_user_token_headers,
+    )
+    marker = f"https://svn.example.com/illegal-excel-{random_lower_string()}"
+    task_record = db.get(ReviewTask, UUID(task["id"]))
+    issue_record = db.get(ReviewTaskIssue, UUID(issue["id"]))
+    assert task_record is not None
+    assert issue_record is not None
+    issue_description = "if、\x0cor、do\n保留换行\t保留制表符\r保留回车"
+    task_record.svn_url = marker
+    issue_record.description_text = issue_description
+    db.add(task_record)
+    db.add(issue_record)
+    db.commit()
+
+    with caplog.at_level(logging.WARNING, logger="app.api.routes.review_tasks"):
+        response = client.get(
+            f"{settings.API_V1_STR}/review-tasks/issue-feedback/export",
+            headers=normal_user_token_headers,
+        )
+
+    assert response.status_code == 200
+    workbook = load_workbook(BytesIO(response.content), read_only=True)
+    rows = list(workbook["问题反馈明细"].iter_rows(min_row=2, values_only=True))
+    workbook.close()
+    row = next(exported for exported in rows if exported[2] == marker)
+    assert row[7] == "if、or、do\n保留换行\t保留制表符\r保留回车"
+    assert "\x0c" not in row[7]
+    assert str(issue_record.id) in caplog.text
+    assert "field=description_text" in caplog.text
+    assert "count=1" in caplog.text
+    assert issue_description not in caplog.text
+
+
+def test_逐问题反馈Excel导出任务选择的审查项名称(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    cases = [
+        (
+            ["DS-01", "DS-03"],
+            "DS-01 需求变更审查；DS-03 MOS 充放电状态机审查",
+        ),
+        ([], "未记录"),
+        (["DS-88"], "DS-88"),
+    ]
+    expected_by_svn: dict[str, str] = {}
+    for review_item_ids, expected in cases:
+        task, _ = _create_new_protocol_task_with_issue(
+            client,
+            normal_user_token_headers,
+        )
+        marker = f"https://svn.example.com/review-items-{random_lower_string()}"
+        task_record = db.get(ReviewTask, UUID(task["id"]))
+        assert task_record is not None
+        task_record.svn_url = marker
+        task_record.review_item_ids = review_item_ids
+        db.add(task_record)
+        expected_by_svn[marker] = expected
+    db.commit()
+
+    response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/issue-feedback/export",
+        headers=normal_user_token_headers,
+    )
+
+    assert response.status_code == 200
+    workbook = load_workbook(BytesIO(response.content), read_only=True)
+    rows = list(workbook["问题反馈明细"].iter_rows(values_only=True))
+    workbook.close()
+    assert rows[0] == (
+        "提交人",
+        "日期",
+        "SVN路径",
+        "旧版本号",
+        "新版本号",
+        "选择的审查项",
+        "AI报告问题原文",
+        "问题描述原文",
+        "是否有帮助",
+        "审查问题反馈",
+    )
+    for row in rows[1:]:
+        marker = str(row[2])
+        if marker in expected_by_svn:
+            assert row[5] == expected_by_svn.pop(marker)
+    assert expected_by_svn == {}
+
+
+def test_逐问题反馈Excel按上海时区开始时间筛选(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    before_task, _ = _create_new_protocol_task_with_issue(
+        client,
+        normal_user_token_headers,
+    )
+    boundary_task, _ = _create_new_protocol_task_with_issue(
+        client,
+        normal_user_token_headers,
+    )
+    before_record = db.get(ReviewTask, UUID(before_task["id"]))
+    boundary_record = db.get(ReviewTask, UUID(boundary_task["id"]))
+    assert before_record is not None
+    assert boundary_record is not None
+    before_marker = f"https://svn.example.com/before-{random_lower_string()}"
+    boundary_marker = f"https://svn.example.com/boundary-{random_lower_string()}"
+    before_record.svn_url = before_marker
+    before_record.started_at = datetime(2026, 8, 13, 15, 59, 59)
+    boundary_record.svn_url = boundary_marker
+    boundary_record.started_at = datetime(2026, 8, 13, 16, 0, 0)
+    db.add(before_record)
+    db.add(boundary_record)
+    db.commit()
+
+    filtered_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/issue-feedback/export",
+        headers=normal_user_token_headers,
+        params={"started_from": "2026-08-14"},
+    )
+    unfiltered_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/issue-feedback/export",
+        headers=normal_user_token_headers,
+    )
+    invalid_response = client.get(
+        f"{settings.API_V1_STR}/review-tasks/issue-feedback/export",
+        headers=normal_user_token_headers,
+        params={"started_from": "not-a-date"},
+    )
+
+    assert filtered_response.status_code == 200
+    filtered_workbook = load_workbook(
+        BytesIO(filtered_response.content),
+        read_only=True,
+    )
+    filtered_rows = list(
+        filtered_workbook["问题反馈明细"].iter_rows(min_row=2, values_only=True)
+    )
+    filtered_workbook.close()
+    filtered_paths = {str(row[2]) for row in filtered_rows}
+    assert boundary_marker in filtered_paths
+    assert before_marker not in filtered_paths
+
+    assert unfiltered_response.status_code == 200
+    unfiltered_workbook = load_workbook(
+        BytesIO(unfiltered_response.content),
+        read_only=True,
+    )
+    unfiltered_rows = list(
+        unfiltered_workbook["问题反馈明细"].iter_rows(min_row=2, values_only=True)
+    )
+    unfiltered_workbook.close()
+    unfiltered_paths = {str(row[2]) for row in unfiltered_rows}
+    assert {before_marker, boundary_marker}.issubset(unfiltered_paths)
+
+    assert invalid_response.status_code == 422
+    assert invalid_response.json()["detail"] == "Invalid started_from"
+
+
+def test_逐问题反馈Excel固定十列并排除历史报告级反馈(
     client: TestClient,
     db: Session,
     tmp_path: Path,
@@ -2770,6 +2938,7 @@ def test_逐问题反馈Excel固定九列并排除历史报告级反馈(
     assert task_record is not None
     assert first_issue is not None
     task_record.created_at = datetime(2026, 7, 29, 16, 30, tzinfo=timezone.utc)
+    task_record.review_item_ids = ["DS-03"]
     first_issue.issue_text = "高风险：空指针解引用"
     first_issue.description_text = "未校验返回值即解引用。"
     first_issue.helpful = True
@@ -2855,6 +3024,7 @@ def test_逐问题反馈Excel固定九列并排除历史报告级反馈(
         "SVN路径",
         "旧版本号",
         "新版本号",
+        "选择的审查项",
         "AI报告问题原文",
         "问题描述原文",
         "是否有帮助",
@@ -2867,24 +3037,28 @@ def test_逐问题反馈Excel固定九列并排除历史报告级反馈(
         task["svn_url"],
         task["old_revision"],
         task["new_revision"],
+        "DS-03 MOS 充放电状态机审查",
         "高风险：空指针解引用",
         "未校验返回值即解引用。",
         "有帮助",
         "已增加空值检查并完成回归测试。",
     )
     assert rows[2][5:] == (
+        "DS-03 MOS 充放电状态机审查",
         "中风险：边界条件误报",
         "产品约束保证输入不会达到该分支。",
         "没帮助",
         None,
     )
     assert rows[3][5:] == (
+        "DS-03 MOS 充放电状态机审查",
         "=1+1",
         "异常日志没有记录请求编号。",
         "未反馈",
         None,
     )
-    assert sheet["F4"].data_type == "s"
+    assert sheet.auto_filter.ref == "A1:J4"
+    assert sheet["G4"].data_type == "s"
     assert all("历史" not in str(cell) for row in rows for cell in row)
 
 
