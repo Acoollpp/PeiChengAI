@@ -72,6 +72,14 @@ def _load_shared_image_validation_corpus() -> list[dict[str, Any]]:
 
 
 IMAGE_VALIDATION_CORPUS = _load_shared_image_validation_corpus()
+VALID_IMAGE_CASES = [
+    {**image_case, "valid_base64": valid_base64}
+    for image_case in IMAGE_VALIDATION_CORPUS
+    for valid_base64 in [
+        image_case["valid_base64"],
+        *image_case.get("additional_valid_base64", []),
+    ]
+]
 ANIMATED_IMAGE_CASES = [
     image_case
     for image_case in IMAGE_VALIDATION_CORPUS
@@ -1989,15 +1997,18 @@ def test_新协议上传校验Markdown图片引用和格式(
 
 @pytest.mark.parametrize(
     "image_case",
-    IMAGE_VALIDATION_CORPUS,
-    ids=[image_case["name"] for image_case in IMAGE_VALIDATION_CORPUS],
+    VALID_IMAGE_CASES,
+    ids=[
+        f"{image_case['name']}-{index}"
+        for index, image_case in enumerate(VALID_IMAGE_CASES)
+    ],
 )
 def test_新协议上传接受内容与扩展名一致的真实图片(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    image_case: dict[str, str],
+    image_case: dict[str, Any],
 ) -> None:
     monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
     task = _create_review_task(client, normal_user_token_headers)

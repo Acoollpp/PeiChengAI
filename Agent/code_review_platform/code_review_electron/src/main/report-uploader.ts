@@ -1,7 +1,10 @@
+import { createHash } from 'node:crypto'
 import { readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { nativeImage } from 'electron'
+import log from 'electron-log/main'
 import remarkParse from 'remark-parse'
+import { SaxesParser } from 'saxes'
 import { unified } from 'unified'
 
 import type { ApiClient } from './api-client'
@@ -39,6 +42,21 @@ const MAX_REPORT_ISSUE_TEXT_LENGTH = 8 * 1024
 const MAX_REPORT_ISSUE_DESCRIPTION_LENGTH = 64 * 1024
 const MAX_REPORT_ISSUE_DISPLAY_SNAPSHOT_LENGTH = 256 * 1024
 const MAX_REPORT_IMAGE_PIXELS = 40_000_000
+const BLOCKED_SVG_ELEMENTS = new Set([
+  'animate',
+  'animatemotion',
+  'animatetransform',
+  'audio',
+  'embed',
+  'foreignobject',
+  'iframe',
+  'object',
+  'script',
+  'set',
+  'style',
+  'video'
+])
+const UNSAFE_SVG_VALUE_PATTERN = /(?:url\s*\(|@import|expression\s*\()/i
 
 type MarkdownAstNode = {
   type: string
@@ -46,6 +64,17 @@ type MarkdownAstNode = {
   identifier?: unknown
   children?: MarkdownAstNode[]
 }
+
+type SvgValidationFailureCode =
+  | 'INVALID_UTF8'
+  | 'FORBIDDEN_XML_DECLARATION'
+  | 'INVALID_XML'
+  | 'ROOT_NOT_SVG'
+  | 'UNSAFE_SVG_CONTENT'
+
+type SvgValidationResult =
+  | { valid: true }
+  | { valid: false; reasonCode: SvgValidationFailureCode }
 
 const walkMarkdownAst = (
   node: MarkdownAstNode,
@@ -86,39 +115,70 @@ export const extractRelativeImagePaths = (markdown: string): string[] => {
   return paths
 }
 
-const isSafeSvg = (content: Buffer): boolean => {
+const validateSafeSvg = (content: Buffer): SvgValidationResult => {
   let source: string
   try {
     source = new TextDecoder('utf-8', { fatal: true }).decode(content)
   } catch {
-    return false
+    return { valid: false, reasonCode: 'INVALID_UTF8' }
   }
   const normalized = source.replace(/^\uFEFF/, '').trimStart()
-  if (
-    /<!DOCTYPE|<!ENTITY/i.test(normalized) ||
-    /<\s*(?:[\w-]+:)?(?:animate|animateMotion|animateTransform|audio|embed|foreignObject|iframe|object|script|set|style|video)\b/i.test(
-      normalized
-    ) ||
-    /\son[a-z]+\s*=/i.test(normalized) ||
-    /\s(?:style|xml:base)\s*=/i.test(normalized) ||
-    /\s[\w:-]+\s*=\s*(["'])[^"']*(?:url\s*\(|@import|expression\s*\()[^"']*\1/i.test(
-      normalized
-    ) ||
-    /\s[\w:-]+\s*=\s*(["'])[^"']*(?:\\|&|\/\*|\*\/)[^"']*\1/i.test(normalized) ||
-    !/^(?:<\?xml[^>]*>\s*)?(?:<!--[^]*?-->\s*)*<svg(?:\s|>)/i.test(normalized) ||
-    !/(?:<\/svg>\s*|<svg(?:\s[^>]*)?\/?>\s*)$/i.test(normalized)
-  ) {
-    return false
+  if (/<!DOCTYPE|<!ENTITY/i.test(normalized)) {
+    return { valid: false, reasonCode: 'FORBIDDEN_XML_DECLARATION' }
   }
-  const resourceAttributePattern = /\s(?:href|xlink:href|src)\s*=\s*(["'])([^"']*)\1/gi
-  for (const match of normalized.matchAll(resourceAttributePattern)) {
-    const value = match[2].trim()
-    if (value && !value.startsWith('#')) {
-      return false
+
+  let failureCode: SvgValidationFailureCode | undefined
+  const reject = (reasonCode: SvgValidationFailureCode): void => {
+    failureCode ??= reasonCode
+  }
+  let sawRoot = false
+  const parser = new SaxesParser({ xmlns: true, position: false })
+  parser.on('processinginstruction', () => {
+    reject('UNSAFE_SVG_CONTENT')
+  })
+  parser.on('doctype', () => {
+    reject('FORBIDDEN_XML_DECLARATION')
+  })
+  parser.on('opentag', (tag) => {
+    if (!sawRoot) {
+      sawRoot = true
+      if (tag.local.toLowerCase() !== 'svg') {
+        reject('ROOT_NOT_SVG')
+      }
     }
+    if (BLOCKED_SVG_ELEMENTS.has(tag.local.toLowerCase())) {
+      reject('UNSAFE_SVG_CONTENT')
+    }
+    for (const attribute of Object.values(tag.attributes)) {
+      const attributeName = attribute.local.toLowerCase()
+      const value = attribute.value.trim()
+      if (
+        attributeName.startsWith('on') ||
+        attributeName === 'base' ||
+        attributeName === 'style' ||
+        ((attributeName === 'href' || attributeName === 'src') && value && !value.startsWith('#')) ||
+        UNSAFE_SVG_VALUE_PATTERN.test(value) ||
+        value.includes('\\') ||
+        value.includes('/*') ||
+        value.includes('*/')
+      ) {
+        reject('UNSAFE_SVG_CONTENT')
+      }
+    }
+  })
+
+  try {
+    parser.write(normalized).close()
+  } catch {
+    return { valid: false, reasonCode: 'INVALID_XML' }
   }
-  return true
+  if (failureCode) {
+    return { valid: false, reasonCode: failureCode }
+  }
+  return sawRoot ? { valid: true } : { valid: false, reasonCode: 'ROOT_NOT_SVG' }
 }
+
+const isSafeSvg = (content: Buffer): boolean => validateSafeSvg(content).valid
 
 const isPngStructurallyValid = (content: Buffer): boolean => {
   let offset = 8
@@ -507,6 +567,15 @@ const readReportAssets = async (
       throw new Error(`报告图片为空：${rawImagePath}`)
     }
     if (!isImageContentValid(extension, content)) {
+      const svgValidation = extension === '.svg' ? validateSafeSvg(content) : undefined
+      log.warn('[REPORT_IMAGE_VALIDATION_FAILED]', {
+        relativePath,
+        extension,
+        reasonCode: svgValidation && !svgValidation.valid
+          ? svgValidation.reasonCode
+          : 'INVALID_IMAGE_CONTENT',
+        sha256: createHash('sha256').update(content).digest('hex')
+      })
       throw new Error(`报告图片内容与文件格式不一致：${rawImagePath}`)
     }
 

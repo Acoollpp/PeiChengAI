@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import log from 'electron-log/main'
 
 vi.mock('electron', () => ({
   nativeImage: {
@@ -30,6 +31,12 @@ vi.mock('electron', () => ({
         isEmpty: () => !isDecodable
       }
     }
+  }
+}))
+
+vi.mock('electron-log/main', () => ({
+  default: {
+    warn: vi.fn()
   }
 }))
 
@@ -71,6 +78,7 @@ type ImageValidationCorpusEntry = {
   extension: string
   content_type: string
   valid_base64: string
+  additional_valid_base64?: string[]
   invalid_base64: string
   additional_invalid_base64?: string[]
   server_only_invalid_base64?: string[]
@@ -260,6 +268,67 @@ describe('report uploader', () => {
           content: svg,
           content_type: 'image/svg+xml'
         }]
+      })
+    )
+  })
+
+  it('上传包含合法 XML 实体的 Skill SVG 属性和代码文本', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-escaped-svg-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const imagePath = join(dir, 'images', 'issue-01.svg')
+    const svg = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360" viewBox="0 0 900 360"><text x="24" y="48" font-family="Microsoft YaHei, &#x27;Segoe UI&#x27;, sans-serif">if (left &lt; right &amp;&amp; enabled)</text></svg>'
+    )
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, `# 代码审查报告\n\n![问题 01 代码证据](images/issue-01.svg)\n`)
+    await writeFile(imagePath, svg)
+
+    await expect(uploadReportFile(api, 'token-123', 'task-escaped-svg', reportPath)).resolves.toEqual({
+      ok: true
+    })
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-escaped-svg',
+      expect.objectContaining({
+        assets: [{
+          relative_path: 'images/issue-01.svg',
+          content: svg,
+          content_type: 'image/svg+xml'
+        }]
+      })
+    )
+  })
+
+  it('拒绝用 XML 实体混淆的 SVG 外部资源', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-escaped-svg-url-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const imagePath = join(dir, 'images', 'issue-01.svg')
+    const api = {
+      uploadReport: vi.fn(async () => ({ ok: true }))
+    }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, `# 代码审查报告\n\n![问题 01 代码证据](images/issue-01.svg)\n`)
+    await writeFile(
+      imagePath,
+      '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="u&#x72;l(https://example.com/image.svg)"/></svg>'
+    )
+
+    await expect(uploadReportFile(api, 'token-123', 'task-escaped-svg-url', reportPath)).rejects.toThrow(
+      '报告图片内容与文件格式不一致'
+    )
+    expect(api.uploadReport).not.toHaveBeenCalled()
+    expect(log.warn).toHaveBeenCalledWith(
+      '[REPORT_IMAGE_VALIDATION_FAILED]',
+      expect.objectContaining({
+        relativePath: 'images/issue-01.svg',
+        extension: '.svg',
+        reasonCode: 'UNSAFE_SVG_CONTENT',
+        sha256: expect.stringMatching(/^[a-f0-9]{64}$/)
       })
     )
   })
@@ -546,11 +615,12 @@ describe('report uploader', () => {
       }
       await mkdir(join(dir, 'images'), { recursive: true })
       await writeFile(reportPath, `# Review\n\n![证据](${relativePath})\n`)
-      await writeFile(imagePath, Buffer.from(entry.valid_base64, 'base64'))
-
-      await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).resolves.toEqual({
-        ok: true
-      })
+      for (const validBase64 of [entry.valid_base64, ...(entry.additional_valid_base64 ?? [])]) {
+        await writeFile(imagePath, Buffer.from(validBase64, 'base64'))
+        await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).resolves.toEqual({
+          ok: true
+        })
+      }
 
       for (const invalidBase64 of [
         entry.invalid_base64,
