@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { nativeImage } from 'electron'
 import log from 'electron-log/main'
@@ -57,12 +57,42 @@ const BLOCKED_SVG_ELEMENTS = new Set([
   'video'
 ])
 const UNSAFE_SVG_VALUE_PATTERN = /(?:url\s*\(|@import|expression\s*\()/i
+const SAFE_SVG_PLACEHOLDER = Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="720" height="72" viewBox="0 0 720 72"><rect width="720" height="72" fill="#f3f4f6"/><text x="24" y="44" fill="#4b5563" font-size="20">代码图片因终端加密无法读取，已省略</text></svg>'
+)
+
+type ReportImageCandidate = {
+  rawImageReferences: MarkdownImageReference[]
+  imagePath: string
+  originalImagePath: string
+  relativePath: string
+  contentType: string
+  extension: string
+  encryptedCandidate: boolean
+}
+
+type PreparedReportAssets = {
+  reportContent: string
+  assets: NonNullable<Parameters<ApiClient['uploadReport']>[2]['assets']>
+}
 
 type MarkdownAstNode = {
   type: string
   url?: unknown
   identifier?: unknown
   children?: MarkdownAstNode[]
+  position?: {
+    start?: { offset?: number }
+    end?: { offset?: number }
+  }
+}
+
+type MarkdownImageReference = {
+  parsedUrl: string
+  sourceUrl: string
+  startOffset: number | null
+  endOffset: number | null
+  directIpgsd: boolean
 }
 
 type SvgValidationFailureCode =
@@ -86,9 +116,76 @@ const walkMarkdownAst = (
   }
 }
 
-export const extractRelativeImagePaths = (markdown: string): string[] => {
+const findImageUrlReference = (
+  markdown: string,
+  node: MarkdownAstNode,
+  parsedUrl: string
+): MarkdownImageReference => {
+  const startOffset = node.position?.start?.offset
+  const endOffset = node.position?.end?.offset
+  if (typeof startOffset !== 'number' || typeof endOffset !== 'number') {
+    return { parsedUrl, sourceUrl: parsedUrl, startOffset: null, endOffset: null, directIpgsd: false }
+  }
+  const source = markdown.slice(startOffset, endOffset)
+  const markerEnd = node.type === 'definition' ? source.indexOf(']:') + 2 : source.indexOf('](') + 2
+  if (markerEnd < 2) {
+    return { parsedUrl, sourceUrl: parsedUrl, startOffset: null, endOffset: null, directIpgsd: false }
+  }
+  let relativeStartOffset = markerEnd
+  while (/\s/.test(source[relativeStartOffset] ?? '')) {
+    relativeStartOffset += 1
+  }
+  const isAngleDestination = source[relativeStartOffset] === '<'
+  if (isAngleDestination) {
+    relativeStartOffset += 1
+  }
+  let relativeEndOffset = relativeStartOffset
+  let nestedParentheses = 0
+  let escaped = false
+  while (relativeEndOffset < source.length) {
+    const character = source[relativeEndOffset]
+    if (escaped) {
+      escaped = false
+      relativeEndOffset += 1
+      continue
+    }
+    if (character === '\\') {
+      escaped = true
+      relativeEndOffset += 1
+      continue
+    }
+    if (
+      (isAngleDestination && character === '>') ||
+      (!isAngleDestination &&
+        (/\s/.test(character) ||
+          (node.type !== 'definition' && character === ')' && nestedParentheses === 0)))
+    ) {
+      break
+    }
+    if (!isAngleDestination && node.type !== 'definition') {
+      if (character === '(') {
+        nestedParentheses += 1
+      } else if (character === ')' && nestedParentheses > 0) {
+        nestedParentheses -= 1
+      }
+    }
+    relativeEndOffset += 1
+  }
+  if (relativeEndOffset <= relativeStartOffset) {
+    return { parsedUrl, sourceUrl: parsedUrl, startOffset: null, endOffset: null, directIpgsd: false }
+  }
+  return {
+    parsedUrl,
+    sourceUrl: source.slice(relativeStartOffset, relativeEndOffset),
+    startOffset: startOffset + relativeStartOffset,
+    endOffset: startOffset + relativeEndOffset,
+    directIpgsd: false
+  }
+}
+
+const extractMarkdownImageReferences = (markdown: string): MarkdownImageReference[] => {
   const tree = unified().use(remarkParse).parse(markdown) as MarkdownAstNode
-  const definitions = new Map<string, string>()
+  const definitions = new Map<string, MarkdownAstNode>()
   walkMarkdownAst(tree, (node) => {
     if (
       node.type === 'definition' &&
@@ -96,24 +193,34 @@ export const extractRelativeImagePaths = (markdown: string): string[] => {
       typeof node.url === 'string' &&
       !definitions.has(node.identifier)
     ) {
-      definitions.set(node.identifier, node.url)
+      definitions.set(node.identifier, node)
     }
   })
 
-  const paths: string[] = []
+  const references: MarkdownImageReference[] = []
+  const seenRanges = new Set<string>()
   walkMarkdownAst(tree, (node) => {
-    const rawPath =
+    const sourceNode =
       node.type === 'image' && typeof node.url === 'string'
-        ? node.url
+        ? node
         : node.type === 'imageReference' && typeof node.identifier === 'string'
           ? definitions.get(node.identifier)
           : undefined
-    if (rawPath && !paths.includes(rawPath)) {
-      paths.push(rawPath)
+    const parsedUrl = sourceNode && typeof sourceNode.url === 'string' ? sourceNode.url : undefined
+    if (parsedUrl && sourceNode) {
+      const reference = findImageUrlReference(markdown, sourceNode, parsedUrl)
+      const rangeKey = `${reference.startOffset}:${reference.endOffset}`
+      if (!seenRanges.has(rangeKey)) {
+        seenRanges.add(rangeKey)
+        references.push(reference)
+      }
     }
   })
-  return paths
+  return references
 }
+
+export const extractRelativeImagePaths = (markdown: string): string[] =>
+  [...new Set(extractMarkdownImageReferences(markdown).map(({ parsedUrl }) => parsedUrl))]
 
 const validateSafeSvg = (content: Buffer): SvgValidationResult => {
   let source: string
@@ -460,24 +567,49 @@ const validateIssueSnapshots = (
 const isInsideDirectory = (filePath: string, directory: string): boolean =>
   filePath === directory || filePath.startsWith(`${directory}${sep}`)
 
+const hasExactDirectoryEntry = async (directory: string, fileName: string): Promise<boolean> => {
+  try {
+    return (await readdir(directory)).includes(fileName)
+  } catch {
+    return false
+  }
+}
+
+const findEncryptedImageCandidate = async (imagePath: string): Promise<string | null> => {
+  const imageDirectory = dirname(imagePath)
+  const originalFileName = basename(imagePath)
+  let entries: string[]
+  try {
+    entries = await readdir(imageDirectory)
+  } catch {
+    return null
+  }
+  const candidates = entries.filter((entry) => {
+    const candidateExtension = extname(entry)
+    return (
+      candidateExtension.toLowerCase() === '.ipgsd' &&
+      entry.slice(0, -candidateExtension.length) === originalFileName
+    )
+  })
+  if (candidates.length !== 1) {
+    return null
+  }
+  return resolve(imageDirectory, candidates[0])
+}
+
+const toSvgPlaceholderRelativePath = (imagePath: string, reportDirectory: string): string =>
+  relative(reportDirectory, `${imagePath}.ipgsd-placeholder.svg`).split(sep).join('/')
+
 const readReportAssets = async (
   reportPath: string,
   reportContent: string
-): Promise<NonNullable<Parameters<ApiClient['uploadReport']>[2]['assets']>> => {
+): Promise<PreparedReportAssets> => {
   const reportDirectory = resolve(dirname(reportPath))
   const imagesDirectory = resolve(reportDirectory, 'images')
-  const imagePaths = extractRelativeImagePaths(reportContent)
-  const validatedImagePathsByRelativePath = new Map<
-    string,
-    {
-      rawImagePath: string
-      imagePath: string
-      relativePath: string
-      contentType: string
-      extension: string
-    }
-  >()
-  for (const rawImagePath of imagePaths) {
+  const imageReferences = extractMarkdownImageReferences(reportContent)
+  const validatedImagePathsByRelativePath = new Map<string, ReportImageCandidate>()
+  for (const imageReference of imageReferences) {
+    const rawImagePath = imageReference.parsedUrl
     let decodedImagePath: string
     try {
       decodedImagePath = decodeURIComponent(rawImagePath)
@@ -492,20 +624,46 @@ const readReportAssets = async (
     if (!isInsideDirectory(imagePath, imagesDirectory)) {
       throw new Error(`报告图片必须位于 images 目录：${rawImagePath}`)
     }
-    const extension = extname(imagePath).toLowerCase()
+    const referenceExtension = extname(imagePath)
+    const encryptedCandidate = referenceExtension.toLowerCase() === '.ipgsd'
+    const originalImagePath = encryptedCandidate
+      ? imagePath.slice(0, -referenceExtension.length)
+      : imagePath
+    const extension = extname(originalImagePath).toLowerCase()
     const contentType = imageContentTypes[extension]
     if (!contentType) {
       throw new Error(`不支持的报告图片格式：${rawImagePath}`)
     }
-    const relativePath = relative(reportDirectory, imagePath).split(sep).join('/')
-    if (!validatedImagePathsByRelativePath.has(relativePath)) {
+    let sourceImagePath = imagePath
+    if (!encryptedCandidate && !(await hasExactDirectoryEntry(dirname(imagePath), basename(imagePath)))) {
+      const candidate = await findEncryptedImageCandidate(imagePath)
+      if (!candidate) {
+        throw new Error(`报告图片不存在：${rawImagePath}`)
+      }
+      sourceImagePath = candidate
+    } else if (encryptedCandidate && !(await hasExactDirectoryEntry(dirname(imagePath), basename(imagePath)))) {
+      throw new Error(`报告图片不存在：${rawImagePath}`)
+    }
+    const relativePath = relative(reportDirectory, originalImagePath).split(sep).join('/')
+    const resolvedImageReference = { ...imageReference, directIpgsd: encryptedCandidate }
+    const existingCandidate = validatedImagePathsByRelativePath.get(relativePath)
+    if (!existingCandidate) {
       validatedImagePathsByRelativePath.set(relativePath, {
-        rawImagePath,
-        imagePath,
+        rawImageReferences: [resolvedImageReference],
+        imagePath: sourceImagePath,
+        originalImagePath,
         relativePath,
         contentType,
-        extension
+        extension,
+        encryptedCandidate: encryptedCandidate || sourceImagePath !== imagePath
       })
+    } else if (
+      existingCandidate.imagePath !== sourceImagePath ||
+      existingCandidate.originalImagePath !== originalImagePath
+    ) {
+      throw new Error(`报告图片规范化路径冲突：${rawImagePath}`)
+    } else {
+      existingCandidate.rawImageReferences.push(resolvedImageReference)
     }
   }
   const validatedImagePaths = [...validatedImagePathsByRelativePath.values()]
@@ -527,14 +685,19 @@ const readReportAssets = async (
   }
 
   const assets: NonNullable<Parameters<ApiClient['uploadReport']>[2]['assets']> = []
+  const uploadReplacements = new Map<number, { endOffset: number; replacement: string }>()
+  const originalPathsByUploadRelativePath = new Map<string, string>()
   let totalAssetBytes = 0
   for (const {
-    rawImagePath,
+    rawImageReferences,
     imagePath,
+    originalImagePath,
     relativePath,
     contentType,
-    extension
+    extension,
+    encryptedCandidate
   } of validatedImagePaths) {
+    const rawImagePath = rawImageReferences[0].parsedUrl
     let realImagePath: string
     try {
       realImagePath = await realpath(imagePath)
@@ -566,26 +729,112 @@ const readReportAssets = async (
     if (content.length === 0) {
       throw new Error(`报告图片为空：${rawImagePath}`)
     }
-    if (!isImageContentValid(extension, content)) {
-      const svgValidation = extension === '.svg' ? validateSafeSvg(content) : undefined
+    const svgValidation = extension === '.svg' ? validateSafeSvg(content) : undefined
+    const isContentValid = svgValidation ? svgValidation.valid : isImageContentValid(extension, content)
+    const validationReasonCode = svgValidation && !svgValidation.valid
+      ? svgValidation.reasonCode
+      : 'INVALID_IMAGE_CONTENT'
+    const isExplicitSvgSecurityFailure =
+      svgValidation &&
+      !svgValidation.valid &&
+      (svgValidation.reasonCode === 'UNSAFE_SVG_CONTENT' ||
+        svgValidation.reasonCode === 'FORBIDDEN_XML_DECLARATION')
+    if (!isContentValid && (!encryptedCandidate || isExplicitSvgSecurityFailure)) {
       log.warn('[REPORT_IMAGE_VALIDATION_FAILED]', {
         relativePath,
         extension,
-        reasonCode: svgValidation && !svgValidation.valid
-          ? svgValidation.reasonCode
-          : 'INVALID_IMAGE_CONTENT',
+        reasonCode: validationReasonCode,
         sha256: createHash('sha256').update(content).digest('hex')
       })
+      if (encryptedCandidate) {
+        log.warn('[REPORT_IMAGE_ENCRYPTED_CANDIDATE_REJECTED]', {
+          relativePath,
+          extension,
+          result: 'REJECTED',
+          reasonCode: validationReasonCode
+        })
+      }
       throw new Error(`报告图片内容与文件格式不一致：${rawImagePath}`)
     }
 
+    const useSvgPlaceholder = !isContentValid
+    const uploadRelativePath = useSvgPlaceholder
+      ? toSvgPlaceholderRelativePath(originalImagePath, reportDirectory)
+      : relativePath
+    if (
+      useSvgPlaceholder &&
+      (await hasExactDirectoryEntry(
+        dirname(originalImagePath),
+        basename(`${originalImagePath}.ipgsd-placeholder.svg`)
+      ))
+    ) {
+      throw new Error(`报告图片占位路径冲突：${rawImagePath}`)
+    }
+    const priorOriginalPath = originalPathsByUploadRelativePath.get(uploadRelativePath)
+    if (priorOriginalPath && priorOriginalPath !== originalImagePath) {
+      throw new Error(`报告图片上传路径冲突：${rawImagePath}`)
+    }
+    originalPathsByUploadRelativePath.set(uploadRelativePath, originalImagePath)
+    for (const imageReference of rawImageReferences) {
+      const sourceUrlWithoutIpgsd = imageReference.sourceUrl.slice(
+        0,
+        -extname(imageReference.sourceUrl).length
+      )
+      const normalizedSourceUrl =
+        imageReference.directIpgsd
+          ? sourceUrlWithoutIpgsd
+          : imageReference.sourceUrl
+      const replacement = useSvgPlaceholder
+        ? `${normalizedSourceUrl}.ipgsd-placeholder.svg`
+        : imageReference.directIpgsd
+          ? sourceUrlWithoutIpgsd
+          : imageReference.sourceUrl
+      if (imageReference.sourceUrl === replacement) {
+        continue
+      }
+      if (imageReference.startOffset === null || imageReference.endOffset === null) {
+        throw new Error(`报告图片路径无法规范化：${imageReference.parsedUrl}`)
+      }
+      const existingReplacement = uploadReplacements.get(imageReference.startOffset)
+      if (
+        existingReplacement &&
+        (existingReplacement.endOffset !== imageReference.endOffset ||
+          existingReplacement.replacement !== replacement)
+      ) {
+        throw new Error(`报告图片上传路径冲突：${imageReference.parsedUrl}`)
+      }
+      uploadReplacements.set(imageReference.startOffset, {
+        endOffset: imageReference.endOffset,
+        replacement
+      })
+    }
+    if (encryptedCandidate) {
+      log[useSvgPlaceholder ? 'warn' : 'info'](
+        useSvgPlaceholder
+          ? '[REPORT_IMAGE_ENCRYPTED_CANDIDATE_PLACEHOLDER]'
+          : '[REPORT_IMAGE_ENCRYPTED_CANDIDATE_UPLOADED]',
+        {
+          relativePath,
+          extension,
+          result: useSvgPlaceholder ? 'PLACEHOLDER' : 'UPLOADED',
+          reasonCode: useSvgPlaceholder ? validationReasonCode : 'VALID_ORIGINAL_CONTENT',
+          ...(useSvgPlaceholder ? { uploadRelativePath } : {})
+        }
+      )
+    }
     assets.push({
-      relative_path: relativePath,
-      content,
-      content_type: contentType
+      relative_path: uploadRelativePath,
+      content: useSvgPlaceholder ? SAFE_SVG_PLACEHOLDER : content,
+      content_type: useSvgPlaceholder ? imageContentTypes['.svg'] : contentType
     })
   }
-  return assets
+  let uploadedReportContent = reportContent
+  for (const [startOffset, { endOffset, replacement }] of [...uploadReplacements.entries()].sort(
+    ([leftStartOffset], [rightStartOffset]) => rightStartOffset - leftStartOffset
+  )) {
+    uploadedReportContent = `${uploadedReportContent.slice(0, startOffset)}${replacement}${uploadedReportContent.slice(endOffset)}`
+  }
+  return { reportContent: uploadedReportContent, assets }
 }
 
 export const ensureReportReady = async (reportPath: string): Promise<void> => {
@@ -617,14 +866,26 @@ export const uploadReportFile = async (
   if (Buffer.byteLength(reportContent, 'utf8') > MAX_REPORT_MARKDOWN_BYTES) {
     throw new Error(`审查报告超过大小限制：${reportPath}`)
   }
-  const extraction = inspectReviewIssues(reportContent)
-  const reportPayload = {
+  const initialExtraction = inspectReviewIssues(reportContent)
+  const initialReportPayload = {
     report_content: reportContent,
     report_path: reportPath,
     report_name: basename(reportPath)
   }
+  if (initialExtraction.status === 'invalid') {
+    return api.uploadReport(token, taskId, initialReportPayload)
+  }
+
+  const preparedAssets = await readReportAssets(reportPath, reportContent)
+  const uploadedReportContent = preparedAssets.reportContent
+  const extraction = inspectReviewIssues(uploadedReportContent)
   if (extraction.status === 'invalid') {
-    return api.uploadReport(token, taskId, reportPayload)
+    return api.uploadReport(token, taskId, initialReportPayload)
+  }
+  const reportPayload = {
+    report_content: uploadedReportContent,
+    report_path: reportPath,
+    report_name: basename(reportPath)
   }
 
   const issues = extraction.issues.map((issue) => ({
@@ -641,14 +902,13 @@ export const uploadReportFile = async (
       heading_level: issue.location.headingLevel
     }
   }))
-  validateIssueSnapshots(issues, reportContent)
-  const assets = await readReportAssets(reportPath, reportContent)
+  validateIssueSnapshots(issues, uploadedReportContent)
 
   return api.uploadReport(token, taskId, {
     ...reportPayload,
     feedback_protocol_version: 1,
     issues,
-    assets
+    assets: preparedAssets.assets
   })
 }
 
