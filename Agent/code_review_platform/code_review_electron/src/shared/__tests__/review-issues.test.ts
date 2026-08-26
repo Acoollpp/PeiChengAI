@@ -4,10 +4,12 @@ import { extractReviewIssues, inspectReviewIssues } from '../review-issues'
 import {
   bmsCodeReviewerHistoricalDs02ReportFixture,
   bmsCodeReviewerHistoricalPcBmsReportFixture,
+  bmsCodeReviewerMissingReviewIssuesReportFixture,
   bmsCodeReviewerNoSeverityReportFixture,
   bmsCodeReviewerNoSeverityZeroReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
   bmsCodeReviewerReportRealVariantsFixture,
+  bmsCodeReviewerSearchEvidenceReportFixture,
   bmsCodeReviewerReportWithIssuesFixture,
   bmsCodeReviewerZeroIssuesFixture,
   bmsDs03ReportFixture,
@@ -17,6 +19,57 @@ import {
 } from './fixtures/review-report-fixtures'
 
 describe('extractReviewIssues', () => {
+  it('按最新版证据合同提取完全缺失型与混合证据问题', () => {
+    const result = inspectReviewIssues(bmsCodeReviewerSearchEvidenceReportFixture)
+
+    expect(result).toMatchObject({
+      format: 'bms_code_reviewer',
+      status: 'parsed'
+    })
+    expect(result.issues).toMatchObject([
+      {
+        issueText: '辅助说明：低压状态下未恢复运行状态',
+        descriptionText: '唤醒路径没有恢复运行状态的实现，否定性检索证据表明该功能完全缺失。',
+      },
+      {
+        issueText: 'DS-04 混合证据问题仍保留代码位置',
+        codeLocations: [
+          { file: 'source/config.c', line: '88', description: '配置读取失败后的默认值分支' }
+        ]
+      }
+    ])
+    expect(result.issues[0]).not.toHaveProperty('codeLocations')
+  })
+
+  it('证据表格式异常不阻断标题和描述可识别的问题快照', () => {
+    const malformedCodeLocation = bmsCodeReviewerSearchEvidenceReportFixture.replace(
+      '| `source/config.c` | 88 | 配置读取失败后的默认值分支 |',
+      '| `source/config.c` | 88 | |'
+    )
+    const malformedSearchEvidence = malformedCodeLocation.replace(
+      '| new；source | RestoreRunningState；SLEEP | `rg -n "RestoreRunningState|SLEEP" source` | 无 | not_found：已检查候选范围内没有恢复运行状态的实现。 |',
+      '| new；source | RestoreRunningState；SLEEP | `rg -n "RestoreRunningState|SLEEP" source` | | not_found：已检查候选范围内没有恢复运行状态的实现。 |'
+    )
+
+    const result = inspectReviewIssues(malformedSearchEvidence)
+
+    expect(result).toMatchObject({
+      format: 'bms_code_reviewer',
+      status: 'parsed',
+      issues: [
+        expect.objectContaining({
+          issueText: '辅助说明：低压状态下未恢复运行状态'
+        }),
+        expect.objectContaining({
+          issueText: 'DS-04 混合证据问题仍保留代码位置'
+        })
+      ]
+    })
+    result.issues.forEach((issue) => {
+      expect(issue).not.toHaveProperty('codeLocations')
+    })
+  })
+
   it('按最新无严重度合同提取任意编号问题并排除审查覆盖三级标题', () => {
     const result = inspectReviewIssues(bmsCodeReviewerNoSeverityReportFixture)
 
@@ -384,10 +437,47 @@ describe('extractReviewIssues', () => {
     ])
   })
 
+  it('未识别问题描述时仍保留标题、完整问题块和空描述', () => {
+    const report = bmsCodeReviewerNoSeverityReportFixture.replace(
+      /^\*\*问题描述：\*\*.*\n/m,
+      ''
+    )
+
+    expect(inspectReviewIssues(report)).toMatchObject({
+      format: 'bms_code_reviewer',
+      status: 'parsed',
+      issues: [
+        expect.objectContaining({
+          issueText: 'STATE-17 休眠高风险路径仍可打开充电 MOS',
+          descriptionText: ''
+        }),
+        expect.objectContaining({
+          issueText: '编号-任意-42 建议路径缺少故障恢复一致性校验'
+        })
+      ]
+    })
+  })
+
+  it.each([
+    [
+      '占位标题',
+      (report: string) =>
+        report.replace('### STATE-17 休眠高风险路径仍可打开充电 MOS', '### <问题编号> <问题标题>')
+    ]
+  ])('缺少问题身份时整节无效且不返回部分快照', (_case, mutate) => {
+    const malformed = mutate(bmsCodeReviewerNoSeverityReportFixture)
+
+    expect(inspectReviewIssues(malformed)).toEqual({
+      format: 'bms_code_reviewer',
+      status: 'invalid',
+      issues: [],
+      message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。'
+    })
+  })
+
   it.each([
     ['缺少所属审查项', (report: string) => report.replace(/^\*\*所属审查项：\*\*.*\n/m, '')],
     ['缺少规则章节', (report: string) => report.replace(/^\*\*规则章节：\*\*.*\n/m, '')],
-    ['缺少问题描述', (report: string) => report.replace(/^\*\*问题描述：\*\*.*\n/m, '')],
     ['缺少影响风险', (report: string) => report.replace(/^\*\*影响风险：\*\*.*\n/m, '')],
     ['缺少整改建议', (report: string) => report.replace(/^\*\*整改建议：\*\*.*\n/m, '')],
     ['缺少位置表', (report: string) => report.replace('**涉及文件及行号：**', '**相关位置：**')],
@@ -447,37 +537,34 @@ describe('extractReviewIssues', () => {
           '| `source/bms_state.c` | `<line>` | 休眠状态分支的守卫条件 |'
         )
     ],
-    [
-      '标题缺少编号',
-      (report: string) =>
-        report.replace('### STATE-17 休眠高风险路径仍可打开充电 MOS', '### 普通说明')
-    ],
-    [
-      '占位标题',
-      (report: string) =>
-        report.replace('### STATE-17 休眠高风险路径仍可打开充电 MOS', '### <问题编号> <问题标题>')
-    ]
-  ])('任一问题块%s时整节无效且不返回部分快照', (_case, mutate) => {
+  ])('辅助字段或代码证据异常时仍保留可定位的问题快照：%s', (_case, mutate) => {
     const malformed = mutate(bmsCodeReviewerNoSeverityReportFixture)
 
-    expect(inspectReviewIssues(malformed)).toEqual({
+    expect(inspectReviewIssues(malformed)).toMatchObject({
+      format: 'bms_code_reviewer',
+      status: 'parsed',
+      issues: [
+        expect.objectContaining({
+          issueText: 'STATE-17 休眠高风险路径仍可打开充电 MOS'
+        }),
+        expect.objectContaining({
+          issueText: '编号-任意-42 建议路径缺少故障恢复一致性校验'
+        })
+      ]
+    })
+  })
+
+  it('新版 BMS 报告缺少审查问题章节时不回退为历史模板', () => {
+    expect(inspectReviewIssues(bmsCodeReviewerMissingReviewIssuesReportFixture)).toEqual({
       format: 'bms_code_reviewer',
       status: 'invalid',
       issues: [],
       message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。'
     })
-  })
-
-  it('审查问题章节混入普通三级标题时整节无效', () => {
-    const malformed = bmsCodeReviewerNoSeverityReportFixture.replace(
-      '## 四、审查覆盖',
-      '### 普通说明\n\n这不是合法问题块。\n\n## 四、审查覆盖'
-    )
-
-    expect(inspectReviewIssues(malformed)).toMatchObject({
-      format: 'bms_code_reviewer',
-      status: 'invalid',
-      issues: []
+    expect(inspectReviewIssues('# 代码审查报告\n\n### 执行说明\n\n历史报告内容。')).toMatchObject({
+      format: 'legacy',
+      status: 'parsed',
+      issues: [expect.objectContaining({ issueText: '执行说明' })]
     })
   })
 
@@ -539,16 +626,21 @@ describe('extractReviewIssues', () => {
     expect(extractReviewIssues(bmsCodeReviewerZeroIssuesFixture)).toEqual([])
   })
 
-  it('明确报告固定模板结构损坏且不影响历史模板兜底', () => {
-    const malformed = bmsCodeReviewerReportWithIssuesFixture.replace(
+  it('缺少已知问题描述标签时仍提取问题快照且不影响历史模板兜底', () => {
+    const reportWithoutDescription = bmsCodeReviewerReportWithIssuesFixture.replace(
       '**问题描述：** 休眠状态分支未阻断充电 MOS 开启路径，满足远程唤醒条件时会绕过休眠保护。',
       '**影响风险：** 缺少问题描述字段。'
     )
 
-    expect(inspectReviewIssues(malformed)).toMatchObject({
+    expect(inspectReviewIssues(reportWithoutDescription)).toMatchObject({
       format: 'bms_code_reviewer',
-      status: 'invalid',
-      message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。'
+      status: 'parsed',
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          issueText: 'P01 [高风险] 休眠状态仍可打开充电 MOS',
+          descriptionText: ''
+        })
+      ])
     })
     expect(inspectReviewIssues(templateOneReportFixture)).toMatchObject({
       format: 'legacy',
@@ -556,7 +648,7 @@ describe('extractReviewIssues', () => {
     })
   })
 
-  it('新版 DS-03 固定报告只提取含问题描述的正式问题且忽略审查覆盖标题', () => {
+  it('新版 DS-03 固定报告提取正式问题且忽略审查覆盖标题', () => {
     const issues = extractReviewIssues(bmsDs03ReportFixture)
 
     expect(issues).toHaveLength(1)

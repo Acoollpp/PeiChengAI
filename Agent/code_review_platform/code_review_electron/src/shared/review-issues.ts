@@ -63,14 +63,6 @@ const descriptionFieldPattern =
   /^\s*(?:[-*+]\s*)?(?:\*\*|__)?(?:问题描述|缺陷描述(?:\s*\(Root Cause\))?|不合规现象描述)\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/i
 const codeLocationFieldPattern =
   /^\s*(?:[-*+]\s*)?(?:\*\*|__)?涉及文件及行号\s*[：:](?:\*\*|__)?\s*$/
-const reviewItemFieldPattern =
-  /^\s*(?:[-*+]\s*)?(?:\*\*|__)?所属审查项\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/
-const ruleSectionFieldPattern =
-  /^\s*(?:[-*+]\s*)?(?:\*\*|__)?规则章节\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/
-const impactRiskFieldPattern =
-  /^\s*(?:[-*+]\s*)?(?:\*\*|__)?影响风险\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/
-const remediationFieldPattern =
-  /^\s*(?:[-*+]\s*)?(?:\*\*|__)?整改建议\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/
 type BmsReportSeverity = Exclude<ReviewIssueSeverity, 'unknown'>
 type BmsReportSeverityRule = {
   canonicalLabel: string
@@ -109,6 +101,7 @@ const bmsIssueHeadingPatterns = [
   historicalDs02IssueHeadingPattern
 ] as const
 const bmsZeroIssueStatementPattern = /^本次未发现能够闭环的问题[。.]?$/
+const bmsCodeReviewerReportTitlePattern = /^BMS\s+代码审查报告$/
 
 const stripMarkerListPrefix = (value: string): string =>
   value.replace(/^\s*(?:\d+[\.)、]|[一二三四五六七八九十]+[、.．\)])\s*/, '').trim()
@@ -271,15 +264,6 @@ const findDescriptionText = (lines: MarkdownLine[]): string => {
   return ''
 }
 
-const findFieldText = (lines: MarkdownLine[], pattern: RegExp): string => {
-  for (const line of lines) {
-    if (line.inCodeBlock) continue
-    const match = pattern.exec(line.text)
-    if (match) return stripMarkdownInline(match[1])
-  }
-  return ''
-}
-
 const isBmsPlaceholderValue = (value: string): boolean => {
   const normalized = normalizeCellText(value)
   return (
@@ -289,37 +273,33 @@ const isBmsPlaceholderValue = (value: string): boolean => {
   )
 }
 
-const hasBmsIssueHeadingShape = (heading: string): boolean =>
-  /^\S+\s+\S/.test(heading) ||
-  /^(?:\d+[.)、．]|[一二三四五六七八九十百]+[、.．)])\s*\S/.test(heading)
-
 const incompleteHistoricalBmsIssueHeadingPattern =
   /^(?:P\d+|CR-\d+|PC-BMS-\d+|DS-02-\d+)\s+\[[^\]]+\]$/
 
-type CodeLocationExtraction = {
-  locations: ReviewIssueCodeLocation[]
-  valid: boolean
-}
+type CodeLocationStatus = 'absent' | 'valid' | 'malformed'
 
-const invalidCodeLocations = (): CodeLocationExtraction => ({ locations: [], valid: false })
+type CodeLocationExtraction = {
+  status: CodeLocationStatus
+  locations: ReviewIssueCodeLocation[]
+}
 
 const findCodeLocations = (lines: MarkdownLine[]): CodeLocationExtraction => {
   const fieldIndex = lines.findIndex(
     (line) => !line.inCodeBlock && codeLocationFieldPattern.test(line.text)
   )
-  if (fieldIndex === -1) return invalidCodeLocations()
+  if (fieldIndex === -1) return { status: 'absent', locations: [] }
 
   const tableLines = lines.slice(fieldIndex + 1)
   const headerLineIndex = tableLines.findIndex(
     (line) => !line.inCodeBlock && line.text.trim().startsWith('|')
   )
-  if (headerLineIndex === -1) return invalidCodeLocations()
+  if (headerLineIndex === -1) return { status: 'malformed', locations: [] }
   const headers = splitTableRow(tableLines[headerLineIndex].text)
   const fileIndex = getHeaderIndex(headers, ['文件'])
   const lineIndex = getHeaderIndex(headers, ['行号'])
   const descriptionIndex = getHeaderIndex(headers, ['位置说明'])
   if (fileIndex === -1 || lineIndex === -1 || descriptionIndex === -1) {
-    return invalidCodeLocations()
+    return { status: 'malformed', locations: [] }
   }
 
   const locations: ReviewIssueCodeLocation[] = []
@@ -331,11 +311,13 @@ const findCodeLocations = (lines: MarkdownLine[]): CodeLocationExtraction => {
     const codeLine = cells[lineIndex] ?? ''
     const description = cells[descriptionIndex] ?? ''
     if ([file, codeLine, description].some(isBmsPlaceholderValue)) {
-      return invalidCodeLocations()
+      return { status: 'malformed', locations: [] }
     }
     locations.push({ file, line: codeLine, description })
   }
-  return { locations, valid: locations.length > 0 }
+  return locations.length > 0
+    ? { status: 'valid', locations }
+    : { status: 'malformed', locations: [] }
 }
 
 const findTemplateOneBoundary = (
@@ -371,7 +353,19 @@ const extractBmsCodeReviewerIssues = (
   const sectionIndex = headings.findIndex(
     (heading) => heading.level === 2 && reviewIssuesSectionPattern.test(heading.text.trim())
   )
-  if (sectionIndex === -1) return undefined
+  if (sectionIndex === -1) {
+    const isBmsCodeReviewerReport = headings.some(
+      (heading) => heading.level === 1 && bmsCodeReviewerReportTitlePattern.test(heading.text.trim())
+    )
+    return isBmsCodeReviewerReport
+      ? {
+          format: 'bms_code_reviewer',
+          status: 'invalid',
+          issues: [],
+          message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。'
+        }
+      : undefined
+  }
 
   const section = headings[sectionIndex]
   const nextSection = headings
@@ -393,19 +387,9 @@ const extractBmsCodeReviewerIssues = (
       const issueText = stripMarkdownInline(rawHeadingText)
       const descriptionText = findDescriptionText(issueLines)
       const codeLocationExtraction = findCodeLocations(issueLines)
-      const hasRequiredFields = [
-        findFieldText(issueLines, reviewItemFieldPattern),
-        findFieldText(issueLines, ruleSectionFieldPattern),
-        descriptionText,
-        findFieldText(issueLines, impactRiskFieldPattern),
-        findFieldText(issueLines, remediationFieldPattern)
-      ].every((value) => !isBmsPlaceholderValue(value))
       if (
         isBmsPlaceholderValue(issueText) ||
-        !hasBmsIssueHeadingShape(issueText) ||
-        incompleteHistoricalBmsIssueHeadingPattern.test(heading.text) ||
-        !hasRequiredFields ||
-        !codeLocationExtraction.valid
+        incompleteHistoricalBmsIssueHeadingPattern.test(heading.text)
       ) {
         return []
       }
@@ -421,7 +405,9 @@ const extractBmsCodeReviewerIssues = (
           displayText: issueText,
           displaySnapshot: markdown.slice(heading.line.startOffset, endOffset).trimEnd(),
           ...(severity === undefined ? {} : { severity }),
-          codeLocations: codeLocationExtraction.locations,
+          ...(codeLocationExtraction.status === 'valid'
+            ? { codeLocations: codeLocationExtraction.locations }
+            : {}),
           anchorId,
           location: {
             startOffset: heading.line.startOffset,

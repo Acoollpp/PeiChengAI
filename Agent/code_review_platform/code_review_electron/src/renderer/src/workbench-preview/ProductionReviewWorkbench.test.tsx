@@ -1522,7 +1522,7 @@ describe('ProductionReviewWorkbench', () => {
       count: 1
     })
     vi.mocked(window.codeReview.readTaskReport).mockResolvedValueOnce(
-      '# 原始报告\n\n## 三、审查问题\n\n### 覆盖摘要\n\n正文仍然可查看。'
+      '# 原始报告\n\n## 三、审查问题\n\n### <问题编号> <问题标题>\n\n正文仍然可查看。'
     )
 
     render(<ProductionReviewWorkbench {...productionProps} />)

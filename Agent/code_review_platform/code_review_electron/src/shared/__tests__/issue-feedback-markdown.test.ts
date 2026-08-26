@@ -9,6 +9,7 @@ import {
   bmsCodeReviewerNoSeverityReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
   bmsCodeReviewerReportWithIssuesFixture,
+  bmsCodeReviewerSearchEvidenceReportFixture,
   templateOneReportFixture,
   templateTwoConclusionReportFixture,
   templateTwoTableReportFixture
@@ -127,6 +128,28 @@ describe('composeIssueFeedbackMarkdown', () => {
     expect(secondFeedbackOffset).toBeLessThan(coverageOffset)
     expect(composed.match(/> 是否有效：/g)).toHaveLength(2)
     expect(composed.indexOf('**材料或生成证据：**')).toBeLessThan(firstFeedbackOffset)
+  })
+
+  it('完全缺失型与混合证据问题可分别插入反馈且不会落入审查覆盖章节', () => {
+    const original = bmsCodeReviewerSearchEvidenceReportFixture
+    const issues = [
+      toServerIssue(original, 0, true, '已补充唤醒后的状态恢复'),
+      toServerIssue(original, 1, false, '默认值要求需要进一步确认')
+    ]
+
+    const composed = composeIssueFeedbackMarkdown(original, issues)
+    const firstFeedbackOffset = composed.indexOf('已补充唤醒后的状态恢复')
+    const secondIssueOffset = composed.indexOf('### DS-04 混合证据问题仍保留代码位置')
+    const secondFeedbackOffset = composed.indexOf('默认值要求需要进一步确认')
+    const coverageOffset = composed.indexOf('## 四、审查覆盖')
+
+    expect(firstFeedbackOffset).toBeGreaterThan(
+      composed.indexOf('### 辅助说明：低压状态下未恢复运行状态')
+    )
+    expect(firstFeedbackOffset).toBeLessThan(secondIssueOffset)
+    expect(secondFeedbackOffset).toBeGreaterThan(secondIssueOffset)
+    expect(secondFeedbackOffset).toBeLessThan(coverageOffset)
+    expect(composed.match(/> 是否有效：/g)).toHaveLength(2)
   })
 
   it.each([
