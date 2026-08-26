@@ -36,6 +36,7 @@ vi.mock('electron', () => ({
 
 vi.mock('electron-log/main', () => ({
   default: {
+    info: vi.fn(),
     warn: vi.fn()
   }
 }))
@@ -242,6 +243,471 @@ describe('report uploader', () => {
         ]
       })
     )
+  })
+
+  it('标准图片缺失时上传同名 IPGSD 加密候选中的真实 SVG 内容', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-ipgsd-svg-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, '# 报告\n\n![证据](images/issue-01.svg)\n')
+    await writeFile(join(dir, 'images', 'issue-01.svg.IPGSD'), svg)
+
+    await uploadReportFile(api, 'token-123', 'task-ipgsd-svg', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-ipgsd-svg',
+      expect.objectContaining({
+        report_content: '# 报告\n\n![证据](images/issue-01.svg)\n',
+        assets: [{
+          relative_path: 'images/issue-01.svg',
+          content: svg,
+          content_type: 'image/svg+xml'
+        }]
+      })
+    )
+    expect(log.info).toHaveBeenCalledWith(
+      '[REPORT_IMAGE_ENCRYPTED_CANDIDATE_UPLOADED]',
+      expect.objectContaining({
+        relativePath: 'images/issue-01.svg',
+        extension: '.svg',
+        result: 'UPLOADED',
+        reasonCode: 'VALID_ORIGINAL_CONTENT'
+      })
+    )
+  })
+
+  it('加密候选内容无效时用内存 SVG 占位并同步上传副本路径', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-ipgsd-placeholder-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const originalReport = '# 报告\n\n![证据](images/issue-01.png)\n'
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, originalReport)
+    await writeFile(join(dir, 'images', 'issue-01.png.IPGSD'), 'ciphertext')
+
+    await uploadReportFile(api, 'token-123', 'task-ipgsd-placeholder', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-ipgsd-placeholder',
+      expect.objectContaining({
+        report_content: '# 报告\n\n![证据](images/issue-01.png.ipgsd-placeholder.svg)\n',
+        assets: [expect.objectContaining({
+          relative_path: 'images/issue-01.png.ipgsd-placeholder.svg',
+          content_type: 'image/svg+xml',
+          content: expect.any(Buffer)
+        })]
+      })
+    )
+    expect(log.warn).toHaveBeenCalledWith(
+      '[REPORT_IMAGE_ENCRYPTED_CANDIDATE_PLACEHOLDER]',
+      expect.objectContaining({
+        relativePath: 'images/issue-01.png',
+        extension: '.png',
+        result: 'PLACEHOLDER',
+        reasonCode: 'INVALID_IMAGE_CONTENT'
+      })
+    )
+    const uploadReportCall = (api.uploadReport.mock.calls as unknown as Array<
+      [string, string, { assets: Array<{ content: Uint8Array }> }]
+    >)[0]
+    if (!uploadReportCall) {
+      throw new Error('缺少报告上传调用')
+    }
+    const placeholderAsset = uploadReportCall[2].assets[0]
+    expect(Buffer.from(placeholderAsset.content).toString('utf8')).toContain(
+      '代码图片因终端加密无法读取，已省略'
+    )
+    await expect(readFile(reportPath, 'utf8')).resolves.toBe(originalReport)
+  })
+
+  it('无效 SVG 加密候选也使用内存 SVG 占位且保持 SVG 路径', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-ipgsd-svg-placeholder-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const originalReport = '# 报告\n\n![证据](images/issue-01.svg)\n'
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, originalReport)
+    await writeFile(join(dir, 'images', 'issue-01.svg.IPGSD'), 'ciphertext')
+
+    await uploadReportFile(api, 'token-123', 'task-ipgsd-svg-placeholder', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-ipgsd-svg-placeholder',
+      expect.objectContaining({
+        report_content: '# 报告\n\n![证据](images/issue-01.svg.ipgsd-placeholder.svg)\n',
+        assets: [expect.objectContaining({
+          relative_path: 'images/issue-01.svg.ipgsd-placeholder.svg',
+          content_type: 'image/svg+xml',
+          content: expect.any(Buffer)
+        })]
+      })
+    )
+    await expect(readFile(reportPath, 'utf8')).resolves.toBe(originalReport)
+  })
+
+  it.each([
+    {
+      name: '脚本',
+      content: '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+      reasonCode: 'UNSAFE_SVG_CONTENT'
+    },
+    {
+      name: '外链',
+      content: '<svg xmlns="http://www.w3.org/2000/svg"><image href="https://example.com/a.svg"/></svg>',
+      reasonCode: 'UNSAFE_SVG_CONTENT'
+    },
+    {
+      name: 'DOCTYPE',
+      content: '<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg"/>',
+      reasonCode: 'FORBIDDEN_XML_DECLARATION'
+    }
+  ])('加密候选为危险 SVG（$name）时阻断上传而不降级占位', async ({ content, reasonCode }) => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-ipgsd-dangerous-svg-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, '# 报告\n\n![证据](images/issue-01.svg)\n')
+    await writeFile(join(dir, 'images', 'issue-01.svg.IPGSD'), content)
+
+    await expect(uploadReportFile(api, 'token-123', 'task-ipgsd-dangerous-svg', reportPath)).rejects.toThrow(
+      '报告图片内容与文件格式不一致'
+    )
+    expect(api.uploadReport).not.toHaveBeenCalled()
+    expect(log.warn).toHaveBeenCalledWith(
+      '[REPORT_IMAGE_ENCRYPTED_CANDIDATE_REJECTED]',
+      expect.objectContaining({
+        relativePath: 'images/issue-01.svg',
+        extension: '.svg',
+        result: 'REJECTED',
+        reasonCode
+      })
+    )
+  })
+
+  it('非 SVG 加密候选的占位路径不会与已有 SVG 冲突', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-ipgsd-placeholder-name-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, '# 报告\n\n![证据](images/a.png)\n')
+    await writeFile(join(dir, 'images', 'a.png.IPGSD'), 'ciphertext')
+    await writeFile(join(dir, 'images', 'a.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
+
+    await uploadReportFile(api, 'token-123', 'task-ipgsd-placeholder-name', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-ipgsd-placeholder-name',
+      expect.objectContaining({
+        report_content: '# 报告\n\n![证据](images/a.png.ipgsd-placeholder.svg)\n',
+        assets: [expect.objectContaining({
+          relative_path: 'images/a.png.ipgsd-placeholder.svg',
+          content_type: 'image/svg+xml'
+        })]
+      })
+    )
+  })
+
+  it('加密候选占位路径已存在时明确阻断', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-ipgsd-placeholder-conflict-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, '# 报告\n\n![证据](images/a.png)\n')
+    await writeFile(join(dir, 'images', 'a.png.IPGSD'), 'ciphertext')
+    await writeFile(join(dir, 'images', 'a.png.ipgsd-placeholder.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
+
+    await expect(uploadReportFile(api, 'token-123', 'task-ipgsd-placeholder-conflict', reportPath)).rejects.toThrow(
+      '报告图片占位路径冲突'
+    )
+    expect(api.uploadReport).not.toHaveBeenCalled()
+  })
+
+  it('只替换图片 URL 和图片 definition，不改写正文或代码中的同字串', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-ipgsd-markdown-ranges-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const originalReport = [
+      '正文提及 images/issue-01.svg.IPGSD，不能改写。',
+      '',
+      '`行内代码 images/issue-01.svg.IPGSD`',
+      '',
+      '```text',
+      '代码块 images/issue-01.svg.IPGSD',
+      '```',
+      '',
+      '![直接图片](images/issue-01.svg.IPGSD)',
+      '![引用图片][evidence]',
+      '',
+      '[evidence]: images/issue-01.svg.IPGSD',
+      ''
+    ].join('\n')
+    const expectedUploadedReport = originalReport
+      .replace('![直接图片](images/issue-01.svg.IPGSD)', '![直接图片](images/issue-01.svg)')
+      .replace('[evidence]: images/issue-01.svg.IPGSD', '[evidence]: images/issue-01.svg')
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, originalReport)
+    await writeFile(join(dir, 'images', 'issue-01.svg.IPGSD'), svg)
+
+    await uploadReportFile(api, 'token-123', 'task-ipgsd-markdown-ranges', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-ipgsd-markdown-ranges',
+      expect.objectContaining({ report_content: expectedUploadedReport })
+    )
+    await expect(readFile(reportPath, 'utf8')).resolves.toBe(originalReport)
+  })
+
+  it.each([
+    {
+      name: '百分号编码',
+      sourceUrl: 'images/a%20b.svg.IPGSD',
+      diskName: 'a b.svg.IPGSD',
+      expectedSourceUrl: 'images/a%20b.svg',
+      expectedRelativePath: 'images/a b.svg'
+    },
+    {
+      name: 'HTML 实体',
+      sourceUrl: 'images/a&amp;b.svg.IPGSD',
+      diskName: 'a&b.svg.IPGSD',
+      expectedSourceUrl: 'images/a&amp;b.svg',
+      expectedRelativePath: 'images/a&b.svg'
+    }
+  ])('IPGSD 图片 URL 保留原始$name语法且资产路径使用解析结果', async ({
+    sourceUrl,
+    diskName,
+    expectedSourceUrl,
+    expectedRelativePath
+  }) => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-ipgsd-encoded-url-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const originalReport = `# 报告\n\n![证据](${sourceUrl})\n`
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, originalReport)
+    await writeFile(join(dir, 'images', diskName), svg)
+
+    await uploadReportFile(api, 'token-123', 'task-ipgsd-encoded-url', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-ipgsd-encoded-url',
+      expect.objectContaining({
+        report_content: `# 报告\n\n![证据](${expectedSourceUrl})\n`,
+        assets: [expect.objectContaining({ relative_path: expectedRelativePath })]
+      })
+    )
+    await expect(readFile(reportPath, 'utf8')).resolves.toBe(originalReport)
+  })
+
+  it('同一规范化路径同时引用标准文件和直接 IPGSD 时阻断', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-ipgsd-source-conflict-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(
+      reportPath,
+      '# 报告\n\n![标准](images/a.svg)\n![加密](images/a.svg.IPGSD)\n'
+    )
+    await writeFile(join(dir, 'images', 'a.svg'), svg)
+    await writeFile(join(dir, 'images', 'a.svg.IPGSD'), svg)
+
+    await expect(uploadReportFile(api, 'token-123', 'task-ipgsd-source-conflict', reportPath)).rejects.toThrow(
+      '报告图片规范化路径冲突'
+    )
+    expect(api.uploadReport).not.toHaveBeenCalled()
+  })
+
+  it('同一 IPGSD 候选被标准和直接路径引用时去重上传一个标准资产', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-ipgsd-same-source-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(
+      reportPath,
+      '# 报告\n\n![标准](images/a.svg)\n![加密](images/a.svg.IPGSD)\n'
+    )
+    await writeFile(join(dir, 'images', 'a.svg.IPGSD'), svg)
+
+    await uploadReportFile(api, 'token-123', 'task-ipgsd-same-source', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-ipgsd-same-source',
+      expect.objectContaining({
+        report_content: '# 报告\n\n![标准](images/a.svg)\n![加密](images/a.svg)\n',
+        assets: [expect.objectContaining({
+          relative_path: 'images/a.svg',
+          content: svg,
+          content_type: 'image/svg+xml'
+        })]
+      })
+    )
+  })
+
+  it('直接 IPGSD 图片 URL 含嵌套括号时仅规范化上传副本', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-ipgsd-nested-parentheses-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const originalReport = '# 报告\n\n![证据](images/call(chain).svg.IPGSD)\n'
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, originalReport)
+    await writeFile(join(dir, 'images', 'call(chain).svg.IPGSD'), svg)
+
+    await uploadReportFile(api, 'token-123', 'task-ipgsd-nested-parentheses', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-ipgsd-nested-parentheses',
+      expect.objectContaining({
+        report_content: '# 报告\n\n![证据](images/call(chain).svg)\n',
+        assets: [expect.objectContaining({ relative_path: 'images/call(chain).svg' })]
+      })
+    )
+    await expect(readFile(reportPath, 'utf8')).resolves.toBe(originalReport)
+  })
+
+  it('同名 IPGSD 候选符号链接到 images 外时继续阻断', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-ipgsd-symlink-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const outsidePath = join(dir, 'outside.png.IPGSD')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, '# 报告\n\n![证据](images/issue-01.png)\n')
+    await writeFile(outsidePath, VALID_PNG_BYTES)
+    await symlink(outsidePath, join(dir, 'images', 'issue-01.png.IPGSD'), 'file')
+
+    await expect(uploadReportFile(api, 'token-123', 'task-ipgsd-symlink', reportPath)).rejects.toThrow(
+      '报告图片不能指向 images 目录外'
+    )
+    expect(api.uploadReport).not.toHaveBeenCalled()
+  })
+
+  it('直接引用 IPGSD 时仅规范化上传副本而不改写本地 Markdown', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-direct-ipgsd-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const originalReport = '# 报告\n\n![证据](images/issue-01.svg.iPgSd)\n'
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, originalReport)
+    await writeFile(join(dir, 'images', 'issue-01.svg.iPgSd'), svg)
+
+    await uploadReportFile(api, 'token-123', 'task-direct-ipgsd', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-direct-ipgsd',
+      expect.objectContaining({
+        report_content: '# 报告\n\n![证据](images/issue-01.svg)\n',
+        assets: [expect.objectContaining({
+          relative_path: 'images/issue-01.svg',
+          content: svg,
+          content_type: 'image/svg+xml'
+        })]
+      })
+    )
+    await expect(readFile(reportPath, 'utf8')).resolves.toBe(originalReport)
+  })
+
+  it('标准原图优先于同名 IPGSD 候选', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-ipgsd-prefer-standard-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const candidate = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><text>candidate</text></svg>')
+    const standard = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><text>standard</text></svg>')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, '# 报告\n\n![证据](images/issue-01.svg)\n')
+    await writeFile(join(dir, 'images', 'issue-01.svg'), standard)
+    await writeFile(join(dir, 'images', 'issue-01.svg.IPGSD'), candidate)
+
+    await uploadReportFile(api, 'token-123', 'task-ipgsd-standard', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-ipgsd-standard',
+      expect.objectContaining({
+        assets: [expect.objectContaining({ content: standard })]
+      })
+    )
+  })
+
+  it('接受同名 IPGSD 候选中的 PNG、JPEG、JPG、GIF 与 WebP 真实内容', async () => {
+    const corpus = await loadSharedImageValidationCorpus()
+    for (const entry of corpus.filter((entry) => entry.extension !== '.svg')) {
+      const dir = await mkdtemp(join(tmpdir(), `report-uploader-ipgsd-${entry.name}-`))
+      tempDirs.push(dir)
+      const reportPath = join(dir, '代码审查报告.md')
+      const relativePath = `images/evidence${entry.extension}`
+      const content = Buffer.from(entry.valid_base64, 'base64')
+      const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+      await mkdir(join(dir, 'images'), { recursive: true })
+      await writeFile(reportPath, `# 报告\n\n![证据](${relativePath})\n`)
+      await writeFile(join(dir, `${relativePath}.IPGSD`), content)
+
+      await uploadReportFile(api, 'token-123', `task-ipgsd-${entry.name}`, reportPath)
+
+      expect(api.uploadReport).toHaveBeenCalledWith(
+        'token-123',
+        `task-ipgsd-${entry.name}`,
+        expect.objectContaining({
+          assets: [expect.objectContaining({
+            relative_path: relativePath,
+            content,
+            content_type: entry.content_type
+          })]
+        })
+      )
+    }
+  })
+
+  it('拒绝基名大小写不匹配、多层后缀和无效原始格式的 IPGSD 路径', async () => {
+    const cases = [
+      { reference: 'images/Issue-01.png', candidate: 'issue-01.png.IPGSD' },
+      { reference: 'images/issue-01.png.backup.IPGSD', candidate: 'issue-01.png.backup.IPGSD' },
+      { reference: 'images/issue-01.bmp.IPGSD', candidate: 'issue-01.bmp.IPGSD' }
+    ]
+    for (const testCase of cases) {
+      const dir = await mkdtemp(join(tmpdir(), 'report-uploader-ipgsd-reject-'))
+      tempDirs.push(dir)
+      const reportPath = join(dir, '代码审查报告.md')
+      const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+      await mkdir(join(dir, 'images'), { recursive: true })
+      await writeFile(reportPath, `# 报告\n\n![证据](${testCase.reference})\n`)
+      await writeFile(join(dir, 'images', testCase.candidate), VALID_PNG_BYTES)
+
+      await expect(uploadReportFile(api, 'token-123', 'task-ipgsd-reject', reportPath)).rejects.toThrow(
+        testCase.reference === 'images/Issue-01.png'
+          ? '报告图片不存在'
+          : '不支持的报告图片格式'
+      )
+      expect(api.uploadReport).not.toHaveBeenCalled()
+    }
   })
 
   it('上传新版 Skill images/issue-<NN>.svg 代码图片并保持相对路径和 MIME', async () => {
@@ -585,6 +1051,7 @@ describe('report uploader', () => {
       'token-123',
       'task-1',
       expect.objectContaining({
+        report_content: corpus.markdown,
         assets: corpus.expected_paths.map((relativePath) => ({
           relative_path: relativePath,
           content: VALID_PNG_BYTES,
