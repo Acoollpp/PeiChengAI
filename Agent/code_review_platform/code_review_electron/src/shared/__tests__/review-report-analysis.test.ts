@@ -11,6 +11,7 @@ import {
   bmsCodeReviewerNoSeverityZeroReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
   bmsCodeReviewerReportRealVariantsFixture,
+  bmsCodeReviewerSearchEvidenceReportFixture,
   bmsCodeReviewerReportWithIssuesFixture,
   bmsCodeReviewerZeroIssuesFixture,
   templateOneReportFixture,
@@ -76,6 +77,20 @@ describe('报告摘要分析', () => {
   })
 
   it('选中报告按真实正文校验固定模板并兼容历史报告解析结果', () => {
+    const reportWithoutDescription = bmsCodeReviewerNoSeverityReportFixture.replace(
+      /^\*\*问题描述：\*\*.*\n/m,
+      ''
+    )
+    expect(analyzeLoadedReviewReport(reportWithoutDescription, {
+      feedbackProtocolVersion: 1,
+      issueCount: 2,
+      highestIssueSeverity: null
+    })).toMatchObject({ status: 'ready', issueCount: 2, highestSeverity: 'unknown' })
+    expect(analyzeLoadedReviewReport(bmsCodeReviewerSearchEvidenceReportFixture, {
+      feedbackProtocolVersion: 1,
+      issueCount: 2,
+      highestIssueSeverity: null
+    })).toMatchObject({ status: 'ready', issueCount: 2, highestSeverity: 'unknown' })
     expect(analyzeLoadedReviewReport(bmsCodeReviewerReportWithIssuesFixture, {
       feedbackProtocolVersion: 1,
       issueCount: 2,
@@ -149,19 +164,18 @@ describe('报告摘要分析', () => {
     })
   })
 
-  it('新版结构损坏或快照计数不一致时返回明确解析失败', () => {
-    const malformed = bmsCodeReviewerReportWithIssuesFixture.replace(
+  it('新版问题描述缺失不阻断重开，但快照计数不一致仍返回明确解析失败', () => {
+    const reportWithoutDescription = bmsCodeReviewerReportWithIssuesFixture.replace(
       '**问题描述：** 休眠状态分支未阻断充电 MOS 开启路径，满足远程唤醒条件时会绕过休眠保护。',
       '**影响风险：** 缺少问题描述字段。'
     )
-    expect(analyzeLoadedReviewReport(malformed, {
+    expect(analyzeLoadedReviewReport(reportWithoutDescription, {
       feedbackProtocolVersion: 1,
       issueCount: 2,
       highestIssueSeverity: 'high'
     })).toMatchObject({
-      status: 'parse_error',
-      highestSeverity: 'unknown',
-      message: expect.stringContaining('固定模板')
+      status: 'ready',
+      highestSeverity: 'high'
     })
     expect(analyzeLoadedReviewReport(bmsCodeReviewerReportWithIssuesFixture, {
       feedbackProtocolVersion: 1,

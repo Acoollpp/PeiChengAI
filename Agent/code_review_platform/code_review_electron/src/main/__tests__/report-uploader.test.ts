@@ -53,6 +53,7 @@ import {
   bmsCodeReviewerHistoricalPcBmsReportFixture,
   bmsCodeReviewerNoSeverityReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
+  bmsCodeReviewerSearchEvidenceReportFixture,
   bmsCodeReviewerZeroIssuesFixture,
   templateOneReportFixture
 } from '../../shared/__tests__/fixtures/review-report-fixtures'
@@ -413,6 +414,65 @@ describe('report uploader', () => {
     )
   })
 
+  it('上传完全缺失型报告时仍按协议 1 提交问题快照', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-search-evidence-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '缺失型审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await writeFile(reportPath, bmsCodeReviewerSearchEvidenceReportFixture)
+
+    await uploadReportFile(api, 'token-123', 'task-search-evidence', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-search-evidence',
+      expect.objectContaining({
+        feedback_protocol_version: 1,
+        issues: [
+          expect.objectContaining({
+            issue_text: 'DS-07 休眠路径未恢复运行状态的完全缺失问题',
+            description_text: '唤醒路径没有恢复运行状态的实现，否定性检索证据表明该功能完全缺失。'
+          }),
+          expect.objectContaining({
+            issue_text: 'DS-04 混合证据问题仍保留代码位置'
+          })
+        ],
+        assets: []
+      })
+    )
+  })
+
+  it('上传未识别问题描述的报告时仍按协议 1 提交空描述快照', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-empty-description-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '空描述审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    const reportWithoutDescription = bmsCodeReviewerNoSeverityReportFixture.replace(
+      /^\*\*问题描述：\*\*.*\n/m,
+      ''
+    )
+    await writeFile(reportPath, reportWithoutDescription)
+
+    await uploadReportFile(api, 'token-123', 'task-empty-description', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-empty-description',
+      expect.objectContaining({
+        feedback_protocol_version: 1,
+        issues: [
+          expect.objectContaining({
+            issue_text: 'STATE-17 休眠高风险路径仍可打开充电 MOS',
+            description_text: ''
+          }),
+          expect.objectContaining({
+            issue_text: '编号-任意-42 建议路径缺少故障恢复一致性校验'
+          })
+        ]
+      })
+    )
+  })
+
   it.each([
     {
       name: 'PC-BMS 历史风险词',
@@ -460,17 +520,6 @@ describe('report uploader', () => {
   })
 
   it.each([
-    {
-      name: '缺少问题描述',
-      markdown: bmsCodeReviewerNoSeverityReportFixture.replace(/^\*\*问题描述：\*\*.*\n/m, '')
-    },
-    {
-      name: '缺少代码位置表',
-      markdown: bmsCodeReviewerNoSeverityReportFixture.replace(
-        '**涉及文件及行号：**',
-        '**相关位置：**'
-      )
-    },
     {
       name: '混入普通三级标题',
       markdown: bmsCodeReviewerNoSeverityReportFixture.replace(

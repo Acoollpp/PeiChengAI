@@ -297,6 +297,27 @@ describe('ReportFeedbackWindow 逐问题草稿', () => {
     )
   })
 
+  it('问题快照没有描述时显示兜底文案并保持可反馈', async () => {
+    window.reportFeedback.getContext = vi.fn(async () => ({
+      ...issueContext,
+      issues: [{ ...issueContext.issues[0], descriptionText: '' }]
+    }))
+    const user = userEvent.setup()
+    render(<ReportFeedbackWindow />)
+
+    expect(await screen.findByText('未提供问题描述。')).toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: '有效' }))
+
+    await waitFor(() => {
+      expect(window.reportFeedback.saveIssueDraft).toHaveBeenCalledWith({
+        taskId: 'task-1',
+        issueId: 'issue-1',
+        helpful: true,
+        feedbackText: ''
+      })
+    })
+  })
+
   it('操作某个问题的评价控件时请求主窗口定位该问题', async () => {
     const user = userEvent.setup()
     render(<ReportFeedbackWindow />)

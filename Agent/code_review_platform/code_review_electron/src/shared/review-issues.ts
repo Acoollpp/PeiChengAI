@@ -63,14 +63,6 @@ const descriptionFieldPattern =
   /^\s*(?:[-*+]\s*)?(?:\*\*|__)?(?:问题描述|缺陷描述(?:\s*\(Root Cause\))?|不合规现象描述)\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/i
 const codeLocationFieldPattern =
   /^\s*(?:[-*+]\s*)?(?:\*\*|__)?涉及文件及行号\s*[：:](?:\*\*|__)?\s*$/
-const reviewItemFieldPattern =
-  /^\s*(?:[-*+]\s*)?(?:\*\*|__)?所属审查项\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/
-const ruleSectionFieldPattern =
-  /^\s*(?:[-*+]\s*)?(?:\*\*|__)?规则章节\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/
-const impactRiskFieldPattern =
-  /^\s*(?:[-*+]\s*)?(?:\*\*|__)?影响风险\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/
-const remediationFieldPattern =
-  /^\s*(?:[-*+]\s*)?(?:\*\*|__)?整改建议\s*[：:](?:\*\*|__)?\s*(.*?)\s*$/
 type BmsReportSeverity = Exclude<ReviewIssueSeverity, 'unknown'>
 type BmsReportSeverityRule = {
   canonicalLabel: string
@@ -271,15 +263,6 @@ const findDescriptionText = (lines: MarkdownLine[]): string => {
   return ''
 }
 
-const findFieldText = (lines: MarkdownLine[], pattern: RegExp): string => {
-  for (const line of lines) {
-    if (line.inCodeBlock) continue
-    const match = pattern.exec(line.text)
-    if (match) return stripMarkdownInline(match[1])
-  }
-  return ''
-}
-
 const isBmsPlaceholderValue = (value: string): boolean => {
   const normalized = normalizeCellText(value)
   return (
@@ -296,30 +279,23 @@ const hasBmsIssueHeadingShape = (heading: string): boolean =>
 const incompleteHistoricalBmsIssueHeadingPattern =
   /^(?:P\d+|CR-\d+|PC-BMS-\d+|DS-02-\d+)\s+\[[^\]]+\]$/
 
-type CodeLocationExtraction = {
-  locations: ReviewIssueCodeLocation[]
-  valid: boolean
-}
-
-const invalidCodeLocations = (): CodeLocationExtraction => ({ locations: [], valid: false })
-
-const findCodeLocations = (lines: MarkdownLine[]): CodeLocationExtraction => {
+const findCodeLocations = (lines: MarkdownLine[]): ReviewIssueCodeLocation[] => {
   const fieldIndex = lines.findIndex(
     (line) => !line.inCodeBlock && codeLocationFieldPattern.test(line.text)
   )
-  if (fieldIndex === -1) return invalidCodeLocations()
+  if (fieldIndex === -1) return []
 
   const tableLines = lines.slice(fieldIndex + 1)
   const headerLineIndex = tableLines.findIndex(
     (line) => !line.inCodeBlock && line.text.trim().startsWith('|')
   )
-  if (headerLineIndex === -1) return invalidCodeLocations()
+  if (headerLineIndex === -1) return []
   const headers = splitTableRow(tableLines[headerLineIndex].text)
   const fileIndex = getHeaderIndex(headers, ['文件'])
   const lineIndex = getHeaderIndex(headers, ['行号'])
   const descriptionIndex = getHeaderIndex(headers, ['位置说明'])
   if (fileIndex === -1 || lineIndex === -1 || descriptionIndex === -1) {
-    return invalidCodeLocations()
+    return []
   }
 
   const locations: ReviewIssueCodeLocation[] = []
@@ -331,11 +307,11 @@ const findCodeLocations = (lines: MarkdownLine[]): CodeLocationExtraction => {
     const codeLine = cells[lineIndex] ?? ''
     const description = cells[descriptionIndex] ?? ''
     if ([file, codeLine, description].some(isBmsPlaceholderValue)) {
-      return invalidCodeLocations()
+      return []
     }
     locations.push({ file, line: codeLine, description })
   }
-  return { locations, valid: locations.length > 0 }
+  return locations
 }
 
 const findTemplateOneBoundary = (
@@ -392,20 +368,11 @@ const extractBmsCodeReviewerIssues = (
       const rawHeadingText = headingLinePattern.exec(heading.line.text)?.[2] ?? heading.text
       const issueText = stripMarkdownInline(rawHeadingText)
       const descriptionText = findDescriptionText(issueLines)
-      const codeLocationExtraction = findCodeLocations(issueLines)
-      const hasRequiredFields = [
-        findFieldText(issueLines, reviewItemFieldPattern),
-        findFieldText(issueLines, ruleSectionFieldPattern),
-        descriptionText,
-        findFieldText(issueLines, impactRiskFieldPattern),
-        findFieldText(issueLines, remediationFieldPattern)
-      ].every((value) => !isBmsPlaceholderValue(value))
+      const codeLocations = findCodeLocations(issueLines)
       if (
         isBmsPlaceholderValue(issueText) ||
         !hasBmsIssueHeadingShape(issueText) ||
-        incompleteHistoricalBmsIssueHeadingPattern.test(heading.text) ||
-        !hasRequiredFields ||
-        !codeLocationExtraction.valid
+        incompleteHistoricalBmsIssueHeadingPattern.test(heading.text)
       ) {
         return []
       }
@@ -421,7 +388,7 @@ const extractBmsCodeReviewerIssues = (
           displayText: issueText,
           displaySnapshot: markdown.slice(heading.line.startOffset, endOffset).trimEnd(),
           ...(severity === undefined ? {} : { severity }),
-          codeLocations: codeLocationExtraction.locations,
+          codeLocations,
           anchorId,
           location: {
             startOffset: heading.line.startOffset,
