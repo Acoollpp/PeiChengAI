@@ -8,8 +8,8 @@ import {
 } from './review-items'
 
 describe('审查项目录', () => {
-  it('以稳定顺序发布 DS-01 到 DS-06 及 DS-99 的正式元数据和材料定义', () => {
-    expect(REVIEW_ITEM_CATALOG_VERSION).toBe(5)
+  it('以稳定顺序发布 DS-01 到 DS-07 及 DS-99 的正式元数据和材料定义', () => {
+    expect(REVIEW_ITEM_CATALOG_VERSION).toBe(6)
     expect(BMS_CODE_REVIEW_SKILL_NAME).toBe('bms-code-reviewer')
     expect(REVIEW_ITEM_CATALOG.map((item) => ({
       id: item.id,
@@ -94,6 +94,14 @@ describe('审查项目录', () => {
         }]
       }),
       expect.objectContaining({
+        id: 'DS-07',
+        category: '控制逻辑专项审核',
+        name: '休眠唤醒状态机审查',
+        sortOrder: 70,
+        enabled: true,
+        materialFields: []
+      }),
+      expect.objectContaining({
         id: 'DS-99',
         category: '自定义审查',
         name: '自定义审查',
@@ -106,7 +114,59 @@ describe('审查项目录', () => {
       })
     ])
     expect(REVIEW_ITEM_CATALOG.map((item) => item.id)).toEqual([
-      'DS-01', 'DS-02', 'DS-03', 'DS-04', 'DS-05', 'DS-06', 'DS-99'
+      'DS-01', 'DS-02', 'DS-03', 'DS-04', 'DS-05', 'DS-06', 'DS-07', 'DS-99'
+    ])
+  })
+
+  it('解析 DS-07 为无专项材料的固定审查项', () => {
+    expect(resolveReviewItemInputs([{
+      id: 'DS-07',
+      user_extra_rules: '  只允许 RTC 中断唤醒  '
+    }])).toEqual([{
+      id: 'DS-07',
+      name: '休眠唤醒状态机审查',
+      user_extra_rules: '只允许 RTC 中断唤醒',
+      materials: []
+    }])
+  })
+
+  it('DS-07 拒绝自定义模式和无关材料，并与 DS-01 隔离输入', () => {
+    expect(() => resolveReviewItemInputs([{
+      id: 'DS-07',
+      custom_mode: 'new_revision_full'
+    }])).toThrow('审查项 DS-07 不支持自定义审查模式。')
+    expect(() => resolveReviewItemInputs([{
+      id: 'DS-07',
+      materials: [{ field_id: 'product-spec', file_paths: ['/input/specification.pdf'] }]
+    }])).toThrow('审查项 DS-07 不支持材料字段 product-spec。')
+
+    const resolved = resolveReviewItemInputs([
+      {
+        id: 'DS-01',
+        user_extra_rules: '只核对需求边界',
+        materials: [{
+          field_id: 'requirement-sheet',
+          file_paths: ['/input/requirements.xlsx']
+        }]
+      },
+      { id: 'DS-07', user_extra_rules: '只允许 RTC 中断唤醒' }
+    ])
+
+    expect(resolved).toEqual([
+      expect.objectContaining({
+        id: 'DS-01',
+        user_extra_rules: '只核对需求边界',
+        materials: [expect.objectContaining({
+          fieldId: 'requirement-sheet',
+          filePaths: ['/input/requirements.xlsx']
+        })]
+      }),
+      {
+        id: 'DS-07',
+        name: '休眠唤醒状态机审查',
+        user_extra_rules: '只允许 RTC 中断唤醒',
+        materials: []
+      }
     ])
   })
 

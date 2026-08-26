@@ -1,4 +1,4 @@
-export const REVIEW_ITEM_CATALOG_VERSION = 5
+export const REVIEW_ITEM_CATALOG_VERSION = 6
 
 export const BMS_CODE_REVIEW_SKILL_NAME = 'bms-code-reviewer'
 
@@ -9,6 +9,7 @@ export type ReviewItemId =
   | 'DS-04'
   | 'DS-05'
   | 'DS-06'
+  | 'DS-07'
   | 'DS-99'
 
 export type CustomReviewMode = 'dual_revision' | 'new_revision_full'
@@ -208,6 +209,23 @@ export const REVIEW_ITEM_CATALOG: readonly ReviewItemDefinition[] = [
         allowedExtensions: ['.pdf']
       }
     ]
+  },
+  {
+    id: 'DS-07',
+    category: {
+      id: 'control-logic',
+      name: '控制逻辑专项审核'
+    },
+    name: '休眠唤醒状态机审查',
+    summary: '检查影响唤醒结果的休眠决策状态，在每条可达唤醒路径首次使用前是否已经取得有效值。',
+    details: {
+      target: '识别状态未保持、未恢复、未重新计算或中途失效导致的无法唤醒、错误唤醒和错误继续休眠。',
+      process: '由 Skill 发现休眠入口、唤醒入口和决策状态，枚举决策点并逐路径核对状态有效性。',
+      specification: '无需专项材料；可通过额外规则补充休眠类型与允许或禁止的唤醒源等约束。具体审查规则、证据模式和失败策略由 bms-code-reviewer Skill 维护。'
+    },
+    sortOrder: 70,
+    enabled: true,
+    materialFields: []
   },
   {
     id: 'DS-99',

@@ -446,6 +446,65 @@ describe('executeReviewTask', () => {
     )
   })
 
+  it('DS-07 单选以真实 ID 路由到服务端和 Codex，且不代理为 DS-99', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-ds07-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, 'DS-07_审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    const ds07Request = {
+      svn_url: 'svn://repo/ds07',
+      old_revision: '0',
+      new_revision: 'r40994',
+      review_items: [{
+        id: 'DS-07',
+        user_extra_rules: '只允许 RTC 中断唤醒'
+      }]
+    }
+    const serverTask = makeTask({
+      svn_url: ds07Request.svn_url,
+      old_revision: ds07Request.old_revision,
+      new_revision: ds07Request.new_revision,
+      review_item_ids: ['DS-07'],
+      skill_name: 'bms-code-reviewer'
+    })
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => serverTask),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      preflightSvn: vi.fn(),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir })),
+      runCodex: vi.fn(async () => {
+        await writeFile(reportPath, '# DS-07 report\n')
+      }),
+      uploadReport: vi.fn()
+    })
+
+    await expect(
+      executeReviewTask({ token: 'token-123', request: ds07Request }, dependencies)
+    ).resolves.toMatchObject({ taskId: 'task-1', status: 'success' })
+
+    expect(dependencies.api.createTask).toHaveBeenCalledWith('token-123', {
+      svn_url: ds07Request.svn_url,
+      old_revision: ds07Request.old_revision,
+      new_revision: ds07Request.new_revision,
+      skill_name: 'bms-code-reviewer',
+      review_item_ids: ['DS-07']
+    })
+    expect(dependencies.runCodex).toHaveBeenCalledWith(expect.objectContaining({
+      reviewItems: [{
+        id: 'DS-07',
+        name: '休眠唤醒状态机审查',
+        user_extra_rules: '只允许 RTC 中断唤醒',
+        materials: []
+      }],
+      oldRevision: '0',
+      newRevision: 'r40994'
+    }))
+    expect(JSON.stringify(vi.mocked(dependencies.api.createTask).mock.calls)).not.toContain('DS-99')
+  })
+
   it('DS-02 单选只向服务端发送 ID，并把原始 revision 和空材料输入交给 Codex', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'task-agent-ds02-'))
     tempDirs.push(cwd)
@@ -706,6 +765,89 @@ describe('executeReviewTask', () => {
       ]
     }))
     expect(dependencies.uploadRequirementFile).not.toHaveBeenCalled()
+  })
+
+  it('DS-01 与 DS-07 组合执行时逐项隔离需求表材料和休眠唤醒规则', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-ds01-ds07-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, 'DS-01_DS-07_审查报告.md')
+    const imagesDir = join(cwd, 'images')
+    const requirementSource = '/local/source/DS-07组合需求表.xlsx'
+    const requirementCopy = join(cwd, 'materials', 'DS-01', 'requirement-sheet', 'DS-07组合需求表.xlsx')
+    const request = {
+      svn_url: 'svn://repo/ds01-ds07',
+      old_revision: '0',
+      new_revision: 'r40994',
+      review_items: [
+        {
+          id: 'DS-01',
+          user_extra_rules: '只核对需求表软件项',
+          materials: [{ field_id: 'requirement-sheet', file_paths: [requirementSource] }]
+        },
+        { id: 'DS-07', user_extra_rules: '只允许 RTC 中断唤醒' }
+      ]
+    }
+    const serverTask = makeTask({
+      svn_url: request.svn_url,
+      old_revision: request.old_revision,
+      new_revision: request.new_revision,
+      review_item_ids: ['DS-01', 'DS-07'],
+      skill_name: 'bms-code-reviewer'
+    })
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => serverTask),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      preflightSvn: vi.fn(),
+      prepareWorkspace: vi.fn(async (
+        input: Parameters<TaskAgentDependencies['prepareWorkspace']>[0]
+      ) => ({
+        cwd,
+        reportPath,
+        imagesDir,
+        reviewItems: input.reviewItems?.map((item) => ({
+          ...item,
+          materials: item.materials.map((material) => ({ ...material, filePaths: [requirementCopy] }))
+        }))
+      })),
+      runCodex: vi.fn(async () => {
+        await writeFile(reportPath, '# DS-01 + DS-07 report\n')
+      }),
+      uploadReport: vi.fn()
+    })
+
+    await expect(
+      executeReviewTask({ token: 'token-123', request }, dependencies)
+    ).resolves.toMatchObject({ taskId: 'task-1', status: 'success' })
+
+    expect(dependencies.api.createTask).toHaveBeenCalledWith('token-123', {
+      svn_url: request.svn_url,
+      old_revision: request.old_revision,
+      new_revision: request.new_revision,
+      skill_name: 'bms-code-reviewer',
+      review_item_ids: ['DS-01', 'DS-07']
+    })
+    const serverCalls = JSON.stringify(vi.mocked(dependencies.api.createTask).mock.calls)
+    expect(serverCalls).not.toContain('只核对需求表软件项')
+    expect(serverCalls).not.toContain('只允许 RTC 中断唤醒')
+    expect(serverCalls).not.toContain(requirementSource)
+    expect(dependencies.runCodex).toHaveBeenCalledWith(expect.objectContaining({
+      reviewItems: [
+        expect.objectContaining({
+          id: 'DS-01',
+          user_extra_rules: '只核对需求表软件项',
+          materials: [expect.objectContaining({ filePaths: [requirementCopy] })]
+        }),
+        {
+          id: 'DS-07',
+          name: '休眠唤醒状态机审查',
+          user_extra_rules: '只允许 RTC 中断唤醒',
+          materials: []
+        }
+      ]
+    }))
   })
 
   it('r0 组合任务原样交给 Codex，并展示 Skill 返回的参数错误而不自行降级', async () => {
