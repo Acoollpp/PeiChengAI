@@ -113,6 +113,9 @@ describe('registerIpcHandlers', () => {
       'task:open-log',
       'task:hide',
       'feedback:submit',
+      'feedback:list',
+      'feedback:read',
+      'feedback:read-screenshot',
       'report-feedback:open',
       'report-feedback:submit-negative',
       'report-feedback-window:get-context',
@@ -2439,6 +2442,33 @@ describe('registerIpcHandlers', () => {
     expect(screenshots?.[1]).toBeInstanceOf(Blob)
     expect(screenshots?.[1].type).toBe('image/jpeg')
     await expect(screenshots?.[1].text()).resolves.toBe('jpeg-bytes')
+  })
+
+  it('通过受鉴权保护的 IPC 读取意见、详情和原始截图', async () => {
+    const listFeedback = vi.fn(async () => ({ data: [], count: 0 }))
+    const readFeedback = vi.fn(async () => ({ id: 'feedback-1', screenshots: [] }))
+    const downloadFeedbackScreenshot = vi.fn(async () => ({
+      bytes: new Uint8Array([1, 2, 3]).buffer,
+      contentType: 'image/png'
+    }))
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      api: { listFeedback, readFeedback, downloadFeedbackScreenshot } as never,
+      authStore: { load: vi.fn(async () => ({ access_token: 'token-123' })) } as never
+    })
+
+    const listHandler = handleMock.mock.calls.find(([channel]) => channel === 'feedback:list')?.[1]
+    const readHandler = handleMock.mock.calls.find(([channel]) => channel === 'feedback:read')?.[1]
+    const screenshotHandler = handleMock.mock.calls.find(([channel]) => channel === 'feedback:read-screenshot')?.[1]
+
+    await expect(listHandler({}, { skip: 10, limit: 10 })).resolves.toEqual({ data: [], count: 0 })
+    await expect(readHandler({}, 'feedback-1')).resolves.toEqual({ id: 'feedback-1', screenshots: [] })
+    await expect(screenshotHandler({}, { feedbackId: 'feedback-1', screenshotId: 'screenshot-1' })).resolves.toEqual({
+      contentType: 'image/png', dataUrl: 'data:image/png;base64,AQID'
+    })
+    expect(listFeedback).toHaveBeenCalledWith('token-123', { skip: 10, limit: 10 })
+    expect(readFeedback).toHaveBeenCalledWith('token-123', 'feedback-1')
+    expect(downloadFeedbackScreenshot).toHaveBeenCalledWith('token-123', 'feedback-1', 'screenshot-1')
   })
 
   it('submits negative report feedback with a fixed payload', async () => {

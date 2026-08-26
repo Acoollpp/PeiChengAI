@@ -107,6 +107,39 @@ export interface FeedbackResult {
   status: 'pending' | 'processing' | 'resolved'
 }
 
+export interface FeedbackScreenshot {
+  id: string
+  file_name: string
+  content_type: string
+  file_size: number
+  sort_order: number
+  created_at: string | null
+}
+
+export interface Feedback {
+  id: string
+  user_id: string
+  user_name: string | null
+  svn_username: string | null
+  description: string
+  has_screenshot: boolean
+  screenshot_count: number
+  screenshots: FeedbackScreenshot[]
+  status: FeedbackResult['status']
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface FeedbackListResponse {
+  data: Feedback[]
+  count: number
+}
+
+export interface FeedbackScreenshotDownload {
+  bytes: ArrayBuffer
+  contentType: string
+}
+
 export interface SubmitReportFeedbackRequest {
   helpful: boolean
   useful_issues_text?: string | null
@@ -543,6 +576,39 @@ export class ApiClient {
       },
       { json: false }
     )
+  }
+
+  listFeedback(token: string, { skip, limit }: { skip: number; limit: number }): Promise<FeedbackListResponse> {
+    const query = new URLSearchParams({ skip: String(skip), limit: String(limit) })
+    return this.request(`/api/v1/feedback?${query.toString()}`, {
+      method: 'GET',
+      headers: this.authHeaders(token)
+    })
+  }
+
+  readFeedback(token: string, feedbackId: string): Promise<Feedback> {
+    return this.request(`/api/v1/feedback/${encodeURIComponent(feedbackId)}`, {
+      method: 'GET',
+      headers: this.authHeaders(token)
+    })
+  }
+
+  async downloadFeedbackScreenshot(
+    token: string,
+    feedbackId: string,
+    screenshotId: string
+  ): Promise<FeedbackScreenshotDownload> {
+    const response = await this.fetchImpl(
+      `${this.baseUrl}/api/v1/feedback/${encodeURIComponent(feedbackId)}/screenshots/${encodeURIComponent(screenshotId)}`,
+      { method: 'GET', headers: this.authHeaders(token) }
+    )
+    if (!response.ok) {
+      throw new ApiError(response.status, await this.readErrorMessage(response))
+    }
+    return {
+      bytes: await response.arrayBuffer(),
+      contentType: response.headers.get('content-type') ?? 'application/octet-stream'
+    }
   }
 
   submitReportFeedback(

@@ -36,6 +36,7 @@ import { CustomReviewRetryDialog } from './CustomReviewRetryDialog'
 import { formatRevisionLabel, isRevisionValue, normalizeRevisionDigits } from './revision'
 import type {
   CreateTaskCommand,
+  Feedback,
   FeedbackScreenshotView,
   ReviewItemDefinition,
   ReviewItemId,
@@ -596,7 +597,39 @@ function ReportCenterView({
   )
 }
 
-function FeedbackView({ adapter }: { adapter: WorkbenchAdapter }): React.JSX.Element {
+const feedbackStatusLabels: Record<Feedback['status'], string> = {
+  pending: '待处理',
+  processing: '处理中',
+  resolved: '已解决'
+}
+
+const feedbackPageSize = 10
+
+const formatFeedbackTime = (value: string | null): string => {
+  if (!value) return '时间未知'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '时间未知' : date.toLocaleString('zh-CN', { hour12: false })
+}
+
+const feedbackImageFiles = (event: React.ClipboardEvent<HTMLTextAreaElement>): File[] => {
+  const fromItems = Array.from(event.clipboardData.items)
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file))
+  return fromItems.length > 0
+    ? fromItems
+    : Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'))
+}
+
+function FeedbackSubmitDialog({
+  adapter,
+  onClose,
+  onSubmitted
+}: {
+  adapter: WorkbenchAdapter
+  onClose: () => void
+  onSubmitted: () => void
+}): React.JSX.Element {
   const [description, setDescription] = useState('')
   const [screenshots, setScreenshots] = useState<FeedbackScreenshotView[]>([])
   const [error, setError] = useState('')
@@ -670,6 +703,7 @@ function FeedbackView({ adapter }: { adapter: WorkbenchAdapter }): React.JSX.Ele
       setDescription('')
       setScreenshots([])
       setError('')
+      onSubmitted()
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : '意见提交失败，请稍后重试。')
     } finally {
@@ -684,12 +718,38 @@ function FeedbackView({ adapter }: { adapter: WorkbenchAdapter }): React.JSX.Ele
     setError('')
   }
 
+  const close = (): void => {
+    if (isSubmitting) return
+    if ((description || screenshots.length > 0) && !window.confirm('存在未提交的意见内容，确认放弃吗？')) return
+    onClose()
+  }
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  })
+
   return (
-    <section className="wb-workspace wb-feedback-page" aria-labelledby="feedback-title">
-      <div className="wb-workspace-title"><div><p className="wb-eyebrow">使用反馈</p><h2 id="feedback-title">意见反馈</h2></div></div>
-      <form className="wb-feedback-form" onSubmit={(event) => { event.preventDefault(); void submit() }}>
+    <div className="wb-modal-backdrop" role="presentation" onMouseDown={(event) => {
+      if (event.currentTarget === event.target) close()
+    }}>
+      <section className="wb-feedback-dialog" role="dialog" aria-modal="true" aria-label="提交新意见">
+        <header className="wb-feedback-dialog-header">
+          <div><p className="wb-eyebrow">使用反馈</p><h2>提交新意见</h2></div>
+          <button className="wb-icon-button" type="button" title="关闭提交新意见" onClick={close} disabled={isSubmitting}><X aria-hidden="true" /><span className="wb-sr-only">关闭提交新意见</span></button>
+        </header>
+        <form className="wb-feedback-form" onSubmit={(event) => { event.preventDefault(); void submit() }}>
         <div className="wb-feedback-intro"><MessageSquareText aria-hidden="true" /><div><strong>提交意见</strong><span>描述问题现象、操作步骤或期望结果，截图可通过下方入口添加。</span></div></div>
-        <label className="wb-form-field wb-feedback-description"><span>问题描述</span><textarea rows={8} value={description} placeholder="请描述问题现象、操作步骤或期望结果" onChange={(event) => { setDescription(event.target.value); setError('') }} /></label>
+        <label className="wb-form-field wb-feedback-description"><span>问题描述</span><textarea rows={8} value={description} placeholder="请描述问题现象、操作步骤或期望结果" onChange={(event) => { setDescription(event.target.value); setError('') }} onPaste={(event) => {
+          const files = feedbackImageFiles(event)
+          if (files.length > 0) {
+            event.preventDefault()
+            addProductionScreenshots(files)
+          }
+        }} /></label>
         <section className="wb-feedback-screenshots" aria-labelledby="feedback-screenshot-title">
           <div className="wb-section-heading"><div><h3 id="feedback-screenshot-title">问题截图</h3><p>支持 PNG、JPG、WEBP，最多 5 张，每张最大 5MB</p></div><button className="wb-secondary-button" type="button" onClick={() => void addScreenshot()}><ImagePlus aria-hidden="true" />添加截图</button></div>
           {adapter.getViewModel().mode === 'production' && (
@@ -706,10 +766,133 @@ function FeedbackView({ adapter }: { adapter: WorkbenchAdapter }): React.JSX.Ele
           {screenshots.length === 0 ? <div className="wb-feedback-empty"><ImagePlus aria-hidden="true" /><span>尚未添加截图</span></div> : <div className="wb-feedback-file-list">{screenshots.map((screenshot) => <div key={screenshot.id}><FileText aria-hidden="true" /><span><strong>{screenshot.name}</strong><small>{screenshot.sizeLabel}</small></span><button className="wb-icon-button" type="button" title={`移除 ${screenshot.name}`} onClick={() => setScreenshots((value) => value.filter((item) => item.id !== screenshot.id))}><X aria-hidden="true" /><span className="wb-sr-only">移除 {screenshot.name}</span></button></div>)}</div>}
         </section>
         {error && <p className="wb-inline-error" role="alert">{error}</p>}
-        <div className="wb-feedback-actions"><button className="wb-secondary-button" type="button" disabled={isSubmitting || (!description && screenshots.length === 0)} onClick={reset}>清空内容</button><button className="wb-primary-button" type="submit" disabled={isSubmitting}><Send aria-hidden="true" />{isSubmitting ? '提交中...' : '提交意见'}</button></div>
-      </form>
-    </section>
+        <div className="wb-feedback-actions"><button className="wb-secondary-button" type="button" disabled={isSubmitting || (!description && screenshots.length === 0)} onClick={reset}>清空内容</button><button className="wb-secondary-button" type="button" disabled={isSubmitting} onClick={close}>取消</button><button className="wb-primary-button" type="submit" disabled={isSubmitting}><Send aria-hidden="true" />{isSubmitting ? '提交中...' : '提交意见'}</button></div>
+        </form>
+      </section>
+    </div>
   )
+}
+
+function FeedbackDetailDialog({
+  feedback,
+  screenshotUrls,
+  loading,
+  error,
+  onClose,
+  onRetry
+}: {
+  feedback?: Feedback
+  screenshotUrls: Record<string, string>
+  loading: boolean
+  error?: string
+  onClose: () => void
+  onRetry: () => void
+}): React.JSX.Element {
+  return <div className="wb-modal-backdrop" role="presentation" onMouseDown={(event) => {
+    if (event.currentTarget === event.target) onClose()
+  }}>
+    <section className="wb-feedback-dialog wb-feedback-detail-dialog" role="dialog" aria-modal="true" aria-label="意见详情">
+      <header className="wb-feedback-dialog-header"><div><p className="wb-eyebrow">意见详情</p><h2>{feedback ? feedbackStatusLabels[feedback.status] : '意见详情'}</h2></div><button className="wb-icon-button" type="button" title="关闭意见详情" onClick={onClose}><X aria-hidden="true" /><span className="wb-sr-only">关闭意见详情</span></button></header>
+      <div className="wb-feedback-detail-content">
+        {loading ? <p role="status">正在加载意见详情...</p> : error ? <div className="wb-feedback-detail-error"><p role="alert">{error}</p><button className="wb-secondary-button" type="button" onClick={onRetry}>重试</button></div> : feedback ? <><dl><div><dt>提交时间</dt><dd>{formatFeedbackTime(feedback.created_at)}</dd></div><div><dt>截图数量</dt><dd>{feedback.screenshot_count} 张</dd></div></dl>
+          <section><h3>意见内容</h3><p>{feedback.description}</p></section>
+          <section><h3>原始截图</h3>{feedback.screenshots.length === 0 ? <p>未提交截图</p> : <div className="wb-feedback-image-grid">{feedback.screenshots.map((screenshot) => <img key={screenshot.id} src={screenshotUrls[screenshot.id]} alt={screenshot.file_name} />)}</div>}</section></> : null}
+      </div>
+    </section>
+  </div>
+}
+
+function FeedbackView({ adapter }: { adapter: WorkbenchAdapter }): React.JSX.Element {
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [feedbacks, setFeedbacks] = useState<Feedback[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(0)
+  const [error, setError] = useState('')
+  const [submitOpen, setSubmitOpen] = useState(false)
+  const [detail, setDetail] = useState<Feedback>()
+  const [detailFeedbackId, setDetailFeedbackId] = useState<string>()
+  const [screenshotUrls, setScreenshotUrls] = useState<Record<string, string>>({})
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState<string>()
+  const listRequestRef = useRef(0)
+  const detailRequestRef = useRef(0)
+
+  const loadPage = async (nextPage: number): Promise<void> => {
+    listRequestRef.current += 1
+    const requestId = listRequestRef.current
+    if (!adapter.commands.listFeedback) {
+      if (listRequestRef.current === requestId) {
+        setState('error')
+        setError('当前工作台不支持意见管理。')
+      }
+      return
+    }
+    setState('loading')
+    setError('')
+    try {
+      const response = await adapter.commands.listFeedback({ skip: nextPage * feedbackPageSize, limit: feedbackPageSize })
+      if (listRequestRef.current !== requestId) return
+      setFeedbacks(response.data)
+      setTotal(response.count)
+      setPage(nextPage)
+      setState('ready')
+    } catch (loadError) {
+      if (listRequestRef.current !== requestId) return
+      setState('error')
+      setError(loadError instanceof Error ? loadError.message : '意见列表加载失败，请稍后重试。')
+    }
+  }
+
+  useEffect(() => { void loadPage(0) }, [adapter])
+
+  const openDetail = async (feedbackId: string): Promise<void> => {
+    if (!adapter.commands.readFeedback || !adapter.commands.readFeedbackScreenshot) return
+    detailRequestRef.current += 1
+    const requestId = detailRequestRef.current
+    setDetailFeedbackId(feedbackId)
+    setDetail(undefined)
+    setDetailLoading(true)
+    setDetailError(undefined)
+    setScreenshotUrls({})
+    try {
+      const feedback = await adapter.commands.readFeedback(feedbackId)
+      if (detailRequestRef.current !== requestId) return
+      setDetail(feedback)
+      const screenshots = await Promise.all(feedback.screenshots.map(async (screenshot) => [
+        screenshot.id,
+        (await adapter.commands.readFeedbackScreenshot?.({ feedbackId, screenshotId: screenshot.id }))?.dataUrl
+      ] as const))
+      if (detailRequestRef.current !== requestId) return
+      setScreenshotUrls(Object.fromEntries(screenshots.filter((entry): entry is [string, string] => Boolean(entry[1]))))
+    } catch (detailLoadError) {
+      if (detailRequestRef.current !== requestId) return
+      setDetailError(detailLoadError instanceof Error ? detailLoadError.message : '意见详情加载失败，请稍后重试。')
+    } finally {
+      if (detailRequestRef.current === requestId) setDetailLoading(false)
+    }
+  }
+
+  const closeDetail = (): void => {
+    detailRequestRef.current += 1
+    setDetail(undefined)
+    setDetailFeedbackId(undefined)
+    setDetailLoading(false)
+    setDetailError(undefined)
+    setScreenshotUrls({})
+  }
+
+  const pageCount = Math.max(1, Math.ceil(total / feedbackPageSize))
+  return <section className="wb-workspace wb-feedback-page" aria-labelledby="feedback-title">
+    <div className="wb-workspace-title wb-feedback-list-title"><div><p className="wb-eyebrow">使用反馈</p><h2 id="feedback-title">意见管理</h2></div><button className="wb-primary-button" type="button" onClick={() => setSubmitOpen(true)}><Plus aria-hidden="true" />提交新意见</button></div>
+    <div className="wb-feedback-list-panel">
+      {state === 'loading' ? <p className="wb-feedback-list-state" role="status"><LoaderCircle aria-hidden="true" />正在加载意见...</p> : state === 'error' ? <div className="wb-feedback-list-state" role="alert"><CircleAlert aria-hidden="true" /><span>{error}</span><button className="wb-secondary-button" type="button" onClick={() => void loadPage(page)}>重试</button></div> : feedbacks.length === 0 ? <div className="wb-feedback-list-state"><MessageSquareText aria-hidden="true" /><span>暂无意见记录</span></div> : <>
+        <div className="wb-feedback-table" role="table" aria-label="意见列表"><div className="wb-feedback-table-header" role="row"><span role="columnheader">意见内容</span><span role="columnheader">状态</span><span role="columnheader">截图</span><span role="columnheader">提交时间</span><span role="columnheader"><span className="wb-sr-only">操作</span></span></div>{feedbacks.map((feedback) => <div className="wb-feedback-table-row" role="row" key={feedback.id}><span role="cell" title={feedback.description}>{feedback.description}</span><span role="cell"><i className={`wb-feedback-status is-${feedback.status}`}>{feedbackStatusLabels[feedback.status]}</i></span><span role="cell">{feedback.screenshot_count} 张</span><time role="cell" dateTime={feedback.created_at ?? undefined}>{formatFeedbackTime(feedback.created_at)}</time><span role="cell"><button className="wb-secondary-button" type="button" onClick={() => void openDetail(feedback.id)}>查看详情</button></span></div>)}</div>
+        <div className="wb-feedback-pagination"><span>共 {total} 条</span><button className="wb-secondary-button" type="button" disabled={page === 0} onClick={() => void loadPage(page - 1)}>上一页</button><span>{page + 1} / {pageCount}</span><button className="wb-secondary-button" type="button" disabled={page + 1 >= pageCount} onClick={() => void loadPage(page + 1)}>下一页</button></div>
+      </>}
+    </div>
+    {submitOpen && <FeedbackSubmitDialog adapter={adapter} onClose={() => setSubmitOpen(false)} onSubmitted={() => { setSubmitOpen(false); void loadPage(0) }} />}
+    {detailFeedbackId && <FeedbackDetailDialog feedback={detail} screenshotUrls={screenshotUrls} loading={detailLoading} error={detailError} onClose={closeDetail} onRetry={() => void openDetail(detailFeedbackId)} />}
+  </section>
 }
 
 export function ReviewWorkbenchPreview({

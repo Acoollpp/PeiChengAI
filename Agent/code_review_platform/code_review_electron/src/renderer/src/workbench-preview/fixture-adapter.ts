@@ -1,5 +1,6 @@
 import type {
   CreateTaskCommand,
+  Feedback,
   FeedbackScreenshotView,
   MaterialFileView,
   PreviewCommandResult,
@@ -366,6 +367,19 @@ const feedbackScreenshots: FeedbackScreenshotView[] = [
   { id: 'feedback-screen-5', name: '报告预览滚动位置.webp', sizeLabel: '1.5 MB' }
 ]
 
+const feedbackRecords: Feedback[] = [
+  {
+    id: 'fixture-feedback-1', user_id: 'fixture-user', user_name: '王工程师', svn_username: 'wang',
+    description: '任务在环境检查阶段停留，重新进入页面后仍未推进。', has_screenshot: true,
+    screenshot_count: 1,
+    screenshots: [{
+      id: 'fixture-feedback-screenshot-1', file_name: '任务阶段停留在环境检查.png',
+      content_type: 'image/png', file_size: 700416, sort_order: 0, created_at: '2026-08-26T09:00:00Z'
+    }],
+    status: 'processing', created_at: '2026-08-26T09:00:00Z', updated_at: '2026-08-26T10:00:00Z'
+  }
+]
+
 const clone = <T,>(value: T): T => structuredClone(value)
 
 const makeState = (scenario: PreviewScenario): WorkbenchViewModel => ({
@@ -594,6 +608,20 @@ export const createFixtureWorkbenchAdapter = (): WorkbenchAdapter => {
             ? `已打开《${report.title}》PDF 报告。`
             : '未找到可查看的 PDF 报告。'
         )
+      },
+      async listFeedback({ skip, limit }) {
+        return { data: clone(feedbackRecords.slice(skip, skip + limit)), count: feedbackRecords.length }
+      },
+      async readFeedback(feedbackId) {
+        const feedback = feedbackRecords.find((value) => value.id === feedbackId)
+        if (!feedback) throw new Error('未找到该意见。')
+        return clone(feedback)
+      },
+      async readFeedbackScreenshot({ feedbackId, screenshotId }) {
+        const screenshot = feedbackRecords.find((value) => value.id === feedbackId)?.screenshots
+          .find((value) => value.id === screenshotId)
+        if (!screenshot) throw new Error('未找到该意见截图。')
+        return { dataUrl: 'data:image/png;base64,aW1hZ2U=', contentType: screenshot.content_type }
       },
       async chooseFeedbackScreenshot(currentScreenshotIds = []) {
         const screenshot = feedbackScreenshots.find(

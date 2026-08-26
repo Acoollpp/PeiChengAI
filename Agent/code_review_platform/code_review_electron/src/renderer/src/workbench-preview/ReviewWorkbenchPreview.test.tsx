@@ -403,6 +403,7 @@ describe('ReviewWorkbenchPreview', () => {
 
     await user.click(screen.getByRole('button', { name: '意见反馈' }))
     expect(screen.queryByRole('heading', { name: '创建审查任务' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '提交新意见' }))
     await user.click(screen.getByRole('button', { name: '提交意见' }))
     expect(screen.getByRole('alert')).toHaveTextContent('请填写问题描述。')
 
@@ -411,7 +412,7 @@ describe('ReviewWorkbenchPreview', () => {
     expect(screen.getByText('任务阶段停留在环境检查.png')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '提交意见' }))
     expect(await screen.findByRole('status')).toHaveTextContent('意见已提交，包含 1 张截图。')
-    expect(screen.getByLabelText('问题描述')).toHaveValue('')
+    expect(screen.queryByRole('dialog', { name: '提交新意见' })).not.toBeInTheDocument()
   })
 
   it('反馈截图最多添加五张且保持唯一，移除时只删除目标截图', async () => {
@@ -420,6 +421,7 @@ describe('ReviewWorkbenchPreview', () => {
     render(<ReviewWorkbenchPreview adapter={adapter} />)
 
     await user.click(screen.getByRole('button', { name: '意见反馈' }))
+    await user.click(screen.getByRole('button', { name: '提交新意见' }))
     const addButton = screen.getByRole('button', { name: '添加截图' })
     const screenshotNames = [
       '任务阶段停留在环境检查.png',

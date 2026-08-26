@@ -738,6 +738,15 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
         return commandResult(message)
       }
     },
+    async listFeedback(options) {
+      return window.codeReview.listFeedback(options)
+    },
+    async readFeedback(feedbackId) {
+      return window.codeReview.readFeedback(feedbackId)
+    },
+    async readFeedbackScreenshot(payload) {
+      return window.codeReview.readFeedbackScreenshot(payload)
+    },
     async chooseFeedbackScreenshot() { throw new Error('生产工作台通过本机文件选择器添加截图。') },
     async submitFeedback(input: SubmitFeedbackCommand) {
       if (feedbackInFlightRef.current) return commandResult('意见正在提交，请勿重复操作。')
