@@ -2020,6 +2020,70 @@ describe('ProductionReviewWorkbench', () => {
     expect(window.codeReview.readFeedback).toHaveBeenCalledTimes(2)
   })
 
+  it('多张截图中一张读取失败时仍显示意见内容和其余截图', async () => {
+    const user = userEvent.setup()
+    const feedback: Feedback = {
+      id: 'feedback-images', user_id: 'user-1', user_name: '王工程师', svn_username: 'wang',
+      description: '两张截图中一张读取失败不应遮蔽意见内容。', has_screenshot: true, screenshot_count: 2,
+      screenshots: [
+        { id: 'screenshot-ok', file_name: '正常截图.png', content_type: 'image/png', file_size: 128, sort_order: 0, created_at: null },
+        { id: 'screenshot-error', file_name: '失败截图.png', content_type: 'image/png', file_size: 128, sort_order: 1, created_at: null }
+      ],
+      status: 'pending', created_at: '2026-08-26T09:00:00Z', updated_at: null
+    }
+    vi.mocked(window.codeReview.listFeedback).mockResolvedValue({ data: [feedback], count: 1 })
+    vi.mocked(window.codeReview.readFeedback).mockResolvedValue(feedback)
+    vi.mocked(window.codeReview.readFeedbackScreenshot).mockImplementation(({ screenshotId }) =>
+      screenshotId === 'screenshot-ok'
+        ? Promise.resolve({ dataUrl: 'data:image/png;base64,b2s=', contentType: 'image/png' })
+        : Promise.reject(new Error('失败截图无法读取。'))
+    )
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+    await user.click(await screen.findByRole('button', { name: '查看详情' }))
+
+    const detailDialog = await screen.findByRole('dialog', { name: '意见详情' })
+    expect(await within(detailDialog).findByRole('heading', { name: '意见内容' })).toBeInTheDocument()
+    expect(within(detailDialog).getByText('两张截图中一张读取失败不应遮蔽意见内容。')).toBeInTheDocument()
+    expect(within(detailDialog).getByAltText('正常截图.png')).toHaveAttribute('src', 'data:image/png;base64,b2s=')
+    expect(within(detailDialog).getByRole('alert')).toHaveTextContent('失败截图无法读取。')
+    expect(within(detailDialog).getByRole('button', { name: '重试读取截图' })).toBeInTheDocument()
+  })
+
+  it('连续重试同一截图时忽略先发后回的旧响应', async () => {
+    const user = userEvent.setup()
+    const feedback: Feedback = {
+      id: 'feedback-retry', user_id: 'user-1', user_name: '王工程师', svn_username: 'wang',
+      description: '连续重试截图。', has_screenshot: true, screenshot_count: 1,
+      screenshots: [{
+        id: 'screenshot-retry', file_name: 'retry.png', content_type: 'image/png', file_size: 128,
+        sort_order: 0, created_at: null
+      }],
+      status: 'pending', created_at: '2026-08-26T09:00:00Z', updated_at: null
+    }
+    const oldRetry = createDeferred<{ dataUrl: string; contentType: string }>()
+    vi.mocked(window.codeReview.listFeedback).mockResolvedValue({ data: [feedback], count: 1 })
+    vi.mocked(window.codeReview.readFeedback).mockResolvedValue(feedback)
+    vi.mocked(window.codeReview.readFeedbackScreenshot)
+      .mockRejectedValueOnce(new Error('首次读取失败。'))
+      .mockImplementationOnce(() => oldRetry.promise)
+      .mockResolvedValueOnce({ dataUrl: 'data:image/png;base64,bmV3', contentType: 'image/png' })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+    await user.click(await screen.findByRole('button', { name: '查看详情' }))
+    const detailDialog = await screen.findByRole('dialog', { name: '意见详情' })
+    const retry = await within(detailDialog).findByRole('button', { name: '重试读取截图' })
+
+    await user.click(retry)
+    await user.click(retry)
+    expect(await within(detailDialog).findByAltText('retry.png')).toHaveAttribute('src', 'data:image/png;base64,bmV3')
+    await act(async () => {
+      oldRetry.resolve({ dataUrl: 'data:image/png;base64,b2xk', contentType: 'image/png' })
+      await Promise.resolve()
+    })
+    expect(within(detailDialog).getByAltText('retry.png')).toHaveAttribute('src', 'data:image/png;base64,bmV3')
+  })
+
   it('关闭 A 后打开 B 时忽略 A 延迟返回的详情', async () => {
     const user = userEvent.setup()
     const feedback = (id: string, description: string): Feedback => ({

@@ -2785,6 +2785,16 @@ input[type="checkbox"] {
   max-width: 100%;
 }
 
+.wb-feedback-image-failure {
+  border: 1px solid var(--wb-line);
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.wb-feedback-image-failure p { color: var(--wb-danger-readable); }
+
 @media (max-width: 720px) {
   .wb-feedback-table-header,
   .wb-feedback-table-row {

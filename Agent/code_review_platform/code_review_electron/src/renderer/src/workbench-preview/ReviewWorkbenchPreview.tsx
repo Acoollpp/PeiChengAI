@@ -776,17 +776,21 @@ function FeedbackSubmitDialog({
 function FeedbackDetailDialog({
   feedback,
   screenshotUrls,
+  screenshotErrors,
   loading,
   error,
   onClose,
-  onRetry
+  onRetry,
+  onRetryScreenshot
 }: {
   feedback?: Feedback
   screenshotUrls: Record<string, string>
+  screenshotErrors: Record<string, string>
   loading: boolean
   error?: string
   onClose: () => void
   onRetry: () => void
+  onRetryScreenshot: (screenshotId: string) => void
 }): React.JSX.Element {
   return <div className="wb-modal-backdrop" role="presentation" onMouseDown={(event) => {
     if (event.currentTarget === event.target) onClose()
@@ -796,7 +800,7 @@ function FeedbackDetailDialog({
       <div className="wb-feedback-detail-content">
         {loading ? <p role="status">正在加载意见详情...</p> : error ? <div className="wb-feedback-detail-error"><p role="alert">{error}</p><button className="wb-secondary-button" type="button" onClick={onRetry}>重试</button></div> : feedback ? <><dl><div><dt>提交时间</dt><dd>{formatFeedbackTime(feedback.created_at)}</dd></div><div><dt>截图数量</dt><dd>{feedback.screenshot_count} 张</dd></div></dl>
           <section><h3>意见内容</h3><p>{feedback.description}</p></section>
-          <section><h3>原始截图</h3>{feedback.screenshots.length === 0 ? <p>未提交截图</p> : <div className="wb-feedback-image-grid">{feedback.screenshots.map((screenshot) => <img key={screenshot.id} src={screenshotUrls[screenshot.id]} alt={screenshot.file_name} />)}</div>}</section></> : null}
+          <section><h3>原始截图</h3>{feedback.screenshots.length === 0 ? <p>未提交截图</p> : <div className="wb-feedback-image-grid">{feedback.screenshots.map((screenshot) => screenshotUrls[screenshot.id] ? <img key={screenshot.id} src={screenshotUrls[screenshot.id]} alt={screenshot.file_name} /> : <div className="wb-feedback-image-failure" key={screenshot.id}><strong>{screenshot.file_name}</strong><p role="alert">{screenshotErrors[screenshot.id] ?? '截图加载失败。'}</p><button className="wb-secondary-button" type="button" onClick={() => onRetryScreenshot(screenshot.id)}>重试读取截图</button></div>)}</div>}</section></> : null}
       </div>
     </section>
   </div>
@@ -812,10 +816,12 @@ function FeedbackView({ adapter }: { adapter: WorkbenchAdapter }): React.JSX.Ele
   const [detail, setDetail] = useState<Feedback>()
   const [detailFeedbackId, setDetailFeedbackId] = useState<string>()
   const [screenshotUrls, setScreenshotUrls] = useState<Record<string, string>>({})
+  const [screenshotErrors, setScreenshotErrors] = useState<Record<string, string>>({})
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string>()
   const listRequestRef = useRef(0)
   const detailRequestRef = useRef(0)
+  const screenshotRequestRef = useRef(new Map<string, number>())
 
   const loadPage = async (nextPage: number): Promise<void> => {
     listRequestRef.current += 1
@@ -854,16 +860,32 @@ function FeedbackView({ adapter }: { adapter: WorkbenchAdapter }): React.JSX.Ele
     setDetailLoading(true)
     setDetailError(undefined)
     setScreenshotUrls({})
+    setScreenshotErrors({})
+    screenshotRequestRef.current.clear()
     try {
       const feedback = await adapter.commands.readFeedback(feedbackId)
       if (detailRequestRef.current !== requestId) return
       setDetail(feedback)
-      const screenshots = await Promise.all(feedback.screenshots.map(async (screenshot) => [
+      const readScreenshot = adapter.commands.readFeedbackScreenshot
+      const screenshots = await Promise.allSettled(feedback.screenshots.map(async (screenshot) => [
         screenshot.id,
-        (await adapter.commands.readFeedbackScreenshot?.({ feedbackId, screenshotId: screenshot.id }))?.dataUrl
+        (await readScreenshot({ feedbackId, screenshotId: screenshot.id })).dataUrl
       ] as const))
       if (detailRequestRef.current !== requestId) return
-      setScreenshotUrls(Object.fromEntries(screenshots.filter((entry): entry is [string, string] => Boolean(entry[1]))))
+      const nextUrls: Record<string, string> = {}
+      const nextErrors: Record<string, string> = {}
+      screenshots.forEach((result, index) => {
+        const screenshot = feedback.screenshots[index]
+        if (result.status === 'fulfilled') {
+          nextUrls[result.value[0]] = result.value[1]
+        } else {
+          nextErrors[screenshot.id] = result.reason instanceof Error
+            ? result.reason.message
+            : '截图加载失败，请重试。'
+        }
+      })
+      setScreenshotUrls(nextUrls)
+      setScreenshotErrors(nextErrors)
     } catch (detailLoadError) {
       if (detailRequestRef.current !== requestId) return
       setDetailError(detailLoadError instanceof Error ? detailLoadError.message : '意见详情加载失败，请稍后重试。')
@@ -879,6 +901,39 @@ function FeedbackView({ adapter }: { adapter: WorkbenchAdapter }): React.JSX.Ele
     setDetailLoading(false)
     setDetailError(undefined)
     setScreenshotUrls({})
+    setScreenshotErrors({})
+    screenshotRequestRef.current.clear()
+  }
+
+  const retryScreenshot = async (screenshotId: string): Promise<void> => {
+    const feedback = detail
+    const feedbackId = detailFeedbackId
+    const readScreenshot = adapter.commands.readFeedbackScreenshot
+    const requestId = detailRequestRef.current
+    if (!feedback || !feedbackId || !readScreenshot || !feedback.screenshots.some((value) => value.id === screenshotId)) return
+    const screenshotRequestId = (screenshotRequestRef.current.get(screenshotId) ?? 0) + 1
+    screenshotRequestRef.current.set(screenshotId, screenshotRequestId)
+    try {
+      const result = await readScreenshot({ feedbackId, screenshotId })
+      if (
+        detailRequestRef.current !== requestId ||
+        screenshotRequestRef.current.get(screenshotId) !== screenshotRequestId
+      ) return
+      setScreenshotUrls((current) => ({ ...current, [screenshotId]: result.dataUrl }))
+      setScreenshotErrors((current) => {
+        const { [screenshotId]: _ignored, ...remaining } = current
+        return remaining
+      })
+    } catch (screenshotError) {
+      if (
+        detailRequestRef.current !== requestId ||
+        screenshotRequestRef.current.get(screenshotId) !== screenshotRequestId
+      ) return
+      setScreenshotErrors((current) => ({
+        ...current,
+        [screenshotId]: screenshotError instanceof Error ? screenshotError.message : '截图加载失败，请重试。'
+      }))
+    }
   }
 
   const pageCount = Math.max(1, Math.ceil(total / feedbackPageSize))
@@ -891,7 +946,7 @@ function FeedbackView({ adapter }: { adapter: WorkbenchAdapter }): React.JSX.Ele
       </>}
     </div>
     {submitOpen && <FeedbackSubmitDialog adapter={adapter} onClose={() => setSubmitOpen(false)} onSubmitted={() => { setSubmitOpen(false); void loadPage(0) }} />}
-    {detailFeedbackId && <FeedbackDetailDialog feedback={detail} screenshotUrls={screenshotUrls} loading={detailLoading} error={detailError} onClose={closeDetail} onRetry={() => void openDetail(detailFeedbackId)} />}
+    {detailFeedbackId && <FeedbackDetailDialog feedback={detail} screenshotUrls={screenshotUrls} screenshotErrors={screenshotErrors} loading={detailLoading} error={detailError} onClose={closeDetail} onRetry={() => void openDetail(detailFeedbackId)} onRetryScreenshot={(screenshotId) => void retryScreenshot(screenshotId)} />}
   </section>
 }
 
