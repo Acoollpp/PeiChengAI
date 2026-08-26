@@ -101,6 +101,7 @@ const bmsIssueHeadingPatterns = [
   historicalDs02IssueHeadingPattern
 ] as const
 const bmsZeroIssueStatementPattern = /^本次未发现能够闭环的问题[。.]?$/
+const bmsCodeReviewerReportTitlePattern = /^BMS\s+代码审查报告$/
 
 const stripMarkerListPrefix = (value: string): string =>
   value.replace(/^\s*(?:\d+[\.)、]|[一二三四五六七八九十]+[、.．\)])\s*/, '').trim()
@@ -272,30 +273,33 @@ const isBmsPlaceholderValue = (value: string): boolean => {
   )
 }
 
-const hasBmsIssueHeadingShape = (heading: string): boolean =>
-  /^\S+\s+\S/.test(heading) ||
-  /^(?:\d+[.)、．]|[一二三四五六七八九十百]+[、.．)])\s*\S/.test(heading)
-
 const incompleteHistoricalBmsIssueHeadingPattern =
   /^(?:P\d+|CR-\d+|PC-BMS-\d+|DS-02-\d+)\s+\[[^\]]+\]$/
 
-const findCodeLocations = (lines: MarkdownLine[]): ReviewIssueCodeLocation[] => {
+type CodeLocationStatus = 'absent' | 'valid' | 'malformed'
+
+type CodeLocationExtraction = {
+  status: CodeLocationStatus
+  locations: ReviewIssueCodeLocation[]
+}
+
+const findCodeLocations = (lines: MarkdownLine[]): CodeLocationExtraction => {
   const fieldIndex = lines.findIndex(
     (line) => !line.inCodeBlock && codeLocationFieldPattern.test(line.text)
   )
-  if (fieldIndex === -1) return []
+  if (fieldIndex === -1) return { status: 'absent', locations: [] }
 
   const tableLines = lines.slice(fieldIndex + 1)
   const headerLineIndex = tableLines.findIndex(
     (line) => !line.inCodeBlock && line.text.trim().startsWith('|')
   )
-  if (headerLineIndex === -1) return []
+  if (headerLineIndex === -1) return { status: 'malformed', locations: [] }
   const headers = splitTableRow(tableLines[headerLineIndex].text)
   const fileIndex = getHeaderIndex(headers, ['文件'])
   const lineIndex = getHeaderIndex(headers, ['行号'])
   const descriptionIndex = getHeaderIndex(headers, ['位置说明'])
   if (fileIndex === -1 || lineIndex === -1 || descriptionIndex === -1) {
-    return []
+    return { status: 'malformed', locations: [] }
   }
 
   const locations: ReviewIssueCodeLocation[] = []
@@ -307,11 +311,13 @@ const findCodeLocations = (lines: MarkdownLine[]): ReviewIssueCodeLocation[] => 
     const codeLine = cells[lineIndex] ?? ''
     const description = cells[descriptionIndex] ?? ''
     if ([file, codeLine, description].some(isBmsPlaceholderValue)) {
-      return []
+      return { status: 'malformed', locations: [] }
     }
     locations.push({ file, line: codeLine, description })
   }
-  return locations
+  return locations.length > 0
+    ? { status: 'valid', locations }
+    : { status: 'malformed', locations: [] }
 }
 
 const findTemplateOneBoundary = (
@@ -347,7 +353,19 @@ const extractBmsCodeReviewerIssues = (
   const sectionIndex = headings.findIndex(
     (heading) => heading.level === 2 && reviewIssuesSectionPattern.test(heading.text.trim())
   )
-  if (sectionIndex === -1) return undefined
+  if (sectionIndex === -1) {
+    const isBmsCodeReviewerReport = headings.some(
+      (heading) => heading.level === 1 && bmsCodeReviewerReportTitlePattern.test(heading.text.trim())
+    )
+    return isBmsCodeReviewerReport
+      ? {
+          format: 'bms_code_reviewer',
+          status: 'invalid',
+          issues: [],
+          message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。'
+        }
+      : undefined
+  }
 
   const section = headings[sectionIndex]
   const nextSection = headings
@@ -368,10 +386,9 @@ const extractBmsCodeReviewerIssues = (
       const rawHeadingText = headingLinePattern.exec(heading.line.text)?.[2] ?? heading.text
       const issueText = stripMarkdownInline(rawHeadingText)
       const descriptionText = findDescriptionText(issueLines)
-      const codeLocations = findCodeLocations(issueLines)
+      const codeLocationExtraction = findCodeLocations(issueLines)
       if (
         isBmsPlaceholderValue(issueText) ||
-        !hasBmsIssueHeadingShape(issueText) ||
         incompleteHistoricalBmsIssueHeadingPattern.test(heading.text)
       ) {
         return []
@@ -388,7 +405,9 @@ const extractBmsCodeReviewerIssues = (
           displayText: issueText,
           displaySnapshot: markdown.slice(heading.line.startOffset, endOffset).trimEnd(),
           ...(severity === undefined ? {} : { severity }),
-          codeLocations,
+          ...(codeLocationExtraction.status === 'valid'
+            ? { codeLocations: codeLocationExtraction.locations }
+            : {}),
           anchorId,
           location: {
             startOffset: heading.line.startOffset,

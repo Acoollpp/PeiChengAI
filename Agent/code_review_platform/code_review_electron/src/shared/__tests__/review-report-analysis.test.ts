@@ -7,6 +7,7 @@ import {
 import {
   bmsCodeReviewerHistoricalDs02ReportFixture,
   bmsCodeReviewerHistoricalPcBmsReportFixture,
+  bmsCodeReviewerMissingReviewIssuesReportFixture,
   bmsCodeReviewerNoSeverityReportFixture,
   bmsCodeReviewerNoSeverityZeroReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
@@ -77,6 +78,14 @@ describe('报告摘要分析', () => {
   })
 
   it('选中报告按真实正文校验固定模板并兼容历史报告解析结果', () => {
+    expect(analyzeLoadedReviewReport(bmsCodeReviewerMissingReviewIssuesReportFixture, {
+      feedbackProtocolVersion: 1,
+      issueCount: 1,
+      highestIssueSeverity: null
+    })).toMatchObject({
+      status: 'parse_error',
+      message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。'
+    })
     const reportWithoutDescription = bmsCodeReviewerNoSeverityReportFixture.replace(
       /^\*\*问题描述：\*\*.*\n/m,
       ''

@@ -4,6 +4,7 @@ import { extractReviewIssues, inspectReviewIssues } from '../review-issues'
 import {
   bmsCodeReviewerHistoricalDs02ReportFixture,
   bmsCodeReviewerHistoricalPcBmsReportFixture,
+  bmsCodeReviewerMissingReviewIssuesReportFixture,
   bmsCodeReviewerNoSeverityReportFixture,
   bmsCodeReviewerNoSeverityZeroReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
@@ -27,9 +28,8 @@ describe('extractReviewIssues', () => {
     })
     expect(result.issues).toMatchObject([
       {
-        issueText: 'DS-07 休眠路径未恢复运行状态的完全缺失问题',
+        issueText: '辅助说明：低压状态下未恢复运行状态',
         descriptionText: '唤醒路径没有恢复运行状态的实现，否定性检索证据表明该功能完全缺失。',
-        codeLocations: []
       },
       {
         issueText: 'DS-04 混合证据问题仍保留代码位置',
@@ -38,6 +38,7 @@ describe('extractReviewIssues', () => {
         ]
       }
     ])
+    expect(result.issues[0]).not.toHaveProperty('codeLocations')
   })
 
   it('证据表格式异常不阻断标题和描述可识别的问题快照', () => {
@@ -57,14 +58,15 @@ describe('extractReviewIssues', () => {
       status: 'parsed',
       issues: [
         expect.objectContaining({
-          issueText: 'DS-07 休眠路径未恢复运行状态的完全缺失问题',
-          codeLocations: []
+          issueText: '辅助说明：低压状态下未恢复运行状态'
         }),
         expect.objectContaining({
-          issueText: 'DS-04 混合证据问题仍保留代码位置',
-          codeLocations: []
+          issueText: 'DS-04 混合证据问题仍保留代码位置'
         })
       ]
+    })
+    result.issues.forEach((issue) => {
+      expect(issue).not.toHaveProperty('codeLocations')
     })
   })
 
@@ -458,11 +460,6 @@ describe('extractReviewIssues', () => {
 
   it.each([
     [
-      '标题缺少编号',
-      (report: string) =>
-        report.replace('### STATE-17 休眠高风险路径仍可打开充电 MOS', '### 普通说明')
-    ],
-    [
       '占位标题',
       (report: string) =>
         report.replace('### STATE-17 休眠高风险路径仍可打开充电 MOS', '### <问题编号> <问题标题>')
@@ -557,16 +554,17 @@ describe('extractReviewIssues', () => {
     })
   })
 
-  it('审查问题章节混入普通三级标题时整节无效', () => {
-    const malformed = bmsCodeReviewerNoSeverityReportFixture.replace(
-      '## 四、审查覆盖',
-      '### 普通说明\n\n这不是合法问题块。\n\n## 四、审查覆盖'
-    )
-
-    expect(inspectReviewIssues(malformed)).toMatchObject({
+  it('新版 BMS 报告缺少审查问题章节时不回退为历史模板', () => {
+    expect(inspectReviewIssues(bmsCodeReviewerMissingReviewIssuesReportFixture)).toEqual({
       format: 'bms_code_reviewer',
       status: 'invalid',
-      issues: []
+      issues: [],
+      message: '“审查问题”章节不符合 bms-code-reviewer 固定模板。'
+    })
+    expect(inspectReviewIssues('# 代码审查报告\n\n### 执行说明\n\n历史报告内容。')).toMatchObject({
+      format: 'legacy',
+      status: 'parsed',
+      issues: [expect.objectContaining({ issueText: '执行说明' })]
     })
   })
 

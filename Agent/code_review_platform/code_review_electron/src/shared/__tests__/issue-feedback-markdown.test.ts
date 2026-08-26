@@ -144,7 +144,7 @@ describe('composeIssueFeedbackMarkdown', () => {
     const coverageOffset = composed.indexOf('## 四、审查覆盖')
 
     expect(firstFeedbackOffset).toBeGreaterThan(
-      composed.indexOf('### DS-07 休眠路径未恢复运行状态的完全缺失问题')
+      composed.indexOf('### 辅助说明：低压状态下未恢复运行状态')
     )
     expect(firstFeedbackOffset).toBeLessThan(secondIssueOffset)
     expect(secondFeedbackOffset).toBeGreaterThan(secondIssueOffset)

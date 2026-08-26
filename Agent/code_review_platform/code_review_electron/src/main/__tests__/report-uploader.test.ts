@@ -51,6 +51,7 @@ import {
 import {
   bmsCodeReviewerHistoricalDs02ReportFixture,
   bmsCodeReviewerHistoricalPcBmsReportFixture,
+  bmsCodeReviewerMissingReviewIssuesReportFixture,
   bmsCodeReviewerNoSeverityReportFixture,
   bmsCodeReviewerPcBmsReportFixture,
   bmsCodeReviewerSearchEvidenceReportFixture,
@@ -430,7 +431,7 @@ describe('report uploader', () => {
         feedback_protocol_version: 1,
         issues: [
           expect.objectContaining({
-            issue_text: 'DS-07 休眠路径未恢复运行状态的完全缺失问题',
+            issue_text: '辅助说明：低压状态下未恢复运行状态',
             description_text: '唤醒路径没有恢复运行状态的实现，否定性检索证据表明该功能完全缺失。'
           }),
           expect.objectContaining({
@@ -440,6 +441,22 @@ describe('report uploader', () => {
         assets: []
       })
     )
+  })
+
+  it('新版 BMS 报告缺少审查问题章节时只上传 Markdown', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-missing-bms-issues-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '缺少审查问题报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await writeFile(reportPath, bmsCodeReviewerMissingReviewIssuesReportFixture)
+
+    await uploadReportFile(api, 'token-123', 'task-missing-bms-issues', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith('token-123', 'task-missing-bms-issues', {
+      report_content: bmsCodeReviewerMissingReviewIssuesReportFixture,
+      report_path: reportPath,
+      report_name: '缺少审查问题报告.md'
+    })
   })
 
   it('上传未识别问题描述的报告时仍按协议 1 提交空描述快照', async () => {
@@ -521,10 +538,10 @@ describe('report uploader', () => {
 
   it.each([
     {
-      name: '混入普通三级标题',
+      name: '混入占位问题标题',
       markdown: bmsCodeReviewerNoSeverityReportFixture.replace(
         '## 四、审查覆盖',
-        '### 普通说明\n\n这不是合法问题块。\n\n## 四、审查覆盖'
+        '### <问题编号> <问题标题>\n\n这不是合法问题块。\n\n## 四、审查覆盖'
       )
     }
   ])('结构无效 BMS 报告（$name）只上传 Markdown 且不声明反馈协议', async ({ markdown }) => {

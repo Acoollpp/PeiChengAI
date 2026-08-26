@@ -51,6 +51,11 @@ export const bmsCodeReviewerSearchEvidenceReportFixture = readFileSync(
   'utf8'
 )
 
+export const bmsCodeReviewerMissingReviewIssuesReportFixture = readFileSync(
+  fileURLToPath(new URL('./bms-code-reviewer-missing-review-issues-report.md', import.meta.url)),
+  'utf8'
+)
+
 export const templateOneReportFixture = `# 代码审查报告-模版一
 
 ## 五、代码质量问题
