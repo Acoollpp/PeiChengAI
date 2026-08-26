@@ -517,6 +517,31 @@ def test_create_review_task_stores_and_returns_review_item_ids(
     assert read_response.json()["review_item_ids"] == ["DS-01", "DS-03"]
 
 
+def test_create_review_task_stores_and_returns_ds07_review_item_id(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks",
+        headers=normal_user_token_headers,
+        json={
+            "svn_url": "svn://repo/ds07",
+            "old_revision": "0",
+            "new_revision": "r40994",
+            "skill_name": "bms-code-reviewer",
+            "review_item_ids": ["DS-07"],
+        },
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["review_item_ids"] == ["DS-07"]
+    task = db.get(ReviewTask, UUID(content["id"]))
+    assert task is not None
+    assert task.review_item_ids == ["DS-07"]
+
+
 def test_create_review_task_stores_ds99_input_snapshot_without_material_metadata(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
@@ -2811,6 +2836,7 @@ def test_逐问题反馈Excel导出任务选择的审查项名称(
             ["DS-01", "DS-03"],
             "DS-01 需求变更审查；DS-03 MOS 充放电状态机审查",
         ),
+        (["DS-07"], "DS-07 休眠唤醒状态机审查"),
         ([], "未记录"),
         (["DS-88"], "DS-88"),
     ]

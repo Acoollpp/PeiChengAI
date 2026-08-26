@@ -12,6 +12,7 @@ const WORKBENCH_REVIEW_ITEM_PRESENTATION: Record<
   'DS-04': undefined,
   'DS-05': undefined,
   'DS-06': undefined,
+  'DS-07': undefined,
   'DS-99': undefined
 }
 

@@ -41,6 +41,26 @@ describe('buildBmsReviewTaskPrompt', () => {
     expect(prompt).not.toContain('重点审查方向')
   })
 
+  it('生成 DS-07 固定审查提示词且不声明 DS-99 模式', () => {
+    const prompt = buildBmsReviewTaskPrompt({
+      svnUrl: 'svn://example.com/bms/ds07',
+      oldRevision: '0',
+      newRevision: 'r40994',
+      reviewItems: [{
+        id: 'DS-07',
+        name: '休眠唤醒状态机审查',
+        user_extra_rules: '只允许 RTC 中断唤醒',
+        materials: []
+      }],
+      reportPath: '/runtime/workspaces/task-ds07/report.md'
+    })
+
+    expect(prompt).toContain('### DS-07：休眠唤醒状态机审查')
+    expect(prompt).toContain('用户额外规则：只允许 RTC 中断唤醒')
+    expect(prompt).toContain('专项材料：无')
+    expect(prompt).not.toContain('模式：')
+  })
+
   it('指定证据工作目录，未提供时不产出该段落', () => {
     const input = {
       svnUrl: 'svn://example.com/bms/trunk',
