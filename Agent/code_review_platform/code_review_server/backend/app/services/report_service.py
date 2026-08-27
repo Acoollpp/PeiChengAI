@@ -253,7 +253,11 @@ def _is_safe_svg(content: bytes) -> bool:
     if b"<!DOCTYPE" in content.upper() or b"<!ENTITY" in content.upper():
         return False
     try:
-        root = ElementTree.fromstring(content)
+        parser = ElementTree.iterparse(BytesIO(content), events=("end", "pi"))
+        for event, _element in parser:
+            if event == "pi":
+                return False
+        root = parser.root
     except (ElementTree.ParseError, UnicodeDecodeError, ValueError):
         return False
     if not isinstance(root.tag, str) or _xml_local_name(root.tag) != "svg":
