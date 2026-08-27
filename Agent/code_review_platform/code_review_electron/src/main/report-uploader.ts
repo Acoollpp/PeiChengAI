@@ -4,12 +4,12 @@ import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from '
 import { nativeImage } from 'electron'
 import log from 'electron-log/main'
 import remarkParse from 'remark-parse'
-import { SaxesParser } from 'saxes'
 import { unified } from 'unified'
 
 import type { ApiClient } from './api-client'
 import { inspectReviewIssues } from '../shared/review-issues'
 import { stripReviewReportOutputMetadata } from '../shared/review-report-metadata'
+import { prepareSvgForPublishing, validateSafeSvg } from './report-svg-safety'
 
 export interface ReportUploadApi {
   uploadReport: ApiClient['uploadReport']
@@ -42,22 +42,7 @@ const MAX_REPORT_ISSUE_TEXT_LENGTH = 8 * 1024
 const MAX_REPORT_ISSUE_DESCRIPTION_LENGTH = 64 * 1024
 const MAX_REPORT_ISSUE_DISPLAY_SNAPSHOT_LENGTH = 256 * 1024
 const MAX_REPORT_IMAGE_PIXELS = 40_000_000
-const BLOCKED_SVG_ELEMENTS = new Set([
-  'animate',
-  'animatemotion',
-  'animatetransform',
-  'audio',
-  'embed',
-  'foreignobject',
-  'iframe',
-  'object',
-  'script',
-  'set',
-  'style',
-  'video'
-])
-const UNSAFE_SVG_VALUE_PATTERN = /(?:url\s*\(|@import|expression\s*\()/i
-const SAFE_SVG_PLACEHOLDER = Buffer.from(
+const ENCRYPTED_IMAGE_SVG_PLACEHOLDER = Buffer.from(
   '<svg xmlns="http://www.w3.org/2000/svg" width="720" height="72" viewBox="0 0 720 72"><rect width="720" height="72" fill="#f3f4f6"/><text x="24" y="44" fill="#4b5563" font-size="20">代码图片因终端加密无法读取，已省略</text></svg>'
 )
 
@@ -94,17 +79,6 @@ type MarkdownImageReference = {
   endOffset: number | null
   directIpgsd: boolean
 }
-
-type SvgValidationFailureCode =
-  | 'INVALID_UTF8'
-  | 'FORBIDDEN_XML_DECLARATION'
-  | 'INVALID_XML'
-  | 'ROOT_NOT_SVG'
-  | 'UNSAFE_SVG_CONTENT'
-
-type SvgValidationResult =
-  | { valid: true }
-  | { valid: false; reasonCode: SvgValidationFailureCode }
 
 const walkMarkdownAst = (
   node: MarkdownAstNode,
@@ -221,71 +195,6 @@ const extractMarkdownImageReferences = (markdown: string): MarkdownImageReferenc
 
 export const extractRelativeImagePaths = (markdown: string): string[] =>
   [...new Set(extractMarkdownImageReferences(markdown).map(({ parsedUrl }) => parsedUrl))]
-
-const validateSafeSvg = (content: Buffer): SvgValidationResult => {
-  let source: string
-  try {
-    source = new TextDecoder('utf-8', { fatal: true }).decode(content)
-  } catch {
-    return { valid: false, reasonCode: 'INVALID_UTF8' }
-  }
-  const normalized = source.replace(/^\uFEFF/, '').trimStart()
-  if (/<!DOCTYPE|<!ENTITY/i.test(normalized)) {
-    return { valid: false, reasonCode: 'FORBIDDEN_XML_DECLARATION' }
-  }
-
-  let failureCode: SvgValidationFailureCode | undefined
-  const reject = (reasonCode: SvgValidationFailureCode): void => {
-    failureCode ??= reasonCode
-  }
-  let sawRoot = false
-  const parser = new SaxesParser({ xmlns: true, position: false })
-  parser.on('processinginstruction', () => {
-    reject('UNSAFE_SVG_CONTENT')
-  })
-  parser.on('doctype', () => {
-    reject('FORBIDDEN_XML_DECLARATION')
-  })
-  parser.on('opentag', (tag) => {
-    if (!sawRoot) {
-      sawRoot = true
-      if (tag.local.toLowerCase() !== 'svg') {
-        reject('ROOT_NOT_SVG')
-      }
-    }
-    if (BLOCKED_SVG_ELEMENTS.has(tag.local.toLowerCase())) {
-      reject('UNSAFE_SVG_CONTENT')
-    }
-    for (const attribute of Object.values(tag.attributes)) {
-      const attributeName = attribute.local.toLowerCase()
-      const value = attribute.value.trim()
-      if (
-        attributeName.startsWith('on') ||
-        attributeName === 'base' ||
-        attributeName === 'style' ||
-        ((attributeName === 'href' || attributeName === 'src') && value && !value.startsWith('#')) ||
-        UNSAFE_SVG_VALUE_PATTERN.test(value) ||
-        value.includes('\\') ||
-        value.includes('/*') ||
-        value.includes('*/')
-      ) {
-        reject('UNSAFE_SVG_CONTENT')
-      }
-    }
-  })
-
-  try {
-    parser.write(normalized).close()
-  } catch {
-    return { valid: false, reasonCode: 'INVALID_XML' }
-  }
-  if (failureCode) {
-    return { valid: false, reasonCode: failureCode }
-  }
-  return sawRoot ? { valid: true } : { valid: false, reasonCode: 'ROOT_NOT_SVG' }
-}
-
-const isSafeSvg = (content: Buffer): boolean => validateSafeSvg(content).valid
 
 const isPngStructurallyValid = (content: Buffer): boolean => {
   let offset = 8
@@ -491,7 +400,7 @@ const hasExpectedImageSignature = (extension: string, content: Buffer): boolean 
         content.subarray(8, 12).toString('ascii') === 'WEBP'
       )
     case '.svg':
-      return isSafeSvg(content)
+      return validateSafeSvg(content).valid
     default:
       return false
   }
@@ -729,40 +638,51 @@ const readReportAssets = async (
     if (content.length === 0) {
       throw new Error(`报告图片为空：${rawImagePath}`)
     }
-    const svgValidation = extension === '.svg' ? validateSafeSvg(content) : undefined
-    const isContentValid = svgValidation ? svgValidation.valid : isImageContentValid(extension, content)
-    const validationReasonCode = svgValidation && !svgValidation.valid
-      ? svgValidation.reasonCode
+    const preparedSvg = extension === '.svg' ? prepareSvgForPublishing(content) : undefined
+    const isContentValid = preparedSvg
+      ? preparedSvg.outcome !== 'PLACEHOLDER'
+      : isImageContentValid(extension, content)
+    const validationReasonCode = preparedSvg?.outcome === 'PLACEHOLDER'
+      ? preparedSvg.reasonCode
       : 'INVALID_IMAGE_CONTENT'
-    const isExplicitSvgSecurityFailure =
-      svgValidation &&
-      !svgValidation.valid &&
-      (svgValidation.reasonCode === 'UNSAFE_SVG_CONTENT' ||
-        svgValidation.reasonCode === 'FORBIDDEN_XML_DECLARATION')
-    if (!isContentValid && (!encryptedCandidate || isExplicitSvgSecurityFailure)) {
+    if (!isContentValid && extension !== '.svg' && !encryptedCandidate) {
       log.warn('[REPORT_IMAGE_VALIDATION_FAILED]', {
         relativePath,
         extension,
         reasonCode: validationReasonCode,
         sha256: createHash('sha256').update(content).digest('hex')
       })
-      if (encryptedCandidate) {
-        log.warn('[REPORT_IMAGE_ENCRYPTED_CANDIDATE_REJECTED]', {
-          relativePath,
-          extension,
-          result: 'REJECTED',
-          reasonCode: validationReasonCode
-        })
-      }
       throw new Error(`报告图片内容与文件格式不一致：${rawImagePath}`)
     }
 
-    const useSvgPlaceholder = !isContentValid
+    const useSvgPlaceholder = preparedSvg?.outcome === 'PLACEHOLDER' || !isContentValid
+    if (preparedSvg?.outcome === 'NORMALIZED') {
+      log.info('[REPORT_IMAGE_SVG_NORMALIZED]', {
+        relativePath,
+        extension,
+        result: 'NORMALIZED',
+        originalSha256: createHash('sha256').update(content).digest('hex'),
+        normalizedSha256: createHash('sha256').update(preparedSvg.content).digest('hex')
+      })
+    }
+    if (preparedSvg?.outcome === 'PLACEHOLDER') {
+      log.warn('[REPORT_IMAGE_VALIDATION_FAILED]', {
+        relativePath,
+        extension,
+        reasonCode: validationReasonCode,
+        sha256: createHash('sha256').update(content).digest('hex'),
+        result: 'PLACEHOLDER'
+      })
+    }
+    const shouldKeepOriginalSvgPath = useSvgPlaceholder && extension === '.svg' && !encryptedCandidate
     const uploadRelativePath = useSvgPlaceholder
-      ? toSvgPlaceholderRelativePath(originalImagePath, reportDirectory)
+      ? shouldKeepOriginalSvgPath
+        ? relativePath
+        : toSvgPlaceholderRelativePath(originalImagePath, reportDirectory)
       : relativePath
     if (
       useSvgPlaceholder &&
+      !shouldKeepOriginalSvgPath &&
       (await hasExactDirectoryEntry(
         dirname(originalImagePath),
         basename(`${originalImagePath}.ipgsd-placeholder.svg`)
@@ -785,7 +705,9 @@ const readReportAssets = async (
           ? sourceUrlWithoutIpgsd
           : imageReference.sourceUrl
       const replacement = useSvgPlaceholder
-        ? `${normalizedSourceUrl}.ipgsd-placeholder.svg`
+        ? shouldKeepOriginalSvgPath
+          ? normalizedSourceUrl
+          : `${normalizedSourceUrl}.ipgsd-placeholder.svg`
         : imageReference.directIpgsd
           ? sourceUrlWithoutIpgsd
           : imageReference.sourceUrl
@@ -824,7 +746,9 @@ const readReportAssets = async (
     }
     assets.push({
       relative_path: uploadRelativePath,
-      content: useSvgPlaceholder ? SAFE_SVG_PLACEHOLDER : content,
+      content: useSvgPlaceholder
+        ? preparedSvg?.content ?? ENCRYPTED_IMAGE_SVG_PLACEHOLDER
+        : preparedSvg?.content ?? content,
       content_type: useSvgPlaceholder ? imageContentTypes['.svg'] : contentType
     })
   }

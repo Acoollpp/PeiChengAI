@@ -5,6 +5,7 @@ import { extname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { generatePdfReport } from '../report-pdf-generator'
+import { SAFE_SVG_PLACEHOLDER } from '../report-svg-safety'
 
 const expectMissing = async (path: string): Promise<void> => {
   await expect(access(path)).rejects.toThrow()
@@ -578,6 +579,29 @@ describe('report pdf generator', () => {
     expect(loadedHtml).toContain('alt="问题1代码对比"')
     expect(loadedHtml).toContain('height: auto')
     expect(loadedHtml).toContain('break-inside: avoid')
+  })
+
+  it('不将不安全 SVG 原图嵌入 PDF，而是使用安全占位图', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-pdf-unsafe-svg-'))
+    tempDirs.push(dir)
+    await mkdir(join(dir, 'images'), { recursive: true })
+    const reportPath = join(dir, '代码审查报告.md')
+    const unsafeSvg = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+    await writeFile(reportPath, '![问题1代码对比](images/issue-01.svg)\n')
+    await writeFile(join(dir, 'images', 'issue-01.svg'), unsafeSvg)
+    let loadedHtml = ''
+    const createWindow = vi.fn(() => ({
+      loadFile: vi.fn(async (path: string) => {
+        loadedHtml = await readFile(path, 'utf8')
+      }),
+      webContents: { printToPDF: vi.fn(async () => Buffer.from('pdf-bytes')) },
+      close: vi.fn()
+    }))
+
+    await generatePdfReport(reportPath, { createWindow })
+
+    expect(loadedHtml).not.toContain(Buffer.from(unsafeSvg).toString('base64'))
+    expect(loadedHtml).toContain(SAFE_SVG_PLACEHOLDER.toString('base64'))
   })
 
   it('keeps SVG image path safety checks', async () => {

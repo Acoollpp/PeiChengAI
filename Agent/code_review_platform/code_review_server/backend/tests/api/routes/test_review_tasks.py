@@ -2115,8 +2115,77 @@ def test_新协议上传拒绝只有正确文件头或含主动内容的图片(
         ],
     )
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "报告图片内容与文件格式不一致"
+    if image_case["extension"] == ".svg":
+        assert response.status_code == 200
+        stored_asset = report_service.asset_path_for_task(task["id"], asset_path)
+        assert stored_asset.read_bytes() == report_service.SAFE_SVG_PLACEHOLDER
+    else:
+        assert response.status_code == 400
+        assert response.json()["detail"] == "报告图片内容与文件格式不一致"
+
+
+def test_新协议上传会规范化空白style的SVG但不替换有效图形(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    asset_path = "images/evidence.svg"
+    source = (
+        b'<svg xmlns="http://www.w3.org/2000/svg"><style> \n </style>'
+        b'<rect width="1" height="1"/></svg>'
+    )
+    expected = b'<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>'
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": "[]",
+            "asset_paths": json.dumps([asset_path]),
+        },
+        files=[
+            ("upload", ("report.md", b"# Review\n\n![evidence](images/evidence.svg)\n", "text/markdown")),
+            ("assets", ("evidence.svg", source, "image/svg+xml")),
+        ],
+    )
+
+    assert response.status_code == 200
+    stored_asset = report_service.asset_path_for_task(task["id"], asset_path)
+    assert stored_asset.read_bytes() == expected
+
+
+def test_新协议上传保留SVG_CDATA中的style字样(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    asset_path = "images/evidence.svg"
+    source = b'<svg xmlns="http://www.w3.org/2000/svg"><text><![CDATA[<style></style>]]></text></svg>'
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": "[]",
+            "asset_paths": json.dumps([asset_path]),
+        },
+        files=[
+            ("upload", ("report.md", b"# Review\n\n![evidence](images/evidence.svg)\n", "text/markdown")),
+            ("assets", ("evidence.svg", source, "image/svg+xml")),
+        ],
+    )
+
+    assert response.status_code == 200
+    stored_asset = report_service.asset_path_for_task(task["id"], asset_path)
+    assert stored_asset.read_bytes() == source
 
 
 @pytest.mark.parametrize(

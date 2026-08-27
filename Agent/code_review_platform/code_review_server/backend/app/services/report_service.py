@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -59,6 +60,14 @@ BLOCKED_SVG_ELEMENTS = {
     "style",
     "video",
 }
+SAFE_SVG_PLACEHOLDER = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="720" height="72" '
+    b'viewBox="0 0 720 72"><rect width="720" height="72" fill="#f3f4f6"/>'
+    b'<text x="24" y="44" fill="#4b5563" font-size="20">'
+    b'\xe4\xbb\xa3\xe7\xa0\x81\xe5\x9b\xbe\xe7\x89\x87\xe6\x97\xa0\xe6\xb3\x95\xe5\xae\x89\xe5\x85\xa8\xe5\xb1\x95\xe7\xa4\xba\xef\xbc\x8c\xe5\xb7\xb2\xe7\x9c\x81\xe7\x95\xa5'
+    b"</text></svg>"
+)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -321,6 +330,84 @@ def _is_image_content_valid(extension: str, content: bytes) -> bool:
     return _is_raster_image_decodable(extension, content)
 
 
+def _find_xml_tag_end(source: str, start_offset: int) -> int:
+    quote: str | None = None
+    for index in range(start_offset + 1, len(source)):
+        character = source[index]
+        if quote is not None:
+            if character == quote:
+                quote = None
+        elif character in {'"', "'"}:
+            quote = character
+        elif character == ">":
+            return index
+    return -1
+
+
+def _remove_empty_style_elements(content: bytes) -> bytes | None:
+    try:
+        source = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+    cursor = 0
+    search_offset = 0
+    normalized_parts: list[str] = []
+    changed = False
+    while search_offset < len(source):
+        tag_start = source.find("<", search_offset)
+        if tag_start == -1:
+            break
+        if source.startswith("<![CDATA[", tag_start):
+            cdata_end = source.find("]]>", tag_start + 9)
+            search_offset = len(source) if cdata_end == -1 else cdata_end + 3
+            continue
+        if source.startswith("<!--", tag_start):
+            comment_end = source.find("-->", tag_start + 4)
+            search_offset = len(source) if comment_end == -1 else comment_end + 3
+            continue
+        if source.startswith("<?", tag_start):
+            instruction_end = source.find("?>", tag_start + 2)
+            search_offset = len(source) if instruction_end == -1 else instruction_end + 2
+            continue
+        tag_end = _find_xml_tag_end(source, tag_start)
+        if tag_end == -1:
+            break
+        tag = source[tag_start : tag_end + 1]
+        if re.fullmatch(r"<style\s*/\s*>", tag, flags=re.IGNORECASE):
+            normalized_parts.append(source[cursor:tag_start])
+            cursor = tag_end + 1
+            changed = True
+        elif re.fullmatch(r"<style\s*>", tag, flags=re.IGNORECASE):
+            content_start = tag_end + 1
+            closing_start = content_start
+            while closing_start < len(source) and source[closing_start].isspace():
+                closing_start += 1
+            closing_tag = re.match(r"</style\s*>", source[closing_start:], re.IGNORECASE)
+            if closing_tag:
+                normalized_parts.append(source[cursor:tag_start])
+                cursor = closing_start + len(closing_tag.group(0))
+                changed = True
+                search_offset = cursor
+                continue
+        search_offset = tag_end + 1
+    if not changed:
+        return None
+    normalized_parts.append(source[cursor:])
+    return "".join(normalized_parts).encode("utf-8")
+
+
+def _prepare_svg_for_publishing(content: bytes) -> tuple[bytes, str]:
+    if _is_safe_svg(content):
+        return content, "ORIGINAL"
+
+    normalized = _remove_empty_style_elements(content)
+    if normalized is not None and _is_safe_svg(normalized):
+        return normalized, "NORMALIZED"
+
+    return SAFE_SVG_PLACEHOLDER, "PLACEHOLDER"
+
+
 async def prepare_report_upload(
     upload: UploadFile,
     asset_paths: list[str],
@@ -387,7 +474,18 @@ async def prepare_report_upload(
         total_asset_bytes += len(content)
         if total_asset_bytes > MAX_REPORT_ASSETS_TOTAL_BYTES:
             raise HTTPException(status_code=400, detail="报告图片总大小超过限制")
-        if not _is_image_content_valid(relative_path.suffix.lower(), content):
+        extension = relative_path.suffix.lower()
+        if extension == ".svg":
+            original_content = content
+            content, svg_result = _prepare_svg_for_publishing(content)
+            if svg_result != "ORIGINAL":
+                logger.warning(
+                    "[REPORT_IMAGE_SVG_%s] relative_path=%s sha256=%s",
+                    svg_result,
+                    relative_path.as_posix(),
+                    hashlib.sha256(original_content).hexdigest(),
+                )
+        elif not _is_image_content_valid(extension, content):
             raise HTTPException(
                 status_code=400,
                 detail="报告图片内容与文件格式不一致",
