@@ -10,6 +10,8 @@ import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import type { Plugin } from 'unified'
 
+import { prepareSvgForPublishing } from './report-svg-safety'
+
 export interface GeneratePdfReportResult {
   status: 'ready'
   reportPath: string
@@ -103,7 +105,11 @@ const readRequiredImage = async (
     throw new Error(`PDF生成失败：报告图片不存在：${rawImagePath}`)
   }
 
-  const content = await readFile(realImagePath)
+  const originalContent = await readFile(realImagePath)
+  const content =
+    contentType === 'image/svg+xml'
+      ? prepareSvgForPublishing(originalContent).content
+      : originalContent
   return {
     rawImagePath,
     dataUrl: `data:${contentType};base64,${content.toString('base64')}`

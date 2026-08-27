@@ -49,6 +49,7 @@ import {
   uploadRequirementFile,
   uploadReportFile
 } from '../report-uploader'
+import { SAFE_SVG_PLACEHOLDER, prepareSvgForPublishing } from '../report-svg-safety'
 import {
   bmsCodeReviewerHistoricalDs02ReportFixture,
   bmsCodeReviewerHistoricalPcBmsReportFixture,
@@ -86,6 +87,13 @@ type ImageValidationCorpusEntry = {
   additional_invalid_base64?: string[]
   server_only_invalid_base64?: string[]
   animated_base64?: string
+  svg_publish_cases?: Array<{
+    name: string
+    source_base64: string
+    expected_outcome: 'NORMALIZED' | 'PLACEHOLDER'
+    expected_content_base64?: string
+    reason_code: string
+  }>
 }
 
 const loadSharedImageValidationCorpus = async (): Promise<ImageValidationCorpusEntry[]> =>
@@ -365,11 +373,21 @@ describe('report uploader', () => {
       reasonCode: 'UNSAFE_SVG_CONTENT'
     },
     {
+      name: '非空样式',
+      content: '<svg xmlns="http://www.w3.org/2000/svg"><style>rect { fill: red; }</style></svg>',
+      reasonCode: 'UNSAFE_SVG_CONTENT'
+    },
+    {
+      name: '带属性的空样式',
+      content: '<svg xmlns="http://www.w3.org/2000/svg"><style type="text/css"></style></svg>',
+      reasonCode: 'UNSAFE_SVG_CONTENT'
+    },
+    {
       name: 'DOCTYPE',
       content: '<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg"/>',
       reasonCode: 'FORBIDDEN_XML_DECLARATION'
     }
-  ])('加密候选为危险 SVG（$name）时阻断上传而不降级占位', async ({ content, reasonCode }) => {
+  ])('加密候选为危险 SVG（$name）时使用安全占位继续上传', async ({ content, reasonCode }) => {
     const dir = await mkdtemp(join(tmpdir(), 'report-uploader-ipgsd-dangerous-svg-'))
     tempDirs.push(dir)
     const reportPath = join(dir, '代码审查报告.md')
@@ -378,16 +396,26 @@ describe('report uploader', () => {
     await writeFile(reportPath, '# 报告\n\n![证据](images/issue-01.svg)\n')
     await writeFile(join(dir, 'images', 'issue-01.svg.IPGSD'), content)
 
-    await expect(uploadReportFile(api, 'token-123', 'task-ipgsd-dangerous-svg', reportPath)).rejects.toThrow(
-      '报告图片内容与文件格式不一致'
+    await uploadReportFile(api, 'token-123', 'task-ipgsd-dangerous-svg', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-ipgsd-dangerous-svg',
+      expect.objectContaining({
+        report_content: '# 报告\n\n![证据](images/issue-01.svg.ipgsd-placeholder.svg)\n',
+        assets: [expect.objectContaining({
+          relative_path: 'images/issue-01.svg.ipgsd-placeholder.svg',
+          content_type: 'image/svg+xml',
+          content: expect.any(Buffer)
+        })]
+      })
     )
-    expect(api.uploadReport).not.toHaveBeenCalled()
     expect(log.warn).toHaveBeenCalledWith(
-      '[REPORT_IMAGE_ENCRYPTED_CANDIDATE_REJECTED]',
+      '[REPORT_IMAGE_ENCRYPTED_CANDIDATE_PLACEHOLDER]',
       expect.objectContaining({
         relativePath: 'images/issue-01.svg',
         extension: '.svg',
-        result: 'REJECTED',
+        result: 'PLACEHOLDER',
         reasonCode
       })
     )
@@ -771,7 +799,7 @@ describe('report uploader', () => {
     )
   })
 
-  it('拒绝用 XML 实体混淆的 SVG 外部资源', async () => {
+  it('普通 SVG 含 XML 实体混淆的外部资源时保留路径并使用安全占位', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'report-uploader-escaped-svg-url-'))
     tempDirs.push(dir)
     const reportPath = join(dir, '代码审查报告.md')
@@ -786,10 +814,19 @@ describe('report uploader', () => {
       '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="u&#x72;l(https://example.com/image.svg)"/></svg>'
     )
 
-    await expect(uploadReportFile(api, 'token-123', 'task-escaped-svg-url', reportPath)).rejects.toThrow(
-      '报告图片内容与文件格式不一致'
+    await uploadReportFile(api, 'token-123', 'task-escaped-svg-url', reportPath)
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-escaped-svg-url',
+      expect.objectContaining({
+        report_content: '# 代码审查报告\n\n![问题 01 代码证据](images/issue-01.svg)\n',
+        assets: [expect.objectContaining({
+          relative_path: 'images/issue-01.svg',
+          content_type: 'image/svg+xml',
+          content: expect.any(Buffer)
+        })]
+      })
     )
-    expect(api.uploadReport).not.toHaveBeenCalled()
     expect(log.warn).toHaveBeenCalledWith(
       '[REPORT_IMAGE_VALIDATION_FAILED]',
       expect.objectContaining({
@@ -797,6 +834,66 @@ describe('report uploader', () => {
         extension: '.svg',
         reasonCode: 'UNSAFE_SVG_CONTENT',
         sha256: expect.stringMatching(/^[a-f0-9]{64}$/)
+      })
+    )
+  })
+
+  it('普通 SVG 只含无属性空白 style 时规范化上传且不改写本地文件', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-empty-style-svg-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const imagePath = join(dir, 'images', 'issue-01.svg')
+    const report = '# 代码审查报告\n\n![问题 01 代码证据](images/issue-01.svg)\n'
+    const source = '<svg xmlns="http://www.w3.org/2000/svg"><style> \n </style><rect width="1" height="1"/></svg>'
+    const expected = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>'
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, report)
+    await writeFile(imagePath, source)
+
+    await uploadReportFile(api, 'token-123', 'task-empty-style-svg', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-empty-style-svg',
+      expect.objectContaining({
+        report_content: report,
+        assets: [{
+          relative_path: 'images/issue-01.svg',
+          content: Buffer.from(expected),
+          content_type: 'image/svg+xml'
+        }]
+      })
+    )
+    await expect(readFile(imagePath, 'utf8')).resolves.toBe(source)
+    expect(log.info).toHaveBeenCalledWith(
+      '[REPORT_IMAGE_SVG_NORMALIZED]',
+      expect.objectContaining({ relativePath: 'images/issue-01.svg' })
+    )
+  })
+
+  it('SVG CDATA 内的 style 字样不触发规范化', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-cdata-style-svg-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const imagePath = join(dir, 'images', 'issue-01.svg')
+    const source = '<svg xmlns="http://www.w3.org/2000/svg"><text><![CDATA[<style></style>]]></text></svg>'
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, '# 代码审查报告\n\n![问题 01 代码证据](images/issue-01.svg)\n')
+    await writeFile(imagePath, source)
+
+    await uploadReportFile(api, 'token-123', 'task-cdata-style-svg', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-cdata-style-svg',
+      expect.objectContaining({
+        assets: [{
+          relative_path: 'images/issue-01.svg',
+          content: Buffer.from(source),
+          content_type: 'image/svg+xml'
+        }]
       })
     )
   })
@@ -1160,15 +1257,43 @@ describe('report uploader', () => {
         ...(entry.additional_invalid_base64 ?? [])
       ]) {
         await writeFile(imagePath, Buffer.from(invalidBase64, 'base64'))
-        await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(
-          '报告图片内容与文件格式不一致'
-        )
+        if (entry.extension === '.svg') {
+          await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).resolves.toEqual({ ok: true })
+        } else {
+          await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(
+            '报告图片内容与文件格式不一致'
+          )
+        }
       }
       if (entry.animated_base64) {
         await writeFile(imagePath, Buffer.from(entry.animated_base64, 'base64'))
         await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(
           '报告图片内容与文件格式不一致'
         )
+      }
+    }
+  })
+
+  it('按共享语料规范化或降级 SVG 发布副本', async () => {
+    const corpus = await loadSharedImageValidationCorpus()
+    const svgEntry = corpus.find((entry) => entry.extension === '.svg')
+    if (!svgEntry?.svg_publish_cases) {
+      throw new Error('缺少 SVG 发布共享语料')
+    }
+
+    for (const testCase of svgEntry.svg_publish_cases) {
+      const prepared = prepareSvgForPublishing(Buffer.from(testCase.source_base64, 'base64'))
+      expect(prepared.outcome).toBe(testCase.expected_outcome)
+      if (testCase.expected_outcome === 'NORMALIZED') {
+        expect(prepared.content).toEqual(
+          Buffer.from(testCase.expected_content_base64 ?? '', 'base64')
+        )
+      } else {
+        expect(prepared.content).toEqual(SAFE_SVG_PLACEHOLDER)
+        expect(prepared.outcome).toBe('PLACEHOLDER')
+        if (prepared.outcome === 'PLACEHOLDER') {
+          expect(prepared.reasonCode).toBe(testCase.reason_code)
+        }
       }
     }
   })

@@ -94,6 +94,11 @@ INVALID_IMAGE_CASES = [
         *image_case.get("server_only_invalid_base64", []),
     ]
 ]
+SVG_PUBLISH_CASES = next(
+    image_case["svg_publish_cases"]
+    for image_case in IMAGE_VALIDATION_CORPUS
+    if image_case["extension"] == ".svg"
+)
 
 
 def _valid_issue_snapshot(order: int = 0) -> dict[str, object]:
@@ -2115,8 +2120,155 @@ def test_新协议上传拒绝只有正确文件头或含主动内容的图片(
         ],
     )
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "报告图片内容与文件格式不一致"
+    if image_case["extension"] == ".svg":
+        assert response.status_code == 200
+        stored_asset = report_service.asset_path_for_task(task["id"], asset_path)
+        assert stored_asset.read_bytes() == report_service.SAFE_SVG_PLACEHOLDER
+    else:
+        assert response.status_code == 400
+        assert response.json()["detail"] == "报告图片内容与文件格式不一致"
+
+
+def test_新协议上传会规范化空白style的SVG但不替换有效图形(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    asset_path = "images/evidence.svg"
+    source = (
+        b'<svg xmlns="http://www.w3.org/2000/svg"><style> \n </style>'
+        b'<rect width="1" height="1"/></svg>'
+    )
+    expected = b'<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>'
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": "[]",
+            "asset_paths": json.dumps([asset_path]),
+        },
+        files=[
+            ("upload", ("report.md", b"# Review\n\n![evidence](images/evidence.svg)\n", "text/markdown")),
+            ("assets", ("evidence.svg", source, "image/svg+xml")),
+        ],
+    )
+
+    assert response.status_code == 200
+    stored_asset = report_service.asset_path_for_task(task["id"], asset_path)
+    assert stored_asset.read_bytes() == expected
+
+
+def test_新协议上传保留SVG_CDATA中的style字样(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    asset_path = "images/evidence.svg"
+    source = b'<svg xmlns="http://www.w3.org/2000/svg"><text><![CDATA[<style></style>]]></text></svg>'
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": "[]",
+            "asset_paths": json.dumps([asset_path]),
+        },
+        files=[
+            ("upload", ("report.md", b"# Review\n\n![evidence](images/evidence.svg)\n", "text/markdown")),
+            ("assets", ("evidence.svg", source, "image/svg+xml")),
+        ],
+    )
+
+    assert response.status_code == 200
+    stored_asset = report_service.asset_path_for_task(task["id"], asset_path)
+    assert stored_asset.read_bytes() == source
+
+
+def test_新协议上传将外链处理指令SVG降级为安全占位图(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    asset_path = "images/evidence.svg"
+    source = (
+        b'<?xml-stylesheet type="text/css" href="https://example.com/x.css"?>'
+        b'<svg xmlns="http://www.w3.org/2000/svg"/>'
+    )
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": "[]",
+            "asset_paths": json.dumps([asset_path]),
+        },
+        files=[
+            ("upload", ("report.md", b"# Review\n\n![evidence](images/evidence.svg)\n", "text/markdown")),
+            ("assets", ("evidence.svg", source, "image/svg+xml")),
+        ],
+    )
+
+    assert response.status_code == 200
+    stored_asset = report_service.asset_path_for_task(task["id"], asset_path)
+    assert stored_asset.read_bytes() == report_service.SAFE_SVG_PLACEHOLDER
+
+
+@pytest.mark.parametrize(
+    "svg_case",
+    SVG_PUBLISH_CASES,
+    ids=[svg_case["name"] for svg_case in SVG_PUBLISH_CASES],
+)
+def test_新协议上传按共享语料准备SVG发布副本(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    svg_case: dict[str, Any],
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    asset_path = "images/evidence.svg"
+    source = base64.b64decode(svg_case["source_base64"])
+
+    response = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        data={
+            "feedback_protocol_version": "1",
+            "issues": "[]",
+            "asset_paths": json.dumps([asset_path]),
+        },
+        files=[
+            ("upload", ("report.md", b"# Review\n\n![evidence](images/evidence.svg)\n", "text/markdown")),
+            ("assets", ("evidence.svg", source, "image/svg+xml")),
+        ],
+    )
+
+    assert response.status_code == 200
+    stored_asset = report_service.asset_path_for_task(task["id"], asset_path)
+    if svg_case["expected_outcome"] == "NORMALIZED":
+        assert stored_asset.read_bytes() == base64.b64decode(
+            svg_case["expected_content_base64"]
+        )
+    else:
+        assert stored_asset.read_bytes() == report_service.SAFE_SVG_PLACEHOLDER
+    assert f"reasonCode={svg_case['reason_code']}" in caplog.text
+    assert str(tmp_path) not in caplog.text
+    assert source.decode("utf-8") not in caplog.text
 
 
 @pytest.mark.parametrize(
