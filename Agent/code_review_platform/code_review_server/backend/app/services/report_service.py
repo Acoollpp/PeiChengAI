@@ -249,25 +249,28 @@ def _xml_local_name(name: str) -> str:
     return name.rsplit("}", 1)[-1].casefold()
 
 
-def _is_safe_svg(content: bytes) -> bool:
+def _svg_validation_failure_reason(content: bytes) -> str | None:
     if b"<!DOCTYPE" in content.upper() or b"<!ENTITY" in content.upper():
-        return False
+        return "FORBIDDEN_XML_DECLARATION"
     try:
+        content.decode("utf-8")
         parser = ElementTree.iterparse(BytesIO(content), events=("end", "pi"))
         for event, _element in parser:
             if event == "pi":
-                return False
+                return "UNSAFE_SVG_PROCESSING_INSTRUCTION"
         root = parser.root
-    except (ElementTree.ParseError, UnicodeDecodeError, ValueError):
-        return False
+    except UnicodeDecodeError:
+        return "INVALID_UTF8"
+    except (ElementTree.ParseError, ValueError):
+        return "INVALID_XML"
     if not isinstance(root.tag, str) or _xml_local_name(root.tag) != "svg":
-        return False
+        return "ROOT_NOT_SVG"
 
     for element in root.iter():
         if not isinstance(element.tag, str):
-            return False
+            return "UNSAFE_SVG_CONTENT"
         if _xml_local_name(element.tag) in BLOCKED_SVG_ELEMENTS:
-            return False
+            return "UNSAFE_SVG_CONTENT"
         for raw_name, raw_value in element.attrib.items():
             attribute_name = _xml_local_name(raw_name)
             value = raw_value.strip()
@@ -275,22 +278,26 @@ def _is_safe_svg(content: bytes) -> bool:
                 "base",
                 "style",
             }:
-                return False
+                return "UNSAFE_SVG_CONTENT"
             if (
                 attribute_name in {"href", "src"}
                 and value
                 and not value.startswith("#")
             ):
-                return False
+                return "UNSAFE_SVG_CONTENT"
             if re.search(
                 r"(?:url\s*\(|@import|expression\s*\()",
                 value,
                 flags=re.IGNORECASE,
             ):
-                return False
+                return "UNSAFE_SVG_CONTENT"
             if "\\" in value or "/*" in value or "*/" in value:
-                return False
-    return True
+                return "UNSAFE_SVG_CONTENT"
+    return None
+
+
+def _is_safe_svg(content: bytes) -> bool:
+    return _svg_validation_failure_reason(content) is None
 
 
 def _is_raster_image_decodable(extension: str, content: bytes) -> bool:
@@ -401,15 +408,16 @@ def _remove_empty_style_elements(content: bytes) -> bytes | None:
     return "".join(normalized_parts).encode("utf-8")
 
 
-def _prepare_svg_for_publishing(content: bytes) -> tuple[bytes, str]:
-    if _is_safe_svg(content):
-        return content, "ORIGINAL"
+def _prepare_svg_for_publishing(content: bytes) -> tuple[bytes, str, str | None]:
+    reason_code = _svg_validation_failure_reason(content)
+    if reason_code is None:
+        return content, "ORIGINAL", None
 
     normalized = _remove_empty_style_elements(content)
-    if normalized is not None and _is_safe_svg(normalized):
-        return normalized, "NORMALIZED"
+    if normalized is not None and _svg_validation_failure_reason(normalized) is None:
+        return normalized, "NORMALIZED", reason_code
 
-    return SAFE_SVG_PLACEHOLDER, "PLACEHOLDER"
+    return SAFE_SVG_PLACEHOLDER, "PLACEHOLDER", reason_code
 
 
 async def prepare_report_upload(
@@ -481,12 +489,13 @@ async def prepare_report_upload(
         extension = relative_path.suffix.lower()
         if extension == ".svg":
             original_content = content
-            content, svg_result = _prepare_svg_for_publishing(content)
+            content, svg_result, reason_code = _prepare_svg_for_publishing(content)
             if svg_result != "ORIGINAL":
                 logger.warning(
-                    "[REPORT_IMAGE_SVG_%s] relative_path=%s sha256=%s",
+                    "[REPORT_IMAGE_SVG_%s] relative_path=%s reasonCode=%s sha256=%s",
                     svg_result,
                     relative_path.as_posix(),
+                    reason_code,
                     hashlib.sha256(original_content).hexdigest(),
                 )
         elif not _is_image_content_valid(extension, content):

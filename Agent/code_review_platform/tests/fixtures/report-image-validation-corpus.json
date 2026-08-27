@@ -52,6 +52,33 @@
     ],
     "server_only_invalid_base64": [
       "PHN2Zz48Zz48L3N2Zz4="
+    ],
+    "svg_publish_cases": [
+      {
+        "name": "空白style",
+        "source_base64": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxzdHlsZT4gCiA8L3N0eWxlPjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz48L3N2Zz4=",
+        "expected_outcome": "NORMALIZED",
+        "expected_content_base64": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz48L3N2Zz4=",
+        "reason_code": "UNSAFE_SVG_CONTENT"
+      },
+      {
+        "name": "非空style",
+        "source_base64": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxzdHlsZT5yZWN0IHsgZmlsbDogcmVkOyB9PC9zdHlsZT48L3N2Zz4=",
+        "expected_outcome": "PLACEHOLDER",
+        "reason_code": "UNSAFE_SVG_CONTENT"
+      },
+      {
+        "name": "带属性空白style",
+        "source_base64": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxzdHlsZSB0eXBlPSJ0ZXh0L2NzcyI+PC9zdHlsZT48L3N2Zz4=",
+        "expected_outcome": "PLACEHOLDER",
+        "reason_code": "UNSAFE_SVG_CONTENT"
+      },
+      {
+        "name": "外链处理指令",
+        "source_base64": "PD94bWwtc3R5bGVzaGVldCB0eXBlPSJ0ZXh0L2NzcyIgaHJlZj0iaHR0cHM6Ly9leGFtcGxlLmNvbS94LmNzcyI/PjxzdmcgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIi8+",
+        "expected_outcome": "PLACEHOLDER",
+        "reason_code": "UNSAFE_SVG_PROCESSING_INSTRUCTION"
+      }
     ]
   }
 ]

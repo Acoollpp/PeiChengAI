@@ -25,6 +25,7 @@ export type SvgValidationFailureCode =
   | 'FORBIDDEN_XML_DECLARATION'
   | 'INVALID_XML'
   | 'ROOT_NOT_SVG'
+  | 'UNSAFE_SVG_PROCESSING_INSTRUCTION'
   | 'UNSAFE_SVG_CONTENT'
 
 type SvgValidationResult =
@@ -55,7 +56,7 @@ export const validateSafeSvg = (content: Buffer): SvgValidationResult => {
   let sawRoot = false
   const parser = new SaxesParser({ xmlns: true, position: false })
   parser.on('processinginstruction', () => {
-    reject('UNSAFE_SVG_CONTENT')
+    reject('UNSAFE_SVG_PROCESSING_INSTRUCTION')
   })
   parser.on('doctype', () => {
     reject('FORBIDDEN_XML_DECLARATION')

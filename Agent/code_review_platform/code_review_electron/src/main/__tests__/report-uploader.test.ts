@@ -49,6 +49,7 @@ import {
   uploadRequirementFile,
   uploadReportFile
 } from '../report-uploader'
+import { SAFE_SVG_PLACEHOLDER, prepareSvgForPublishing } from '../report-svg-safety'
 import {
   bmsCodeReviewerHistoricalDs02ReportFixture,
   bmsCodeReviewerHistoricalPcBmsReportFixture,
@@ -86,6 +87,13 @@ type ImageValidationCorpusEntry = {
   additional_invalid_base64?: string[]
   server_only_invalid_base64?: string[]
   animated_base64?: string
+  svg_publish_cases?: Array<{
+    name: string
+    source_base64: string
+    expected_outcome: 'NORMALIZED' | 'PLACEHOLDER'
+    expected_content_base64?: string
+    reason_code: string
+  }>
 }
 
 const loadSharedImageValidationCorpus = async (): Promise<ImageValidationCorpusEntry[]> =>
@@ -1262,6 +1270,30 @@ describe('report uploader', () => {
         await expect(uploadReportFile(api, 'token-123', 'task-1', reportPath)).rejects.toThrow(
           '报告图片内容与文件格式不一致'
         )
+      }
+    }
+  })
+
+  it('按共享语料规范化或降级 SVG 发布副本', async () => {
+    const corpus = await loadSharedImageValidationCorpus()
+    const svgEntry = corpus.find((entry) => entry.extension === '.svg')
+    if (!svgEntry?.svg_publish_cases) {
+      throw new Error('缺少 SVG 发布共享语料')
+    }
+
+    for (const testCase of svgEntry.svg_publish_cases) {
+      const prepared = prepareSvgForPublishing(Buffer.from(testCase.source_base64, 'base64'))
+      expect(prepared.outcome).toBe(testCase.expected_outcome)
+      if (testCase.expected_outcome === 'NORMALIZED') {
+        expect(prepared.content).toEqual(
+          Buffer.from(testCase.expected_content_base64 ?? '', 'base64')
+        )
+      } else {
+        expect(prepared.content).toEqual(SAFE_SVG_PLACEHOLDER)
+        expect(prepared.outcome).toBe('PLACEHOLDER')
+        if (prepared.outcome === 'PLACEHOLDER') {
+          expect(prepared.reasonCode).toBe(testCase.reason_code)
+        }
       }
     }
   })
