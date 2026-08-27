@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { act, StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { CodeReviewApi } from '../code-review-api'
+import type { CodeReviewApi, Feedback, FeedbackListResponse } from '../code-review-api'
 import type { TaskProgressEvent } from '../../../shared/types'
 import { ProductionReviewWorkbench } from './ProductionReviewWorkbench'
 import type { ReviewItemDefinition } from './types'
@@ -119,6 +119,9 @@ const setupCodeReviewApi = (): void => {
     showTaskCompletionNotification: vi.fn(async () => ({ status: 'shown' as const })),
     onTaskCompletionNotificationClicked: vi.fn(() => vi.fn()),
     submitFeedback: vi.fn(async () => ({ id: 'feedback-1', status: 'pending' as const })),
+    listFeedback: vi.fn(async () => ({ data: [], count: 0 })),
+    readFeedback: vi.fn(),
+    readFeedbackScreenshot: vi.fn(),
     onReportFeedbackSubmitted: vi.fn(() => vi.fn()),
     onIssueFeedbackSubmitted: vi.fn(() => vi.fn()),
     onReportFeedbackFocusAnchor: vi.fn(() => vi.fn())
@@ -1885,6 +1888,7 @@ describe('ProductionReviewWorkbench', () => {
     const user = userEvent.setup()
     render(<ProductionReviewWorkbench {...productionProps} />)
     await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+    await user.click(screen.getByRole('button', { name: '提交新意见' }))
     await user.type(screen.getByLabelText('问题描述'), '生产任务阶段显示异常')
     const screenshot = new File(['image'], '真实截图.png', { type: 'image/png' })
     await user.upload(screen.getByLabelText('选择反馈截图'), [screenshot, screenshot])
@@ -1894,6 +1898,361 @@ describe('ProductionReviewWorkbench', () => {
     await waitFor(() => expect(window.codeReview.submitFeedback).toHaveBeenCalledWith({
       description: '生产任务阶段显示异常', screenshots: [screenshot]
     }))
+  })
+
+  it('意见反馈默认展示意见管理列表，并从右上角弹窗提交新意见', async () => {
+    const user = userEvent.setup()
+    const feedbackApi = window.codeReview as unknown as {
+      listFeedback: ReturnType<typeof vi.fn>
+    }
+    feedbackApi.listFeedback = vi.fn(async () => ({
+      data: [{
+        id: 'feedback-1',
+        description: '创建任务后进度一直停留在准备中。',
+        status: 'pending',
+        screenshot_count: 1,
+        created_at: '2026-08-26T09:00:00Z'
+      }],
+      count: 1
+    }))
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+
+    expect(await screen.findByRole('heading', { name: '意见管理' })).toBeInTheDocument()
+    expect(feedbackApi.listFeedback).toHaveBeenCalledWith({ skip: 0, limit: 10 })
+    expect(screen.getByText('创建任务后进度一直停留在准备中。')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '提交新意见' }))
+    expect(screen.getByRole('dialog', { name: '提交新意见' })).toBeInTheDocument()
+    expect(screen.getByLabelText('问题描述')).toBeInTheDocument()
+  })
+
+  it('从剪贴板图片项添加截图，并随意见一并提交', async () => {
+    const user = userEvent.setup()
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+    await user.click(screen.getByRole('button', { name: '提交新意见' }))
+    await user.type(screen.getByLabelText('问题描述'), '粘贴截图后应能直接提交')
+    const screenshot = new File(['clipboard-image'], 'clipboard.png', { type: 'image/png' })
+
+    fireEvent.paste(screen.getByLabelText('问题描述'), {
+      clipboardData: {
+        items: [{ kind: 'file', type: 'image/png', getAsFile: () => screenshot }],
+        files: []
+      }
+    })
+
+    expect(screen.getByText('clipboard.png')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '提交意见' }))
+    await waitFor(() => expect(window.codeReview.submitFeedback).toHaveBeenCalledWith({
+      description: '粘贴截图后应能直接提交', screenshots: [screenshot]
+    }))
+  })
+
+  it('兼容从剪贴板文件列表添加截图', async () => {
+    const user = userEvent.setup()
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+    await user.click(screen.getByRole('button', { name: '提交新意见' }))
+    const screenshot = new File(['clipboard-file'], 'clipboard-file.jpg', { type: 'image/jpeg' })
+
+    fireEvent.paste(screen.getByLabelText('问题描述'), {
+      clipboardData: { items: [], files: [screenshot] }
+    })
+
+    expect(screen.getByText('clipboard-file.jpg')).toBeInTheDocument()
+  })
+
+  it('提交成功刷新时忽略先前过期的意见列表响应', async () => {
+    const user = userEvent.setup()
+    const feedback = (id: string, description: string, createdAt: string) => ({
+      id, user_id: 'user-1', user_name: '王工程师', svn_username: 'wang', description,
+      has_screenshot: false, screenshot_count: 0, screenshots: [], status: 'pending' as const,
+      created_at: createdAt, updated_at: null
+    })
+    const staleResponse = createDeferred<FeedbackListResponse>()
+    vi.mocked(window.codeReview.listFeedback)
+      .mockImplementationOnce(() => staleResponse.promise)
+      .mockResolvedValueOnce({
+        data: [feedback('fresh-feedback', '提交成功后的最新意见。', '2026-08-26T10:00:00Z')],
+        count: 1
+      })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+    await user.click(screen.getByRole('button', { name: '提交新意见' }))
+    await user.type(screen.getByLabelText('问题描述'), '触发刷新')
+    await user.click(screen.getByRole('button', { name: '提交意见' }))
+
+    expect(await screen.findByText('提交成功后的最新意见。')).toBeInTheDocument()
+    act(() => staleResponse.resolve({
+      data: [feedback('stale-feedback', '过期响应不应覆盖列表。', '2026-08-26T09:00:00Z')],
+      count: 1
+    }))
+    await waitFor(() => expect(screen.queryByText('过期响应不应覆盖列表。')).not.toBeInTheDocument())
+  })
+
+  it('详情首次加载失败时显示错误并允许重试', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listFeedback).mockResolvedValue({
+      data: [{
+        id: 'feedback-detail', user_id: 'user-1', user_name: '王工程师', svn_username: 'wang',
+        description: '查看详情失败后可重试。', has_screenshot: false, screenshot_count: 0,
+        screenshots: [], status: 'pending', created_at: '2026-08-26T09:00:00Z', updated_at: null
+      }],
+      count: 1
+    })
+    vi.mocked(window.codeReview.readFeedback)
+      .mockRejectedValueOnce(new Error('详情服务暂不可用。'))
+      .mockResolvedValueOnce({
+        id: 'feedback-detail', user_id: 'user-1', user_name: '王工程师', svn_username: 'wang',
+        description: '查看详情失败后可重试。', has_screenshot: false, screenshot_count: 0,
+        screenshots: [], status: 'pending', created_at: '2026-08-26T09:00:00Z', updated_at: null
+      })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+    await user.click(await screen.findByRole('button', { name: '查看详情' }))
+
+    expect(await screen.findByRole('dialog', { name: '意见详情' })).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('详情服务暂不可用。')
+    await user.click(screen.getByRole('button', { name: '重试' }))
+    await waitFor(() => expect(within(screen.getByRole('dialog', { name: '意见详情' })).getByRole('heading', { name: '意见内容' })).toBeInTheDocument())
+    expect(window.codeReview.readFeedback).toHaveBeenCalledTimes(2)
+  })
+
+  it('多张截图中一张读取失败时仍显示意见内容和其余截图', async () => {
+    const user = userEvent.setup()
+    const feedback: Feedback = {
+      id: 'feedback-images', user_id: 'user-1', user_name: '王工程师', svn_username: 'wang',
+      description: '两张截图中一张读取失败不应遮蔽意见内容。', has_screenshot: true, screenshot_count: 2,
+      screenshots: [
+        { id: 'screenshot-ok', file_name: '正常截图.png', content_type: 'image/png', file_size: 128, sort_order: 0, created_at: null },
+        { id: 'screenshot-error', file_name: '失败截图.png', content_type: 'image/png', file_size: 128, sort_order: 1, created_at: null }
+      ],
+      status: 'pending', created_at: '2026-08-26T09:00:00Z', updated_at: null
+    }
+    vi.mocked(window.codeReview.listFeedback).mockResolvedValue({ data: [feedback], count: 1 })
+    vi.mocked(window.codeReview.readFeedback).mockResolvedValue(feedback)
+    vi.mocked(window.codeReview.readFeedbackScreenshot).mockImplementation(({ screenshotId }) =>
+      screenshotId === 'screenshot-ok'
+        ? Promise.resolve({ dataUrl: 'data:image/png;base64,b2s=', contentType: 'image/png' })
+        : Promise.reject(new Error('失败截图无法读取。'))
+    )
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+    await user.click(await screen.findByRole('button', { name: '查看详情' }))
+
+    const detailDialog = await screen.findByRole('dialog', { name: '意见详情' })
+    expect(await within(detailDialog).findByRole('heading', { name: '意见内容' })).toBeInTheDocument()
+    expect(within(detailDialog).getByText('两张截图中一张读取失败不应遮蔽意见内容。')).toBeInTheDocument()
+    expect(within(detailDialog).getByAltText('正常截图.png')).toHaveAttribute('src', 'data:image/png;base64,b2s=')
+    expect(within(detailDialog).getByRole('alert')).toHaveTextContent('失败截图无法读取。')
+    expect(within(detailDialog).getByRole('button', { name: '重试读取截图' })).toBeInTheDocument()
+  })
+
+  it('连续重试同一截图时忽略先发后回的旧响应', async () => {
+    const user = userEvent.setup()
+    const feedback: Feedback = {
+      id: 'feedback-retry', user_id: 'user-1', user_name: '王工程师', svn_username: 'wang',
+      description: '连续重试截图。', has_screenshot: true, screenshot_count: 1,
+      screenshots: [{
+        id: 'screenshot-retry', file_name: 'retry.png', content_type: 'image/png', file_size: 128,
+        sort_order: 0, created_at: null
+      }],
+      status: 'pending', created_at: '2026-08-26T09:00:00Z', updated_at: null
+    }
+    const oldRetry = createDeferred<{ dataUrl: string; contentType: string }>()
+    vi.mocked(window.codeReview.listFeedback).mockResolvedValue({ data: [feedback], count: 1 })
+    vi.mocked(window.codeReview.readFeedback).mockResolvedValue(feedback)
+    vi.mocked(window.codeReview.readFeedbackScreenshot)
+      .mockRejectedValueOnce(new Error('首次读取失败。'))
+      .mockImplementationOnce(() => oldRetry.promise)
+      .mockResolvedValueOnce({ dataUrl: 'data:image/png;base64,bmV3', contentType: 'image/png' })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+    await user.click(await screen.findByRole('button', { name: '查看详情' }))
+    const detailDialog = await screen.findByRole('dialog', { name: '意见详情' })
+    const retry = await within(detailDialog).findByRole('button', { name: '重试读取截图' })
+
+    await user.click(retry)
+    await user.click(retry)
+    expect(await within(detailDialog).findByAltText('retry.png')).toHaveAttribute('src', 'data:image/png;base64,bmV3')
+    await act(async () => {
+      oldRetry.resolve({ dataUrl: 'data:image/png;base64,b2xk', contentType: 'image/png' })
+      await Promise.resolve()
+    })
+    expect(within(detailDialog).getByAltText('retry.png')).toHaveAttribute('src', 'data:image/png;base64,bmV3')
+  })
+
+  it('关闭 A 后打开 B 时忽略 A 延迟返回的详情', async () => {
+    const user = userEvent.setup()
+    const feedback = (id: string, description: string): Feedback => ({
+      id, user_id: 'user-1', user_name: '王工程师', svn_username: 'wang', description,
+      has_screenshot: false, screenshot_count: 0, screenshots: [], status: 'pending',
+      created_at: '2026-08-26T09:00:00Z', updated_at: null
+    })
+    const delayedA = createDeferred<Feedback>()
+    const detailB = feedback('feedback-b', 'B 的详情内容。')
+    vi.mocked(window.codeReview.listFeedback).mockResolvedValue({
+      data: [feedback('feedback-a', 'A 的列表内容。'), detailB], count: 2
+    })
+    vi.mocked(window.codeReview.readFeedback).mockImplementation((feedbackId) =>
+      feedbackId === 'feedback-a' ? delayedA.promise : Promise.resolve(detailB)
+    )
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+    const detailButtons = await screen.findAllByRole('button', { name: '查看详情' })
+    await user.click(detailButtons[0])
+    expect(await screen.findByRole('dialog', { name: '意见详情' })).toHaveTextContent('正在加载意见详情...')
+    await user.click(screen.getByRole('button', { name: '关闭意见详情' }))
+    await user.click(detailButtons[1])
+    await waitFor(() => expect(within(screen.getByRole('dialog', { name: '意见详情' })).getByText('B 的详情内容。')).toBeInTheDocument())
+
+    act(() => delayedA.resolve(feedback('feedback-a', 'A 的延迟详情内容。')))
+    await waitFor(() => expect(within(screen.getByRole('dialog', { name: '意见详情' })).queryByText('A 的延迟详情内容。')).not.toBeInTheDocument())
+  })
+
+  it('关闭含截图的 A 后打开 B 时忽略 A 延迟返回的截图', async () => {
+    const user = userEvent.setup()
+    const feedback = (id: string, description: string, screenshotId: string, screenshotName: string): Feedback => ({
+      id, user_id: 'user-1', user_name: '王工程师', svn_username: 'wang', description,
+      has_screenshot: true, screenshot_count: 1,
+      screenshots: [{
+        id: screenshotId, file_name: screenshotName, content_type: 'image/png', file_size: 128,
+        sort_order: 0, created_at: '2026-08-26T09:00:00Z'
+      }],
+      status: 'pending', created_at: '2026-08-26T09:00:00Z', updated_at: null
+    })
+    const detailA = feedback('feedback-a', 'A 的详情内容。', 'screenshot-a', 'A.png')
+    const detailB = feedback('feedback-b', 'B 的详情内容。', 'screenshot-b', 'B.png')
+    const delayedScreenshotA = createDeferred<{ dataUrl: string; contentType: string }>()
+    vi.mocked(window.codeReview.listFeedback).mockResolvedValue({ data: [detailA, detailB], count: 2 })
+    vi.mocked(window.codeReview.readFeedback).mockImplementation((feedbackId) =>
+      Promise.resolve(feedbackId === 'feedback-a' ? detailA : detailB)
+    )
+    vi.mocked(window.codeReview.readFeedbackScreenshot).mockImplementation(({ screenshotId }) =>
+      screenshotId === 'screenshot-a'
+        ? delayedScreenshotA.promise
+        : Promise.resolve({ dataUrl: 'data:image/png;base64,Yg==', contentType: 'image/png' })
+    )
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+    const detailButtons = await screen.findAllByRole('button', { name: '查看详情' })
+    await user.click(detailButtons[0])
+    await waitFor(() => expect(window.codeReview.readFeedbackScreenshot).toHaveBeenCalledWith({
+      feedbackId: 'feedback-a', screenshotId: 'screenshot-a'
+    }))
+    await user.click(screen.getByRole('button', { name: '关闭意见详情' }))
+    await user.click(detailButtons[1])
+    expect(await screen.findByAltText('B.png')).toHaveAttribute('src', 'data:image/png;base64,Yg==')
+
+    await act(async () => {
+      delayedScreenshotA.resolve({ dataUrl: 'data:image/png;base64,YQ==', contentType: 'image/png' })
+      await Promise.resolve()
+    })
+    expect(screen.getByAltText('B.png')).toHaveAttribute('src', 'data:image/png;base64,Yg==')
+  })
+
+  it('意见列表展示加载中、空数据、失败重试状态', async () => {
+    const user = userEvent.setup()
+    const initialResponse = createDeferred<{ data: []; count: number }>()
+    vi.mocked(window.codeReview.listFeedback)
+      .mockImplementationOnce(() => initialResponse.promise)
+      .mockRejectedValueOnce(new Error('网络暂不可用。'))
+      .mockResolvedValueOnce({ data: [], count: 0 })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+    expect(screen.getByRole('status')).toHaveTextContent('正在加载意见...')
+    act(() => initialResponse.resolve({ data: [], count: 0 }))
+    expect(await screen.findByText('暂无意见记录')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '任务管理' }))
+    await user.click(screen.getByRole('button', { name: '意见反馈' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('网络暂不可用。')
+    await user.click(screen.getByRole('button', { name: '重试' }))
+    expect(await screen.findByText('暂无意见记录')).toBeInTheDocument()
+  })
+
+  it('有未提交内容时取消、关闭和 Escape 都要求确认放弃', async () => {
+    const user = userEvent.setup()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+    await user.click(screen.getByRole('button', { name: '提交新意见' }))
+    await user.type(screen.getByLabelText('问题描述'), '尚未提交的意见')
+
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    await user.click(screen.getByRole('button', { name: '关闭提交新意见' }))
+    await user.keyboard('{Escape}')
+    expect(confirm).toHaveBeenCalledTimes(3)
+    expect(screen.getByRole('dialog', { name: '提交新意见' })).toBeInTheDocument()
+
+    confirm.mockReturnValue(true)
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('dialog', { name: '提交新意见' })).not.toBeInTheDocument()
+    confirm.mockRestore()
+  })
+
+  it('提交失败后保留问题描述和截图以便重试', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.submitFeedback).mockRejectedValueOnce(new Error('提交服务暂不可用。'))
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+    await user.click(screen.getByRole('button', { name: '提交新意见' }))
+    const description = screen.getByLabelText('问题描述')
+    const screenshot = new File(['image'], 'retry.png', { type: 'image/png' })
+    await user.type(description, '失败后仍需保留')
+    await user.upload(screen.getByLabelText('选择反馈截图'), screenshot)
+    await user.click(screen.getByRole('button', { name: '提交意见' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('提交服务暂不可用。')
+    expect(description).toHaveValue('失败后仍需保留')
+    expect(screen.getByText('retry.png')).toBeInTheDocument()
+  })
+
+  it('意见列表分页并在详情中读取原始截图', async () => {
+    const user = userEvent.setup()
+    const firstPage = Array.from({ length: 10 }, (_, index) => ({
+      id: `feedback-${index + 1}`,
+      description: `第 ${index + 1} 条意见`,
+      status: 'pending' as const,
+      has_screenshot: false,
+      screenshot_count: 0,
+      screenshots: [],
+      created_at: '2026-08-26T09:00:00Z',
+      updated_at: null,
+      user_id: 'user-1',
+      user_name: '王工程师',
+      svn_username: 'wang'
+    }))
+    vi.mocked(window.codeReview.listFeedback).mockImplementation(async ({ skip }) => ({
+      data: skip === 0 ? firstPage : [{
+        ...firstPage[0], id: 'feedback-11', description: '第 11 条意见'
+      }],
+      count: 11
+    }))
+    vi.mocked(window.codeReview.readFeedback).mockResolvedValue({
+      ...firstPage[0],
+      screenshots: [{
+        id: 'screenshot-1', file_name: '现场截图.png', content_type: 'image/png', file_size: 128,
+        sort_order: 0, created_at: '2026-08-26T09:00:00Z'
+      }],
+      screenshot_count: 1,
+      has_screenshot: true
+    })
+    vi.mocked(window.codeReview.readFeedbackScreenshot).mockResolvedValue({
+      dataUrl: 'data:image/png;base64,aW1hZ2U=', contentType: 'image/png'
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+    await user.click(await screen.findByRole('button', { name: '意见反馈' }))
+
+    await user.click((await screen.findAllByRole('button', { name: '查看详情' }))[0])
+    expect(await screen.findByRole('dialog', { name: '意见详情' })).toBeInTheDocument()
+    expect(await screen.findByAltText('现场截图.png')).toHaveAttribute('src', 'data:image/png;base64,aW1hZ2U=')
+    await user.click(screen.getByRole('button', { name: '关闭意见详情' }))
+    await user.click(screen.getByRole('button', { name: '下一页' }))
+    expect(await screen.findByText('第 11 条意见')).toBeInTheDocument()
+    expect(window.codeReview.listFeedback).toHaveBeenLastCalledWith({ skip: 10, limit: 10 })
   })
 
   it('环境未就绪时保留安装入口并禁止提交生产任务', async () => {
@@ -2048,6 +2407,7 @@ describe('ProductionReviewWorkbench', () => {
       resolveFeedback = resolve
     }))
     await user.click(screen.getByRole('button', { name: '意见反馈' }))
+    await user.click(screen.getByRole('button', { name: '提交新意见' }))
     await user.type(screen.getByLabelText('问题描述'), '防重复提交')
     const feedbackButton = screen.getByRole('button', { name: '提交意见' })
     fireEvent.click(feedbackButton)
@@ -2055,6 +2415,7 @@ describe('ProductionReviewWorkbench', () => {
     expect(window.codeReview.submitFeedback).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button', { name: '提交中...' })).toBeDisabled()
     act(() => resolveFeedback?.({ id: 'feedback-once', status: 'pending' }))
-    await waitFor(() => expect(screen.getByLabelText('问题描述')).toHaveValue(''))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '提交新意见' })).not.toBeInTheDocument())
+    expect(window.codeReview.listFeedback).toHaveBeenLastCalledWith({ skip: 0, limit: 10 })
   })
 })

@@ -100,6 +100,21 @@ describe('preload codeReview API', () => {
     expect(payload).not.toHaveProperty('screenshot')
   })
 
+  it('通过只读 IPC 转发意见列表、详情和截图读取请求', async () => {
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+    const listOptions = { skip: 10, limit: 10 }
+    const screenshotPayload = { feedbackId: 'feedback-1', screenshotId: 'screenshot-1' }
+
+    await api.listFeedback(listOptions)
+    await api.readFeedback('feedback-1')
+    await api.readFeedbackScreenshot(screenshotPayload)
+
+    expect(invokeMock).toHaveBeenCalledWith('feedback:list', listOptions)
+    expect(invokeMock).toHaveBeenCalledWith('feedback:read', 'feedback-1')
+    expect(invokeMock).toHaveBeenCalledWith('feedback:read-screenshot', screenshotPayload)
+  })
+
   it('does not expose the legacy generic report feedback API', async () => {
     await import('./index')
     const api = exposeInMainWorldMock.mock.calls[0][1]

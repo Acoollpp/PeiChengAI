@@ -2632,6 +2632,187 @@ input[type="checkbox"] {
   background: var(--wb-surface);
 }
 
+.wb-feedback-list-title {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.wb-feedback-list-panel {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.wb-feedback-list-state {
+  align-items: center;
+  color: var(--wb-readable-muted);
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  min-height: 180px;
+}
+
+.wb-feedback-list-state > svg {
+  height: 20px;
+  width: 20px;
+}
+
+.wb-feedback-table {
+  border: 1px solid var(--wb-line);
+  min-width: 0;
+  width: 100%;
+}
+
+.wb-feedback-table-header,
+.wb-feedback-table-row {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(180px, 1fr) 86px 54px 148px 76px;
+  padding: 10px 14px;
+}
+
+.wb-feedback-table-header {
+  background: var(--wb-surface-raised);
+  color: var(--wb-readable-muted);
+  font-size: 12px;
+}
+
+.wb-feedback-table-row {
+  border-top: 1px solid var(--wb-line);
+  font-size: 13px;
+}
+
+.wb-feedback-table-row > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-feedback-status {
+  border-radius: 4px;
+  display: inline-flex;
+  font-size: 12px;
+  font-style: normal;
+  justify-content: center;
+  min-width: 58px;
+  padding: 3px 6px;
+}
+
+.wb-feedback-status.is-pending { background: #f4e4b9; color: #6e4a04; }
+.wb-feedback-status.is-processing { background: #cce3ef; color: #16556f; }
+.wb-feedback-status.is-resolved { background: #cfe8d1; color: #296039; }
+
+.wb-feedback-pagination {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.wb-feedback-dialog {
+  background: var(--wb-surface);
+  box-shadow: var(--wb-shadow-popover);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: min(80vh, 760px);
+  overflow: hidden;
+  width: min(720px, calc(100vw - 32px));
+}
+
+.wb-feedback-dialog-header {
+  align-items: center;
+  border-bottom: 1px solid var(--wb-line);
+  display: flex;
+  justify-content: space-between;
+  padding: 18px 20px;
+}
+
+.wb-feedback-dialog-header h2 { font-size: 18px; margin: 4px 0 0; }
+.wb-feedback-dialog-header .wb-eyebrow { margin: 0; }
+
+.wb-feedback-dialog .wb-feedback-form {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 20px 20px;
+}
+
+.wb-feedback-dialog .wb-feedback-actions {
+  background: var(--wb-surface);
+  bottom: 0;
+  margin-top: 18px;
+  padding-top: 12px;
+  position: sticky;
+}
+
+.wb-feedback-detail-content {
+  display: grid;
+  gap: 18px;
+  overflow: auto;
+  padding: 20px;
+}
+
+.wb-feedback-detail-content dl {
+  display: flex;
+  gap: 24px;
+  margin: 0;
+}
+
+.wb-feedback-detail-content dl div { display: grid; gap: 4px; }
+.wb-feedback-detail-content dt { color: var(--wb-readable-muted); font-size: 12px; }
+.wb-feedback-detail-content dd { margin: 0; }
+.wb-feedback-detail-content h3 { font-size: 14px; margin: 0 0 8px; }
+.wb-feedback-detail-content p { line-height: 1.6; margin: 0; white-space: pre-wrap; }
+
+.wb-feedback-detail-error {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.wb-feedback-image-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.wb-feedback-image-grid img {
+  border: 1px solid var(--wb-line);
+  max-width: 100%;
+}
+
+.wb-feedback-image-failure {
+  border: 1px solid var(--wb-line);
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.wb-feedback-image-failure p { color: var(--wb-danger-readable); }
+
+@media (max-width: 720px) {
+  .wb-feedback-table-header,
+  .wb-feedback-table-row {
+    grid-template-columns: minmax(0, 1fr) 72px 76px;
+    padding: 10px;
+  }
+
+  .wb-feedback-table-header > :nth-child(3),
+  .wb-feedback-table-header > :nth-child(4),
+  .wb-feedback-table-row > :nth-child(3),
+  .wb-feedback-table-row > :nth-child(4) {
+    display: none;
+  }
+
+  .wb-feedback-list-title { align-items: flex-start; }
+  .wb-feedback-pagination { flex-wrap: wrap; }
+}
+
 .wb-feedback-intro {
   display: flex;
   align-items: flex-start;

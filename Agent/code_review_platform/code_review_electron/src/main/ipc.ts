@@ -6,6 +6,8 @@ import { dialog, ipcMain, Notification, shell, type BrowserWindow } from 'electr
 import {
   ApiClient,
   ApiError,
+  type Feedback,
+  type FeedbackListResponse,
   type CreateTaskRequest,
   type FeedbackResult,
   type KeyLoginRequest,
@@ -86,6 +88,21 @@ interface SerializedFeedbackScreenshot {
 interface SubmitFeedbackIpcPayload {
   description: string
   screenshots?: SerializedFeedbackScreenshot[]
+}
+
+interface FeedbackListOptions {
+  skip: number
+  limit: number
+}
+
+interface ReadFeedbackScreenshotRequest {
+  feedbackId: string
+  screenshotId: string
+}
+
+interface ReadFeedbackScreenshotResult {
+  dataUrl: string
+  contentType: string
 }
 
 export interface IpcHandlerDependencies {
@@ -1287,6 +1304,35 @@ export const registerIpcHandlers = (
 
       const api = await createApiClient()
       return api.submitFeedback(tokens.access_token, toSubmitFeedbackRequest(payload))
+    }
+  )
+
+  ipcMain.handle('feedback:list', async (_event, options: FeedbackListOptions): Promise<FeedbackListResponse> => {
+    const token = await loadAccessToken(authStore)
+    const api = await createApiClient()
+    return api.listFeedback(token, options)
+  })
+
+  ipcMain.handle('feedback:read', async (_event, feedbackId: string): Promise<Feedback> => {
+    if (typeof feedbackId !== 'string' || !feedbackId.trim()) throw new Error('意见 ID 无效')
+    const token = await loadAccessToken(authStore)
+    const api = await createApiClient()
+    return api.readFeedback(token, feedbackId)
+  })
+
+  ipcMain.handle(
+    'feedback:read-screenshot',
+    async (_event, payload: ReadFeedbackScreenshotRequest): Promise<ReadFeedbackScreenshotResult> => {
+      if (!payload?.feedbackId?.trim() || !payload?.screenshotId?.trim()) {
+        throw new Error('意见截图参数无效')
+      }
+      const token = await loadAccessToken(authStore)
+      const api = await createApiClient()
+      const screenshot = await api.downloadFeedbackScreenshot(token, payload.feedbackId, payload.screenshotId)
+      return {
+        contentType: screenshot.contentType,
+        dataUrl: `data:${screenshot.contentType};base64,${Buffer.from(screenshot.bytes).toString('base64')}`
+      }
     }
   )
 

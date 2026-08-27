@@ -184,6 +184,51 @@ export interface SubmitFeedbackResult {
   status: 'pending' | 'processing' | 'resolved'
 }
 
+export type FeedbackStatus = SubmitFeedbackResult['status']
+
+export interface FeedbackScreenshot {
+  id: string
+  file_name: string
+  content_type: string
+  file_size: number
+  sort_order: number
+  created_at: string | null
+}
+
+export interface Feedback {
+  id: string
+  user_id: string
+  user_name: string | null
+  svn_username: string | null
+  description: string
+  has_screenshot: boolean
+  screenshot_count: number
+  screenshots: FeedbackScreenshot[]
+  status: FeedbackStatus
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface FeedbackListOptions {
+  skip: number
+  limit: number
+}
+
+export interface FeedbackListResponse {
+  data: Feedback[]
+  count: number
+}
+
+export interface ReadFeedbackScreenshotRequest {
+  feedbackId: string
+  screenshotId: string
+}
+
+export interface ReadFeedbackScreenshotResult {
+  dataUrl: string
+  contentType: string
+}
+
 export interface ReviewTasksResponse {
   data: ReviewTask[]
   count: number
@@ -297,6 +342,11 @@ export interface CodeReviewApi {
   checkEnvironment(): Promise<EnvironmentCheckResult>
   onEnvironmentProgress(callback: (event: EnvironmentProgressEvent) => void): () => void
   submitFeedback(payload: SubmitFeedbackPayload): Promise<SubmitFeedbackResult>
+  listFeedback(options: FeedbackListOptions): Promise<FeedbackListResponse>
+  readFeedback(feedbackId: string): Promise<Feedback>
+  readFeedbackScreenshot(
+    payload: ReadFeedbackScreenshotRequest
+  ): Promise<ReadFeedbackScreenshotResult>
   openReportFeedbackWindow(payload: OpenReportFeedbackWindowPayload): Promise<true>
   submitNegativeReportFeedback(taskId: string): Promise<ReportFeedbackSubmittedEvent>
   onReportFeedbackFocusAnchor(

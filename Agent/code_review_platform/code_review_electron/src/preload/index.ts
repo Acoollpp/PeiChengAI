@@ -15,10 +15,15 @@ import type {
   KeyLoginRequest,
   KeyLoginResult,
   DownloadCurrentReportResult,
+  Feedback,
+  FeedbackListOptions,
+  FeedbackListResponse,
   OpenPdfReportRequest,
   OpenPdfReportResult,
   ReadReportAssetRequest,
   ReadReportAssetResult,
+  ReadFeedbackScreenshotRequest,
+  ReadFeedbackScreenshotResult,
   RetryTaskRequest,
   RememberedCredentials,
   SubmitFeedbackIpcPayload,
@@ -140,6 +145,14 @@ contextBridge.exposeInMainWorld('codeReview', {
     listen('environment:progress', callback),
   submitFeedback: async (payload: SubmitFeedbackPayload): Promise<SubmitFeedbackResult> =>
     ipcRenderer.invoke('feedback:submit', await serializeFeedbackPayload(payload)),
+  listFeedback: (options: FeedbackListOptions): Promise<FeedbackListResponse> =>
+    invoke('feedback:list', options),
+  readFeedback: (feedbackId: string): Promise<Feedback> =>
+    invoke('feedback:read', feedbackId),
+  readFeedbackScreenshot: (
+    payload: ReadFeedbackScreenshotRequest
+  ): Promise<ReadFeedbackScreenshotResult> =>
+    invoke('feedback:read-screenshot', payload),
   openReportFeedbackWindow: (
     payload: Parameters<CodeReviewApi['openReportFeedbackWindow']>[0]
   ): Promise<true> =>

@@ -158,4 +158,14 @@ describe('Issue #88 主题覆盖 CSS 契约', () => {
     expect(reportFeedbackCss).toContain('background: #ffffff;')
     expect(reportFeedbackMain).not.toContain('ThemeToggleButton')
   })
+
+  it('窄窗口下意见列表不保留固定表格宽度，并隐藏次要列', () => {
+    expectBlockContains(workbenchCss, '.wb-feedback-table', [
+      'min-width: 0;',
+      'width: 100%;'
+    ])
+    expect(workbenchCss).toContain('@media (max-width: 720px)')
+    expect(workbenchCss).toContain('.wb-feedback-table-row > :nth-child(3)')
+    expect(workbenchCss).toContain('.wb-feedback-table-row > :nth-child(4)')
+  })
 })

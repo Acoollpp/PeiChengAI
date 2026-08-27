@@ -997,6 +997,44 @@ describe('ApiClient', () => {
     await expect((uploadedScreenshots[1] as File).text()).resolves.toBe('jpeg-bytes')
   })
 
+  it('按分页参数读取意见列表，并携带鉴权头', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      data: [{
+        id: 'feedback-1', user_id: 'user-1', user_name: '王工程师', svn_username: 'wang',
+        description: '任务创建失败', has_screenshot: true, screenshot_count: 1,
+        screenshots: [], status: 'pending', created_at: '2026-08-26T09:00:00Z', updated_at: null
+      }],
+      count: 11
+    }))
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    await expect(client.listFeedback('token-123', { skip: 10, limit: 10 })).resolves.toMatchObject({ count: 11 })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://server.example/api/v1/feedback?skip=10&limit=10',
+      {
+        method: 'GET',
+        headers: { authorization: 'Bearer token-123', 'content-type': 'application/json' }
+      }
+    )
+  })
+
+  it('读取指定意见截图的二进制内容和媒体类型', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Uint8Array([1, 2, 3]), {
+      status: 200,
+      headers: { 'content-type': 'image/png' }
+    }))
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    const result = await client.downloadFeedbackScreenshot('token-123', 'feedback/1', 'screenshot/1')
+
+    expect(new Uint8Array(result.bytes)).toEqual(new Uint8Array([1, 2, 3]))
+    expect(result.contentType).toBe('image/png')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://server.example/api/v1/feedback/feedback%2F1/screenshots/screenshot%2F1',
+      { method: 'GET', headers: { authorization: 'Bearer token-123' } }
+    )
+  })
+
   it('throws an ApiError containing http status for failed responses', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse(

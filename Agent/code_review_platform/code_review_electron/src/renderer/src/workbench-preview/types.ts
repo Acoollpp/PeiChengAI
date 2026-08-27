@@ -1,4 +1,11 @@
 import type { CustomReviewMode, ReviewItemId } from '../../../shared/review-items'
+import type {
+  Feedback,
+  FeedbackListOptions,
+  FeedbackListResponse,
+  ReadFeedbackScreenshotRequest,
+  ReadFeedbackScreenshotResult
+} from '../code-review-api'
 
 export type { ReviewItemId } from '../../../shared/review-items'
 
@@ -123,6 +130,8 @@ export interface SubmitFeedbackCommand {
   screenshots: FeedbackScreenshotView[]
 }
 
+export type { Feedback, FeedbackListOptions, FeedbackListResponse }
+
 export type WorkbenchTaskStats =
   | { status: 'loading' }
   | {
@@ -196,6 +205,11 @@ export interface WorkbenchCommands {
   submitNegativeReportFeedback?(reportId: string): Promise<PreviewCommandResult>
   openTaskLog?(taskId: string): Promise<PreviewCommandResult>
   hideTask?(taskId: string): Promise<PreviewCommandResult>
+  listFeedback?(options: FeedbackListOptions): Promise<FeedbackListResponse>
+  readFeedback?(feedbackId: string): Promise<Feedback>
+  readFeedbackScreenshot?(
+    payload: ReadFeedbackScreenshotRequest
+  ): Promise<ReadFeedbackScreenshotResult>
   chooseFeedbackScreenshot(currentScreenshotIds?: string[]): Promise<FeedbackScreenshotView>
   submitFeedback(input: SubmitFeedbackCommand): Promise<PreviewCommandResult>
   chooseMaterial(
