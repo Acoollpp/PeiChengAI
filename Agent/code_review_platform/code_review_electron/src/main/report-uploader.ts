@@ -9,6 +9,7 @@ import { unified } from 'unified'
 import type { ApiClient } from './api-client'
 import { inspectReviewIssues } from '../shared/review-issues'
 import { stripReviewReportOutputMetadata } from '../shared/review-report-metadata'
+import { REPORT_IMAGE_INVALID_UTF8 } from '../shared/report-upload-recovery'
 import { prepareSvgForPublishing, validateSafeSvg } from './report-svg-safety'
 
 export interface ReportUploadApi {
@@ -59,6 +60,15 @@ type ReportImageCandidate = {
 type PreparedReportAssets = {
   reportContent: string
   assets: NonNullable<Parameters<ApiClient['uploadReport']>[2]['assets']>
+}
+
+export class ReportUploadRecoveryError extends Error {
+  readonly code = REPORT_IMAGE_INVALID_UTF8
+
+  constructor(readonly assetPaths: string[]) {
+    super('报告图片不是有效的 UTF-8 SVG')
+    this.name = 'ReportUploadRecoveryError'
+  }
 }
 
 type MarkdownAstNode = {
@@ -596,6 +606,7 @@ const readReportAssets = async (
   const assets: NonNullable<Parameters<ApiClient['uploadReport']>[2]['assets']> = []
   const uploadReplacements = new Map<number, { endOffset: number; replacement: string }>()
   const originalPathsByUploadRelativePath = new Map<string, string>()
+  const invalidUtf8SvgPaths: string[] = []
   let totalAssetBytes = 0
   for (const {
     rawImageReferences,
@@ -639,6 +650,17 @@ const readReportAssets = async (
       throw new Error(`报告图片为空：${rawImagePath}`)
     }
     const preparedSvg = extension === '.svg' ? prepareSvgForPublishing(content) : undefined
+    if (preparedSvg?.outcome === 'PLACEHOLDER' && preparedSvg.reasonCode === 'INVALID_UTF8') {
+      log.warn('[REPORT_IMAGE_VALIDATION_FAILED]', {
+        relativePath,
+        extension,
+        reasonCode: preparedSvg.reasonCode,
+        sha256: createHash('sha256').update(content).digest('hex'),
+        result: 'WAITING_FOR_DECRYPTION'
+      })
+      invalidUtf8SvgPaths.push(relativePath)
+      continue
+    }
     const isContentValid = preparedSvg
       ? preparedSvg.outcome !== 'PLACEHOLDER'
       : isImageContentValid(extension, content)
@@ -752,6 +774,9 @@ const readReportAssets = async (
       content_type: useSvgPlaceholder ? imageContentTypes['.svg'] : contentType
     })
   }
+  if (invalidUtf8SvgPaths.length > 0) {
+    throw new ReportUploadRecoveryError(invalidUtf8SvgPaths)
+  }
   let uploadedReportContent = reportContent
   for (const [startOffset, { endOffset, replacement }] of [...uploadReplacements.entries()].sort(
     ([leftStartOffset], [rightStartOffset]) => rightStartOffset - leftStartOffset
@@ -759,6 +784,119 @@ const readReportAssets = async (
     uploadedReportContent = `${uploadedReportContent.slice(0, startOffset)}${replacement}${uploadedReportContent.slice(endOffset)}`
   }
   return { reportContent: uploadedReportContent, assets }
+}
+
+const detectInvalidUtf8SvgForLegacyFallback = async (
+  reportPath: string,
+  reportContent: string
+): Promise<void> => {
+  const reportDirectory = resolve(dirname(reportPath))
+  const imagesDirectory = resolve(reportDirectory, 'images')
+  let realReportDirectory: string
+  let realImagesDirectory: string
+  try {
+    realReportDirectory = await realpath(reportDirectory)
+    realImagesDirectory = await realpath(imagesDirectory)
+  } catch {
+    return
+  }
+  if (!isInsideDirectory(realImagesDirectory, realReportDirectory)) return
+
+  const candidatesByRealPath = new Map<
+    string,
+    { rawImagePath: string; relativePath: string; realSourcePath: string }
+  >()
+  let totalCandidateBytes = 0
+  for (const reference of extractMarkdownImageReferences(reportContent)) {
+    let decodedPath: string
+    try {
+      decodedPath = decodeURIComponent(reference.parsedUrl)
+    } catch {
+      continue
+    }
+    if (isAbsolute(decodedPath)) continue
+    const imagePath = resolve(reportDirectory, decodedPath)
+    if (!isInsideDirectory(imagePath, imagesDirectory)) continue
+    const referenceExtension = extname(imagePath)
+    const directIpgsd = referenceExtension.toLowerCase() === '.ipgsd'
+    const originalImagePath = directIpgsd
+      ? imagePath.slice(0, -referenceExtension.length)
+      : imagePath
+    if (extname(originalImagePath).toLowerCase() !== '.svg') continue
+
+    let sourcePath = imagePath
+    if (!directIpgsd && !(await hasExactDirectoryEntry(dirname(imagePath), basename(imagePath)))) {
+      const encryptedCandidate = await findEncryptedImageCandidate(imagePath)
+      if (!encryptedCandidate) continue
+      sourcePath = encryptedCandidate
+    } else if (
+      directIpgsd && !(await hasExactDirectoryEntry(dirname(imagePath), basename(imagePath)))
+    ) {
+      continue
+    }
+
+    let realSourcePath: string
+    try {
+      realSourcePath = await realpath(sourcePath)
+    } catch {
+      continue
+    }
+    if (!isInsideDirectory(realSourcePath, realImagesDirectory)) continue
+
+    let imageStat
+    try {
+      imageStat = await stat(realSourcePath)
+    } catch {
+      continue
+    }
+    if (!imageStat.isFile() || imageStat.size <= 0) continue
+    if (imageStat.size > MAX_REPORT_IMAGE_BYTES) {
+      throw new Error(`单个报告图片超过大小限制：${reference.parsedUrl}`)
+    }
+    if (candidatesByRealPath.has(realSourcePath)) continue
+
+    candidatesByRealPath.set(realSourcePath, {
+      rawImagePath: reference.parsedUrl,
+      relativePath: relative(reportDirectory, originalImagePath).split(sep).join('/'),
+      realSourcePath
+    })
+    if (candidatesByRealPath.size > MAX_REPORT_IMAGE_COUNT) {
+      throw new Error('报告图片数量超过限制')
+    }
+    totalCandidateBytes += imageStat.size
+    if (totalCandidateBytes > MAX_REPORT_ASSETS_TOTAL_BYTES) {
+      throw new Error('报告图片总大小超过限制')
+    }
+  }
+
+  const invalidUtf8Paths = new Set<string>()
+  let totalReadBytes = 0
+  for (const candidate of candidatesByRealPath.values()) {
+    let content: Buffer
+    try {
+      content = await readFile(candidate.realSourcePath)
+    } catch {
+      continue
+    }
+    if (content.length > MAX_REPORT_IMAGE_BYTES) {
+      throw new Error(`单个报告图片超过大小限制：${candidate.rawImagePath}`)
+    }
+    totalReadBytes += content.length
+    if (totalReadBytes > MAX_REPORT_ASSETS_TOTAL_BYTES) {
+      throw new Error('报告图片总大小超过限制')
+    }
+    try {
+      const validation = validateSafeSvg(content)
+      if (!validation.valid && validation.reasonCode === 'INVALID_UTF8') {
+        invalidUtf8Paths.add(candidate.relativePath)
+      }
+    } catch {
+      // 历史 Markdown-only 回退只识别可信的 INVALID_UTF8，不引入新的阻断条件。
+    }
+  }
+  if (invalidUtf8Paths.size > 0) {
+    throw new ReportUploadRecoveryError([...invalidUtf8Paths])
+  }
 }
 
 export const ensureReportReady = async (reportPath: string): Promise<void> => {
@@ -797,6 +935,7 @@ export const uploadReportFile = async (
     report_name: basename(reportPath)
   }
   if (initialExtraction.status === 'invalid') {
+    await detectInvalidUtf8SvgForLegacyFallback(reportPath, reportContent)
     return api.uploadReport(token, taskId, initialReportPayload)
   }
 

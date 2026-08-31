@@ -359,7 +359,13 @@ describe('ReviewTaskQueueModel', () => {
         isLocallyExecuting: false,
         issue_count: 1,
         reportMarkdown: '# 已加载的历史报告',
-        pdfPath: '/local/fallback.pdf'
+        pdfPath: '/local/fallback.pdf',
+        report_upload_recovery: {
+          failureCode: 'REPORT_IMAGE_INVALID_UTF8',
+          stage: 'uploading_report',
+          assetPaths: ['images/issue.svg'],
+          availability: 'ready'
+        }
       })
     ], {
       type: 'reconcile-server-snapshot',
@@ -380,7 +386,8 @@ describe('ReviewTaskQueueModel', () => {
       issue_count: 3,
       report_path: '/server/latest.md',
       reportMarkdown: '# 已加载的历史报告',
-      pdfPath: '/local/fallback.pdf'
+      pdfPath: '/local/fallback.pdf',
+      report_upload_recovery: undefined
     })])
   })
 

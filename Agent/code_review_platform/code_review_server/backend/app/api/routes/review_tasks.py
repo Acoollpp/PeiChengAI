@@ -1735,6 +1735,8 @@ def update_review_task_status(
     now = _utcnow()
     update_data = status_in.model_dump(exclude_unset=True)
     task.sqlmodel_update(update_data)
+    if "report_upload_failure_code" not in update_data:
+        task.report_upload_failure_code = None
     if task.started_at is None and task.status != ReviewTaskStatus.created:
         task.started_at = now
     if task.status in {
@@ -1805,6 +1807,8 @@ async def upload_review_task_report(
     task.report_name = upload.filename or REVIEW_REPORT_FILE_NAME
     task.feedback_protocol_version = feedback_protocol_version
     task.status = ReviewTaskStatus.success
+    task.error_message = None
+    task.report_upload_failure_code = None
     if task.started_at is None:
         task.started_at = now
     task.finished_at = now

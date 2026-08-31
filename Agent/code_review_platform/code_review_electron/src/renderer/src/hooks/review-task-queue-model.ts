@@ -78,10 +78,15 @@ const terminalStatuses = new Set<ReviewTask['status']>([
 const isTerminalTaskStatus = (status: ReviewTask['status']): boolean =>
   terminalStatuses.has(status)
 
+const isRecoverableReportUpload = (
+  task: Pick<ReviewTask, 'status' | 'report_upload_recovery'>
+): boolean => task.status === 'uploading_report' && task.report_upload_recovery !== undefined
+
 export const toTaskViewItem = (task: ReviewTask, createdAtMs = Date.now()): TaskViewItem => ({
   ...task,
   localTaskId: task.id,
-  localQueueState: isTerminalTaskStatus(task.status) ? 'finished' : 'running',
+  localQueueState:
+    isTerminalTaskStatus(task.status) || isRecoverableReportUpload(task) ? 'finished' : 'running',
   queueIndex: 0,
   createdAtMs,
   isLocallyExecuting: false,
@@ -133,6 +138,7 @@ const preserveLocalFields = (existing: TaskViewItem, serverTask: ReviewTask): Ta
   reportMarkdown: existing.reportMarkdown,
   localReportPath: existing.localReportPath,
   pdfPath: existing.pdfPath,
+  report_upload_recovery: serverTask.report_upload_recovery,
   codex_log: existing.origin === 'local-run' ? existing.codex_log : serverTask.codex_log,
   codex_log_path:
     existing.origin === 'local-run'
@@ -144,7 +150,7 @@ const preserveLocalFields = (existing: TaskViewItem, serverTask: ReviewTask): Ta
   localProgressStage: existing.localProgressStage,
   // 服务端状态只回答业务结果；本地 Promise 是否结束由运行命令独立维护。
   isLocallyExecuting: existing.isLocallyExecuting,
-  localQueueState: isTerminalTaskStatus(serverTask.status)
+  localQueueState: isTerminalTaskStatus(serverTask.status) || isRecoverableReportUpload(serverTask)
     ? 'finished'
     : existing.origin === 'local-run'
       ? existing.localQueueState
@@ -298,6 +304,9 @@ const completeRun = (
       : result.feedbackProtocolVersion !== undefined
         ? result.feedbackProtocolVersion
         : latest.feedback_protocol_version,
+    report_upload_recovery: result.status === 'success'
+      ? undefined
+      : result.reportUploadRecovery ?? serverTask?.report_upload_recovery ?? latest.report_upload_recovery,
     progress_message: result.status === 'success' ? '审查完成' : latest.progress_message,
     started_at: serverTask?.started_at ?? latest.started_at ?? now,
     finished_at: isTerminalTaskStatus(result.status)
@@ -369,6 +378,8 @@ export const applyReviewTaskQueueCommand = (
         issue_count: undefined,
         highest_issue_severity: undefined,
         feedback_protocol_version: undefined,
+        report_upload_failure_code: undefined,
+        report_upload_recovery: undefined,
         started_at: undefined,
         finished_at: undefined,
         localQueueState: 'queued',

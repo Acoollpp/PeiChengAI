@@ -21,6 +21,7 @@ import type {
   TaskProgressEvent
 } from '../../shared/types'
 import type { TaskPreflightErrorField, TaskPreflightResult } from '../../shared/task-preflight'
+import type { ReportUploadRecovery } from '../../shared/report-upload-recovery'
 
 export type { ClientUpdatePolicy, EnvironmentProgressEvent, TaskProgressEvent }
 export type { CurrentUser, DepartmentsResponse, ReviewTaskStats }
@@ -142,11 +143,16 @@ export interface ExecuteTaskResult {
   codexLogPath?: string
   feedbackProtocolVersion?: number | null
   serverTask?: ReviewTask
+  reportUploadRecovery?: ReportUploadRecovery
 }
 
 export interface CancelTaskRequest {
   client_task_id?: string
   task_id?: string
+}
+
+export interface RetryReportUploadRequest {
+  task_id: string
 }
 
 export interface CancelTaskResult {
@@ -318,6 +324,7 @@ export interface CodeReviewApi {
   preflightTask(payload: TaskPreflightRequest): Promise<TaskPreflightResult>
   executeTask(payload: ExecuteTaskRequest): Promise<ExecuteTaskResult>
   retryTask(payload: RetryTaskRequest): Promise<ExecuteTaskResult>
+  retryReportUpload(payload: RetryReportUploadRequest): Promise<ExecuteTaskResult>
   cancelTask(payload: CancelTaskRequest): Promise<CancelTaskResult>
   openTaskLog(taskId: string): Promise<OpenTaskLogResult>
   hideTask(taskId: string): Promise<HideTaskResult>

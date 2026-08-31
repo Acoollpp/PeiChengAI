@@ -1,5 +1,6 @@
 import type { ReviewTemplateKey } from './review-templates'
 import type { CustomReviewMode } from './review-items'
+import type { ReportUploadRecovery } from './report-upload-recovery'
 
 export type EnvironmentStatus =
   | 'ready'
@@ -98,6 +99,8 @@ export interface ReviewTask {
   started_at?: string | null
   finished_at?: string | null
   error_message?: string
+  report_upload_failure_code?: 'REPORT_IMAGE_INVALID_UTF8' | null
+  report_upload_recovery?: ReportUploadRecovery
   progress_message?: string
   codex_log?: TaskProgressEvent[]
   codex_log_path?: string

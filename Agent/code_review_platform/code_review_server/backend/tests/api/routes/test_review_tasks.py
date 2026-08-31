@@ -27,6 +27,7 @@ from app.models import (
     MAX_REVIEW_TASK_ISSUE_FEEDBACK_LENGTH,
     MAX_REVIEW_TASK_ISSUE_TEXT_LENGTH,
     Department,
+    ReportUploadFailureCode,
     ReviewTask,
     ReviewTaskIssue,
     ReviewTaskIssueSnapshotCreate,
@@ -3864,6 +3865,9 @@ def test_restart_failed_task_status_clears_previous_error_and_finish_time(
     assert db_task is not None
     db_task.status = ReviewTaskStatus.failed
     db_task.error_message = "Codex 执行失败"
+    db_task.report_upload_failure_code = (
+        ReportUploadFailureCode.REPORT_IMAGE_INVALID_UTF8
+    )
     db_task.started_at = _today_elapsed_datetime(20)
     db_task.finished_at = _today_elapsed_datetime(10)
     db.add(db_task)
@@ -3879,12 +3883,67 @@ def test_restart_failed_task_status_clears_previous_error_and_finish_time(
     content = response.json()
     assert content["status"] == "checking_environment"
     assert content["error_message"] is None
+    assert content["report_upload_failure_code"] is None
     assert content["finished_at"] is None
 
     db.refresh(db_task)
     assert db_task.status == ReviewTaskStatus.checking_environment
     assert db_task.error_message is None
+    assert db_task.report_upload_failure_code is None
     assert db_task.finished_at is None
+
+
+def test_report_upload_recovery_stays_uploading_and_clears_after_success(
+    client: TestClient,
+    normal_user_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    task = _create_review_task(client, normal_user_token_headers)
+    baseline_stats = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=normal_user_token_headers,
+    ).json()
+
+    blocked = client.patch(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/status",
+        headers=normal_user_token_headers,
+        json={
+            "status": "uploading_report",
+            "error_message": "图片可能被 IPGSD 加密，请解密后重试",
+            "report_upload_failure_code": "REPORT_IMAGE_INVALID_UTF8",
+        },
+    )
+
+    assert blocked.status_code == 200
+    blocked_content = blocked.json()
+    assert blocked_content["status"] == "uploading_report"
+    assert blocked_content["report_upload_failure_code"] == "REPORT_IMAGE_INVALID_UTF8"
+    assert blocked_content["finished_at"] is None
+    blocked_stats = client.get(
+        f"{settings.API_V1_STR}/review-tasks/stats",
+        headers=normal_user_token_headers,
+    ).json()
+    assert blocked_stats["failed_or_error"] == baseline_stats["failed_or_error"]
+    assert blocked_stats["running"] == baseline_stats["running"] + 1
+
+    uploaded = client.post(
+        f"{settings.API_V1_STR}/review-tasks/{task['id']}/report",
+        headers=normal_user_token_headers,
+        files={"upload": ("report.md", b"# Review\n", "text/markdown")},
+    )
+
+    assert uploaded.status_code == 200
+    content = uploaded.json()
+    assert content["status"] == "success"
+    assert content["report_upload_failure_code"] is None
+    assert content["finished_at"] is not None
+
+    db_task = db.get(ReviewTask, UUID(task["id"]))
+    assert db_task is not None
+    assert db_task.report_upload_failure_code is None
 
 
 def test_download_review_task_report_uses_uploaded_report_filename(

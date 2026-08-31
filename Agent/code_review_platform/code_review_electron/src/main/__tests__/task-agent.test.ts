@@ -13,6 +13,7 @@ import {
   type TaskAgentDependencies
 } from '../task-agent'
 import { CodexReviewError } from '../codex-runner'
+import { ReportUploadRecoveryError } from '../report-uploader'
 import { SvnPreflightError } from '../svn-preflight'
 import type { ReviewTask } from '../../shared/types'
 
@@ -1756,6 +1757,53 @@ describe('executeReviewTask', () => {
       'persisted:success',
       'local-task-1:task-1:stage:success:审查完成'
     ])
+  })
+
+  it('报告图片为非 UTF-8 时停在上传阶段并返回结构化可恢复结果', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'task-agent-report-decryption-'))
+    tempDirs.push(cwd)
+    const reportPath = join(cwd, '代码审查报告.md')
+    const events: string[] = []
+    const dependencies: TaskAgentDependencies = withPdfDependencies({
+      api: {
+        createTask: vi.fn(async () => makeTask()),
+        updateTaskStatus: vi.fn(async () => undefined)
+      },
+      checkEnvironment: vi.fn(async () => ({ status: 'ready' as const, svnPath: '/fake/bin/svn' })),
+      prepareWorkspace: vi.fn(async () => ({ cwd, reportPath, imagesDir: join(cwd, 'images') })),
+      runCodex: vi.fn(async () => {
+        await writeFile(reportPath, '# 报告\n')
+      }),
+      uploadReport: vi.fn(async () => {
+        throw new ReportUploadRecoveryError(['images/issue-01.svg'])
+      })
+    })
+
+    const result = await executeReviewTask(
+      { token: 'token-123', request, clientTaskId: 'local-task-1' },
+      dependencies,
+      (event) => {
+        if (event.type === 'stage') events.push(`${event.stage}:${event.message}`)
+      }
+    )
+
+    expect(result).toMatchObject({
+      taskId: 'task-1',
+      status: 'uploading_report',
+      reportPath,
+      reportUploadRecovery: {
+        failureCode: 'REPORT_IMAGE_INVALID_UTF8',
+        stage: 'uploading_report',
+        assetPaths: ['images/issue-01.svg'],
+        availability: 'ready'
+      }
+    })
+    expect(dependencies.api.updateTaskStatus).toHaveBeenLastCalledWith('token-123', 'task-1', {
+      status: 'uploading_report',
+      error_message: '图片可能被 IPGSD 加密，请解密后重试',
+      report_upload_failure_code: 'REPORT_IMAGE_INVALID_UTF8'
+    })
+    expect(events.at(-1)).toBe('uploading_report:图片可能被 IPGSD 加密，请解密后重试')
   })
 
   it('continues review when requirement file archive fails', async () => {

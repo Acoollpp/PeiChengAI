@@ -54,6 +54,7 @@ export interface UpdateTaskStatusRequest {
   status: string
   report_path?: string
   error_message?: string | null
+  report_upload_failure_code?: 'REPORT_IMAGE_INVALID_UTF8' | null
 }
 
 export interface UploadReportRequest {

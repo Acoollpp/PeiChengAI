@@ -254,7 +254,16 @@ const TaskTableRow = ({
           <FileText aria-hidden="true" /><span className="wb-sr-only">打开任务日志 {task.id}</span>
         </button>
       )}
-      {task.stage === 'failed' && (
+      {task.stage === 'failed' && task.reportUploadRecovery?.availability === 'ready' && (
+        <button
+          className="wb-text-button"
+          type="button"
+          onClick={() => void adapter.commands.retryReportUpload?.(task.id)}
+        >
+          重新检测并上传
+        </button>
+      )}
+      {task.stage === 'failed' && !task.reportUploadRecovery && (
         <>
           <button
             className="wb-icon-button"

@@ -1059,6 +1059,53 @@ describe('useTaskQueue', () => {
     )
   })
 
+  it('等待图片解密的上传结果释放并发槽并保留独立恢复信息', async () => {
+    const deferreds = Array.from({ length: 3 }, () => createDeferred<ExecuteTaskResult>())
+    const executeTask = vi.fn(() => deferreds[executeTask.mock.calls.length - 1].promise)
+    const { result } = renderHook(() => useTaskQueue({ executeTask }))
+
+    await act(async () => {
+      await result.current.submitTask(basePayload(1))
+      await result.current.submitTask(basePayload(2))
+      await result.current.submitTask(basePayload(3))
+    })
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(2))
+
+    await act(async () => {
+      deferreds[0].resolve({
+        taskId: 'task-waiting-decryption',
+        status: 'uploading_report',
+        reportPath: '/workspace/task-waiting-decryption/报告.md',
+        reportUploadRecovery: {
+          failureCode: 'REPORT_IMAGE_INVALID_UTF8',
+          stage: 'uploading_report',
+          assetPaths: ['images/issue.svg'],
+          availability: 'ready'
+        },
+        serverTask: {
+          id: 'task-waiting-decryption',
+          svn_url: 'svn://repo/project-1',
+          old_revision: '1',
+          new_revision: '2',
+          status: 'uploading_report',
+          error_message: '图片可能被 IPGSD 加密，请解密后重试',
+          report_upload_failure_code: 'REPORT_IMAGE_INVALID_UTF8'
+        }
+      })
+      await deferreds[0].promise
+    })
+
+    await waitFor(() => expect(executeTask).toHaveBeenCalledTimes(3))
+    expect(result.current.historyTasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        status: 'uploading_report',
+        isLocallyExecuting: false,
+        localReportPath: '/workspace/task-waiting-decryption/报告.md',
+        report_upload_recovery: expect.objectContaining({ availability: 'ready' })
+      })
+    ]))
+  })
+
   it('取消等待中的任务后进入历史任务且不会调用后台取消接口', async () => {
     const deferreds = [
       createDeferred<ExecuteTaskResult>(),
