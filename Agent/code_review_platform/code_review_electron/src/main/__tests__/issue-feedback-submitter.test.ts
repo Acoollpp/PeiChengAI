@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -78,6 +78,92 @@ describe('submitIssueFeedback', () => {
     }
   }
 
+  it('使用隔离服务端资产生成反馈版PDF且保留本地报告证据', async () => {
+    const { workspace, runtimePaths } = await createRuntime()
+    const localReportPath = runtimePaths.reportPathForTask('task-1', '本地报告.md')
+    const localSvgPath = join(workspace, 'images', 'issue-01.svg')
+    const encryptedSvgPath = `${localSvgPath}.IPGSD`
+    const localRasterPath = join(workspace, 'images', 'issue-02.png')
+    const localMarkdown = Buffer.from(
+      '# 本地原始报告\n\n![原图](images/issue-01.svg)\n\n![本地截图](images/issue-02.png)\n'
+    )
+    const localSvg = Buffer.from('<svg><text>本地原始图片</text></svg>')
+    const encryptedSvg = Buffer.from([0x49, 0x50, 0x47, 0x53, 0x44, 0x00, 0xff])
+    const localRaster = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01])
+    const serverMarkdown =
+      '# 服务端报告\n\n![占位图](images/issue-01.svg)\n\n![服务端截图](images/issue-02.png)\n'
+    const serverPlaceholder = Buffer.from('<svg><text>代码图片无法安全展示，已省略</text></svg>')
+    const serverRaster = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x02])
+    await mkdir(dirname(localSvgPath), { recursive: true })
+    await Promise.all([
+      writeFile(localReportPath, localMarkdown),
+      writeFile(localSvgPath, localSvg),
+      writeFile(encryptedSvgPath, encryptedSvg),
+      writeFile(localRasterPath, localRaster)
+    ])
+
+    let renderingReportPath = ''
+    let renderingReportContent = ''
+    const generatePdf = vi.fn(async (reportPath: string) => {
+      renderingReportPath = reportPath
+      await expect(readFile(join(dirname(reportPath), 'images', 'issue-01.svg'))).resolves.toEqual(
+        serverPlaceholder
+      )
+      await expect(readFile(join(dirname(reportPath), 'images', 'issue-02.png'))).resolves.toEqual(
+        serverRaster
+      )
+      renderingReportContent = await readFile(reportPath, 'utf8')
+      const pdfPath = reportPath.replace(/\.md$/i, '.pdf')
+      await writeFile(pdfPath, '%PDF-1.4\nserver-placeholder')
+      return { status: 'ready' as const, reportPath, pdfPath }
+    })
+    const uploadPdfReport = vi.fn(async () =>
+      makeTask({
+        feedback_submitted_at: '2026-08-31T12:00:00Z',
+        pdf_report_name: '本地报告.pdf'
+      })
+    )
+
+    const result = await submitIssueFeedback({
+      api: {
+        readTask: vi.fn(async () => makeTask()),
+        readTaskReport: vi.fn(async () => serverMarkdown),
+        readTaskIssues: vi.fn(async () => ({
+          data: [],
+          count: 0,
+          evaluated_count: 0,
+          feedback_submitted_at: null
+        })),
+        downloadReportAsset: vi.fn(async (_token, _taskId, assetPath) =>
+          Uint8Array.from(assetPath.endsWith('.svg') ? serverPlaceholder : serverRaster).buffer
+        ),
+        uploadPdfReport
+      },
+      token: 'token-123',
+      taskId: 'task-1',
+      runtimePaths,
+      generatePdf
+    })
+
+    expect(renderingReportPath).not.toBe(localReportPath)
+    expect(dirname(renderingReportPath)).not.toBe(workspace)
+    expect(renderingReportContent).toBe(serverMarkdown)
+    await expect(readFile(localReportPath)).resolves.toEqual(localMarkdown)
+    await expect(readFile(localSvgPath)).resolves.toEqual(localSvg)
+    await expect(readFile(encryptedSvgPath)).resolves.toEqual(encryptedSvg)
+    await expect(readFile(localRasterPath)).resolves.toEqual(localRaster)
+    await expect(readFile(renderingReportPath)).rejects.toThrow()
+    await expect(readFile(join(workspace, '本地报告.pdf'), 'utf8')).resolves.toBe(
+      '%PDF-1.4\nserver-placeholder'
+    )
+    expect(uploadPdfReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-1',
+      expect.objectContaining({ pdf_name: '本地报告.pdf' })
+    )
+    expect(result.pdfPath).toBe(join(workspace, '本地报告.pdf'))
+  })
+
   it('使用服务端原始报告和草稿生成最终PDF且不改写本地Markdown', async () => {
     const { workspace, runtimePaths } = await createRuntime()
     const localReportPath = runtimePaths.reportPathForTask('task-1', '本地报告.md')
@@ -97,9 +183,9 @@ describe('submitIssueFeedback', () => {
       options?: GeneratePdfReportDependencies
     ) => {
       renderingMarkdown = options?.markdown ?? ''
-      await expect(readFile(join(workspace, 'images', 'null-pointer.png'))).resolves.toEqual(
-        Buffer.from([1, 2, 3])
-      )
+      await expect(
+        readFile(join(dirname(reportPath), 'images', 'null-pointer.png'))
+      ).resolves.toEqual(Buffer.from([1, 2, 3]))
       const pdfPath = reportPath.replace(/\.md$/i, '.pdf')
       await writeFile(pdfPath, '%PDF-1.4\nfinal')
       return { status: 'ready' as const, reportPath, pdfPath }
@@ -353,7 +439,7 @@ describe('submitIssueFeedback', () => {
   })
 
   it('图片缺失或PDF生成失败时不上传也不锁定', async () => {
-    const { runtimePaths } = await createRuntime()
+    const { workspace, runtimePaths } = await createRuntime()
     const issues = toServerIssues(templateOneReportFixture)
     const uploadPdfReport = vi.fn()
     const generatePdf = vi.fn()
@@ -383,6 +469,99 @@ describe('submitIssueFeedback', () => {
     ).rejects.toThrow('图片资产不存在')
     expect(generatePdf).not.toHaveBeenCalled()
     expect(uploadPdfReport).not.toHaveBeenCalled()
+    await expect(readdir(workspace)).resolves.not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/^\.feedback-pdf-render-/)])
+    )
+  })
+
+  it('服务端图片为空时清理隔离目录且不生成PDF', async () => {
+    const { workspace, runtimePaths } = await createRuntime()
+    const markdown = '# 代码审查报告-模版一\n\n![空图片](images/empty.png)\n'
+    const generatePdf = vi.fn()
+    const uploadPdfReport = vi.fn()
+
+    await expect(
+      submitIssueFeedback({
+        api: {
+          readTask: vi.fn(async () => makeTask()),
+          readTaskReport: vi.fn(async () => markdown),
+          readTaskIssues: vi.fn(async () => ({
+            data: [], count: 0, evaluated_count: 0, feedback_submitted_at: null
+          })),
+          downloadReportAsset: vi.fn(async () => new ArrayBuffer(0)),
+          uploadPdfReport
+        },
+        token: 'token-123',
+        taskId: 'task-1',
+        runtimePaths,
+        generatePdf
+      })
+    ).rejects.toThrow('报告图片为空')
+
+    expect(generatePdf).not.toHaveBeenCalled()
+    expect(uploadPdfReport).not.toHaveBeenCalled()
+    await expect(readdir(workspace)).resolves.not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/^\.feedback-pdf-render-/)])
+    )
+  })
+
+  it.each([
+    {
+      name: '上级目录',
+      imagePath: '../outside.png',
+      expectedError: '报告图片必须位于 images 目录'
+    },
+    {
+      name: '相似目录',
+      imagePath: 'images-other/outside.png',
+      expectedError: '报告图片必须位于 images 目录'
+    },
+    {
+      name: '绝对路径',
+      imagePath: '/images/outside.png',
+      expectedError: '报告图片必须使用安全的相对路径'
+    },
+    {
+      name: '反斜杠',
+      imagePath: 'images\\outside.png',
+      expectedError: '报告图片必须使用安全的相对路径'
+    },
+    {
+      name: '无效编码',
+      imagePath: 'images/%E0%A4%A.png',
+      expectedError: '报告图片路径编码无效'
+    }
+  ])('拒绝服务端报告中的$name图片路径', async ({ imagePath, expectedError }) => {
+    const { workspace, runtimePaths } = await createRuntime()
+    const markdown = `# 代码审查报告-模版一\n\n![证据](${imagePath})\n`
+    const downloadReportAsset = vi.fn()
+    const generatePdf = vi.fn()
+    const uploadPdfReport = vi.fn()
+
+    await expect(
+      submitIssueFeedback({
+        api: {
+          readTask: vi.fn(async () => makeTask()),
+          readTaskReport: vi.fn(async () => markdown),
+          readTaskIssues: vi.fn(async () => ({
+            data: [], count: 0, evaluated_count: 0, feedback_submitted_at: null
+          })),
+          downloadReportAsset,
+          uploadPdfReport
+        },
+        token: 'token-123',
+        taskId: 'task-1',
+        runtimePaths,
+        generatePdf
+      })
+    ).rejects.toThrow(expectedError)
+
+    expect(downloadReportAsset).not.toHaveBeenCalled()
+    expect(generatePdf).not.toHaveBeenCalled()
+    expect(uploadPdfReport).not.toHaveBeenCalled()
+    await expect(readdir(workspace)).resolves.not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/^\.feedback-pdf-render-/)])
+    )
   })
 
   it('反馈说明为空白时在生成PDF前拒绝并指出审查问题序号', async () => {
@@ -420,15 +599,29 @@ describe('submitIssueFeedback', () => {
     expect(uploadPdfReport).not.toHaveBeenCalled()
   })
 
-  it('拒绝通过本地符号链接把远程图片写到报告目录外', async () => {
+  it('本地图片符号链接不影响隔离资产且不会被服务端内容改写', async () => {
     const { workspace, runtimePaths } = await createRuntime()
     const outsideDirectory = join(dirname(workspace), 'outside')
     await mkdir(join(workspace, 'images'), { recursive: true })
     await mkdir(outsideDirectory, { recursive: true })
     await symlink(outsideDirectory, join(workspace, 'images', 'nested'))
     const markdown = '# 代码审查报告-模版一\n\n![证据](images/nested/evidence.png)\n'
-    const generatePdf = vi.fn()
-    const uploadPdfReport = vi.fn()
+    let renderingReportPath = ''
+    const generatePdf = vi.fn(async (reportPath: string) => {
+      renderingReportPath = reportPath
+      await expect(
+        readFile(join(dirname(reportPath), 'images', 'nested', 'evidence.png'))
+      ).resolves.toEqual(Buffer.from([1]))
+      const pdfPath = reportPath.replace(/\.md$/i, '.pdf')
+      await writeFile(pdfPath, '%PDF-1.4\nlinked-local-source')
+      return { status: 'ready' as const, reportPath, pdfPath }
+    })
+    const uploadPdfReport = vi.fn(async () =>
+      makeTask({
+        feedback_submitted_at: '2026-08-31T12:00:00Z',
+        pdf_report_name: '本地报告.pdf'
+      })
+    )
 
     await expect(
       submitIssueFeedback({
@@ -446,17 +639,33 @@ describe('submitIssueFeedback', () => {
         runtimePaths,
         generatePdf
       })
-    ).rejects.toThrow('不能指向 images 目录外')
+    ).resolves.toEqual(expect.objectContaining({ pdfPath: join(workspace, '本地报告.pdf') }))
     await expect(readFile(join(outsideDirectory, 'evidence.png'))).rejects.toThrow()
-    expect(generatePdf).not.toHaveBeenCalled()
-    expect(uploadPdfReport).not.toHaveBeenCalled()
+    await expect(readFile(renderingReportPath)).rejects.toThrow()
+    expect(generatePdf).toHaveBeenCalledTimes(1)
+    expect(uploadPdfReport).toHaveBeenCalledTimes(1)
   })
 
   it('PDF生成失败时保留草稿且不调用服务端完成接口', async () => {
-    const { runtimePaths } = await createRuntime()
-    const markdown = '# 代码审查报告-模版一\n\n没有审查问题。\n'
+    const { workspace, runtimePaths } = await createRuntime()
+    const localReportPath = join(workspace, '本地报告.md')
+    const localSvgPath = join(workspace, 'images', 'issue-01.svg')
+    const encryptedSvgPath = `${localSvgPath}.IPGSD`
+    const localMarkdown = Buffer.from('# 本地报告证据\n')
+    const localSvg = Buffer.from('<svg><text>本地证据</text></svg>')
+    const encryptedSvg = Buffer.from([0x49, 0x50, 0x47, 0x53, 0x44])
+    const serverPlaceholder = Buffer.from('<svg><text>服务端占位</text></svg>')
+    const markdown = '# 代码审查报告-模版一\n\n![证据](images/issue-01.svg)\n'
+    await mkdir(dirname(localSvgPath), { recursive: true })
+    await Promise.all([
+      writeFile(localReportPath, localMarkdown),
+      writeFile(localSvgPath, localSvg),
+      writeFile(encryptedSvgPath, encryptedSvg)
+    ])
     const uploadPdfReport = vi.fn()
-    const generatePdf = vi.fn(async () => {
+    let renderingReportPath = ''
+    const generatePdf = vi.fn(async (reportPath: string) => {
+      renderingReportPath = reportPath
       throw new Error('PDF打印失败')
     })
 
@@ -471,7 +680,7 @@ describe('submitIssueFeedback', () => {
             evaluated_count: 0,
             feedback_submitted_at: null
           })),
-          downloadReportAsset: vi.fn(),
+          downloadReportAsset: vi.fn(async () => Uint8Array.from(serverPlaceholder).buffer),
           uploadPdfReport
         },
         token: 'token-123',
@@ -481,6 +690,10 @@ describe('submitIssueFeedback', () => {
       })
     ).rejects.toThrow('PDF打印失败')
     expect(uploadPdfReport).not.toHaveBeenCalled()
+    await expect(readFile(localReportPath)).resolves.toEqual(localMarkdown)
+    await expect(readFile(localSvgPath)).resolves.toEqual(localSvg)
+    await expect(readFile(encryptedSvgPath)).resolves.toEqual(encryptedSvg)
+    await expect(readFile(renderingReportPath)).rejects.toThrow()
   })
 
   it('PDF上传失败后保留唯一的本地PDF并允许原路径重试', async () => {
@@ -521,8 +734,16 @@ describe('submitIssueFeedback', () => {
     ).resolves.toEqual(expect.objectContaining({ status: 'submitted' }))
 
     expect(generatePdf).toHaveBeenCalledTimes(2)
-    expect(new Set(generatePdf.mock.calls.map(([reportPath]) => reportPath))).toEqual(
-      new Set([join(workspace, '本地报告.md')])
+    const renderingReportPaths = generatePdf.mock.calls.map(([reportPath]) => reportPath)
+    expect(new Set(renderingReportPaths).size).toBe(2)
+    renderingReportPaths.forEach((reportPath) => {
+      expect(reportPath).not.toBe(join(workspace, '本地报告.md'))
+      expect(dirname(reportPath)).not.toBe(workspace)
+    })
+    await Promise.all(
+      renderingReportPaths.map((reportPath) =>
+        expect(readFile(reportPath)).rejects.toThrow()
+      )
     )
     await expect(readFile(join(workspace, '本地报告.pdf'), 'utf8')).resolves.toBe(
       '%PDF-1.4\nretry'

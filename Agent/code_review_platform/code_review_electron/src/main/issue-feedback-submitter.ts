@@ -1,5 +1,4 @@
-import { mkdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
+import { copyFile, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
 
 import type { ApiClient } from './api-client'
@@ -112,17 +111,7 @@ const downloadReportAssets = async (
       throw new Error(`PDF生成失败：报告图片路径不能指向 images 目录外：${rawPath}`)
     }
 
-    const temporaryPath = join(
-      targetDirectory,
-      `.${basename(targetPath)}.${randomUUID()}.download`
-    )
-    try {
-      await writeFile(temporaryPath, Buffer.from(content))
-      await rm(targetPath, { force: true })
-      await rename(temporaryPath, targetPath)
-    } finally {
-      await rm(temporaryPath, { force: true })
-    }
+    await writeFile(targetPath, Buffer.from(content))
   }
 }
 
@@ -166,41 +155,56 @@ export const submitIssueFeedback = async ({
     resolveReportFileName(task.report_name)
   )
   const originalMarkdown = await api.readTaskReport(token, taskId)
-  await mkdir(dirname(reportPath), { recursive: true })
-  await downloadReportAssets(api, token, taskId, reportPath, originalMarkdown)
-  const renderingMarkdown = composeIssueFeedbackMarkdown(
-    originalMarkdown,
-    issueResponse.data
-  )
-  const pdf = await generatePdf(reportPath, {
-    markdown: renderingMarkdown.replace(/^\uFEFF/, '')
-  })
-  let submittedTask: ReviewTask
+  const reportDirectory = dirname(reportPath)
+  await mkdir(reportDirectory, { recursive: true })
+  const renderingDirectory = await mkdtemp(join(reportDirectory, '.feedback-pdf-render-'))
   try {
-    submittedTask = await uploadPdfReportFile(api, token, taskId, pdf.pdfPath)
-  } catch (uploadError) {
-    let recoveredTask: ReviewTask | undefined
-    try {
-      const latestTask = await api.readTask(token, taskId)
-      if (latestTask.feedback_submitted_at) {
-        recoveredTask = latestTask
-      }
-    } catch {
-      // 保留原始上传错误；回查失败不能证明服务端已经完成提交。
-    }
-    if (!recoveredTask) {
-      throw uploadError
-    }
-    submittedTask = recoveredTask
-  }
-  if (!submittedTask.feedback_submitted_at) {
-    throw new Error('服务端未确认最终反馈提交状态')
-  }
+    const renderingReportPath = join(renderingDirectory, basename(reportPath))
+    await writeFile(renderingReportPath, originalMarkdown, 'utf8')
+    await downloadReportAssets(api, token, taskId, renderingReportPath, originalMarkdown)
+    const renderingMarkdown = composeIssueFeedbackMarkdown(
+      originalMarkdown,
+      issueResponse.data
+    )
+    const pdf = await generatePdf(renderingReportPath, {
+      markdown: renderingMarkdown.replace(/^\uFEFF/, '')
+    })
+    const finalPdfPath = reportPath.replace(/\.md$/i, '.pdf')
+    await copyFile(pdf.pdfPath, finalPdfPath)
 
-  return submittedResult(
-    taskId,
-    pdf.pdfPath,
-    submittedTask,
-    submittedTask.feedback_submitted_at
-  )
+    let submittedTask: ReviewTask
+    try {
+      submittedTask = await uploadPdfReportFile(api, token, taskId, finalPdfPath)
+    } catch (uploadError) {
+      let recoveredTask: ReviewTask | undefined
+      try {
+        const latestTask = await api.readTask(token, taskId)
+        if (latestTask.feedback_submitted_at) {
+          recoveredTask = latestTask
+        }
+      } catch {
+        // 保留原始上传错误；回查失败不能证明服务端已经完成提交。
+      }
+      if (!recoveredTask) {
+        throw uploadError
+      }
+      submittedTask = recoveredTask
+    }
+    if (!submittedTask.feedback_submitted_at) {
+      throw new Error('服务端未确认最终反馈提交状态')
+    }
+
+    return submittedResult(
+      taskId,
+      finalPdfPath,
+      submittedTask,
+      submittedTask.feedback_submitted_at
+    )
+  } finally {
+    try {
+      await rm(renderingDirectory, { recursive: true, force: true })
+    } catch {
+      // 临时渲染目录尽力清理，不能掩盖下载、生成或上传错误。
+    }
+  }
 }
