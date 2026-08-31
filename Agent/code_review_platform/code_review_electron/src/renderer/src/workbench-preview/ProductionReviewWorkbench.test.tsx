@@ -102,6 +102,7 @@ const setupCodeReviewApi = (): void => {
       feedbackProtocolVersion: 1
     })),
     retryTask: vi.fn(),
+    retryReportUpload: vi.fn(),
     cancelTask: vi.fn(async () => ({ status: 'cancelled' as const })),
     onTaskProgress: vi.fn(() => vi.fn()),
     selectReviewMaterialFile: vi.fn(async () => ({ status: 'cancelled' as const })),
@@ -376,6 +377,90 @@ describe('ProductionReviewWorkbench', () => {
     expect(screen.getByText('暂无待处理失败任务')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '当前任务 2' })).toBeInTheDocument()
     expect(screen.queryByText('失败任务重试后进入环境检查')).not.toBeInTheDocument()
+  })
+
+  it('可恢复上传失败显示精确文案并只调用重新检测上传命令', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [{
+        id: 'task-report-decryption',
+        svn_url: 'svn://server/report-decryption',
+        old_revision: '10',
+        new_revision: '11',
+        review_item_ids: ['DS-03'],
+        status: 'uploading_report',
+        error_message: '图片可能被 IPGSD 加密，请解密后重试',
+        report_upload_failure_code: 'REPORT_IMAGE_INVALID_UTF8',
+        report_upload_recovery: {
+          failureCode: 'REPORT_IMAGE_INVALID_UTF8',
+          stage: 'uploading_report',
+          assetPaths: ['images/issue-01.svg'],
+          availability: 'ready'
+        }
+      }],
+      count: 1
+    })
+    vi.mocked(window.codeReview.retryReportUpload).mockImplementation(
+      () => new Promise<never>(() => undefined)
+    )
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await user.click(await screen.findByRole('tab', { name: '待处理失败任务 1' }))
+    const taskRow = screen.getByRole('article', { name: /task-report-decryption/ })
+    expect(within(taskRow).getByText('上传报告')).toBeInTheDocument()
+    expect(within(taskRow).getByText('图片可能被 IPGSD 加密，请解密后重试')).toBeInTheDocument()
+    expect(within(taskRow).queryByRole('button', { name: /从头重试/ })).not.toBeInTheDocument()
+
+    await user.click(within(taskRow).getByRole('button', { name: '重新检测并上传' }))
+
+    expect(window.codeReview.retryReportUpload).toHaveBeenCalledWith({
+      task_id: 'task-report-decryption'
+    })
+    expect(window.codeReview.retryTask).not.toHaveBeenCalled()
+    expect(window.codeReview.executeTask).not.toHaveBeenCalled()
+  })
+
+  it('源文件缺失和其他客户端均不提供本机恢复操作', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.codeReview.listTasks).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'task-source-missing', svn_url: 'svn://server/source-missing',
+          old_revision: '10', new_revision: '11', review_item_ids: ['DS-03'],
+          status: 'uploading_report', report_upload_failure_code: 'REPORT_IMAGE_INVALID_UTF8',
+          report_upload_recovery: {
+            failureCode: 'REPORT_IMAGE_INVALID_UTF8', stage: 'uploading_report',
+            assetPaths: ['images/issue.svg'], availability: 'source_missing'
+          }
+        },
+        {
+          id: 'task-other-client', svn_url: 'svn://server/other-client',
+          old_revision: '12', new_revision: '13', review_item_ids: ['DS-03'],
+          status: 'uploading_report', report_upload_failure_code: 'REPORT_IMAGE_INVALID_UTF8',
+          report_upload_recovery: {
+            failureCode: 'REPORT_IMAGE_INVALID_UTF8', stage: 'uploading_report',
+            assetPaths: [], availability: 'other_client'
+          }
+        }
+      ],
+      count: 2
+    })
+    render(<ProductionReviewWorkbench {...productionProps} />)
+
+    await user.click(await screen.findByRole('tab', { name: '待处理失败任务 2' }))
+    const missingRow = screen.getByRole('article', { name: /task-source-missing/ })
+    expect(within(missingRow).getByText(
+      '本地报告文件已不存在，无法重新检测上传，请新建任务重新审查。'
+    )).toBeInTheDocument()
+    expect(within(missingRow).queryByRole('button', { name: /重新检测并上传|从头重试/ }))
+      .not.toBeInTheDocument()
+    expect(window.codeReview.retryTask).not.toHaveBeenCalled()
+    expect(window.codeReview.retryReportUpload).not.toHaveBeenCalled()
+
+    const otherRow = screen.getByRole('article', { name: /task-other-client/ })
+    expect(within(otherRow).getByText(/请回到原执行客户端/)).toBeInTheDocument()
+    expect(within(otherRow).queryByRole('button', { name: /重新检测并上传|从头重试/ }))
+      .not.toBeInTheDocument()
   })
 
   it('统计加载失败时明确降级且不阻断任务创建，并可独立重试', async () => {

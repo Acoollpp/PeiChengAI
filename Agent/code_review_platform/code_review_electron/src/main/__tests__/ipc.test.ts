@@ -109,6 +109,7 @@ describe('registerIpcHandlers', () => {
       'task:preflight',
       'task:execute',
       'task:retry',
+      'task:retry-report-upload',
       'task:cancel',
       'task:open-log',
       'task:hide',
@@ -2111,6 +2112,58 @@ describe('registerIpcHandlers', () => {
       count: 14
     })
     expect(api.listTasks).toHaveBeenCalledWith('token-123', { mine: true })
+  })
+
+  it('任务列表用结构化原因码合并本机报告上传恢复状态', async () => {
+    const api = {
+      listTasks: vi.fn(async () => ({
+        data: [{
+          id: 'task-report-recovery',
+          svn_url: 'svn://repo/project',
+          old_revision: '1',
+          new_revision: '2',
+          status: 'uploading_report',
+          report_upload_failure_code: 'REPORT_IMAGE_INVALID_UTF8'
+        }],
+        count: 1
+      }))
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123', refresh_token: 'refresh-token' })),
+      save: vi.fn()
+    }
+    const getReportUploadRecovery = vi.fn(async () => ({
+      failureCode: 'REPORT_IMAGE_INVALID_UTF8' as const,
+      stage: 'uploading_report' as const,
+      assetPaths: [],
+      availability: 'other_client' as const
+    }))
+    const reviewTaskRuntime = {
+      run: vi.fn(),
+      retryReportUpload: vi.fn(),
+      getReportUploadRecovery,
+      cancel: vi.fn(),
+      cancelAll: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never,
+      reviewTaskRuntime: reviewTaskRuntime as never
+    })
+    const listHandler = handleMock.mock.calls.find(([channel]) => channel === 'task:list')?.[1]
+
+    await expect(listHandler()).resolves.toEqual({
+      data: [expect.objectContaining({
+        id: 'task-report-recovery',
+        report_upload_recovery: expect.objectContaining({ availability: 'other_client' })
+      })],
+      count: 1
+    })
+    expect(getReportUploadRecovery).toHaveBeenCalledWith(
+      'task-report-recovery',
+      'REPORT_IMAGE_INVALID_UTF8'
+    )
   })
 
   it('读取当前登录用户可见范围内的今日任务统计', async () => {

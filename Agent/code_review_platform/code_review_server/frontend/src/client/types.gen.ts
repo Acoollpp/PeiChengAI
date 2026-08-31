@@ -271,6 +271,8 @@ export type PrivateUserCreate = {
     is_superuser?: boolean;
 };
 
+export type ReportUploadFailureCode = 'REPORT_IMAGE_INVALID_UTF8';
+
 export type ReviewFocusDirectionCreate = {
     title: string;
     content: string;
@@ -417,6 +419,7 @@ export type ReviewTaskPublic = {
     report_feedback_helpful?: (boolean | null);
     report_feedback_useful_issues_text?: (string | null);
     error_message?: (string | null);
+    report_upload_failure_code?: (ReportUploadFailureCode | null);
     client_hostname?: (string | null);
     client_version?: (string | null);
     created_at?: (string | null);
@@ -472,6 +475,7 @@ export type ReviewTaskStatus = 'created' | 'checking_environment' | 'running_cod
 export type ReviewTaskStatusUpdate = {
     status: ReviewTaskStatus;
     error_message?: (string | null);
+    report_upload_failure_code?: (ReportUploadFailureCode | null);
     client_hostname?: (string | null);
     client_version?: (string | null);
 };

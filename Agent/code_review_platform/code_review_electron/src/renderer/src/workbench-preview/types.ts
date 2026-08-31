@@ -1,4 +1,5 @@
 import type { CustomReviewMode, ReviewItemId } from '../../../shared/review-items'
+import type { ReportUploadRecovery } from '../../../shared/report-upload-recovery'
 import type {
   Feedback,
   FeedbackListOptions,
@@ -91,6 +92,7 @@ export interface ReviewTaskViewModel {
   updatedAt: string
   queueIndex?: number
   phaseTrack: StageTrackItem[]
+  reportUploadRecovery?: ReportUploadRecovery
 }
 
 export interface ReviewReportViewModel {
@@ -188,6 +190,7 @@ export interface WorkbenchCommands {
   createTask(input: CreateTaskCommand): Promise<PreviewCommandResult>
   cancelTask(taskId: string): Promise<PreviewCommandResult>
   retryTask(taskId: string): Promise<PreviewCommandResult>
+  retryReportUpload?(taskId: string): Promise<PreviewCommandResult>
   confirmCustomReviewRetry?(
     taskId: string,
     customMaterials: Record<string, MaterialFileView[]>,

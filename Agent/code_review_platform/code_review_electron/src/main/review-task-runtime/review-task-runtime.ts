@@ -1,12 +1,15 @@
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 
+import log from 'electron-log/main'
+
 import { ApiClient, type CreateTaskRequest } from '../api-client'
 import { AuthStore } from '../auth-store'
 import { checkEnvironment, type EnvironmentCheckResult } from '../environment-checker'
 import { generatePdfReport } from '../report-pdf-generator'
 import {
   prepareReportForPublishing,
+  ReportUploadRecoveryError,
   type PdfReportUploadApi,
   type ReportUploadApi,
   type RequirementFileUploadApi,
@@ -14,6 +17,11 @@ import {
   uploadReportFile,
   uploadRequirementFile
 } from '../report-uploader'
+import {
+  ReportUploadRecoveryStore,
+  type ReportUploadRecoveryRepository,
+  type StoredReportUploadRecovery
+} from '../report-upload-recovery-store'
 import { createSkillSyncService, type SkillSyncResult } from '../skill-sync'
 import { ServerConfigStore } from '../server-config-store'
 import {
@@ -21,6 +29,8 @@ import {
   defaultRunCodex,
   executeReviewTask,
   retryReviewTask,
+  sanitizeErrorSummary,
+  toUserFacingErrorMessage,
   type ExecuteReviewTaskResult,
   type TaskAgentDependencies
 } from '../task-agent'
@@ -28,6 +38,11 @@ import { appendTaskLogEvent, CODEX_REVIEW_LOG_FILE_NAME, flushTaskLog } from '..
 import { runSvnPreflight } from '../svn-preflight'
 import type { SelectedReviewItemInput } from '../../shared/review-items'
 import type { TaskProgressEvent } from '../../shared/types'
+import {
+  REPORT_IMAGE_DECRYPTION_REQUIRED_MESSAGE,
+  REPORT_IMAGE_INVALID_UTF8,
+  type ReportUploadRecovery
+} from '../../shared/report-upload-recovery'
 import { ActiveTaskRegistry, type ActiveReviewTaskRun } from './active-task-registry'
 
 export type ReviewTaskRunCommand =
@@ -73,6 +88,14 @@ export interface ReviewTaskRuntime {
     onProgress?: ReviewTaskProgressObserver
   ): Promise<ExecuteReviewTaskResult>
   cancel(reference: ActiveReviewTaskReference): Promise<CancelTaskResult>
+  retryReportUpload(
+    taskId: string,
+    onProgress?: ReviewTaskProgressObserver
+  ): Promise<ExecuteReviewTaskResult>
+  getReportUploadRecovery(
+    taskId: string,
+    failureCode: string | null | undefined
+  ): Promise<ReportUploadRecovery | undefined>
   cancelAll(): Promise<void>
 }
 
@@ -91,6 +114,7 @@ export interface ReviewTaskRuntimeOptions {
   uploadReport?: TaskAgentDependencies['uploadReport']
   uploadPdfReport?: TaskAgentDependencies['uploadPdfReport']
   flushTaskLog?: typeof flushTaskLog
+  reportUploadRecoveryStore?: ReportUploadRecoveryRepository
 }
 
 export type ReviewTaskRuntimeApi = TaskAgentDependencies['api'] &
@@ -105,8 +129,13 @@ export type ReviewTaskRuntimeApi = TaskAgentDependencies['api'] &
 export class DefaultReviewTaskRuntime implements ReviewTaskRuntime {
   private readonly registry = new ActiveTaskRegistry()
   private readonly pendingCompletions = new Set<Promise<void>>()
+  private readonly reportUploadRecoveryStore: ReportUploadRecoveryRepository
+  private readonly pendingReportUploads = new Map<string, Promise<ExecuteReviewTaskResult>>()
 
-  constructor(private readonly options: ReviewTaskRuntimeOptions) {}
+  constructor(private readonly options: ReviewTaskRuntimeOptions) {
+    this.reportUploadRecoveryStore =
+      options.reportUploadRecoveryStore ?? new ReportUploadRecoveryStore()
+  }
 
   async run(
     command: ReviewTaskRunCommand,
@@ -118,6 +147,9 @@ export class DefaultReviewTaskRuntime implements ReviewTaskRuntime {
     }
 
     await this.syncSkillForCurrentUser(tokens.access_token)
+    if (command.kind === 'retry') {
+      await this.clearReportUploadRecovery(command.taskId)
+    }
     const api = await this.options.createApiClient()
     let resolveCompletion!: () => void
     const completion = new Promise<void>((resolve) => {
@@ -151,7 +183,7 @@ export class DefaultReviewTaskRuntime implements ReviewTaskRuntime {
     }
 
     try {
-      return command.kind === 'create'
+      const result = command.kind === 'create'
         ? await executeReviewTask(
             {
               token: tokens.access_token,
@@ -176,6 +208,8 @@ export class DefaultReviewTaskRuntime implements ReviewTaskRuntime {
             dependencies,
             reportProgress
           )
+      await this.syncReportUploadRecovery(result)
+      return result
     } finally {
       this.registry.unregister(activeTask)
       // 日志写入由进度回调异步触发；运行结束前必须 flush，避免任务已返回而日志仍缺行。
@@ -186,6 +220,35 @@ export class DefaultReviewTaskRuntime implements ReviewTaskRuntime {
         this.pendingCompletions.delete(activeTask.completion)
       }
     }
+  }
+
+  retryReportUpload(
+    taskId: string,
+    onProgress?: ReviewTaskProgressObserver
+  ): Promise<ExecuteReviewTaskResult> {
+    const existing = this.pendingReportUploads.get(taskId)
+    if (existing) return existing
+
+    const operation = this.retryReportUploadOnce(taskId, onProgress).finally(() => {
+      if (this.pendingReportUploads.get(taskId) === operation) {
+        this.pendingReportUploads.delete(taskId)
+      }
+    })
+    this.pendingReportUploads.set(taskId, operation)
+    return operation
+  }
+
+  async getReportUploadRecovery(
+    taskId: string,
+    failureCode: string | null | undefined
+  ): Promise<ReportUploadRecovery | undefined> {
+    if (failureCode !== REPORT_IMAGE_INVALID_UTF8) return undefined
+    const source = await this.reportUploadRecoveryStore.load(taskId)
+    if (!source) return this.toRecovery([], 'other_client')
+    if (source.status === 'source_missing') {
+      return this.toRecovery(source.assetPaths, 'source_missing')
+    }
+    return this.toRecovery(source.record.assetPaths, 'ready')
   }
 
   async cancel(reference: ActiveReviewTaskReference): Promise<CancelTaskResult> {
@@ -202,6 +265,141 @@ export class DefaultReviewTaskRuntime implements ReviewTaskRuntime {
       ...this.pendingCompletions
     ]
     await Promise.allSettled(pendingOperations)
+  }
+
+  private async retryReportUploadOnce(
+    taskId: string,
+    onProgress?: ReviewTaskProgressObserver
+  ): Promise<ExecuteReviewTaskResult> {
+    const tokens = await this.options.authStore.load()
+    if (!tokens) throw new Error('Not authenticated')
+    const api = await this.options.createApiClient()
+    const source = await this.reportUploadRecoveryStore.load(taskId)
+    if (!source) {
+      return {
+        taskId,
+        status: 'uploading_report',
+        reportUploadRecovery: this.toRecovery([], 'other_client')
+      }
+    }
+    if (source.status === 'source_missing') {
+      return {
+        taskId,
+        status: 'uploading_report',
+        reportUploadRecovery: this.toRecovery(source.assetPaths, 'source_missing')
+      }
+    }
+
+    const record = source.record
+    onProgress?.({
+      taskId,
+      type: 'stage',
+      stage: 'uploading_report',
+      message: '重新检测并上传报告'
+    })
+    const prepareReport = this.options.prepareReport ?? prepareReportForPublishing
+    const uploadReport =
+      this.options.uploadReport ??
+      ((token: string, id: string, reportPath: string, reportContent?: string) =>
+        uploadReportFile(api, token, id, reportPath, reportContent))
+    let reportMarkdown: string
+    try {
+      reportMarkdown = await prepareReport(record.reportPath)
+      await uploadReport(tokens.access_token, taskId, record.reportPath, reportMarkdown)
+    } catch (error) {
+      if (error instanceof ReportUploadRecoveryError) {
+        const updatedRecord = { ...record, assetPaths: error.assetPaths }
+        await this.persistRecovery(updatedRecord)
+        await api.updateTaskStatus(tokens.access_token, taskId, {
+          status: 'uploading_report',
+          error_message: REPORT_IMAGE_DECRYPTION_REQUIRED_MESSAGE,
+          report_upload_failure_code: REPORT_IMAGE_INVALID_UTF8
+        })
+        return {
+          taskId,
+          status: 'uploading_report',
+          reportPath: record.reportPath,
+          reportUploadRecovery: this.toRecovery(error.assetPaths, 'ready')
+        }
+      }
+
+      const serverTask = api.readTask
+        ? await api.readTask(tokens.access_token, taskId).catch(() => undefined)
+        : undefined
+      if (serverTask?.status === 'success') {
+        await this.clearReportUploadRecovery(taskId)
+        return {
+          taskId,
+          status: 'success',
+          reportPath: record.reportPath,
+          serverTask
+        }
+      }
+      const errorMessage = toUserFacingErrorMessage(
+        sanitizeErrorSummary(error, tokens.access_token)
+      )
+      await api.updateTaskStatus(tokens.access_token, taskId, {
+        status: 'failed',
+        error_message: errorMessage
+      })
+      await this.clearReportUploadRecovery(taskId)
+      throw new Error(errorMessage)
+    }
+
+    await this.clearReportUploadRecovery(taskId)
+    return {
+      taskId,
+      status: 'success',
+      reportMarkdown,
+      reportPath: record.reportPath
+    }
+  }
+
+  private toRecovery(
+    assetPaths: string[],
+    availability: ReportUploadRecovery['availability']
+  ): ReportUploadRecovery {
+    return {
+      failureCode: REPORT_IMAGE_INVALID_UTF8,
+      stage: 'uploading_report',
+      assetPaths,
+      availability
+    }
+  }
+
+  private async syncReportUploadRecovery(result: ExecuteReviewTaskResult): Promise<void> {
+    if (result.reportUploadRecovery && result.reportPath) {
+      await this.persistRecovery({
+        taskId: result.taskId,
+        reportPath: result.reportPath,
+        failureCode: result.reportUploadRecovery.failureCode,
+        assetPaths: result.reportUploadRecovery.assetPaths
+      })
+      return
+    }
+    await this.clearReportUploadRecovery(result.taskId)
+  }
+
+  private async persistRecovery(record: StoredReportUploadRecovery): Promise<void> {
+    try {
+      await this.reportUploadRecoveryStore.save(record)
+    } catch (error) {
+      log.error('[REPORT_UPLOAD_RECOVERY_SAVE_FAILED]', {
+        taskId: record.taskId,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    }
+  }
+
+  private async clearReportUploadRecovery(taskId: string): Promise<void> {
+    try {
+      await this.reportUploadRecoveryStore.remove(taskId)
+    } catch (error) {
+      log.warn('[REPORT_UPLOAD_RECOVERY_REMOVE_FAILED]', {
+        taskId,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    }
   }
 
   private async syncSkillForCurrentUser(token: string): Promise<void> {

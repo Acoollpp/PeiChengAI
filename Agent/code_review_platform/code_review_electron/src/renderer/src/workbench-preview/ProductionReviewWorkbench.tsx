@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { BMS_CODE_REVIEW_SKILL_NAME, REVIEW_ITEM_CATALOG } from '../../../shared/review-items'
+import { REPORT_IMAGE_DECRYPTION_REQUIRED_MESSAGE } from '../../../shared/report-upload-recovery'
 import {
   getCustomReviewRetrySnapshot,
   hasPartialCustomReviewRetrySnapshot
@@ -113,6 +114,7 @@ const taskStatsTerminalState = (task: TaskViewItem): TaskStatsTerminalState =>
 
 const taskStage = (task: TaskViewItem): TaskStage => {
   if (task.localQueueState === 'queued') return 'waiting'
+  if (task.report_upload_recovery) return 'failed'
   if (task.status === 'success') return 'completed'
   if (task.status === 'failed' || task.status === 'environment_error') return 'failed'
   if (task.status === 'cancelled') return 'cancelled'
@@ -159,7 +161,14 @@ const hasReadableMarkdownReport = (
   )
 const toTaskViewModel = (task: TaskViewItem): ReviewTaskViewModel => {
   const stage = taskStage(task)
-  const message = stage === 'completed' && !hasReadableMarkdownReport(task)
+  const recovery = task.report_upload_recovery
+  const message = recovery?.availability === 'ready'
+    ? REPORT_IMAGE_DECRYPTION_REQUIRED_MESSAGE
+    : recovery?.availability === 'other_client'
+      ? '请回到原执行客户端解密图片并重新上传报告。'
+      : recovery?.availability === 'source_missing'
+        ? '本地报告文件已不存在，无法重新检测上传，请新建任务重新审查。'
+        : stage === 'completed' && !hasReadableMarkdownReport(task)
     ? '任务已完成，但未生成可查看的 Markdown 报告。'
     : task.progress_message ?? task.error_message ?? (
       stage === 'completed' ? '报告已生成，可查看。' : stageLabels[stage]
@@ -167,10 +176,12 @@ const toTaskViewModel = (task: TaskViewItem): ReviewTaskViewModel => {
   return {
     id: task.id, title: taskTitle(task), svnUrl: task.svn_url,
     oldRevision: task.old_revision, newRevision: task.new_revision,
-    reviewItemIds: itemIds(task), stage, stageLabel: stageLabels[stage],
+    reviewItemIds: itemIds(task), stage,
+    stageLabel: recovery ? '上传报告' : stageLabels[stage],
     message,
     updatedAt: formatTime(task), ...(stage === 'waiting' ? { queueIndex: task.queueIndex } : {}),
-    phaseTrack: phaseTrack(stage)
+    phaseTrack: phaseTrack(stage),
+    ...(recovery ? { reportUploadRecovery: recovery } : {})
   }
 }
 type ReportContentState = Pick<ReviewReportViewModel, 'contentStatus' | 'contentMessage'>
@@ -243,6 +254,7 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
   const createTaskInFlightRef = useRef(false)
   const feedbackInFlightRef = useRef(false)
   const negativeFeedbackInFlightRef = useRef(new Set<string>())
+  const reportUploadRetryInFlightRef = useRef(new Set<string>())
   const canCreateTask = environment?.status === 'ready' && !environment.skillError
   const showNotice = useCallback((message: string): void => {
     setNotice(message)
@@ -593,6 +605,35 @@ export function ProductionReviewWorkbench(props: ProductionReviewWorkbenchProps)
       await queue.retryTask(task)
       showNotice(`任务 ${task.id} 已加入本机重试队列。`)
       return commandResult(`任务 ${task.id} 已加入本机重试队列。`)
+    },
+    async retryReportUpload(taskId) {
+      const task = findTask(taskId)
+      if (!task?.report_upload_recovery) return commandResult('该任务不需要重新检测上传。')
+      if (task.report_upload_recovery.availability !== 'ready') {
+        return commandResult(task.report_upload_recovery.availability === 'other_client'
+          ? '请回到原执行客户端解密图片并重新上传报告。'
+          : '本地报告文件已不存在，无法重新检测上传，请新建任务重新审查。')
+      }
+      if (reportUploadRetryInFlightRef.current.has(task.id)) {
+        return commandResult('报告正在重新检测并上传。')
+      }
+      reportUploadRetryInFlightRef.current.add(task.id)
+      try {
+        const result = await window.codeReview.retryReportUpload({ task_id: task.id })
+        await loadReportList()
+        const message = result.status === 'success'
+          ? '报告已重新检测并上传。'
+          : '图片可能被 IPGSD 加密，请解密后重试'
+        showNotice(message)
+        return commandResult(message)
+      } catch (error) {
+        await loadReportList()
+        const message = error instanceof Error ? error.message : '报告重新检测上传失败。'
+        showNotice(message)
+        return commandResult(message)
+      } finally {
+        reportUploadRetryInFlightRef.current.delete(task.id)
+      }
     },
     async confirmCustomReviewRetry(taskId, customMaterials, fixedMaterials) {
       const task = findTask(taskId)

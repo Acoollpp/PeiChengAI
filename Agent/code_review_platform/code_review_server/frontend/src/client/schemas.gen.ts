@@ -1487,6 +1487,12 @@ export const PrivateUserCreateSchema = {
     title: 'PrivateUserCreate'
 } as const;
 
+export const ReportUploadFailureCodeSchema = {
+    type: 'string',
+    enum: ['REPORT_IMAGE_INVALID_UTF8'],
+    title: 'ReportUploadFailureCode'
+} as const;
+
 export const ReviewFocusDirectionCreateSchema = {
     properties: {
         title: {
@@ -2501,6 +2507,16 @@ export const ReviewTaskPublicSchema = {
             ],
             title: 'Error Message'
         },
+        report_upload_failure_code: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/ReportUploadFailureCode'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
         client_hostname: {
             anyOf: [
                 {
@@ -2786,6 +2802,16 @@ export const ReviewTaskStatusUpdateSchema = {
                 }
             ],
             title: 'Error Message'
+        },
+        report_upload_failure_code: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/ReportUploadFailureCode'
+                },
+                {
+                    type: 'null'
+                }
+            ]
         },
         client_hostname: {
             anyOf: [

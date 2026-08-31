@@ -177,6 +177,10 @@ interface RetryTaskRequest {
   review_items?: SelectedReviewItemInput[]
 }
 
+interface RetryReportUploadRequest {
+  task_id: string
+}
+
 interface OpenTaskLogRequest {
   taskId: string
 }
@@ -1005,9 +1009,17 @@ export const registerIpcHandlers = (
     }
 
     // count 保留服务端原值：它反映服务端真实任务数，不因本机隐藏而改变。
+    const visibleTasks = response.data.filter((task) => !hiddenTaskIds.includes(task.id))
+    const tasksWithRecovery = await Promise.all(visibleTasks.map(async (task) => {
+      const recovery = await reviewTaskRuntime.getReportUploadRecovery(
+        task.id,
+        task.report_upload_failure_code
+      )
+      return recovery ? { ...task, report_upload_recovery: recovery } : task
+    }))
     return {
       ...response,
-      data: response.data.filter((task) => !hiddenTaskIds.includes(task.id))
+      data: tasksWithRecovery
     }
   })
 
@@ -1249,6 +1261,24 @@ export const registerIpcHandlers = (
         }
       }
 
+      return result
+    }
+  )
+
+  ipcMain.handle(
+    'task:retry-report-upload',
+    async (event, payload: RetryReportUploadRequest): Promise<ExecuteReviewTaskResult> => {
+      const result = await reviewTaskRuntime.retryReportUpload(
+        payload.task_id,
+        (progressEvent) => sendToRenderer(event.sender, 'task:progress', progressEvent)
+      )
+      if (result.status === 'success' && result.reportPath) {
+        latestSuccessfulReport = {
+          status: 'ready',
+          taskId: result.taskId,
+          reportPath: result.reportPath
+        }
+      }
       return result
     }
   )

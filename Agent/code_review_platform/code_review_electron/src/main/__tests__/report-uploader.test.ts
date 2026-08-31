@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, truncate, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -286,6 +286,172 @@ describe('report uploader', () => {
         reasonCode: 'VALID_ORIGINAL_CONTENT'
       })
     )
+  })
+
+  it.each([
+    {
+      name: '普通 SVG',
+      markdownPath: 'images/issue-01.svg',
+      diskName: 'issue-01.svg'
+    },
+    {
+      name: 'IPGSD 加密候选',
+      markdownPath: 'images/issue-01.svg',
+      diskName: 'issue-01.svg.IPGSD'
+    }
+  ])('$name 为非 UTF-8 时在上传前返回可恢复原因码', async ({ markdownPath, diskName }) => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-invalid-utf8-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, `# 报告\n\n![证据](${markdownPath})\n`)
+    await writeFile(join(dir, 'images', diskName), Buffer.from([0xff, 0xfe, 0xfd]))
+
+    await expect(
+      uploadReportFile(api, 'token-123', 'task-invalid-utf8', reportPath)
+    ).rejects.toMatchObject({
+      code: 'REPORT_IMAGE_INVALID_UTF8',
+      assetPaths: ['images/issue-01.svg']
+    })
+    expect(api.uploadReport).not.toHaveBeenCalled()
+  })
+
+  it('旧结构报告也必须在兼容上传前检测非 UTF-8 SVG', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-invalid-structure-utf8-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(
+      reportPath,
+      `${bmsCodeReviewerNoSeverityReportFixture.replace(
+        '## 四、审查覆盖',
+        '### <问题编号> <问题标题>\n\n这不是合法问题块。\n\n## 四、审查覆盖'
+      )}\n![证据](images/issue.svg)\n`
+    )
+    await writeFile(join(dir, 'images', 'issue.svg'), Buffer.from([0xff, 0xfe, 0xfd]))
+
+    await expect(
+      uploadReportFile(api, 'token-123', 'task-invalid-structure-utf8', reportPath)
+    ).rejects.toMatchObject({ code: 'REPORT_IMAGE_INVALID_UTF8' })
+    expect(api.uploadReport).not.toHaveBeenCalled()
+  })
+
+  it('旧结构报告引用超限的非 UTF-8 SVG 时按单图预算阻断', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-invalid-structure-large-svg-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const imagePath = join(dir, 'images', 'large.svg')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(
+      reportPath,
+      `${bmsCodeReviewerNoSeverityReportFixture.replace(
+        '## 四、审查覆盖',
+        '### <问题编号> <问题标题>\n\n这不是合法问题块。\n\n## 四、审查覆盖'
+      )}\n![证据](images/large.svg)\n`
+    )
+    await writeFile(imagePath, Buffer.from([0xff, 0xfe, 0xfd]))
+    await truncate(imagePath, 10 * 1024 * 1024 + 1)
+
+    await expect(
+      uploadReportFile(api, 'token-123', 'task-invalid-structure-large-svg', reportPath)
+    ).rejects.toThrow('单个报告图片超过大小限制：images/large.svg')
+    expect(api.uploadReport).not.toHaveBeenCalled()
+  })
+
+  it('旧结构报告重复引用同一真实 SVG 时只计为一个候选', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-invalid-structure-duplicate-svg-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    const repeatedReferences = Array.from(
+      { length: 51 },
+      (_, index) => `![证据 ${index + 1}](images/shared.svg)`
+    ).join('\n')
+    const invalidMarkdown = `${bmsCodeReviewerNoSeverityReportFixture.replace(
+      '## 四、审查覆盖',
+      '### <问题编号> <问题标题>\n\n这不是合法问题块。\n\n## 四、审查覆盖'
+    )}\n${repeatedReferences}\n`
+    const svg = Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg">${' '.repeat(1024 * 1024)}</svg>`
+    )
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(reportPath, invalidMarkdown)
+    await writeFile(join(dir, 'images', 'shared.svg'), svg)
+
+    await uploadReportFile(api, 'token-123', 'task-invalid-structure-duplicate-svg', reportPath)
+
+    expect(api.uploadReport).toHaveBeenCalledWith(
+      'token-123',
+      'task-invalid-structure-duplicate-svg',
+      {
+        report_content: invalidMarkdown,
+        report_path: reportPath,
+        report_name: '代码审查报告.md'
+      }
+    )
+  })
+
+  it('旧结构报告引用过多唯一 SVG 时按图片数量预算阻断', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-invalid-structure-many-svg-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    const imageNames = Array.from({ length: 51 }, (_, index) => `issue-${index + 1}.svg`)
+    const references = imageNames
+      .map((imageName, index) => `![证据 ${index + 1}](images/${imageName})`)
+      .join('\n')
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(
+      reportPath,
+      `${bmsCodeReviewerNoSeverityReportFixture.replace(
+        '## 四、审查覆盖',
+        '### <问题编号> <问题标题>\n\n这不是合法问题块。\n\n## 四、审查覆盖'
+      )}\n${references}\n`
+    )
+    await Promise.all(
+      imageNames.map((imageName) =>
+        writeFile(join(dir, 'images', imageName), '<svg xmlns="http://www.w3.org/2000/svg"/>')
+      )
+    )
+
+    await expect(
+      uploadReportFile(api, 'token-123', 'task-invalid-structure-many-svg', reportPath)
+    ).rejects.toThrow('报告图片数量超过限制')
+    expect(api.uploadReport).not.toHaveBeenCalled()
+  })
+
+  it('旧结构报告的唯一 SVG 总大小超过预算时在读取前阻断', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'report-uploader-invalid-structure-total-svg-'))
+    tempDirs.push(dir)
+    const reportPath = join(dir, '代码审查报告.md')
+    const api = { uploadReport: vi.fn(async () => ({ ok: true })) }
+    const imageNames = Array.from({ length: 6 }, (_, index) => `large-${index + 1}.svg`)
+    const references = imageNames
+      .map((imageName, index) => `![证据 ${index + 1}](images/${imageName})`)
+      .join('\n')
+    await mkdir(join(dir, 'images'), { recursive: true })
+    await writeFile(
+      reportPath,
+      `${bmsCodeReviewerNoSeverityReportFixture.replace(
+        '## 四、审查覆盖',
+        '### <问题编号> <问题标题>\n\n这不是合法问题块。\n\n## 四、审查覆盖'
+      )}\n${references}\n`
+    )
+    await Promise.all(
+      imageNames.map(async (imageName) => {
+        const imagePath = join(dir, 'images', imageName)
+        await writeFile(imagePath, '')
+        await truncate(imagePath, 10 * 1024 * 1024)
+      })
+    )
+
+    await expect(
+      uploadReportFile(api, 'token-123', 'task-invalid-structure-total-svg', reportPath)
+    ).rejects.toThrow('报告图片总大小超过限制')
+    expect(api.uploadReport).not.toHaveBeenCalled()
   })
 
   it('加密候选内容无效时用内存 SVG 占位并同步上传副本路径', async () => {

@@ -11,10 +11,15 @@ import { buildReviewPrompt, CodexReviewError, runCodexReview, type CodexErrorCod
 import { generatePdfReport, type GeneratePdfReportResult } from './report-pdf-generator'
 import {
   prepareReportForPublishing,
+  ReportUploadRecoveryError,
   uploadPdfReportFile,
   uploadReportFile,
   uploadRequirementFile
 } from './report-uploader'
+import {
+  REPORT_IMAGE_DECRYPTION_REQUIRED_MESSAGE,
+  type ReportUploadRecovery
+} from '../shared/report-upload-recovery'
 import { getRuntimePaths } from './runtime-paths'
 import {
   runSvnPreflight,
@@ -110,6 +115,7 @@ export interface ExecuteReviewTaskResult {
   codexLogPath?: string
   feedbackProtocolVersion?: number | null
   serverTask?: ReviewTask
+  reportUploadRecovery?: ReportUploadRecovery
 }
 
 export interface TaskAgentApi {
@@ -522,6 +528,7 @@ const runExistingReviewTask = async (
   const task = input.task
   const oldRevision = input.oldRevision ?? task.old_revision
   const newRevision = input.newRevision ?? task.new_revision
+  let workspace: PreparedWorkspace | undefined
 
   try {
     throwIfCancelled(input.signal)
@@ -531,7 +538,8 @@ const runExistingReviewTask = async (
 
     await updateStatus(dependencies, input.token, task.id, {
       status: 'checking_environment',
-      error_message: null
+      error_message: null,
+      report_upload_failure_code: null
     })
     if (input.restartMessage) {
       emitStage(
@@ -587,7 +595,7 @@ const runExistingReviewTask = async (
     throwIfCancelled(input.signal)
 
     emitStage(onProgress, task.id, input.clientTaskId, 'preparing_workspace', '准备任务工作区')
-    const workspace = await dependencies.prepareWorkspace({
+    workspace = await dependencies.prepareWorkspace({
       taskId: task.id,
       svnUrl: task.svn_url,
       oldRevision,
@@ -680,6 +688,36 @@ const runExistingReviewTask = async (
         error_message: '任务已取消'
       })
       return { taskId: task.id, status: 'cancelled' }
+    }
+
+    if (error instanceof ReportUploadRecoveryError) {
+      if (!workspace) {
+        throw new Error('报告上传恢复信息缺少本地工作区')
+      }
+      await updateStatus(dependencies, input.token, task.id, {
+        status: 'uploading_report',
+        error_message: REPORT_IMAGE_DECRYPTION_REQUIRED_MESSAGE,
+        report_upload_failure_code: error.code
+      })
+      emitStage(
+        onProgress,
+        task.id,
+        input.clientTaskId,
+        'uploading_report',
+        REPORT_IMAGE_DECRYPTION_REQUIRED_MESSAGE
+      )
+      return {
+        taskId: task.id,
+        status: 'uploading_report',
+        reportPath: workspace.reportPath,
+        ...(workspace.codexLogPath ? { codexLogPath: workspace.codexLogPath } : {}),
+        reportUploadRecovery: {
+          failureCode: error.code,
+          stage: 'uploading_report',
+          assetPaths: error.assetPaths,
+          availability: 'ready'
+        }
+      }
     }
 
     const errorMessage = error instanceof CodexReviewError
@@ -791,7 +829,7 @@ const updateStatus = (
   payload: UpdateTaskStatusRequest
 ): Promise<unknown> => dependencies.api.updateTaskStatus(token, taskId, payload)
 
-const sanitizeErrorSummary = (error: unknown, token: string): string => {
+export const sanitizeErrorSummary = (error: unknown, token: string): string => {
   const rawMessage = error instanceof Error ? error.message : String(error)
   const withoutToken = token ? rawMessage.split(token).join('[redacted]') : rawMessage
 

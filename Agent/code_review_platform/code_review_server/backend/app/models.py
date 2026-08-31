@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Index, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -37,6 +37,10 @@ class ReviewTaskStatus(str, Enum):
     failed = "failed"
     environment_error = "environment_error"
     cancelled = "cancelled"
+
+
+class ReportUploadFailureCode(str, Enum):
+    REPORT_IMAGE_INVALID_UTF8 = "REPORT_IMAGE_INVALID_UTF8"
 
 
 class CustomReviewMode(str, Enum):
@@ -391,6 +395,10 @@ class ReviewTask(SQLModel, table=True):
         sa_type=DateTime(timezone=True),  # type: ignore
     )
     error_message: str | None = None
+    report_upload_failure_code: ReportUploadFailureCode | None = Field(
+        default=None,
+        sa_type=String(64),
+    )
     client_hostname: str | None = Field(default=None, max_length=255)
     client_version: str | None = Field(default=None, max_length=255)
     created_at: datetime | None = Field(
@@ -556,6 +564,7 @@ class ReviewTaskCreate(SQLModel):
 class ReviewTaskStatusUpdate(SQLModel):
     status: ReviewTaskStatus
     error_message: str | None = None
+    report_upload_failure_code: ReportUploadFailureCode | None = None
     client_hostname: str | None = Field(default=None, max_length=255)
     client_version: str | None = Field(default=None, max_length=255)
 
@@ -667,6 +676,7 @@ class ReviewTaskPublic(SQLModel):
     report_feedback_helpful: bool | None = None
     report_feedback_useful_issues_text: str | None = None
     error_message: str | None = None
+    report_upload_failure_code: ReportUploadFailureCode | None = None
     client_hostname: str | None = None
     client_version: str | None = None
     created_at: datetime | None = None

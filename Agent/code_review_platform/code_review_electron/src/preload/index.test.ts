@@ -198,6 +198,16 @@ describe('preload codeReview API', () => {
     expect(invokeMock).toHaveBeenCalledWith('task:retry', payload)
   })
 
+  it('重新检测报告时使用独立 IPC 且只传递任务 ID', async () => {
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+    const payload = { task_id: 'task-report-decryption' }
+
+    await api.retryReportUpload(payload)
+
+    expect(invokeMock).toHaveBeenCalledWith('task:retry-report-upload', payload)
+  })
+
   it('通过类型化 IPC 选择 DS-01 本地材料', async () => {
     await import('./index')
     const api = exposeInMainWorldMock.mock.calls[0][1]

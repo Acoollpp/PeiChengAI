@@ -24,6 +24,7 @@ import type {
   ReadReportAssetResult,
   ReadFeedbackScreenshotRequest,
   ReadFeedbackScreenshotResult,
+  RetryReportUploadRequest,
   RetryTaskRequest,
   RememberedCredentials,
   SubmitFeedbackIpcPayload,
@@ -100,6 +101,8 @@ contextBridge.exposeInMainWorld('codeReview', {
     invoke('task:preflight', payload),
   executeTask: (payload: ExecuteTaskRequest): Promise<ExecuteTaskResult> => invoke('task:execute', payload),
   retryTask: (payload: RetryTaskRequest): Promise<ExecuteTaskResult> => invoke('task:retry', payload),
+  retryReportUpload: (payload: RetryReportUploadRequest): Promise<ExecuteTaskResult> =>
+    invoke('task:retry-report-upload', payload),
   cancelTask: (payload: CancelTaskRequest): Promise<CancelTaskResult> =>
     ipcRenderer.invoke('task:cancel', payload),
   openTaskLog: (taskId: string): ReturnType<CodeReviewApi['openTaskLog']> =>
