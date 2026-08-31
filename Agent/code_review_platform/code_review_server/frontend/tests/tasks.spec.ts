@@ -173,7 +173,7 @@ test.describe("Admin task navigation", () => {
 
     await expect(
       page.getByText(
-        "Codex 审查超过 60 分钟仍未完成，请稍后重试或联系管理员。",
+        "Codex 审查超过 90 分钟仍未完成，请稍后重试或联系管理员。",
       ),
     ).toBeVisible()
     await expect(
