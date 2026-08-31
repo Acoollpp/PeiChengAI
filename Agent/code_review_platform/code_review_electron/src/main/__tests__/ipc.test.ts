@@ -247,7 +247,7 @@ describe('registerIpcHandlers', () => {
     const appUpdateService = {
       check: vi.fn(async () => false),
       download: vi.fn(async () => true),
-      install: vi.fn(() => true),
+      install: vi.fn(async () => true),
       quit: vi.fn(() => true)
     }
     const { registerIpcHandlers } = await import('../ipc')
@@ -267,7 +267,7 @@ describe('registerIpcHandlers', () => {
 
     await expect(checkHandler()).resolves.toBe(false)
     await expect(downloadHandler()).resolves.toBe(true)
-    expect(installHandler()).toBe(true)
+    await expect(installHandler()).resolves.toBe(true)
     expect(quitHandler()).toBe(true)
     expect(appUpdateService.check).toHaveBeenCalledTimes(1)
     expect(appUpdateService.download).toHaveBeenCalledTimes(1)

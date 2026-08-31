@@ -97,6 +97,7 @@ describe('main window menu', () => {
     expect(registerIpcHandlers).toHaveBeenCalledWith({
       getMainWindow: expect.any(Function),
       getReportFeedbackWindowManager: expect.any(Function),
+      prepareForAppUpdateInstall: expect.any(Function),
       reviewTaskRuntime
     })
     expect(createReportFeedbackWindowManager).toHaveBeenCalledWith(createdWindows[0], {
@@ -131,6 +132,14 @@ describe('main window menu', () => {
 
     firstFeedbackWindowManager.destroy()
     expect(getReportFeedbackWindowManager()).toBe(secondFeedbackWindowManager)
+
+    const { prepareForAppUpdateInstall } = registerIpcHandlers.mock.calls[0][0]
+    await prepareForAppUpdateInstall()
+    const beforeQuitHandler = on.mock.calls.find(([eventName]) => eventName === 'before-quit')?.[1]
+    const updateQuitEvent = { preventDefault: vi.fn() }
+    beforeQuitHandler(updateQuitEvent)
+    expect(reviewTaskRuntime.cancelAll).toHaveBeenCalledTimes(1)
+    expect(updateQuitEvent.preventDefault).not.toHaveBeenCalled()
   })
 
   it('registers active task cancellation before app quit', async () => {

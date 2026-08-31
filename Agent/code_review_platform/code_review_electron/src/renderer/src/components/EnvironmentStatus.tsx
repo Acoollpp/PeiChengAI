@@ -215,7 +215,9 @@ export function EnvironmentStatus({
           ))}
           {hasDependencyIssue && (
             <p className="dependency-help">
-              CodeGraph 异常请重新安装客户端；其他依赖如已安装但仍显示缺失，请点击重新检查。
+              {codegraphUnavailable
+                ? 'CodeGraph 异常请重新安装客户端；其他依赖如已安装但仍显示缺失，请点击重新检查。'
+                : '依赖如已安装但仍显示缺失，请点击重新检查。'}
             </p>
           )}
         </div>

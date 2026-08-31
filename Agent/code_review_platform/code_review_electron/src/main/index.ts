@@ -25,12 +25,20 @@ const workbenchPreviewEnabled = isWorkbenchPreviewEnabled()
 let mainWindow: BrowserWindow | undefined
 let reportFeedbackWindowManager: ReportFeedbackWindowManager | undefined
 let reviewTaskRuntime: ReviewTaskRuntime | undefined
+let isQuittingAfterTaskCleanup = false
+let isPreparedForAppUpdateInstall = false
 
 app.commandLine.appendSwitch('disable-gpu')
 app.commandLine.appendSwitch('disable-software-rasterizer')
 
 const cancelAllReviewTaskRuns = (): Promise<void> =>
   reviewTaskRuntime?.cancelAll() ?? Promise.resolve()
+
+const prepareForAppUpdateInstall = async (): Promise<void> => {
+  reportFeedbackWindowManager?.destroy()
+  await cancelAllReviewTaskRuns()
+  isPreparedForAppUpdateInstall = true
+}
 
 const resolvePreloadPath = (): string => {
   const mjsPath = join(MAIN_PROCESS_DIR, '../preload/index.mjs')
@@ -84,6 +92,7 @@ app.whenReady().then(() => {
   registerIpcHandlers({
     getMainWindow: () => mainWindow,
     getReportFeedbackWindowManager: () => reportFeedbackWindowManager,
+    prepareForAppUpdateInstall,
     reviewTaskRuntime
   })
 
@@ -102,12 +111,10 @@ app.on('window-all-closed', () => {
   })
 })
 
-let isQuittingAfterTaskCleanup = false
-
 app.on('before-quit', (event) => {
   reportFeedbackWindowManager?.destroy()
 
-  if (isQuittingAfterTaskCleanup) {
+  if (isPreparedForAppUpdateInstall || isQuittingAfterTaskCleanup) {
     return
   }
 
