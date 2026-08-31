@@ -94,6 +94,34 @@ describe('EnvironmentStatus', () => {
     expect(screen.queryByRole('button', { name: /安装 CodeGraph/ })).not.toBeInTheDocument()
   })
 
+  it('Codex CLI 缺失但 CodeGraph 就绪时不误报 CodeGraph 异常', () => {
+    render(
+      <EnvironmentStatus
+        result={{
+          status: 'missing_codex',
+          codegraphStatus: 'ready',
+          codegraphRequiredVersion: '1.4.1',
+          codegraphVersion: '1.4.1',
+          codegraphPath:
+            'C:\\Program Files\\AI代码审查客户端\\resources\\codegraph\\win32-x64\\bin\\codegraph.cmd'
+        }}
+        isChecking={false}
+        isInstallingSkillDuringCheck={false}
+        isInstallingCodex={false}
+        isInstallingSvn={false}
+        onRefresh={vi.fn()}
+        onInstallCodex={vi.fn()}
+        onInstallSvn={vi.fn()}
+        onInstallSkill={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Codex CLI 缺失，请点击安装')).toBeInTheDocument()
+    expect(screen.getByText('内置 CodeGraph 已就绪')).toBeInTheDocument()
+    expect(screen.getByText('依赖如已安装但仍显示缺失，请点击重新检查。')).toBeInTheDocument()
+    expect(screen.queryByText(/CodeGraph 异常/)).not.toBeInTheDocument()
+  })
+
   it('CodeGraph 状态变化时就绪态收起、异常态自动展开并在恢复后重新收起', () => {
     const props = {
       isChecking: false,

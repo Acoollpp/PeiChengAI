@@ -17,6 +17,7 @@ const optionalPolicy = {
 interface FakeUpdater extends EventEmitter {
   autoDownload: boolean
   autoInstallOnAppQuit: boolean
+  autoRunAppAfterInstall: boolean
   logger: unknown
   setFeedURL: AppUpdaterClient['setFeedURL'] & ReturnType<typeof vi.fn>
   addAuthHeader: AppUpdaterClient['addAuthHeader'] & ReturnType<typeof vi.fn>
@@ -29,6 +30,7 @@ function createFakeUpdater(): FakeUpdater {
   return Object.assign(new EventEmitter(), {
     autoDownload: true,
     autoInstallOnAppQuit: true,
+    autoRunAppAfterInstall: true,
     logger: null,
     setFeedURL: vi.fn(),
     addAuthHeader: vi.fn(),
@@ -90,7 +92,7 @@ describe('AppUpdateService', () => {
       send: vi.fn()
     })
 
-    expect(() => service.install()).toThrow('更新尚未下载完成')
+    await expect(service.install()).rejects.toThrow('更新尚未下载完成')
     expect(updater.quitAndInstall).not.toHaveBeenCalled()
   })
 
@@ -213,18 +215,29 @@ describe('AppUpdateService', () => {
   it('installs after an update has been downloaded', async () => {
     const updater = createFakeUpdater()
     const send = vi.fn()
+    const operationOrder: string[] = []
+    const prepareInstall = vi.fn(async () => {
+      operationOrder.push('prepare')
+    })
+    updater.quitAndInstall.mockImplementation(() => {
+      operationOrder.push('install')
+    })
     const { AppUpdateService } = await import('../app-updater')
     const service = new AppUpdateService({
       createUpdater: () => updater as unknown as AppUpdaterClient,
       loadServerConfig: vi.fn(async () => ({ server_url: 'http://127.0.0.1:8000' })),
       loadToken: vi.fn(async () => 'token-123'),
+      prepareInstall,
       send
     })
 
     updater.emit('update-downloaded', { version: '1.0.1', files: [] })
 
-    expect(service.install()).toBe(true)
-    expect(updater.quitAndInstall).toHaveBeenCalledWith(false, true)
+    await expect(service.install()).resolves.toBe(true)
+    expect(prepareInstall).toHaveBeenCalledTimes(1)
+    expect(operationOrder).toEqual(['prepare', 'install'])
+    expect(updater.autoRunAppAfterInstall).toBe(false)
+    expect(updater.quitAndInstall).toHaveBeenCalledWith(true, false)
 
     updater.emit('error', new Error('安装启动失败'))
     expect(send).toHaveBeenCalledWith(

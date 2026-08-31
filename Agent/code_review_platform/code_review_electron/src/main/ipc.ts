@@ -126,6 +126,7 @@ export interface IpcHandlerDependencies {
   uploadPdfReport?: TaskAgentDependencies['uploadPdfReport']
   runtimePaths?: RuntimePaths
   appUpdateService?: AppUpdateService
+  prepareForAppUpdateInstall?: () => Promise<void>
   getMainWindow?: () => BrowserWindow | undefined
   getReportFeedbackWindowManager?: () => ReportFeedbackWindowManager | undefined
   reviewTaskRuntime?: ReviewTaskRuntime
@@ -680,7 +681,8 @@ export const registerIpcHandlers = (
   const serverConfigStore = dependencies.serverConfigStore ?? new ServerConfigStore()
   const hiddenTaskStore = dependencies.hiddenTaskStore ?? new HiddenTaskStore()
   const appUpdateService =
-    dependencies.appUpdateService ?? createAppUpdateService(authStore, serverConfigStore)
+    dependencies.appUpdateService ??
+    createAppUpdateService(authStore, serverConfigStore, dependencies.prepareForAppUpdateInstall)
   const getMainWindow = dependencies.getMainWindow ?? (() => undefined)
   const getReportFeedbackWindowManager =
     dependencies.getReportFeedbackWindowManager ?? (() => undefined)
@@ -918,7 +920,7 @@ export const registerIpcHandlers = (
 
   ipcMain.handle('app-update:download', (): Promise<true> => appUpdateService.download())
 
-  ipcMain.handle('app-update:install', (): true => appUpdateService.install())
+  ipcMain.handle('app-update:install', (): Promise<true> => appUpdateService.install())
 
   ipcMain.handle('app-update:quit', (): true => appUpdateService.quit())
 
