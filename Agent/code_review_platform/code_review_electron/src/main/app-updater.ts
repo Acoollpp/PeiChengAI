@@ -28,6 +28,7 @@ type AppUpdateSender = (channel: string, payload: unknown) => void
 export interface AppUpdaterClient {
   autoDownload: boolean
   autoInstallOnAppQuit: boolean
+  autoRunAppAfterInstall: boolean
   logger: unknown
   setFeedURL(options: { provider: 'generic'; url: string }): void
   addAuthHeader(token: string): void
@@ -48,6 +49,7 @@ export interface AppUpdateServiceOptions {
     currentVersion: string
   ) => Promise<ClientUpdatePolicy>
   updateCheckTimeoutMs?: number
+  prepareInstall?: () => Promise<void>
   quit?: () => void
   send?: AppUpdateSender
 }
@@ -65,6 +67,7 @@ export class AppUpdateService {
   private readonly getCurrentVersion: () => string
   private readonly loadPolicy: NonNullable<AppUpdateServiceOptions['loadPolicy']>
   private readonly updateCheckTimeoutMs: number
+  private readonly prepareInstall: () => Promise<void>
   private readonly quitApp: () => void
   private readonly send: AppUpdateSender
 
@@ -75,6 +78,7 @@ export class AppUpdateService {
     this.getCurrentVersion = options.getCurrentVersion ?? (() => '0.0.0')
     this.loadPolicy = options.loadPolicy ?? readClientUpdatePolicy
     this.updateCheckTimeoutMs = options.updateCheckTimeoutMs ?? DEFAULT_UPDATE_CHECK_TIMEOUT_MS
+    this.prepareInstall = options.prepareInstall ?? (() => Promise.resolve())
     this.quitApp = options.quit ?? (() => undefined)
     this.send = options.send ?? sendToAllRendererWindows
 
@@ -155,14 +159,15 @@ export class AppUpdateService {
     return this.downloadPromise
   }
 
-  install(): true {
+  async install(): Promise<true> {
     if (!this.isUpdateDownloaded) {
       throw new Error('更新尚未下载完成')
     }
 
     this.activeOperation = 'install'
     try {
-      this.getUpdater().quitAndInstall(false, true)
+      await this.prepareInstall()
+      this.getUpdater().quitAndInstall(true, false)
     } catch (error) {
       this.activeOperation = undefined
       throw error
@@ -183,6 +188,7 @@ export class AppUpdateService {
     const updater = this.createUpdater()
     updater.autoDownload = false
     updater.autoInstallOnAppQuit = false
+    updater.autoRunAppAfterInstall = false
     updater.logger = log
     this.registerEventForwarding(updater)
     this.updater = updater
@@ -230,7 +236,8 @@ export class AppUpdateService {
 
 export function createAppUpdateService(
   authStore: AuthStore,
-  serverConfigStore: ServerConfigStore
+  serverConfigStore: ServerConfigStore,
+  prepareInstall?: () => Promise<void>
 ): AppUpdateService {
   return new AppUpdateService({
     loadServerConfig: () => serverConfigStore.load(),
@@ -239,6 +246,7 @@ export function createAppUpdateService(
       return tokens?.access_token ?? null
     },
     getCurrentVersion: () => app.getVersion(),
+    prepareInstall,
     quit: () => app.quit()
   })
 }

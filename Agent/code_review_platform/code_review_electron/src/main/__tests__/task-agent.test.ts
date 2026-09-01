@@ -88,8 +88,8 @@ describe('executeReviewTask', () => {
     tempDirs = []
   })
 
-  it('Codex 审查默认超时时间为 60 分钟', () => {
-    expect(CODEX_REVIEW_TIMEOUT_MS).toBe(60 * 60 * 1000)
+  it('Codex 审查默认超时时间为 90 分钟', () => {
+    expect(CODEX_REVIEW_TIMEOUT_MS).toBe(90 * 60 * 1000)
   })
 
   it('prepares the default workspace with a dynamic report file name from task revisions', async () => {
@@ -1890,8 +1890,8 @@ describe('executeReviewTask', () => {
   it('maps common Codex infrastructure failures to business friendly messages', async () => {
     const cases = [
       {
-        raw: 'Codex review timed out after 3600000ms',
-        expected: 'Codex 审查超过 60 分钟仍未完成，请稍后重试或联系管理员。'
+        raw: 'Codex review timed out after 5400000ms',
+        expected: 'Codex 审查超过 90 分钟仍未完成，请稍后重试或联系管理员。'
       },
       {
         raw: '审查报告不存在：[路径已隐藏]',

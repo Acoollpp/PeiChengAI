@@ -150,7 +150,7 @@ export interface TaskAgentDependencies {
 
 export type TaskProgressReporter = (event: TaskProgressEvent) => void
 
-export const CODEX_REVIEW_TIMEOUT_MS = 60 * 60 * 1000
+export const CODEX_REVIEW_TIMEOUT_MS = 90 * 60 * 1000
 
 const environmentErrorMessages: Record<Exclude<EnvironmentStatus, 'ready'>, string> = {
   missing_codex: '本机 Codex CLI 不可用，请联系管理员处理。',
@@ -847,7 +847,7 @@ export const sanitizeErrorSummary = (error: unknown, token: string): string => {
 
 export const toUserFacingErrorMessage = (message: string): string => {
   if (/Codex review timed out after \d+ms/.test(message)) {
-    return 'Codex 审查超过 60 分钟仍未完成，请稍后重试或联系管理员。'
+    return 'Codex 审查超过 90 分钟仍未完成，请稍后重试或联系管理员。'
   }
 
   if (message.includes('审查报告不存在')) {

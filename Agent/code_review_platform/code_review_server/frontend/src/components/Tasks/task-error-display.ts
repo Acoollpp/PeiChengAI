@@ -4,7 +4,7 @@ export function formatReviewTaskErrorMessage(message?: string | null) {
   }
 
   if (/Codex review timed out after \d+ms/.test(message)) {
-    return "Codex 审查超过 60 分钟仍未完成，请稍后重试或联系管理员。"
+    return "Codex 审查超过 90 分钟仍未完成，请稍后重试或联系管理员。"
   }
 
   if (message.includes("审查报告不存在")) {

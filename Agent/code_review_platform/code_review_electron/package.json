@@ -1,6 +1,6 @@
 {
   "name": "code-review-electron",
-  "version": "1.6.0",
+  "version": "2.0.8",
   "description": "Electron client for the code review platform.",
   "main": "./out/main/index.js",
   "type": "module",
