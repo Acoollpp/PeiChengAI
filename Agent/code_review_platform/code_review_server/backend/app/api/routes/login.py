@@ -68,9 +68,12 @@ def login_with_key(session: SessionDep, body: KeyLogin) -> AuthToken:
     """
     Authenticate with a locally stored API key.
     """
-    user = UserApiKeyService().authenticate(session, body.key)
+    user = UserApiKeyService().authenticate(session, body.key.strip())
     if user is None:
-        raise HTTPException(status_code=401, detail="Invalid or inactive key")
+        raise HTTPException(
+            status_code=401,
+            detail="Key 不存在或已停用，请确认使用的是 CCH 账户管理里的平台 Key",
+        )
 
     return _create_auth_tokens(user.id)
 

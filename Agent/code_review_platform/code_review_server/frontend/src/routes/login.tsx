@@ -42,7 +42,7 @@ export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
       {
-        title: "登录代码审查平台 - 沛城科技代码审查平台",
+        title: "AI智能平台 - 沛城科技AI智能平台",
       },
     ],
   }),
@@ -82,7 +82,7 @@ function Login() {
     <AuthLayout>
       <div className="flex flex-col gap-6">
         <div className="flex flex-col items-center gap-2 text-center">
-          <h1 className="text-2xl font-bold">登录代码审查平台</h1>
+          <h1 className="text-2xl font-bold">AI智能平台</h1>
         </div>
 
         <Tabs defaultValue="key" className="gap-4">
@@ -142,7 +142,11 @@ function Login() {
                         <Input
                           data-testid="svn-username-input"
                           placeholder="SVN账号"
+                          className="font-mono"
                           autoComplete="username"
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          spellCheck={false}
                           {...field}
                         />
                       </FormControl>

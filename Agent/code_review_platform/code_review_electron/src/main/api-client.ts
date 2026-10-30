@@ -1,6 +1,6 @@
 import type { ReviewTemplateKey } from '../shared/review-templates'
 import { REVIEW_REPORT_FILE_NAME } from '../shared/report-artifacts'
-import type { ReviewTask } from '../shared/types'
+import type { GpioTask, GpioTasksResponse, ReviewTask } from '../shared/types'
 
 export interface TokenPair {
   access_token: string
@@ -61,6 +61,11 @@ export interface FeedbackResult {
 export interface ReviewTasksResponse {
   data: ReviewTask[]
   count: number
+}
+
+export interface CreateGpioTaskRequest {
+  manual_svn_url: string
+  code_svn_url: string
 }
 
 export interface ActiveSkill {
@@ -136,6 +141,51 @@ export class ApiClient {
       method: 'GET',
       headers: this.authHeaders(token)
     })
+  }
+
+  createGpioTask(token: string, payload: CreateGpioTaskRequest): Promise<GpioTask> {
+    return this.request<GpioTask>('/api/v1/gpio-tasks', {
+      method: 'POST',
+      headers: this.authHeaders(token),
+      body: JSON.stringify(payload)
+    })
+  }
+
+  listGpioTasks(token: string): Promise<GpioTasksResponse> {
+    return this.request<GpioTasksResponse>('/api/v1/gpio-tasks', {
+      method: 'GET',
+      headers: this.authHeaders(token)
+    })
+  }
+
+  generateGpioTask(token: string, taskId: string): Promise<GpioTask> {
+    return this.request<GpioTask>(`/api/v1/gpio-tasks/${encodeURIComponent(taskId)}/generate`, {
+      method: 'POST',
+      headers: this.authHeaders(token)
+    })
+  }
+
+  deleteGpioTask(token: string, taskId: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/api/v1/gpio-tasks/${encodeURIComponent(taskId)}`, {
+      method: 'DELETE',
+      headers: this.authHeaders(token)
+    })
+  }
+
+  async downloadGpioWorkbook(token: string, taskId: string): Promise<ArrayBuffer> {
+    const response = await this.fetchImpl(
+      `${this.baseUrl}/api/v1/gpio-tasks/${encodeURIComponent(taskId)}/download`,
+      {
+        method: 'GET',
+        headers: this.authHeaders(token)
+      }
+    )
+
+    if (!response.ok) {
+      throw new ApiError(response.status, await this.readErrorMessage(response))
+    }
+
+    return response.arrayBuffer()
   }
 
   async readTaskReport(token: string, taskId: string): Promise<string> {

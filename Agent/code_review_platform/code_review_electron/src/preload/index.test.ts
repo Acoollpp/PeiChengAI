@@ -126,4 +126,45 @@ describe('preload codeReview API', () => {
       pdfReportName: 'r1_r2审查报告_20260615_143000.pdf'
     })
   })
+
+  it('passes GPIO SVN URLs through create task IPC', async () => {
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+
+    await api.createGpioTask({
+      manual_svn_url: 'svn://repo/manual',
+      code_svn_url: 'svn://repo/code'
+    })
+
+    expect(invokeMock).toHaveBeenCalledWith('gpio:create-task', {
+      manual_svn_url: 'svn://repo/manual',
+      code_svn_url: 'svn://repo/code'
+    })
+  })
+
+  it('exposes GPIO task IPC methods', async () => {
+    await import('./index')
+    const api = exposeInMainWorldMock.mock.calls[0][1]
+
+    await api.createGpioTask({
+      manual_svn_url: 'svn://repo/manual',
+      code_svn_url: 'svn://repo/code'
+    })
+    await api.listGpioTasks()
+    await api.generateGpioTask('gpio-task-1')
+    await api.openGpioWorkbook('gpio-task-1', 'GPIO配置表.xlsx')
+    await api.deleteGpioTask('gpio-task-1')
+
+    expect(invokeMock).toHaveBeenCalledWith('gpio:create-task', {
+      manual_svn_url: 'svn://repo/manual',
+      code_svn_url: 'svn://repo/code'
+    })
+    expect(invokeMock).toHaveBeenCalledWith('gpio:list-tasks')
+    expect(invokeMock).toHaveBeenCalledWith('gpio:generate-task', 'gpio-task-1')
+    expect(invokeMock).toHaveBeenCalledWith('gpio:open-workbook', {
+      taskId: 'gpio-task-1',
+      resultName: 'GPIO配置表.xlsx'
+    })
+    expect(invokeMock).toHaveBeenCalledWith('gpio:delete-task', 'gpio-task-1')
+  })
 })

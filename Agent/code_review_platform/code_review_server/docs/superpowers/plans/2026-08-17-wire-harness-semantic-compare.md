@@ -26,6 +26,7 @@
 ## Task 1: 建立差异数据契约和 PDF 文本提取
 
 **Files:**
+
 - Create: `backend/app/services/wire_harness_semantic_compare.py`
 - Create: `backend/tests/services/test_wire_harness_semantic_compare.py`
 
@@ -73,6 +74,7 @@ Commit: `git add backend/app/services/wire_harness_semantic_compare.py backend/t
 ## Task 2: 增加 OCR fallback 和差异置信度
 
 **Files:**
+
 - Modify: `backend/app/services/wire_harness_semantic_compare.py`
 - Modify: `backend/pyproject.toml` 或运行环境依赖配置（仅在 OCR 包已存在性检查确认后）
 - Modify: `backend/tests/services/test_wire_harness_semantic_compare.py`
@@ -113,6 +115,7 @@ Commit: `git add backend/app/services/wire_harness_semantic_compare.py backend/t
 ## Task 3: 实现红蓝批注、PDF/PNG 输出和离线 HTML 报告
 
 **Files:**
+
 - Create: `backend/app/services/wire_harness_annotation.py`
 - Create: `backend/tests/services/test_wire_harness_annotation.py`
 
@@ -156,6 +159,7 @@ Commit: `git add backend/app/services/wire_harness_annotation.py backend/tests/s
 ## Task 4: 接入任务编排、数据库字段和结果 ZIP
 
 **Files:**
+
 - Modify: `backend/app/services/wire_harness_compare_task_service.py`
 - Modify: `backend/app/models.py`
 - Modify: `backend/app/api/routes/wire_harness_compare_tasks.py`
@@ -191,6 +195,7 @@ Commit: `git add backend/app/services/wire_harness_compare_task_service.py backe
 ## Task 5: 更新 React 任务页和交互报告入口
 
 **Files:**
+
 - Modify: `frontend/src/components/WireHarnessCompare/WireHarnessComparePage.tsx`
 - Modify: `frontend/src/routes/_layout/tasks.wire-harness-compare.tsx` only if route metadata requires it
 - Modify: generated client/types only if this repository generates them for the new public fields
@@ -220,6 +225,7 @@ Commit: `git add frontend/src/components/WireHarnessCompare frontend/src/routes/
 ## Task 6: 端到端视觉验证和交付
 
 **Files:**
+
 - Modify: `docs/superpowers/specs/2026-08-17-wire-harness-semantic-compare-design.md` only for verified implementation notes
 - Create: `docs/线束图语义对比使用说明.md`，记录输入结构、输出文件和低置信度含义
 

@@ -5,3 +5,12 @@ node_modules/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+.local-postgres-data/
+.local-postgres-pw.txt
+.local-*.log
+.local-storage/
+.superpowers/
+
+# Local build/backup artifacts
+.tmp_cch_assets/
+node_modules.broken-backup/

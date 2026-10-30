@@ -10,6 +10,7 @@ import type {
   SvnLoginRequest
 } from './code-review-api'
 import { LoginPage } from './components/LoginPage'
+import { GpioTaskPage } from './components/GpioTaskPage'
 import { SvnBindingDialog } from './components/SvnBindingDialog'
 import { TaskPage } from './components/TaskPage'
 import { UpdateDialog } from './components/UpdateDialog'
@@ -18,12 +19,15 @@ type AuthSession = {
   displayName: string
 }
 
+type WorkspaceModule = 'review' | 'gpio'
+
 const fallbackEnvironment: EnvironmentCheckResult = {
   status: 'failed'
 }
 
 export function App(): React.JSX.Element {
   const [session, setSession] = useState<AuthSession | null>(null)
+  const [activeModule, setActiveModule] = useState<WorkspaceModule>('review')
   const [environment, setEnvironment] = useState<EnvironmentCheckResult | null>(null)
   const [isCheckingEnvironment, setIsCheckingEnvironment] = useState(false)
   const [environmentProgress, setEnvironmentProgress] =
@@ -225,18 +229,39 @@ export function App(): React.JSX.Element {
 
   return (
     <main className="app-shell">
-      <TaskPage
-        environment={environment}
-        isCheckingEnvironment={isCheckingEnvironment}
-        isInstallingSkillDuringCheck={environmentProgress?.stage === 'installing_skill'}
-        isInstallingCodex={isInstallingCodex}
-        isInstallingSvn={isInstallingSvn}
-        svnUsername={session.displayName}
-        onRefreshEnvironment={checkEnvironment}
-        onInstallCodex={installCodex}
-        onInstallSvn={installSvn}
-        onInstallSkill={installSkill}
-      />
+      <nav className="module-switcher" aria-label="功能切换">
+        <button
+          className={activeModule === 'review' ? 'is-active' : ''}
+          type="button"
+          onClick={() => setActiveModule('review')}
+        >
+          代码审查
+        </button>
+        <button
+          className={activeModule === 'gpio' ? 'is-active' : ''}
+          type="button"
+          onClick={() => setActiveModule('gpio')}
+        >
+          GPIO配置表
+        </button>
+        <span className="test-version-badge">测试中</span>
+      </nav>
+      {activeModule === 'review' ? (
+        <TaskPage
+          environment={environment}
+          isCheckingEnvironment={isCheckingEnvironment}
+          isInstallingSkillDuringCheck={environmentProgress?.stage === 'installing_skill'}
+          isInstallingCodex={isInstallingCodex}
+          isInstallingSvn={isInstallingSvn}
+          svnUsername={session.displayName}
+          onRefreshEnvironment={checkEnvironment}
+          onInstallCodex={installCodex}
+          onInstallSvn={installSvn}
+          onInstallSkill={installSkill}
+        />
+      ) : (
+        <GpioTaskPage svnUsername={session.displayName} />
+      )}
       {needSvnBinding && (
         <SvnBindingDialog
           onSubmit={bindSvnCredential}

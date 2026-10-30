@@ -54,16 +54,23 @@ from app.core.db import engine, init_db
 from app.main import app
 from app.models import (
     AuditLog,
+    BomChangeCheckTask,
+    BomElectronicEditTask,
+    BomSpecCompareTask,
     ClientRelease,
     Feedback,
     FeedbackScreenshot,
+    GpioGenerationTask,
     Item,
     ReviewTask,
     SkillPackage,
     User,
     UserApiKey,
     UserSvnCredential,
+    WhiteboxAgent,
+    WhiteboxTestTask,
 )
+from app.services.credential_service import CredentialService
 from tests.utils.user import create_random_user
 from tests.utils.utils import auth_headers_for_user_id, get_superuser_token_headers
 
@@ -107,6 +114,24 @@ def db() -> Generator[Session, None, None]:
         if inspect(engine).has_table("feedback"):
             statement = delete(Feedback)
             session.execute(statement)
+        if inspect(engine).has_table("gpio_generation_task"):
+            statement = delete(GpioGenerationTask)
+            session.execute(statement)
+        if inspect(engine).has_table("whitebox_test_task"):
+            statement = delete(WhiteboxTestTask)
+            session.execute(statement)
+        if inspect(engine).has_table("whitebox_agent"):
+            statement = delete(WhiteboxAgent)
+            session.execute(statement)
+        if inspect(engine).has_table("bom_spec_compare_task"):
+            statement = delete(BomSpecCompareTask)
+            session.execute(statement)
+        if inspect(engine).has_table("bom_change_check_task"):
+            statement = delete(BomChangeCheckTask)
+            session.execute(statement)
+        if inspect(engine).has_table("bom_electronic_edit_task"):
+            statement = delete(BomElectronicEditTask)
+            session.execute(statement)
         statement = delete(User)
         session.execute(statement)
         session.commit()
@@ -127,4 +152,7 @@ def superuser_token_headers(client: TestClient) -> dict[str, str]:
 def normal_user_token_headers(client: TestClient, db: Session) -> dict[str, str]:
     _ = client
     user = create_random_user(db)
+    CredentialService(settings.SVN_CREDENTIAL_MASTER_KEY).save_svn_password(
+        db, user.id, "secret"
+    )
     return auth_headers_for_user_id(user.id)

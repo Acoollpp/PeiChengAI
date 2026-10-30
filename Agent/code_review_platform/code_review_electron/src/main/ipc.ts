@@ -44,6 +44,11 @@ interface SubmitFeedbackIpcPayload {
   screenshots?: SerializedFeedbackScreenshot[]
 }
 
+interface CreateGpioTaskRequest {
+  manual_svn_url: string
+  code_svn_url: string
+}
+
 export interface IpcHandlerDependencies {
   api?: ApiClient
   authStore?: AuthStore
@@ -77,6 +82,16 @@ interface OpenPdfReportRequest {
 interface OpenPdfReportResult {
   status: 'ready'
   pdfPath: string
+}
+
+interface OpenGpioWorkbookRequest {
+  taskId: string
+  resultName?: string | null
+}
+
+interface OpenGpioWorkbookResult {
+  status: 'ready'
+  workbookPath: string
 }
 
 interface ReadReportAssetRequest {
@@ -237,6 +252,8 @@ const resolveReportFileName = (
 
   return { fileName: trimmedFileName, isValidProvidedName: true }
 }
+
+const GPIO_WORKBOOK_FILE_NAME = 'GPIO配置表.xlsx'
 
 const readReportAsset = async ({
   reportPath,
@@ -526,6 +543,75 @@ export const registerIpcHandlers = (dependencies: IpcHandlerDependencies = {}): 
 
     return cancelActiveReviewTask(activeTask)
   })
+
+  ipcMain.handle('gpio:create-task', async (_event, payload: CreateGpioTaskRequest) => {
+    const tokens = await authStore.load()
+
+    if (!tokens) {
+      throw new Error('Not authenticated')
+    }
+
+    const api = await createApiClient()
+    return api.createGpioTask(tokens.access_token, payload)
+  })
+
+  ipcMain.handle('gpio:list-tasks', async () => {
+    const tokens = await authStore.load()
+
+    if (!tokens) {
+      throw new Error('Not authenticated')
+    }
+
+    const api = await createApiClient()
+    return api.listGpioTasks(tokens.access_token)
+  })
+
+  ipcMain.handle('gpio:generate-task', async (_event, taskId: string) => {
+    const tokens = await authStore.load()
+
+    if (!tokens) {
+      throw new Error('Not authenticated')
+    }
+
+    const api = await createApiClient()
+    return api.generateGpioTask(tokens.access_token, taskId)
+  })
+
+  ipcMain.handle('gpio:delete-task', async (_event, taskId: string) => {
+    const tokens = await authStore.load()
+
+    if (!tokens) {
+      throw new Error('Not authenticated')
+    }
+
+    const api = await createApiClient()
+    return api.deleteGpioTask(tokens.access_token, taskId)
+  })
+
+  ipcMain.handle(
+    'gpio:open-workbook',
+    async (_event, payload: OpenGpioWorkbookRequest): Promise<OpenGpioWorkbookResult> => {
+      const tokens = await authStore.load()
+
+      if (!tokens) {
+        throw new Error('Not authenticated')
+      }
+
+      const runtimePaths = await loadRuntimePaths()
+      const { fileName } = resolveReportFileName(
+        payload.resultName ?? undefined,
+        GPIO_WORKBOOK_FILE_NAME
+      )
+      const workbookPath = join(runtimePaths.workspaceForTask(payload.taskId), fileName)
+      const api = await createApiClient()
+      const workbookBytes = await api.downloadGpioWorkbook(tokens.access_token, payload.taskId)
+      await mkdir(dirname(workbookPath), { recursive: true })
+      await writeFile(workbookPath, Buffer.from(workbookBytes))
+      shell.showItemInFolder(workbookPath)
+
+      return { status: 'ready', workbookPath }
+    }
+  )
 
   ipcMain.handle(
     'feedback:submit',

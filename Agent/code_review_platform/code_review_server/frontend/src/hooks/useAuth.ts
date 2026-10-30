@@ -42,7 +42,9 @@ const useAuth = () => {
 
   const keyLoginMutation = useMutation({
     mutationFn: (data: KeyLogin) =>
-      LoginService.loginWithKey({ requestBody: data }),
+      LoginService.loginWithKey({
+        requestBody: { ...data, key: data.key.trim() },
+      }),
     onSuccess: (response) => onLoginSuccess(response.access_token),
     onError: handleError.bind(showErrorToast),
   })

@@ -20,7 +20,7 @@ const createWindow = (): void => {
     height: 760,
     minWidth: 920,
     minHeight: 620,
-    title: 'Code Review Client',
+    title: 'Code Review Client - 测试中',
     webPreferences: {
       preload: resolvePreloadPath(),
       sandbox: false,

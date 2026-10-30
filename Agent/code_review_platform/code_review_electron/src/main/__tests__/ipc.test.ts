@@ -65,6 +65,11 @@ describe('registerIpcHandlers', () => {
       'environment:check',
       'task:execute',
       'task:cancel',
+      'gpio:create-task',
+      'gpio:list-tasks',
+      'gpio:generate-task',
+      'gpio:delete-task',
+      'gpio:open-workbook',
       'feedback:submit',
       'report:asset',
       'report:download-current',
@@ -611,6 +616,41 @@ describe('registerIpcHandlers', () => {
       error_message: '任务已取消'
     })
     await expect(readFile(reportPath, 'utf8')).rejects.toThrow()
+  })
+
+  it('creates GPIO task with manual and code SVN URLs', async () => {
+    const api = {
+      createGpioTask: vi.fn(async () => ({ id: 'gpio-task-1', status: 'success' }))
+    }
+    const authStore = {
+      load: vi.fn(async () => ({ access_token: 'token-123' })),
+      save: vi.fn()
+    }
+    const { registerIpcHandlers } = await import('../ipc')
+
+    registerIpcHandlers({
+      api: api as never,
+      authStore: authStore as never
+    })
+
+    const createHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'gpio:create-task'
+    )?.[1]
+
+    await expect(
+      createHandler({}, {
+        manual_svn_url: 'svn://repo/manual',
+        code_svn_url: 'svn://repo/code'
+      })
+    ).resolves.toEqual({ id: 'gpio-task-1', status: 'success' })
+
+    expect(api.createGpioTask).toHaveBeenCalledWith(
+      'token-123',
+      {
+        manual_svn_url: 'svn://repo/manual',
+        code_svn_url: 'svn://repo/code'
+      }
+    )
   })
 
   it('downloads a historical task report into the local runtime workspace before opening it', async () => {

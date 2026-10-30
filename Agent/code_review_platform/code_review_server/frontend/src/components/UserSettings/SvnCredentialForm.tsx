@@ -77,7 +77,11 @@ const SvnCredentialForm = () => {
                 <FormControl>
                   <Input
                     data-testid="svn-username-input"
+                    className="font-mono"
                     autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     {...field}
                   />
                 </FormControl>

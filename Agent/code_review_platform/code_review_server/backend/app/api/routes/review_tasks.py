@@ -23,6 +23,7 @@ from app.models import (
     User,
 )
 from app.services import report_service
+from app.services.storage_cleanup import robust_unlink
 
 router = APIRouter(prefix="/review-tasks", tags=["review-tasks"])
 REVIEW_REPORT_FILE_NAME = "代码审查报告.md"
@@ -286,20 +287,10 @@ def delete_review_task(
     )
     report_path = Path(task.report_path) if task.report_path else None
     if report_path and report_path.is_file():
-        try:
-            report_path.unlink()
-        except OSError as exc:
-            raise HTTPException(
-                status_code=500, detail="Failed to delete review task report"
-            ) from exc
+        robust_unlink(report_path)
     pdf_report_path = Path(task.pdf_report_path) if task.pdf_report_path else None
     if pdf_report_path and pdf_report_path.is_file():
-        try:
-            pdf_report_path.unlink()
-        except OSError as exc:
-            raise HTTPException(
-                status_code=500, detail="Failed to delete review task PDF report"
-            ) from exc
+        robust_unlink(pdf_report_path)
 
     session.delete(task)
     session.commit()

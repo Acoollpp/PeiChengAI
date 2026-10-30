@@ -74,6 +74,34 @@ class Settings(BaseSettings):
     SKILL_STORAGE_DIR: str = "/app/skills"
     CLIENT_RELEASE_STORAGE_DIR: str = "/app/client-releases"
     FEEDBACK_STORAGE_DIR: str = "/app/feedback-screenshots"
+    CODEX_HOME_DIR: str = ""
+    GPIO_STORAGE_DIR: str = "/app/gpio-tasks"
+    GPIO_CODEX_COMMAND: str = "codex"
+    GPIO_CODEX_TIMEOUT_SECONDS: int = 1800
+    WHITEBOX_STORAGE_DIR: str = "/app/whitebox-tasks"
+    WHITEBOX_AGENT_TOKEN: str = "change-this-whitebox-agent-token"
+    WHITEBOX_TASK_TIMEOUT_SECONDS: int = 10800
+    BOM_SPEC_COMPARE_STORAGE_DIR: str = "/app/bom-spec-compare-tasks"
+    BOM_SPEC_COMPARE_CODEX_COMMAND: str = "codex"
+    BOM_SPEC_COMPARE_CODEX_TIMEOUT_SECONDS: int = 1800
+    BOM_SPEC_COMPARE_7Z_COMMAND: str = "7z"
+    BOM_SPEC_COMPARE_ARCHIVE_TIMEOUT_SECONDS: int = 300
+    BOM_CHANGE_CHECK_STORAGE_DIR: str = "/app/bom-change-check-tasks"
+    BOM_CHANGE_CHECK_CODEX_COMMAND: str = "codex"
+    BOM_CHANGE_CHECK_CODEX_TIMEOUT_SECONDS: int = 1800
+    BOM_ELECTRONIC_EDIT_STORAGE_DIR: str = "/app/bom-electronic-edit-tasks"
+    WIRE_HARNESS_COMPARE_STORAGE_DIR: str = "/app/wire-harness-compare-tasks"
+    WIRE_HARNESS_COMPARE_MAX_ARCHIVE_BYTES: int = 500 * 1024 * 1024
+    WIRE_HARNESS_COMPARE_MAX_FILES: int = 2000
+    WIRE_HARNESS_COMPARE_RAR_COMMAND: str = "UnRAR"
+    WIRE_HARNESS_COMPARE_OCR_ENGINE: str = "auto"
+    WIRE_HARNESS_COMPARE_OCR_DPI: int = 300
+    WIRE_HARNESS_COMPARE_TESSERACT_COMMAND: str = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    WIRE_HARNESS_COMPARE_CODEX_COMMAND: str = "codex"
+    WIRE_HARNESS_COMPARE_CODEX_MODEL: str = 'gpt-6.1-sol'
+    WIRE_HARNESS_COMPARE_CODEX_TRANSIENT_RETRIES: int = 3
+    WIRE_HARNESS_COMPARE_CODEX_TIMEOUT_SECONDS: int = 1800
+    WIRE_HARNESS_COMPARE_RENDER_DPI: int = 160
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value == "changethis":

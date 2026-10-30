@@ -37,7 +37,27 @@ const setupCodeReviewApi = (): void => {
     readTaskReport: vi.fn(),
     executeTask: vi.fn(),
     onTaskProgress: vi.fn(() => vi.fn()),
+    createGpioTask: vi.fn(async () => ({
+      id: 'gpio-task-1',
+      status: 'success',
+      manual_svn_url: 'svn://repo/manual',
+      code_svn_url: 'svn://repo/code',
+      uploaded_files: []
+    })),
+    listGpioTasks: vi.fn(async () => ({ data: [], count: 0 })),
+    generateGpioTask: vi.fn(async () => ({
+      id: 'gpio-task-1',
+      status: 'success',
+      manual_svn_url: 'svn://repo/manual',
+      code_svn_url: 'svn://repo/code',
+      uploaded_files: [],
+      result_name: 'GPIO配置表.xlsx'
+    })),
+    openGpioWorkbook: vi.fn(),
+    deleteGpioTask: vi.fn(),
     downloadCurrentReport: vi.fn(),
+    openPdfReport: vi.fn(),
+    readReportAsset: vi.fn(),
     installCodex: vi.fn(),
     installSvn: vi.fn(),
     installSkill: vi.fn(),
@@ -103,5 +123,23 @@ describe('App update flow', () => {
       progressListener?.({ percent: 43 })
     })
     expect(screen.queryByText('正在下载新版本')).not.toBeInTheDocument()
+  })
+})
+
+describe('App workspace navigation', () => {
+  it('opens GPIO configuration task page from the client without running local Codex', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.type(await screen.findByLabelText('Key'), 'sk-cch-test')
+    await user.click(screen.getByRole('button', { name: 'Key 登录' }))
+    await user.click(await screen.findByRole('button', { name: 'GPIO配置表' }))
+
+    expect(await screen.findByRole('heading', { name: 'GPIO配置表任务' })).toBeInTheDocument()
+    expect(
+      screen.getByText('客户端只提交 SVN 路径，服务端自行拉取芯片手册和代码生成 Excel。')
+    ).toBeInTheDocument()
+    expect(window.codeReview.listGpioTasks).toHaveBeenCalledTimes(1)
+    expect(window.codeReview.executeTask).not.toHaveBeenCalled()
   })
 })

@@ -13,6 +13,8 @@ import type {
   KeyLoginRequest,
   KeyLoginResult,
   DownloadCurrentReportResult,
+  CreateGpioTaskRequest,
+  OpenGpioWorkbookResult,
   OpenPdfReportRequest,
   OpenPdfReportResult,
   ReadReportAssetRequest,
@@ -81,6 +83,15 @@ contextBridge.exposeInMainWorld('codeReview', {
       ipcRenderer.removeListener('task:progress', listener)
     }
   },
+  createGpioTask: (payload: CreateGpioTaskRequest) => ipcRenderer.invoke('gpio:create-task', payload),
+  listGpioTasks: () => ipcRenderer.invoke('gpio:list-tasks'),
+  generateGpioTask: (taskId: string) => ipcRenderer.invoke('gpio:generate-task', taskId),
+  openGpioWorkbook: (
+    taskId: string,
+    resultName?: string | null
+  ): Promise<OpenGpioWorkbookResult> =>
+    ipcRenderer.invoke('gpio:open-workbook', { taskId, resultName }),
+  deleteGpioTask: (taskId: string) => ipcRenderer.invoke('gpio:delete-task', taskId),
   downloadCurrentReport: (taskId?: string): Promise<DownloadCurrentReportResult> =>
     ipcRenderer.invoke('report:download-current', taskId),
   openPdfReport: (payload: OpenPdfReportRequest): Promise<OpenPdfReportResult> =>

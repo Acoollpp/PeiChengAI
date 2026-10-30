@@ -12,6 +12,8 @@ type LoginPageProps = {
 
 type AuthMode = 'key' | 'svn'
 
+const normalizeAccessKey = (value: string): string => value.trim().replace(/^API:\s*/i, '').trim()
+
 export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX.Element {
   const [mode, setMode] = useState<AuthMode>('key')
   const [serverUrl, setServerUrl] = useState('')
@@ -71,7 +73,7 @@ export function LoginPage({ onKeyLogin, onSvnLogin }: LoginPageProps): React.JSX
       if (mode === 'key') {
         const keyPayload = {
           server_url: normalizedServerUrl,
-          key: accessKey.trim()
+          key: normalizeAccessKey(accessKey)
         }
 
         await onKeyLogin(keyPayload)

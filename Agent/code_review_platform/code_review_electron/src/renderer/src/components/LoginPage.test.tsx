@@ -61,6 +61,20 @@ describe('LoginPage', () => {
     expect(screen.getByRole('button', { name: '隐藏 Key' })).toBeInTheDocument()
   })
 
+  it('提交 Key 登录时会去掉复制文本里的 API 前缀', async () => {
+    const user = userEvent.setup()
+    const onKeyLogin = vi.fn(async () => undefined)
+    render(<LoginPage onKeyLogin={onKeyLogin} onSvnLogin={vi.fn()} />)
+
+    await user.type(screen.getByLabelText('Key'), 'API: ah-local-test')
+    await user.click(screen.getByRole('button', { name: 'Key 登录' }))
+
+    expect(onKeyLogin).toHaveBeenCalledWith({
+      server_url: 'http://127.0.0.1:8000',
+      key: 'ah-local-test'
+    })
+  })
+
   it('可以切换 SVN 密码的可见性', async () => {
     const user = userEvent.setup()
     render(<LoginPage onKeyLogin={vi.fn()} onSvnLogin={vi.fn()} />)

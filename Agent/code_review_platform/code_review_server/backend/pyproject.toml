@@ -20,6 +20,11 @@ dependencies = [
     "pyjwt<3.0.0,>=2.8.0",
     "pwdlib[argon2,bcrypt]>=0.3.0",
     "cryptography<46.0.0,>=43.0.0",
+    "pypdf>=6.13.3",
+    "pymupdf>=1.26.0",
+    "pillow>=11.0.0",
+    "pytesseract>=0.3.13,<1.0.0",
+    "xlrd>=2.0.1",
 ]
 
 [dependency-groups]

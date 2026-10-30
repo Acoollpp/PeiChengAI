@@ -152,6 +152,82 @@ describe('ApiClient', () => {
     })
   })
 
+  it('creates a GPIO task on the server with authorization header', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        id: 'gpio-task-1',
+        status: 'success',
+        manual_svn_url: 'svn://repo/manual',
+        code_svn_url: 'svn://repo/code',
+        uploaded_files: []
+      })
+    )
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    const result = await client.createGpioTask('token-123', {
+      manual_svn_url: 'svn://repo/manual',
+      code_svn_url: 'svn://repo/code'
+    })
+
+    expect(result).toMatchObject({
+      id: 'gpio-task-1',
+      status: 'success',
+      manual_svn_url: 'svn://repo/manual',
+      code_svn_url: 'svn://repo/code'
+    })
+    expect(fetchMock).toHaveBeenCalledWith('https://server.example/api/v1/gpio-tasks', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer token-123'
+      },
+      body: JSON.stringify({
+        manual_svn_url: 'svn://repo/manual',
+        code_svn_url: 'svn://repo/code'
+      })
+    })
+  })
+
+  it('triggers server-side GPIO generation and downloads generated workbook bytes', async () => {
+    const workbookBytes = new Uint8Array([80, 75, 3, 4])
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ id: 'gpio-task-1', status: 'analyzing' }))
+      .mockResolvedValueOnce(
+        new Response(workbookBytes, {
+          status: 200,
+          headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+        })
+      )
+    const client = new ApiClient('https://server.example', fetchMock)
+
+    await client.generateGpioTask('token-123', 'gpio-task-1')
+    const result = await client.downloadGpioWorkbook('token-123', 'gpio-task-1')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://server.example/api/v1/gpio-tasks/gpio-task-1/generate',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer token-123'
+        }
+      }
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://server.example/api/v1/gpio-tasks/gpio-task-1/download',
+      {
+        method: 'GET',
+        headers: {
+          authorization: 'Bearer token-123'
+        }
+      }
+    )
+    expect(new Uint8Array(result)).toEqual(workbookBytes)
+  })
+
   it('reads a review task report as markdown text', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response('# Review\n\nLooks good.\n', {

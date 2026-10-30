@@ -9,28 +9,40 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as LoginRouteImport } from './routes/login'
 import { Route as LayoutRouteImport } from './routes/_layout'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
-import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
-import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
-import { Route as LayoutFeedbackRouteImport } from './routes/_layout/feedback'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
+import { Route as LayoutFeedbackRouteImport } from './routes/_layout/feedback'
+import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
+import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutAdminIndexRouteImport } from './routes/_layout/admin.index'
-import { Route as LayoutTasksReviewRouteImport } from './routes/_layout/tasks.review'
-import { Route as LayoutAdminUsersRouteImport } from './routes/_layout/admin.users'
-import { Route as LayoutAdminTasksRouteImport } from './routes/_layout/admin.tasks'
-import { Route as LayoutAdminSkillsRouteImport } from './routes/_layout/admin.skills'
 import { Route as LayoutAdminClientReleasesRouteImport } from './routes/_layout/admin.client-releases'
+import { Route as LayoutAdminSkillsRouteImport } from './routes/_layout/admin.skills'
+import { Route as LayoutAdminTasksRouteImport } from './routes/_layout/admin.tasks'
+import { Route as LayoutAdminUsersRouteImport } from './routes/_layout/admin.users'
+import { Route as LayoutTasksBomChangeCheckRouteImport } from './routes/_layout/tasks.bom-change-check'
+import { Route as LayoutTasksBomChangeCheckManageRouteImport } from './routes/_layout/tasks.bom-change-check-manage'
+import { Route as LayoutTasksBomElectronicEditRouteImport } from './routes/_layout/tasks.bom-electronic-edit'
+import { Route as LayoutTasksBomElectronicEditManageRouteImport } from './routes/_layout/tasks.bom-electronic-edit-manage'
+import { Route as LayoutTasksBomSpecCompareRouteImport } from './routes/_layout/tasks.bom-spec-compare'
+import { Route as LayoutTasksBomSpecCompareManageRouteImport } from './routes/_layout/tasks.bom-spec-compare-manage'
+import { Route as LayoutTasksGpioRouteImport } from './routes/_layout/tasks.gpio'
+import { Route as LayoutTasksGpioManageRouteImport } from './routes/_layout/tasks.gpio-manage'
+import { Route as LayoutTasksReviewRouteImport } from './routes/_layout/tasks.review'
+import { Route as LayoutTasksWhiteboxRouteImport } from './routes/_layout/tasks.whitebox'
+import { Route as LayoutTasksWhiteboxManageRouteImport } from './routes/_layout/tasks.whitebox-manage'
+import { Route as LayoutTasksWireHarnessCompareRouteImport } from './routes/_layout/tasks.wire-harness-compare'
+import { Route as LayoutTasksWireHarnessCompareManageRouteImport } from './routes/_layout/tasks.wire-harness-compare-manage'
 import { Route as LayoutAdminTasksReviewRouteImport } from './routes/_layout/admin.tasks.review'
 
+const LayoutRoute = LayoutRouteImport.update({
+  id: '/_layout',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LayoutRoute = LayoutRouteImport.update({
-  id: '/_layout',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LayoutIndexRoute = LayoutIndexRouteImport.update({
@@ -38,14 +50,9 @@ const LayoutIndexRoute = LayoutIndexRouteImport.update({
   path: '/',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutSettingsRoute = LayoutSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutItemsRoute = LayoutItemsRouteImport.update({
-  id: '/items',
-  path: '/items',
+const LayoutAdminRoute = LayoutAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutFeedbackRoute = LayoutFeedbackRouteImport.update({
@@ -53,9 +60,14 @@ const LayoutFeedbackRoute = LayoutFeedbackRouteImport.update({
   path: '/feedback',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutAdminRoute = LayoutAdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
+const LayoutItemsRoute = LayoutItemsRouteImport.update({
+  id: '/items',
+  path: '/items',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutSettingsRoute = LayoutSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutAdminIndexRoute = LayoutAdminIndexRouteImport.update({
@@ -63,14 +75,15 @@ const LayoutAdminIndexRoute = LayoutAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => LayoutAdminRoute,
 } as any)
-const LayoutTasksReviewRoute = LayoutTasksReviewRouteImport.update({
-  id: '/tasks/review',
-  path: '/tasks/review',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutAdminUsersRoute = LayoutAdminUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
+const LayoutAdminClientReleasesRoute =
+  LayoutAdminClientReleasesRouteImport.update({
+    id: '/client-releases',
+    path: '/client-releases',
+    getParentRoute: () => LayoutAdminRoute,
+  } as any)
+const LayoutAdminSkillsRoute = LayoutAdminSkillsRouteImport.update({
+  id: '/skills',
+  path: '/skills',
   getParentRoute: () => LayoutAdminRoute,
 } as any)
 const LayoutAdminTasksRoute = LayoutAdminTasksRouteImport.update({
@@ -78,16 +91,84 @@ const LayoutAdminTasksRoute = LayoutAdminTasksRouteImport.update({
   path: '/tasks',
   getParentRoute: () => LayoutAdminRoute,
 } as any)
-const LayoutAdminSkillsRoute = LayoutAdminSkillsRouteImport.update({
-  id: '/skills',
-  path: '/skills',
+const LayoutAdminUsersRoute = LayoutAdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
   getParentRoute: () => LayoutAdminRoute,
 } as any)
-const LayoutAdminClientReleasesRoute =
-  LayoutAdminClientReleasesRouteImport.update({
-    id: '/client-releases',
-    path: '/client-releases',
-    getParentRoute: () => LayoutAdminRoute,
+const LayoutTasksBomChangeCheckRoute =
+  LayoutTasksBomChangeCheckRouteImport.update({
+    id: '/tasks/bom-change-check',
+    path: '/tasks/bom-change-check',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutTasksBomChangeCheckManageRoute =
+  LayoutTasksBomChangeCheckManageRouteImport.update({
+    id: '/tasks/bom-change-check-manage',
+    path: '/tasks/bom-change-check-manage',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutTasksBomElectronicEditRoute =
+  LayoutTasksBomElectronicEditRouteImport.update({
+    id: '/tasks/bom-electronic-edit',
+    path: '/tasks/bom-electronic-edit',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutTasksBomElectronicEditManageRoute =
+  LayoutTasksBomElectronicEditManageRouteImport.update({
+    id: '/tasks/bom-electronic-edit-manage',
+    path: '/tasks/bom-electronic-edit-manage',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutTasksBomSpecCompareRoute =
+  LayoutTasksBomSpecCompareRouteImport.update({
+    id: '/tasks/bom-spec-compare',
+    path: '/tasks/bom-spec-compare',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutTasksBomSpecCompareManageRoute =
+  LayoutTasksBomSpecCompareManageRouteImport.update({
+    id: '/tasks/bom-spec-compare-manage',
+    path: '/tasks/bom-spec-compare-manage',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutTasksGpioRoute = LayoutTasksGpioRouteImport.update({
+  id: '/tasks/gpio',
+  path: '/tasks/gpio',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutTasksGpioManageRoute = LayoutTasksGpioManageRouteImport.update({
+  id: '/tasks/gpio-manage',
+  path: '/tasks/gpio-manage',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutTasksReviewRoute = LayoutTasksReviewRouteImport.update({
+  id: '/tasks/review',
+  path: '/tasks/review',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutTasksWhiteboxRoute = LayoutTasksWhiteboxRouteImport.update({
+  id: '/tasks/whitebox',
+  path: '/tasks/whitebox',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutTasksWhiteboxManageRoute =
+  LayoutTasksWhiteboxManageRouteImport.update({
+    id: '/tasks/whitebox-manage',
+    path: '/tasks/whitebox-manage',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutTasksWireHarnessCompareRoute =
+  LayoutTasksWireHarnessCompareRouteImport.update({
+    id: '/tasks/wire-harness-compare',
+    path: '/tasks/wire-harness-compare',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutTasksWireHarnessCompareManageRoute =
+  LayoutTasksWireHarnessCompareManageRouteImport.update({
+    id: '/tasks/wire-harness-compare-manage',
+    path: '/tasks/wire-harness-compare-manage',
+    getParentRoute: () => LayoutRoute,
   } as any)
 const LayoutAdminTasksReviewRoute = LayoutAdminTasksReviewRouteImport.update({
   id: '/review',
@@ -106,7 +187,19 @@ export interface FileRoutesByFullPath {
   '/admin/skills': typeof LayoutAdminSkillsRoute
   '/admin/tasks': typeof LayoutAdminTasksRouteWithChildren
   '/admin/users': typeof LayoutAdminUsersRoute
+  '/tasks/bom-change-check': typeof LayoutTasksBomChangeCheckRoute
+  '/tasks/bom-change-check-manage': typeof LayoutTasksBomChangeCheckManageRoute
+  '/tasks/bom-electronic-edit': typeof LayoutTasksBomElectronicEditRoute
+  '/tasks/bom-electronic-edit-manage': typeof LayoutTasksBomElectronicEditManageRoute
+  '/tasks/bom-spec-compare': typeof LayoutTasksBomSpecCompareRoute
+  '/tasks/bom-spec-compare-manage': typeof LayoutTasksBomSpecCompareManageRoute
+  '/tasks/gpio': typeof LayoutTasksGpioRoute
+  '/tasks/gpio-manage': typeof LayoutTasksGpioManageRoute
   '/tasks/review': typeof LayoutTasksReviewRoute
+  '/tasks/whitebox': typeof LayoutTasksWhiteboxRoute
+  '/tasks/whitebox-manage': typeof LayoutTasksWhiteboxManageRoute
+  '/tasks/wire-harness-compare': typeof LayoutTasksWireHarnessCompareRoute
+  '/tasks/wire-harness-compare-manage': typeof LayoutTasksWireHarnessCompareManageRoute
   '/admin/': typeof LayoutAdminIndexRoute
   '/admin/tasks/review': typeof LayoutAdminTasksReviewRoute
 }
@@ -120,7 +213,19 @@ export interface FileRoutesByTo {
   '/admin/skills': typeof LayoutAdminSkillsRoute
   '/admin/tasks': typeof LayoutAdminTasksRouteWithChildren
   '/admin/users': typeof LayoutAdminUsersRoute
+  '/tasks/bom-change-check': typeof LayoutTasksBomChangeCheckRoute
+  '/tasks/bom-change-check-manage': typeof LayoutTasksBomChangeCheckManageRoute
+  '/tasks/bom-electronic-edit': typeof LayoutTasksBomElectronicEditRoute
+  '/tasks/bom-electronic-edit-manage': typeof LayoutTasksBomElectronicEditManageRoute
+  '/tasks/bom-spec-compare': typeof LayoutTasksBomSpecCompareRoute
+  '/tasks/bom-spec-compare-manage': typeof LayoutTasksBomSpecCompareManageRoute
+  '/tasks/gpio': typeof LayoutTasksGpioRoute
+  '/tasks/gpio-manage': typeof LayoutTasksGpioManageRoute
   '/tasks/review': typeof LayoutTasksReviewRoute
+  '/tasks/whitebox': typeof LayoutTasksWhiteboxRoute
+  '/tasks/whitebox-manage': typeof LayoutTasksWhiteboxManageRoute
+  '/tasks/wire-harness-compare': typeof LayoutTasksWireHarnessCompareRoute
+  '/tasks/wire-harness-compare-manage': typeof LayoutTasksWireHarnessCompareManageRoute
   '/admin': typeof LayoutAdminIndexRoute
   '/admin/tasks/review': typeof LayoutAdminTasksReviewRoute
 }
@@ -137,7 +242,19 @@ export interface FileRoutesById {
   '/_layout/admin/skills': typeof LayoutAdminSkillsRoute
   '/_layout/admin/tasks': typeof LayoutAdminTasksRouteWithChildren
   '/_layout/admin/users': typeof LayoutAdminUsersRoute
+  '/_layout/tasks/bom-change-check': typeof LayoutTasksBomChangeCheckRoute
+  '/_layout/tasks/bom-change-check-manage': typeof LayoutTasksBomChangeCheckManageRoute
+  '/_layout/tasks/bom-electronic-edit': typeof LayoutTasksBomElectronicEditRoute
+  '/_layout/tasks/bom-electronic-edit-manage': typeof LayoutTasksBomElectronicEditManageRoute
+  '/_layout/tasks/bom-spec-compare': typeof LayoutTasksBomSpecCompareRoute
+  '/_layout/tasks/bom-spec-compare-manage': typeof LayoutTasksBomSpecCompareManageRoute
+  '/_layout/tasks/gpio': typeof LayoutTasksGpioRoute
+  '/_layout/tasks/gpio-manage': typeof LayoutTasksGpioManageRoute
   '/_layout/tasks/review': typeof LayoutTasksReviewRoute
+  '/_layout/tasks/whitebox': typeof LayoutTasksWhiteboxRoute
+  '/_layout/tasks/whitebox-manage': typeof LayoutTasksWhiteboxManageRoute
+  '/_layout/tasks/wire-harness-compare': typeof LayoutTasksWireHarnessCompareRoute
+  '/_layout/tasks/wire-harness-compare-manage': typeof LayoutTasksWireHarnessCompareManageRoute
   '/_layout/admin/': typeof LayoutAdminIndexRoute
   '/_layout/admin/tasks/review': typeof LayoutAdminTasksReviewRoute
 }
@@ -154,7 +271,19 @@ export interface FileRouteTypes {
     | '/admin/skills'
     | '/admin/tasks'
     | '/admin/users'
+    | '/tasks/bom-change-check'
+    | '/tasks/bom-change-check-manage'
+    | '/tasks/bom-electronic-edit'
+    | '/tasks/bom-electronic-edit-manage'
+    | '/tasks/bom-spec-compare'
+    | '/tasks/bom-spec-compare-manage'
+    | '/tasks/gpio'
+    | '/tasks/gpio-manage'
     | '/tasks/review'
+    | '/tasks/whitebox'
+    | '/tasks/whitebox-manage'
+    | '/tasks/wire-harness-compare'
+    | '/tasks/wire-harness-compare-manage'
     | '/admin/'
     | '/admin/tasks/review'
   fileRoutesByTo: FileRoutesByTo
@@ -168,7 +297,19 @@ export interface FileRouteTypes {
     | '/admin/skills'
     | '/admin/tasks'
     | '/admin/users'
+    | '/tasks/bom-change-check'
+    | '/tasks/bom-change-check-manage'
+    | '/tasks/bom-electronic-edit'
+    | '/tasks/bom-electronic-edit-manage'
+    | '/tasks/bom-spec-compare'
+    | '/tasks/bom-spec-compare-manage'
+    | '/tasks/gpio'
+    | '/tasks/gpio-manage'
     | '/tasks/review'
+    | '/tasks/whitebox'
+    | '/tasks/whitebox-manage'
+    | '/tasks/wire-harness-compare'
+    | '/tasks/wire-harness-compare-manage'
     | '/admin'
     | '/admin/tasks/review'
   id:
@@ -184,7 +325,19 @@ export interface FileRouteTypes {
     | '/_layout/admin/skills'
     | '/_layout/admin/tasks'
     | '/_layout/admin/users'
+    | '/_layout/tasks/bom-change-check'
+    | '/_layout/tasks/bom-change-check-manage'
+    | '/_layout/tasks/bom-electronic-edit'
+    | '/_layout/tasks/bom-electronic-edit-manage'
+    | '/_layout/tasks/bom-spec-compare'
+    | '/_layout/tasks/bom-spec-compare-manage'
+    | '/_layout/tasks/gpio'
+    | '/_layout/tasks/gpio-manage'
     | '/_layout/tasks/review'
+    | '/_layout/tasks/whitebox'
+    | '/_layout/tasks/whitebox-manage'
+    | '/_layout/tasks/wire-harness-compare'
+    | '/_layout/tasks/wire-harness-compare-manage'
     | '/_layout/admin/'
     | '/_layout/admin/tasks/review'
   fileRoutesById: FileRoutesById
@@ -196,18 +349,18 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_layout': {
       id: '/_layout'
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof LayoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_layout/': {
@@ -217,18 +370,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutIndexRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/settings': {
-      id: '/_layout/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof LayoutSettingsRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/items': {
-      id: '/_layout/items'
-      path: '/items'
-      fullPath: '/items'
-      preLoaderRoute: typeof LayoutItemsRouteImport
+    '/_layout/admin': {
+      id: '/_layout/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof LayoutAdminRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/feedback': {
@@ -238,11 +384,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutFeedbackRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/admin': {
-      id: '/_layout/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof LayoutAdminRouteImport
+    '/_layout/items': {
+      id: '/_layout/items'
+      path: '/items'
+      fullPath: '/items'
+      preLoaderRoute: typeof LayoutItemsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/settings': {
+      id: '/_layout/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof LayoutSettingsRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/admin/': {
@@ -252,25 +405,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminIndexRouteImport
       parentRoute: typeof LayoutAdminRoute
     }
-    '/_layout/tasks/review': {
-      id: '/_layout/tasks/review'
-      path: '/tasks/review'
-      fullPath: '/tasks/review'
-      preLoaderRoute: typeof LayoutTasksReviewRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/admin/users': {
-      id: '/_layout/admin/users'
-      path: '/users'
-      fullPath: '/admin/users'
-      preLoaderRoute: typeof LayoutAdminUsersRouteImport
-      parentRoute: typeof LayoutAdminRoute
-    }
-    '/_layout/admin/tasks': {
-      id: '/_layout/admin/tasks'
-      path: '/tasks'
-      fullPath: '/admin/tasks'
-      preLoaderRoute: typeof LayoutAdminTasksRouteImport
+    '/_layout/admin/client-releases': {
+      id: '/_layout/admin/client-releases'
+      path: '/client-releases'
+      fullPath: '/admin/client-releases'
+      preLoaderRoute: typeof LayoutAdminClientReleasesRouteImport
       parentRoute: typeof LayoutAdminRoute
     }
     '/_layout/admin/skills': {
@@ -280,12 +419,110 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminSkillsRouteImport
       parentRoute: typeof LayoutAdminRoute
     }
-    '/_layout/admin/client-releases': {
-      id: '/_layout/admin/client-releases'
-      path: '/client-releases'
-      fullPath: '/admin/client-releases'
-      preLoaderRoute: typeof LayoutAdminClientReleasesRouteImport
+    '/_layout/admin/tasks': {
+      id: '/_layout/admin/tasks'
+      path: '/tasks'
+      fullPath: '/admin/tasks'
+      preLoaderRoute: typeof LayoutAdminTasksRouteImport
       parentRoute: typeof LayoutAdminRoute
+    }
+    '/_layout/admin/users': {
+      id: '/_layout/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof LayoutAdminUsersRouteImport
+      parentRoute: typeof LayoutAdminRoute
+    }
+    '/_layout/tasks/bom-change-check': {
+      id: '/_layout/tasks/bom-change-check'
+      path: '/tasks/bom-change-check'
+      fullPath: '/tasks/bom-change-check'
+      preLoaderRoute: typeof LayoutTasksBomChangeCheckRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/tasks/bom-change-check-manage': {
+      id: '/_layout/tasks/bom-change-check-manage'
+      path: '/tasks/bom-change-check-manage'
+      fullPath: '/tasks/bom-change-check-manage'
+      preLoaderRoute: typeof LayoutTasksBomChangeCheckManageRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/tasks/bom-electronic-edit': {
+      id: '/_layout/tasks/bom-electronic-edit'
+      path: '/tasks/bom-electronic-edit'
+      fullPath: '/tasks/bom-electronic-edit'
+      preLoaderRoute: typeof LayoutTasksBomElectronicEditRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/tasks/bom-electronic-edit-manage': {
+      id: '/_layout/tasks/bom-electronic-edit-manage'
+      path: '/tasks/bom-electronic-edit-manage'
+      fullPath: '/tasks/bom-electronic-edit-manage'
+      preLoaderRoute: typeof LayoutTasksBomElectronicEditManageRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/tasks/bom-spec-compare': {
+      id: '/_layout/tasks/bom-spec-compare'
+      path: '/tasks/bom-spec-compare'
+      fullPath: '/tasks/bom-spec-compare'
+      preLoaderRoute: typeof LayoutTasksBomSpecCompareRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/tasks/bom-spec-compare-manage': {
+      id: '/_layout/tasks/bom-spec-compare-manage'
+      path: '/tasks/bom-spec-compare-manage'
+      fullPath: '/tasks/bom-spec-compare-manage'
+      preLoaderRoute: typeof LayoutTasksBomSpecCompareManageRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/tasks/gpio': {
+      id: '/_layout/tasks/gpio'
+      path: '/tasks/gpio'
+      fullPath: '/tasks/gpio'
+      preLoaderRoute: typeof LayoutTasksGpioRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/tasks/gpio-manage': {
+      id: '/_layout/tasks/gpio-manage'
+      path: '/tasks/gpio-manage'
+      fullPath: '/tasks/gpio-manage'
+      preLoaderRoute: typeof LayoutTasksGpioManageRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/tasks/review': {
+      id: '/_layout/tasks/review'
+      path: '/tasks/review'
+      fullPath: '/tasks/review'
+      preLoaderRoute: typeof LayoutTasksReviewRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/tasks/whitebox': {
+      id: '/_layout/tasks/whitebox'
+      path: '/tasks/whitebox'
+      fullPath: '/tasks/whitebox'
+      preLoaderRoute: typeof LayoutTasksWhiteboxRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/tasks/whitebox-manage': {
+      id: '/_layout/tasks/whitebox-manage'
+      path: '/tasks/whitebox-manage'
+      fullPath: '/tasks/whitebox-manage'
+      preLoaderRoute: typeof LayoutTasksWhiteboxManageRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/tasks/wire-harness-compare': {
+      id: '/_layout/tasks/wire-harness-compare'
+      path: '/tasks/wire-harness-compare'
+      fullPath: '/tasks/wire-harness-compare'
+      preLoaderRoute: typeof LayoutTasksWireHarnessCompareRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/tasks/wire-harness-compare-manage': {
+      id: '/_layout/tasks/wire-harness-compare-manage'
+      path: '/tasks/wire-harness-compare-manage'
+      fullPath: '/tasks/wire-harness-compare-manage'
+      preLoaderRoute: typeof LayoutTasksWireHarnessCompareManageRouteImport
+      parentRoute: typeof LayoutRoute
     }
     '/_layout/admin/tasks/review': {
       id: '/_layout/admin/tasks/review'
@@ -334,7 +571,19 @@ interface LayoutRouteChildren {
   LayoutItemsRoute: typeof LayoutItemsRoute
   LayoutSettingsRoute: typeof LayoutSettingsRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
+  LayoutTasksBomChangeCheckRoute: typeof LayoutTasksBomChangeCheckRoute
+  LayoutTasksBomChangeCheckManageRoute: typeof LayoutTasksBomChangeCheckManageRoute
+  LayoutTasksBomElectronicEditRoute: typeof LayoutTasksBomElectronicEditRoute
+  LayoutTasksBomElectronicEditManageRoute: typeof LayoutTasksBomElectronicEditManageRoute
+  LayoutTasksBomSpecCompareRoute: typeof LayoutTasksBomSpecCompareRoute
+  LayoutTasksBomSpecCompareManageRoute: typeof LayoutTasksBomSpecCompareManageRoute
+  LayoutTasksGpioRoute: typeof LayoutTasksGpioRoute
+  LayoutTasksGpioManageRoute: typeof LayoutTasksGpioManageRoute
   LayoutTasksReviewRoute: typeof LayoutTasksReviewRoute
+  LayoutTasksWhiteboxRoute: typeof LayoutTasksWhiteboxRoute
+  LayoutTasksWhiteboxManageRoute: typeof LayoutTasksWhiteboxManageRoute
+  LayoutTasksWireHarnessCompareRoute: typeof LayoutTasksWireHarnessCompareRoute
+  LayoutTasksWireHarnessCompareManageRoute: typeof LayoutTasksWireHarnessCompareManageRoute
 }
 
 const LayoutRouteChildren: LayoutRouteChildren = {
@@ -343,7 +592,21 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutItemsRoute: LayoutItemsRoute,
   LayoutSettingsRoute: LayoutSettingsRoute,
   LayoutIndexRoute: LayoutIndexRoute,
+  LayoutTasksBomChangeCheckRoute: LayoutTasksBomChangeCheckRoute,
+  LayoutTasksBomChangeCheckManageRoute: LayoutTasksBomChangeCheckManageRoute,
+  LayoutTasksBomElectronicEditRoute: LayoutTasksBomElectronicEditRoute,
+  LayoutTasksBomElectronicEditManageRoute:
+    LayoutTasksBomElectronicEditManageRoute,
+  LayoutTasksBomSpecCompareRoute: LayoutTasksBomSpecCompareRoute,
+  LayoutTasksBomSpecCompareManageRoute: LayoutTasksBomSpecCompareManageRoute,
+  LayoutTasksGpioRoute: LayoutTasksGpioRoute,
+  LayoutTasksGpioManageRoute: LayoutTasksGpioManageRoute,
   LayoutTasksReviewRoute: LayoutTasksReviewRoute,
+  LayoutTasksWhiteboxRoute: LayoutTasksWhiteboxRoute,
+  LayoutTasksWhiteboxManageRoute: LayoutTasksWhiteboxManageRoute,
+  LayoutTasksWireHarnessCompareRoute: LayoutTasksWireHarnessCompareRoute,
+  LayoutTasksWireHarnessCompareManageRoute:
+    LayoutTasksWireHarnessCompareManageRoute,
 }
 
 const LayoutRouteWithChildren =

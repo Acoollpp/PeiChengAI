@@ -2,6 +2,8 @@ import type { ReviewTemplateKey } from '../../shared/review-templates'
 import type {
   EnvironmentProgressEvent,
   EnvironmentStatus,
+  GpioTask,
+  GpioTasksResponse,
   ReviewTask,
   ReviewTaskStatus,
   SyncedSkill,
@@ -90,6 +92,33 @@ export interface SubmitFeedbackIpcPayload {
   screenshots?: SerializedFeedbackScreenshot[]
 }
 
+export interface SerializedGpioUploadFile {
+  name: string
+  type: string
+  path?: string
+  bytes?: ArrayBuffer
+}
+
+export interface UploadGpioFilesIpcPayload {
+  taskId: string
+  files: SerializedGpioUploadFile[]
+}
+
+export interface CreateGpioTaskRequest {
+  manual_svn_url: string
+  code_svn_url: string
+}
+
+export interface OpenGpioWorkbookRequest {
+  taskId: string
+  resultName?: string | null
+}
+
+export interface OpenGpioWorkbookResult {
+  status: 'ready'
+  workbookPath: string
+}
+
 export interface SubmitFeedbackResult {
   id: string
   status: 'pending' | 'processing' | 'resolved'
@@ -170,6 +199,11 @@ export interface CodeReviewApi {
   executeTask(payload: ExecuteTaskRequest): Promise<ExecuteTaskResult>
   cancelTask(payload: CancelTaskRequest): Promise<CancelTaskResult>
   onTaskProgress(callback: (event: TaskProgressEvent) => void): () => void
+  createGpioTask(payload: CreateGpioTaskRequest): Promise<GpioTask>
+  listGpioTasks(): Promise<GpioTasksResponse>
+  generateGpioTask(taskId: string): Promise<GpioTask>
+  openGpioWorkbook(taskId: string, resultName?: string | null): Promise<OpenGpioWorkbookResult>
+  deleteGpioTask(taskId: string): Promise<{ message: string }>
   downloadCurrentReport(taskId?: string): Promise<DownloadCurrentReportResult>
   openPdfReport(payload: OpenPdfReportRequest): Promise<OpenPdfReportResult>
   readReportAsset(payload: ReadReportAssetRequest): Promise<ReadReportAssetResult>

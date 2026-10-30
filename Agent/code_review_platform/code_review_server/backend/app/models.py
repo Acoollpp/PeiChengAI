@@ -32,6 +32,88 @@ class ReviewTaskStatus(str, Enum):
     cancelled = "cancelled"
 
 
+class GpioTaskStatus(str, Enum):
+    created = "created"
+    uploaded = "uploaded"
+    analyzing = "analyzing"
+    exporting_svn = "exporting_svn"
+    running_codex = "running_codex"
+    needs_confirmation = "needs_confirmation"
+    success = "success"
+    failed = "failed"
+
+
+class WhiteboxTaskStatus(str, Enum):
+    created = "created"
+    queued = "queued"
+    claimed = "claimed"
+    preparing = "preparing"
+    running = "running"
+    uploading_report = "uploading_report"
+    success = "success"
+    failed = "failed"
+    environment_error = "environment_error"
+    timeout = "timeout"
+    cancelled = "cancelled"
+
+
+class BomSpecCompareTaskStatus(str, Enum):
+    created = "created"
+    queued = "queued"
+    preparing = "preparing"
+    running = "running"
+    uploading_report = "uploading_report"
+    success = "success"
+    failed = "failed"
+    timeout = "timeout"
+    cancelled = "cancelled"
+
+
+class WireHarnessCompareTaskStatus(str, Enum):
+    created = "created"
+    queued = "queued"
+    preparing = "preparing"
+    running = "running"
+    uploading_report = "uploading_report"
+    success = "success"
+    failed = "failed"
+    timeout = "timeout"
+    cancelled = "cancelled"
+
+
+class BomChangeCheckTaskStatus(str, Enum):
+    created = "created"
+    queued = "queued"
+    preparing = "preparing"
+    running = "running"
+    uploading_report = "uploading_report"
+    success = "success"
+    failed = "failed"
+    timeout = "timeout"
+    cancelled = "cancelled"
+
+
+class BomElectronicEditTaskStatus(str, Enum):
+    created = "created"
+    queued = "queued"
+    preparing = "preparing"
+    running = "running"
+    uploading_report = "uploading_report"
+    success = "success"
+    failed = "failed"
+    timeout = "timeout"
+    cancelled = "cancelled"
+
+
+class WhiteboxAgentStatus(str, Enum):
+    online = "online"
+    idle = "idle"
+    busy = "busy"
+    offline = "offline"
+    disabled = "disabled"
+    error = "error"
+
+
 class FeedbackStatus(str, Enum):
     pending = "pending"
     processing = "processing"
@@ -174,6 +256,261 @@ class ReviewTask(SQLModel, table=True):
     )
 
 
+class GpioGenerationTask(SQLModel, table=True):
+    __tablename__ = "gpio_generation_task"
+    __table_args__ = (
+        Index("ix_gpio_generation_task_user_id_status", "user_id", "status"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", nullable=False, index=True)
+    project_no: str = Field(default="", max_length=255)
+    chip_model: str = Field(default="", max_length=255)
+    package_name: str | None = Field(default=None, max_length=255)
+    manual_file_path: str | None = Field(default=None, max_length=2048)
+    manual_file_name: str | None = Field(default=None, max_length=255)
+    code_svn_url: str = Field(max_length=2048)
+    code_revision: str = Field(default="", max_length=255)
+    svn_export_path: str | None = Field(default=None, max_length=2048)
+    status: GpioTaskStatus = Field(default=GpioTaskStatus.created, index=True)
+    uploaded_files: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    recognition_summary: dict[str, Any] | None = Field(default=None, sa_type=JSON)
+    result_path: str | None = Field(default=None, max_length=2048)
+    result_name: str | None = Field(default=None, max_length=255)
+    error_message: str | None = None
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    started_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    finished_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class WhiteboxAgent(SQLModel, table=True):
+    __tablename__ = "whitebox_agent"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str = Field(max_length=255)
+    machine_id: str = Field(unique=True, index=True, max_length=255)
+    status: WhiteboxAgentStatus = Field(default=WhiteboxAgentStatus.online, index=True)
+    capabilities: dict[str, Any] | None = Field(default=None, sa_type=JSON)
+    current_task_id: uuid.UUID | None = Field(default=None, index=True)
+    last_heartbeat_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class WhiteboxTestTask(SQLModel, table=True):
+    __tablename__ = "whitebox_test_task"
+    __table_args__ = (
+        Index("ix_whitebox_test_task_user_id_status", "user_id", "status"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", nullable=False, index=True)
+    project_name: str = Field(max_length=255)
+    source_url: str = Field(max_length=2048)
+    revision: str = Field(max_length=255)
+    test_config: str | None = Field(default=None, max_length=1024)
+    status: WhiteboxTaskStatus = Field(default=WhiteboxTaskStatus.created, index=True)
+    agent_id: uuid.UUID | None = Field(default=None, index=True)
+    input_files: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    result_files: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    error_message: str | None = None
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    started_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    finished_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class BomSpecCompareTask(SQLModel, table=True):
+    __tablename__ = "bom_spec_compare_task"
+    __table_args__ = (
+        Index("ix_bom_spec_compare_task_user_id_status", "user_id", "status"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", nullable=False, index=True)
+    task_name: str = Field(max_length=255)
+    status: BomSpecCompareTaskStatus = Field(
+        default=BomSpecCompareTaskStatus.created,
+        index=True,
+    )
+    input_files: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    result_files: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    project_count: int = Field(default=0)
+    success_count: int = Field(default=0)
+    consistent_count: int = Field(default=0)
+    different_count: int = Field(default=0)
+    failed_count: int = Field(default=0)
+    error_message: str | None = None
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    started_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    finished_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class WireHarnessCompareTask(SQLModel, table=True):
+    __tablename__ = "wire_harness_compare_task"
+    __table_args__ = (
+        Index("ix_wire_harness_compare_task_user_id_status", "user_id", "status"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", nullable=False, index=True)
+    task_name: str = Field(max_length=255)
+    status: WireHarnessCompareTaskStatus = Field(
+        default=WireHarnessCompareTaskStatus.created,
+        index=True,
+    )
+    input_files: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    result_files: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    pair_count: int = Field(default=0)
+    image_count: int = Field(default=0)
+    failed_count: int = Field(default=0)
+    semantic_diff_count: int = Field(default=0)
+    review_required_count: int = Field(default=0)
+    ocr_page_count: int = Field(default=0)
+    error_message: str | None = None
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    started_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    finished_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class BomChangeCheckTask(SQLModel, table=True):
+    __tablename__ = "bom_change_check_task"
+    __table_args__ = (
+        Index("ix_bom_change_check_task_user_id_status", "user_id", "status"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", nullable=False, index=True)
+    task_name: str = Field(max_length=255)
+    status: BomChangeCheckTaskStatus = Field(
+        default=BomChangeCheckTaskStatus.created,
+        index=True,
+    )
+    input_files: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    result_files: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    change_order_abnormal_count: int = Field(default=0)
+    bom_diff_abnormal_count: int = Field(default=0)
+    replacement_abnormal_count: int = Field(default=0)
+    customer_restriction_abnormal_count: int = Field(default=0)
+    manual_review_count: int = Field(default=0)
+    skipped_count: int = Field(default=0)
+    error_message: str | None = None
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    started_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    finished_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class BomElectronicEditTask(SQLModel, table=True):
+    __tablename__ = "bom_electronic_edit_task"
+    __table_args__ = (
+        Index("ix_bom_electronic_edit_task_user_id_status", "user_id", "status"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", nullable=False, index=True)
+    task_name: str = Field(max_length=255)
+    status: BomElectronicEditTaskStatus = Field(
+        default=BomElectronicEditTaskStatus.created,
+        index=True,
+    )
+    input_files: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    result_files: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    modified_count: int = Field(default=0)
+    abnormal_count: int = Field(default=0)
+    report_count: int = Field(default=0)
+    processed_sheet_count: int = Field(default=0)
+    error_message: str | None = None
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    started_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    finished_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
 class Feedback(SQLModel, table=True):
     __tablename__ = "feedback"
     __table_args__ = (
@@ -242,6 +579,11 @@ class ReviewTaskStatusUpdate(SQLModel):
     client_version: str | None = Field(default=None, max_length=255)
 
 
+class GpioTaskCreate(SQLModel):
+    code_svn_url: str = Field(min_length=1, max_length=2048)
+    code_revision: str = Field(min_length=1, max_length=255)
+
+
 class ReviewTaskPublic(SQLModel):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -264,6 +606,307 @@ class ReviewTaskPublic(SQLModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class GpioUploadedFilePublic(SQLModel):
+    file_name: str
+    file_path: str
+    content_type: str | None = None
+    file_size: int
+
+
+class GpioTaskPublic(SQLModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    user_name: str | None = None
+    svn_username: str | None = None
+    project_no: str
+    chip_model: str
+    package_name: str | None = None
+    manual_file_name: str | None = None
+    code_svn_url: str
+    code_revision: str
+    svn_export_path: str | None = None
+    status: GpioTaskStatus
+    uploaded_files: list[GpioUploadedFilePublic] = Field(default_factory=list)
+    recognition_summary: dict[str, Any] | None = None
+    result_path: str | None = None
+    result_name: str | None = None
+    error_message: str | None = None
+    created_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class GpioTasksPublic(SQLModel):
+    data: list[GpioTaskPublic]
+    count: int
+
+
+class GpioTaskUserStatsPublic(SQLModel):
+    user_name: str | None = None
+    svn_username: str | None = None
+    workbook_count: int
+
+
+class GpioTaskStatsPublic(SQLModel):
+    total: int
+    success: int
+    running: int
+    failed_or_error: int
+    by_status: dict[GpioTaskStatus, int]
+    workbooks_by_user: list[GpioTaskUserStatsPublic] = Field(default_factory=list)
+
+
+class WhiteboxUploadedFilePublic(SQLModel):
+    file_name: str
+    file_path: str
+    content_type: str | None = None
+    file_size: int
+
+
+class WhiteboxTaskPublic(SQLModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    user_name: str | None = None
+    svn_username: str | None = None
+    project_name: str
+    source_url: str
+    revision: str
+    test_config: str | None = None
+    status: WhiteboxTaskStatus
+    agent_id: uuid.UUID | None = None
+    input_files: list[WhiteboxUploadedFilePublic] = Field(default_factory=list)
+    result_files: list[WhiteboxUploadedFilePublic] = Field(default_factory=list)
+    error_message: str | None = None
+    created_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class WhiteboxTasksPublic(SQLModel):
+    data: list[WhiteboxTaskPublic]
+    count: int
+
+
+class WhiteboxTaskStatsPublic(SQLModel):
+    total: int
+    success: int
+    running: int
+    failed_or_error: int
+    queued: int
+    by_status: dict[WhiteboxTaskStatus, int]
+
+
+class BomSpecCompareUploadedFilePublic(SQLModel):
+    file_name: str
+    file_path: str
+    content_type: str | None = None
+    file_size: int
+
+
+class BomSpecCompareTaskPublic(SQLModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    user_name: str | None = None
+    svn_username: str | None = None
+    task_name: str
+    status: BomSpecCompareTaskStatus
+    input_files: list[BomSpecCompareUploadedFilePublic] = Field(default_factory=list)
+    result_files: list[BomSpecCompareUploadedFilePublic] = Field(default_factory=list)
+    project_count: int
+    success_count: int
+    consistent_count: int
+    different_count: int
+    failed_count: int
+    error_message: str | None = None
+    created_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class BomSpecCompareTasksPublic(SQLModel):
+    data: list[BomSpecCompareTaskPublic]
+    count: int
+
+
+class BomSpecCompareTaskStatsPublic(SQLModel):
+    total: int
+    success: int
+    running: int
+    failed_or_error: int
+    by_status: dict[BomSpecCompareTaskStatus, int]
+    project_count: int
+    consistent_count: int
+    different_count: int
+    failed_count: int
+    task_total_count: int
+    task_success_count: int
+    task_running_count: int
+    task_failed_count: int
+    project_total_count: int
+    project_consistent_count: int
+    project_different_count: int
+    project_failed_count: int
+
+
+class WireHarnessCompareUploadedFilePublic(SQLModel):
+    file_name: str
+    file_path: str
+    content_type: str | None = None
+    file_size: int
+
+
+class WireHarnessCompareTaskPublic(SQLModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    user_name: str | None = None
+    svn_username: str | None = None
+    task_name: str
+    status: WireHarnessCompareTaskStatus
+    input_files: list[WireHarnessCompareUploadedFilePublic] = Field(default_factory=list)
+    result_files: list[WireHarnessCompareUploadedFilePublic] = Field(default_factory=list)
+    pair_count: int
+    image_count: int
+    failed_count: int
+    semantic_diff_count: int = 0
+    review_required_count: int = 0
+    ocr_page_count: int = 0
+    error_message: str | None = None
+    created_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class WireHarnessCompareTasksPublic(SQLModel):
+    data: list[WireHarnessCompareTaskPublic]
+    count: int
+
+
+class WireHarnessCompareTaskStatsPublic(SQLModel):
+    total: int
+    success: int
+    running: int
+    failed_or_error: int
+    by_status: dict[WireHarnessCompareTaskStatus, int]
+    pair_count: int
+    image_count: int
+    failed_count: int
+
+
+class BomChangeCheckUploadedFilePublic(SQLModel):
+    file_name: str
+    file_path: str
+    content_type: str | None = None
+    file_size: int
+    role: str | None = None
+
+
+class BomChangeCheckTaskPublic(SQLModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    user_name: str | None = None
+    svn_username: str | None = None
+    task_name: str
+    status: BomChangeCheckTaskStatus
+    input_files: list[BomChangeCheckUploadedFilePublic] = Field(default_factory=list)
+    result_files: list[BomChangeCheckUploadedFilePublic] = Field(default_factory=list)
+    change_order_abnormal_count: int
+    bom_diff_abnormal_count: int
+    replacement_abnormal_count: int
+    customer_restriction_abnormal_count: int
+    manual_review_count: int
+    skipped_count: int
+    error_message: str | None = None
+    created_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class BomChangeCheckTasksPublic(SQLModel):
+    data: list[BomChangeCheckTaskPublic]
+    count: int
+
+
+class BomChangeCheckTaskStatsPublic(SQLModel):
+    total: int
+    success: int
+    running: int
+    failed_or_error: int
+    by_status: dict[BomChangeCheckTaskStatus, int]
+    change_order_abnormal_count: int
+    bom_diff_abnormal_count: int
+    replacement_abnormal_count: int
+    customer_restriction_abnormal_count: int
+    manual_review_count: int
+    skipped_count: int
+
+
+class BomElectronicEditUploadedFilePublic(SQLModel):
+    file_name: str
+    file_path: str
+    content_type: str | None = None
+    file_size: int
+    role: str | None = None
+
+
+class BomElectronicEditTaskPublic(SQLModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    user_name: str | None = None
+    svn_username: str | None = None
+    task_name: str
+    status: BomElectronicEditTaskStatus
+    input_files: list[BomElectronicEditUploadedFilePublic] = Field(default_factory=list)
+    result_files: list[BomElectronicEditUploadedFilePublic] = Field(default_factory=list)
+    modified_count: int
+    abnormal_count: int
+    report_count: int
+    processed_sheet_count: int
+    error_message: str | None = None
+    created_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class BomElectronicEditTasksPublic(SQLModel):
+    data: list[BomElectronicEditTaskPublic]
+    count: int
+
+
+class BomElectronicEditTaskStatsPublic(SQLModel):
+    total: int
+    success: int
+    running: int
+    failed_or_error: int
+    by_status: dict[BomElectronicEditTaskStatus, int]
+    modified_count: int
+    abnormal_count: int
+    report_count: int
+    processed_sheet_count: int
+
+
+class WhiteboxAgentPublic(SQLModel):
+    id: uuid.UUID
+    name: str
+    machine_id: str
+    status: WhiteboxAgentStatus
+    capabilities: dict[str, Any] | None = None
+    current_task_id: uuid.UUID | None = None
+    last_heartbeat_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class WhiteboxAgentsPublic(SQLModel):
+    data: list[WhiteboxAgentPublic]
+    count: int
 
 
 class ReviewTasksPublic(SQLModel):

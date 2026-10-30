@@ -13,13 +13,32 @@ import { Toaster } from "./components/ui/sonner"
 import "./index.css"
 import { routeTree } from "./routeTree.gen"
 
-OpenAPI.BASE = import.meta.env.VITE_API_URL
+function resolveApiBase() {
+  const configured = import.meta.env.VITE_API_URL
+  if (configured && configured !== "auto") {
+    return configured
+  }
+  return `${window.location.protocol}//${window.location.hostname}:8003`
+}
+
+OpenAPI.BASE = resolveApiBase()
 OpenAPI.TOKEN = async () => {
   return localStorage.getItem("access_token") || ""
 }
 
+const loginErrorPaths = ["/api/v1/auth/key-login", "/api/v1/auth/login"]
+
+const isLoginRequestError = (error: ApiError) => {
+  return loginErrorPaths.some(
+    (path) => error.request.url === path || error.url.endsWith(path),
+  )
+}
+
 const handleApiError = (error: Error) => {
   if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
+    if (isLoginRequestError(error)) {
+      return
+    }
     localStorage.removeItem("access_token")
     window.location.href = "/login"
   }
